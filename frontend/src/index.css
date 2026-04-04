@@ -155,6 +155,64 @@ html, body, #root {
   color: var(--text-dim);
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* ─── Layout switcher ────────────────────────────────────────────────────── */
+.layout-switcher {
+  display: flex;
+  gap: 4px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.layout-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+
+.layout-btn:hover { color: var(--text); }
+
+.layout-btn--active {
+  background: var(--border);
+  color: var(--text);
+}
+
+/* ─── PiP container ──────────────────────────────────────────────────────── */
+.pip-container {
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+}
+
+.pip-container .tile-grid {
+  height: 100%;
+  padding: 6px;
+}
+
+.pip-waiting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
 /* ─── Unified tile grid ──────────────────────────────────────────────────── */
 .tile-grid {
   display: grid;
@@ -206,8 +264,25 @@ html, body, #root {
   flex-direction: column;
 }
 
+/* Зелёная рамка для своего тайла */
 .participant-card--local {
-  border-color: #555;
+  border-color: #43a047;
+  box-shadow: 0 0 0 1px #43a047;
+}
+
+/* PiP: плавающее превью поверх */
+.participant-card--pip {
+  position: absolute;
+  bottom: 14px;
+  right: 14px;
+  width: 200px;
+  height: 130px;
+  border-radius: var(--radius);
+  z-index: 10;
+  box-shadow: 0 4px 20px rgba(0,0,0,.7);
+  border-color: #43a047;
+  box-shadow: 0 0 0 2px #43a047, 0 4px 20px rgba(0,0,0,.7);
+  cursor: default;
 }
 
 .card-video-wrap {

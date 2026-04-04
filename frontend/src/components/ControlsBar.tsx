@@ -1,6 +1,7 @@
 interface Props {
   isMuted: boolean
   isCamOff: boolean
+  layout?: string
   onToggleMute: () => void
   onToggleCam: () => void
   onLeave: () => void
