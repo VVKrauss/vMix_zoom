@@ -1,0 +1,106 @@
+#cloud-config
+# ─────────────────────────────────────────────────────────────────────────────
+# vMix Streamer — Cloud-init
+# Протестировано на Ubuntu 22.04 LTS
+#
+# Использование (при создании VPS на Hetzner / DigitalOcean / Timeweb и т.д.):
+#   Вставить этот файл в поле "User data" при создании сервера.
+#
+# После первой загрузки (~5-10 мин) приложение будет доступно на порту 80.
+# Логи инициализации: sudo tail -f /var/log/cloud-init-output.log
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ─── Переменные — заменить перед деплоем ─────────────────────────────────────
+# ANNOUNCED_IP будет определён автоматически из внешнего IP сервера.
+# Репозиторий клонируется публично (HTTPS). Если приватный — добавьте deploy key.
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - wget
+  - git
+  - ufw
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - htop
+  - ffmpeg
+  - build-essential
+  - python3
+  - python3-pip
+
+runcmd:
+  # ── 1. Docker ───────────────────────────────────────────────────────────────
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  - chmod a+r /etc/apt/keyrings/docker.gpg
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+  - apt-get update -qq
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  - systemctl enable docker
+  - systemctl start docker
+
+  # ── 2. Firewall ─────────────────────────────────────────────────────────────
+  - ufw --force reset
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp        # SSH
+  - ufw allow 80/tcp        # HTTP (frontend)
+  - ufw allow 443/tcp       # HTTPS (если настроите SSL)
+  - ufw allow 3000/tcp      # Backend API (опционально, можно закрыть)
+  - ufw allow 9001:9010/udp # SRT для vMix
+  - ufw allow 40000:49999/udp  # WebRTC UDP
+  - ufw allow 40000:49999/tcp  # WebRTC TCP
+  - ufw --force enable
+
+  # ── 3. Клонировать репозиторий ───────────────────────────────────────────────
+  - git clone https://github.com/VVKrauss/vMix_zoom.git /opt/vmix-streamer
+  - chown -R root:root /opt/vmix-streamer
+
+  # ── 4. Определить внешний IP и создать .env ──────────────────────────────────
+  - |
+    PUBLIC_IP=$(curl -s https://api.ipify.org || curl -s https://ipv4.icanhazip.com)
+    cat > /opt/vmix-streamer/.env <<EOF
+    ANNOUNCED_IP=${PUBLIC_IP}
+    PORT=3000
+    SRT_BASE_PORT=9001
+    MAX_PEERS=10
+    MEDIASOUP_WORKER_COUNT=2
+    RTC_MIN_PORT=40000
+    RTC_MAX_PORT=49999
+    RTP_BASE_PORT=20000
+    EOF
+    echo "Detected public IP: ${PUBLIC_IP}" >> /var/log/vmix-streamer-init.log
+
+  # ── 5. Запустить через Docker Compose ────────────────────────────────────────
+  - cd /opt/vmix-streamer && docker compose up -d --build
+  - echo "vMix Streamer started at $(date)" >> /var/log/vmix-streamer-init.log
+
+  # ── 6. Systemd-юнит для автозапуска после перезагрузки ──────────────────────
+  - |
+    cat > /etc/systemd/system/vmix-streamer.service <<EOF
+    [Unit]
+    Description=vMix Streamer (Docker Compose)
+    After=docker.service network-online.target
+    Requires=docker.service
+
+    [Service]
+    Type=oneshot
+    RemainAfterExit=yes
+    WorkingDirectory=/opt/vmix-streamer
+    ExecStart=/usr/bin/docker compose up -d
+    ExecStop=/usr/bin/docker compose down
+    TimeoutStartSec=300
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+    systemctl daemon-reload
+    systemctl enable vmix-streamer
+
+final_message: |
+  ✅ vMix Streamer инициализация завершена за $UPTIME секунд.
+  Логи: /var/log/vmix-streamer-init.log
+  Статус: docker compose -f /opt/vmix-streamer/docker-compose.yml ps
