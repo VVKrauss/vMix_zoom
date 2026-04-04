@@ -1,0 +1,257 @@
+import { useCallback, useRef, useState } from 'react'
+import { Device } from 'mediasoup-client'
+import type { Transport, Producer, Consumer } from 'mediasoup-client/lib/types'
+import { io, Socket } from 'socket.io-client'
+import type { ProducerDescriptor, RemoteParticipant } from '../types'
+
+const SERVER = import.meta.env.VITE_SIGNALING_URL as string
+const DEFAULT_ROOM = import.meta.env.VITE_DEFAULT_ROOM as string ?? 'test'
+
+export type RoomStatus = 'idle' | 'connecting' | 'connected' | 'error'
+
+export function useRoom() {
+  const [status, setStatus] = useState<RoomStatus>('idle')
+  const [error, setError] = useState<string | null>(null)
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null)
+  const [participants, setParticipants] = useState<Map<string, RemoteParticipant>>(new Map())
+  const [isMuted, setIsMuted] = useState(false)
+  const [isCamOff, setIsCamOff] = useState(false)
+
+  const socketRef = useRef<Socket | null>(null)
+  const deviceRef = useRef<Device | null>(null)
+  const sendTransportRef = useRef<Transport | null>(null)
+  const recvTransportRef = useRef<Transport | null>(null)
+  const audioProducerRef = useRef<Producer | null>(null)
+  const videoProducerRef = useRef<Producer | null>(null)
+  const consumersRef = useRef<Map<string, Consumer>>(new Map())
+  const roomIdRef = useRef<string>(DEFAULT_ROOM)
+
+  // ─── Consume one producer ────────────────────────────────────────────────
+
+  const consumeProducer = useCallback(async (producer: ProducerDescriptor) => {
+    const device = deviceRef.current
+    const recvTransport = recvTransportRef.current
+    const socket = socketRef.current
+    if (!device || !recvTransport || !socket) return
+
+    const data = await new Promise<Record<string, unknown>>((res) => {
+      socket.emit('consume', {
+        roomId: roomIdRef.current,
+        producerId: producer.producerId,
+        transportId: recvTransport.id,
+        rtpCapabilities: device.rtpCapabilities,
+      }, res)
+    })
+
+    if (data?.error) {
+      console.error('[consume] error:', data.error)
+      return
+    }
+
+    const consumer = await recvTransport.consume(data as never)
+    consumersRef.current.set(consumer.id, consumer)
+
+    const stream = new MediaStream([consumer.track])
+
+    setParticipants((prev) => {
+      const next = new Map(prev)
+      const existing: RemoteParticipant = next.get(producer.peerId) ?? {
+        peerId: producer.peerId,
+        name: producer.name,
+      }
+      if (consumer.kind === 'video') {
+        next.set(producer.peerId, { ...existing, videoStream: stream })
+      } else {
+        next.set(producer.peerId, { ...existing, audioStream: stream })
+      }
+      return next
+    })
+
+    socket.emit('resumeConsumer', {
+      roomId: roomIdRef.current,
+      consumerId: consumer.id,
+    })
+  }, [])
+
+  // ─── Join ────────────────────────────────────────────────────────────────
+
+  const join = useCallback(async (name: string, roomId: string = DEFAULT_ROOM) => {
+    setStatus('connecting')
+    setError(null)
+    roomIdRef.current = roomId
+
+    try {
+      // 1. Get local media
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      })
+      setLocalStream(stream)
+
+      // 2. Connect socket
+      const socket = io(SERVER, { transports: ['websocket'] })
+      socketRef.current = socket
+
+      await new Promise<void>((resolve, reject) => {
+        socket.once('connect', resolve)
+        socket.once('connect_error', reject)
+      })
+
+      // 3. Join room
+      const joinData = await new Promise<{ rtpCapabilities: object; existingProducers: ProducerDescriptor[] }>((res) => {
+        socket.emit('joinRoom', { roomId, name }, res)
+      })
+
+      console.log('[join] existingProducers:', joinData.existingProducers)
+
+      // 4. Load mediasoup device
+      const device = new Device()
+      await device.load({ routerRtpCapabilities: joinData.rtpCapabilities as never })
+      deviceRef.current = device
+
+      // 5. Send transport
+      const sendData = await new Promise<Record<string, unknown>>((res) => {
+        socket.emit('createWebRtcTransport', { roomId }, res)
+      })
+
+      const sendTransport = device.createSendTransport(sendData as never)
+      sendTransportRef.current = sendTransport
+
+      sendTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
+        socket.emit('connectTransport', {
+          roomId,
+          transportId: sendTransport.id,
+          dtlsParameters,
+        }, (res: { error?: string }) => {
+          if (res?.error) return errback(new Error(res.error))
+          callback()
+        })
+      })
+
+      sendTransport.on('produce', ({ kind, rtpParameters }, callback, errback) => {
+        socket.emit('produce', {
+          roomId,
+          transportId: sendTransport.id,
+          kind,
+          rtpParameters,
+        }, (res: { id?: string; error?: string }) => {
+          if (res?.error) return errback(new Error(res.error))
+          callback({ id: res.id! })
+        })
+      })
+
+      // 6. Produce tracks
+      for (const track of stream.getTracks()) {
+        const producer = await sendTransport.produce({ track })
+        if (track.kind === 'audio') audioProducerRef.current = producer
+        if (track.kind === 'video') videoProducerRef.current = producer
+      }
+
+      // 7. Recv transport
+      const recvData = await new Promise<Record<string, unknown>>((res) => {
+        socket.emit('createWebRtcTransport', { roomId }, res)
+      })
+
+      const recvTransport = device.createRecvTransport(recvData as never)
+      recvTransportRef.current = recvTransport
+
+      recvTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
+        socket.emit('connectTransport', {
+          roomId,
+          transportId: recvTransport.id,
+          dtlsParameters,
+        }, (res: { error?: string }) => {
+          if (res?.error) return errback(new Error(res.error))
+          callback()
+        })
+      })
+
+      // 8. Consume existing producers
+      for (const p of joinData.existingProducers ?? []) {
+        await consumeProducer(p)
+      }
+
+      // 9. Socket events
+      socket.on('newProducer', async (producer: ProducerDescriptor) => {
+        console.log('[newProducer]', producer)
+        await consumeProducer(producer)
+      })
+
+      socket.on('peerLeft', ({ peerId }: { peerId: string }) => {
+        setParticipants((prev) => {
+          const next = new Map(prev)
+          next.delete(peerId)
+          return next
+        })
+      })
+
+      setStatus('connected')
+    } catch (err) {
+      console.error('[join] error:', err)
+      setError(String(err))
+      setStatus('error')
+    }
+  }, [consumeProducer])
+
+  // ─── Controls ────────────────────────────────────────────────────────────
+
+  const toggleMute = useCallback(() => {
+    const producer = audioProducerRef.current
+    const stream = localStream
+    if (!producer || !stream) return
+    const track = stream.getAudioTracks()[0]
+    if (!track) return
+    if (isMuted) {
+      producer.resume()
+      track.enabled = true
+    } else {
+      producer.pause()
+      track.enabled = false
+    }
+    setIsMuted((v) => !v)
+  }, [isMuted, localStream])
+
+  const toggleCam = useCallback(() => {
+    const producer = videoProducerRef.current
+    const stream = localStream
+    if (!producer || !stream) return
+    const track = stream.getVideoTracks()[0]
+    if (!track) return
+    if (isCamOff) {
+      producer.resume()
+      track.enabled = true
+    } else {
+      producer.pause()
+      track.enabled = false
+    }
+    setIsCamOff((v) => !v)
+  }, [isCamOff, localStream])
+
+  const leave = useCallback(() => {
+    videoProducerRef.current?.close()
+    audioProducerRef.current?.close()
+    consumersRef.current.forEach((c) => c.close())
+    sendTransportRef.current?.close()
+    recvTransportRef.current?.close()
+    socketRef.current?.disconnect()
+    localStream?.getTracks().forEach((t) => t.stop())
+    setLocalStream(null)
+    setParticipants(new Map())
+    setStatus('idle')
+    setIsMuted(false)
+    setIsCamOff(false)
+  }, [localStream])
+
+  return {
+    join,
+    leave,
+    toggleMute,
+    toggleCam,
+    status,
+    error,
+    localStream,
+    participants,
+    isMuted,
+    isCamOff,
+  }
+}

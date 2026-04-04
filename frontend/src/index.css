@@ -1,0 +1,331 @@
+/* ─── Reset ──────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #0d0d0d;
+  --surface:   #1a1a1a;
+  --surface2:  #242424;
+  --border:    #2e2e2e;
+  --text:      #f0f0f0;
+  --text-dim:  #888;
+  --red:       #e53935;
+  --red-dk:    #b71c1c;
+  --font:      'Inter', system-ui, sans-serif;
+  --radius:    10px;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  overflow: hidden;
+}
+
+/* ─── Join ───────────────────────────────────────────────────────────────── */
+.join-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background: radial-gradient(ellipse at 50% 40%, #1a0000 0%, var(--bg) 70%);
+}
+
+.join-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 40px 44px;
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  box-shadow: 0 24px 64px rgba(0,0,0,.6);
+}
+
+.join-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.join-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.join-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.join-input {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 11px 14px;
+  font-size: 15px;
+  color: var(--text);
+  font-family: var(--font);
+  outline: none;
+  transition: border-color .15s;
+}
+.join-input:focus { border-color: var(--red); }
+
+.join-btn {
+  margin-top: 4px;
+  background: var(--red);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 13px;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: background .15s;
+}
+.join-btn:hover:not(:disabled) { background: #ef5350; }
+.join-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+.join-error {
+  font-size: 13px;
+  color: #ef9a9a;
+  background: rgba(180,0,0,.2);
+  border: 1px solid rgba(229,57,53,.3);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+/* ─── Loading ────────────────────────────────────────────────────────────── */
+.loading-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 16px;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--border);
+  border-top-color: var(--red);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── Room ───────────────────────────────────────────────────────────────── */
+.room-page {
+  display: grid;
+  grid-template-rows: 52px 1fr 72px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.room-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.room-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.room-count {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+/* ─── Body layout ────────────────────────────────────────────────────────── */
+.room-body {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  overflow: hidden;
+  height: 100%;
+}
+
+/* Local video: fixed left column when others present, full width alone */
+.participant-card--local {
+  flex-shrink: 0;
+  width: 260px;
+}
+
+/* ─── Remote grid ────────────────────────────────────────────────────────── */
+.remote-grid {
+  flex: 1;
+  display: grid;
+  gap: 6px;
+  overflow: hidden;
+}
+
+/* 1–2 participants: side by side */
+.remote-grid--1 { grid-template-columns: 1fr; }
+.remote-grid--2 { grid-template-columns: repeat(2, 1fr); }
+/* 3–4 */
+.remote-grid--3,
+.remote-grid--4 { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); }
+/* 5–6 */
+.remote-grid--5,
+.remote-grid--6 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); }
+/* 7–9 */
+.remote-grid--7,
+.remote-grid--8,
+.remote-grid--9 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); }
+
+.remote-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+/* ─── Participant card ───────────────────────────────────────────────────── */
+.participant-card {
+  position: relative;
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.participant-card--local {
+  border-color: #444;
+}
+
+.card-video-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+.card-video-wrap video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.participant-card--local video {
+  transform: scaleX(-1);
+}
+
+.card-video-wrap video.hidden {
+  visibility: hidden;
+}
+
+.cam-off-avatar {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface2);
+  font-size: 36px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.cam-off-avatar::before {
+  content: attr(data-letter);
+}
+
+.card-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: rgba(0,0,0,.55);
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+}
+
+.card-name {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 3px rgba(0,0,0,.8);
+}
+
+.muted-icon {
+  width: 14px;
+  height: 14px;
+  color: #ef9a9a;
+  flex-shrink: 0;
+}
+
+/* ─── Controls bar ───────────────────────────────────────────────────────── */
+.controls-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 0 20px;
+}
+
+.ctrl-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+  padding: 8px 18px;
+  font-family: var(--font);
+  font-size: 11px;
+  transition: background .15s;
+  min-width: 68px;
+}
+
+.ctrl-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.ctrl-btn:hover { background: #2a2a2a; }
+
+.ctrl-btn--off {
+  background: rgba(180,0,0,.2);
+  border-color: rgba(229,57,53,.4);
+  color: #ef9a9a;
+}
+.ctrl-btn--off:hover { background: rgba(180,0,0,.35); }
+
+.ctrl-btn--leave {
+  background: var(--red);
+  border-color: var(--red-dk);
+  color: #fff;
+}
+.ctrl-btn--leave:hover { background: #ef5350; }
