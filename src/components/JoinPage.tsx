@@ -24,7 +24,7 @@ export function JoinPage({ onJoin, error }: Props) {
             <rect width="40" height="40" rx="10" fill="#e53935" />
             <path d="M8 13h14v14H8V13zm16 3l8-4v16l-8-4V16z" fill="white" />
           </svg>
-          <span>vMix Streamer</span>
+          <span>redflow.online</span>
         </div>
 
         <form onSubmit={handleSubmit} className="join-form">
