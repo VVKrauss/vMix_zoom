@@ -155,50 +155,44 @@ html, body, #root {
   color: var(--text-dim);
 }
 
-/* ─── Body layout ────────────────────────────────────────────────────────── */
-.room-body {
-  display: flex;
+/* ─── Unified tile grid ──────────────────────────────────────────────────── */
+.tile-grid {
+  display: grid;
   gap: 6px;
   padding: 6px;
   overflow: hidden;
   height: 100%;
+  align-items: stretch;
 }
 
-/* Local video: fixed left column when others present, full width alone */
-.participant-card--local {
-  flex-shrink: 0;
-  width: 260px;
+/* 1 участник — во весь экран */
+.tile-grid--1 {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
 }
 
-/* ─── Remote grid ────────────────────────────────────────────────────────── */
-.remote-grid {
-  flex: 1;
-  display: grid;
-  gap: 6px;
-  overflow: hidden;
+/* 2 участника — рядом 50/50 */
+.tile-grid--2 {
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: 1fr;
 }
 
-/* 1–2 participants: side by side */
-.remote-grid--1 { grid-template-columns: 1fr; }
-.remote-grid--2 { grid-template-columns: repeat(2, 1fr); }
-/* 3–4 */
-.remote-grid--3,
-.remote-grid--4 { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); }
-/* 5–6 */
-.remote-grid--5,
-.remote-grid--6 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); }
-/* 7–9 */
-.remote-grid--7,
-.remote-grid--8,
-.remote-grid--9 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); }
+/* 3–4 участника — 2×2 */
+.tile-grid--4 {
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+}
 
-.remote-empty {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-dim);
-  font-size: 14px;
+/* 5–6 участников — 3×2 */
+.tile-grid--6 {
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+}
+
+/* 7–9 участников — 3×3 */
+.tile-grid--9 {
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
 }
 
 /* ─── Participant card ───────────────────────────────────────────────────── */
@@ -213,7 +207,7 @@ html, body, #root {
 }
 
 .participant-card--local {
-  border-color: #444;
+  border-color: #555;
 }
 
 .card-video-wrap {
