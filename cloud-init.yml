@@ -3,16 +3,14 @@
 # vMix Streamer — Cloud-init
 # Протестировано на Ubuntu 22.04 LTS
 #
-# Использование (при создании VPS на Hetzner / DigitalOcean / Timeweb и т.д.):
-#   Вставить этот файл в поле "User data" при создании сервера.
+# !! ПЕРЕД ИСПОЛЬЗОВАНИЕМ !!
+# Замените GITHUB_TOKEN ниже на свой Personal Access Token:
+#   GitHub → Settings → Developer settings → Personal access tokens → Fine-grained
+#   Права: Contents → Read-only  (только для этого репо)
 #
-# После первой загрузки (~5-10 мин) приложение будет доступно на порту 80.
-# Логи инициализации: sudo tail -f /var/log/cloud-init-output.log
+# Вставить файл в поле "User data" при создании VPS.
+# Логи: sudo tail -f /var/log/cloud-init-output.log
 # ─────────────────────────────────────────────────────────────────────────────
-
-# ─── Переменные — заменить перед деплоем ─────────────────────────────────────
-# ANNOUNCED_IP будет определён автоматически из внешнего IP сервера.
-# Репозиторий клонируется публично (HTTPS). Если приватный — добавьте deploy key.
 
 package_update: true
 package_upgrade: true
@@ -32,7 +30,7 @@ packages:
   - python3-pip
 
 runcmd:
-  # ── 1. Docker ───────────────────────────────────────────────────────────────
+  # ── 1. Docker ────────────────────────────────────────────────────────────────
   - install -m 0755 -d /etc/apt/keyrings
   - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
   - chmod a+r /etc/apt/keyrings/docker.gpg
@@ -42,65 +40,87 @@ runcmd:
   - systemctl enable docker
   - systemctl start docker
 
-  # ── 2. Firewall ─────────────────────────────────────────────────────────────
+  # ── 2. Firewall ──────────────────────────────────────────────────────────────
   - ufw --force reset
   - ufw default deny incoming
   - ufw default allow outgoing
-  - ufw allow 22/tcp        # SSH
-  - ufw allow 80/tcp        # HTTP (frontend)
-  - ufw allow 443/tcp       # HTTPS (если настроите SSL)
-  - ufw allow 3000/tcp      # Backend API (опционально, можно закрыть)
-  - ufw allow 9001:9010/udp # SRT для vMix
-  - ufw allow 40000:49999/udp  # WebRTC UDP
-  - ufw allow 40000:49999/tcp  # WebRTC TCP
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw allow 3000/tcp
+  - ufw allow 9001:9010/udp
+  - ufw allow 40000:49999/udp
+  - ufw allow 40000:49999/tcp
   - ufw --force enable
 
-  # ── 3. Клонировать репозиторий ───────────────────────────────────────────────
-  - git clone https://github.com/VVKrauss/vMix_zoom.git /opt/vmix-streamer
-  - chown -R root:root /opt/vmix-streamer
-
-  # ── 4. Определить внешний IP и создать .env ──────────────────────────────────
+  # ── 3. Клонировать репозиторий (с токеном для приватного репо) ────────────────
   - |
-    PUBLIC_IP=$(curl -s https://api.ipify.org || curl -s https://ipv4.icanhazip.com)
-    cat > /opt/vmix-streamer/.env <<EOF
-    ANNOUNCED_IP=${PUBLIC_IP}
-    PORT=3000
-    SRT_BASE_PORT=9001
-    MAX_PEERS=10
-    MEDIASOUP_WORKER_COUNT=2
-    RTC_MIN_PORT=40000
-    RTC_MAX_PORT=49999
-    RTP_BASE_PORT=20000
-    EOF
-    echo "Detected public IP: ${PUBLIC_IP}" >> /var/log/vmix-streamer-init.log
+    # !! Замените YOUR_GITHUB_TOKEN на реальный токен !!
+    GITHUB_TOKEN="YOUR_GITHUB_TOKEN"
+    REPO_URL="https://${GITHUB_TOKEN}@github.com/VVKrauss/vMix_zoom.git"
 
-  # ── 5. Запустить через Docker Compose ────────────────────────────────────────
-  - cd /opt/vmix-streamer && docker compose up -d --build
-  - echo "vMix Streamer started at $(date)" >> /var/log/vmix-streamer-init.log
+    echo "[clone] Cloning repository..." >> /var/log/vmix-streamer-init.log
+    git clone "$REPO_URL" /opt/vmix-streamer 2>> /var/log/vmix-streamer-init.log
 
-  # ── 6. Systemd-юнит для автозапуска после перезагрузки ──────────────────────
+    if [ ! -d "/opt/vmix-streamer" ]; then
+      echo "[ERROR] Clone failed! Check token or repo URL." >> /var/log/vmix-streamer-init.log
+      exit 1
+    fi
+
+    echo "[clone] OK" >> /var/log/vmix-streamer-init.log
+
+  # ── 4. Определить внешний IP и создать .env ───────────────────────────────────
   - |
-    cat > /etc/systemd/system/vmix-streamer.service <<EOF
-    [Unit]
-    Description=vMix Streamer (Docker Compose)
-    After=docker.service network-online.target
-    Requires=docker.service
+    PUBLIC_IP=$(curl -s --max-time 5 https://api.ipify.org \
+             || curl -s --max-time 5 https://ipv4.icanhazip.com \
+             || curl -s --max-time 5 http://ifconfig.me)
 
-    [Service]
-    Type=oneshot
-    RemainAfterExit=yes
-    WorkingDirectory=/opt/vmix-streamer
-    ExecStart=/usr/bin/docker compose up -d
-    ExecStop=/usr/bin/docker compose down
-    TimeoutStartSec=300
+    echo "[env] Public IP: ${PUBLIC_IP}" >> /var/log/vmix-streamer-init.log
 
-    [Install]
-    WantedBy=multi-user.target
-    EOF
+    cat > /opt/vmix-streamer/.env <<ENVEOF
+ANNOUNCED_IP=${PUBLIC_IP}
+PORT=3000
+SRT_BASE_PORT=9001
+MAX_PEERS=10
+MEDIASOUP_WORKER_COUNT=2
+RTC_MIN_PORT=40000
+RTC_MAX_PORT=49999
+RTP_BASE_PORT=20000
+ENVEOF
+
+    echo "[env] .env created" >> /var/log/vmix-streamer-init.log
+
+  # ── 5. Запустить через Docker Compose ─────────────────────────────────────────
+  - |
+    echo "[docker] Building and starting containers..." >> /var/log/vmix-streamer-init.log
+    cd /opt/vmix-streamer
+    docker compose up -d --build >> /var/log/vmix-streamer-init.log 2>&1
+    echo "[docker] Done at $(date)" >> /var/log/vmix-streamer-init.log
+
+  # ── 6. Systemd-юнит для автозапуска ───────────────────────────────────────────
+  - |
+    cat > /etc/systemd/system/vmix-streamer.service <<SVCEOF
+[Unit]
+Description=vMix Streamer (Docker Compose)
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/vmix-streamer
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
     systemctl daemon-reload
     systemctl enable vmix-streamer
+    echo "[systemd] vmix-streamer.service enabled" >> /var/log/vmix-streamer-init.log
 
 final_message: |
-  ✅ vMix Streamer инициализация завершена за $UPTIME секунд.
-  Логи: /var/log/vmix-streamer-init.log
-  Статус: docker compose -f /opt/vmix-streamer/docker-compose.yml ps
+  ✅ vMix Streamer cloud-init завершён за $UPTIME секунд.
+  Подробные логи: /var/log/vmix-streamer-init.log
+  Статус контейнеров: docker compose -f /opt/vmix-streamer/docker-compose.yml ps
