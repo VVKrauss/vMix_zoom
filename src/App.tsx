@@ -12,6 +12,7 @@ export function App() {
     status, error,
     localStream, participants,
     isMuted, isCamOff,
+    roomId, localPeerId, srtByPeer,
   } = useRoom()
 
   const handleJoin = (n: string, roomId: string) => {
@@ -34,6 +35,9 @@ export function App() {
         name={name}
         localStream={localStream}
         participants={participants}
+        roomId={roomId ?? ''}
+        localPeerId={localPeerId ?? ''}
+        srtByPeer={srtByPeer}
         isMuted={isMuted}
         isCamOff={isCamOff}
         onToggleMute={toggleMute}

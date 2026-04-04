@@ -1,11 +1,13 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Device } from 'mediasoup-client'
 import type { Transport, Producer, Consumer } from 'mediasoup-client/lib/types'
 import { io, Socket } from 'socket.io-client'
-import type { ProducerDescriptor, RemoteParticipant } from '../types'
+import type { FrontendRoomDetail, ProducerDescriptor, RemoteParticipant, SrtSessionInfo } from '../types'
 
-const SERVER = import.meta.env.VITE_SIGNALING_URL as string
+const SERVER = String(import.meta.env.VITE_SIGNALING_URL ?? '').replace(/\/$/, '')
 const DEFAULT_ROOM = import.meta.env.VITE_DEFAULT_ROOM as string ?? 'test'
+
+const ROOM_POLL_MS = 4000
 
 export type RoomStatus = 'idle' | 'connecting' | 'connected' | 'error'
 
@@ -26,6 +28,8 @@ export function useRoom() {
   const consumersRef = useRef<Map<string, Consumer>>(new Map())
   const roomIdRef = useRef<string>(DEFAULT_ROOM)
   const localStreamRef = useRef<MediaStream | null>(null)
+  const [sessionMeta, setSessionMeta] = useState<{ roomId: string; localPeerId: string } | null>(null)
+  const [srtByPeer, setSrtByPeer] = useState<Record<string, SrtSessionInfo>>({})
 
   // ─── Consume one producer ────────────────────────────────────────────────
 
@@ -68,10 +72,11 @@ export function useRoom() {
       return next
     })
 
-    socket.emit('resumeConsumer', {
-      roomId: roomIdRef.current,
-      consumerId: consumer.id,
-    })
+    socket.emit(
+      'resumeConsumer',
+      { roomId: roomIdRef.current, consumerId: consumer.id },
+      () => {}, // сервер ожидает Socket.IO ack — без колбэка падает callback is not a function
+    )
   }, [])
 
   // ─── Join ────────────────────────────────────────────────────────────────
@@ -98,6 +103,8 @@ export function useRoom() {
         socket.once('connect', resolve)
         socket.once('connect_error', reject)
       })
+
+      setSessionMeta({ roomId: roomIdRef.current, localPeerId: socket.id ?? '' })
 
       // 3. Join room
       const joinData = await new Promise<{ rtpCapabilities: object; existingProducers: ProducerDescriptor[] }>((res) => {
@@ -185,6 +192,25 @@ export function useRoom() {
           next.delete(peerId)
           return next
         })
+        setSrtByPeer((prev) => {
+          const n = { ...prev }
+          delete n[peerId]
+          return n
+        })
+      })
+
+      socket.on('srtStarted', (data: SrtSessionInfo) => {
+        if (!data?.peerId || !data.connectUrlPublic) return
+        setSrtByPeer((prev) => ({
+          ...prev,
+          [data.peerId]: {
+            peerId: data.peerId,
+            roomId: data.roomId,
+            sessionId: data.sessionId,
+            listenPort: data.listenPort,
+            connectUrlPublic: data.connectUrlPublic,
+          },
+        }))
       })
 
       setStatus('connected')
@@ -192,8 +218,55 @@ export function useRoom() {
       console.error('[join] error:', err)
       setError(String(err))
       setStatus('error')
+      setSessionMeta(null)
+      setSrtByPeer({})
+      socketRef.current?.disconnect()
+      socketRef.current = null
     }
   }, [consumeProducer])
+
+  // Поллинг дашборда — подтягивает srt[] после рестарта сервера и синхронизирует состав
+  const activeRoomId = sessionMeta?.roomId
+  useEffect(() => {
+    if (status !== 'connected' || !activeRoomId) return
+
+    const mergeFromDetail = (data: FrontendRoomDetail) => {
+      const rows = data.srt ?? []
+      if (!rows.length) return
+      setSrtByPeer((prev) => {
+        const next = { ...prev }
+        for (const row of rows) {
+          if (row.peerId && row.connectUrlPublic) {
+            next[row.peerId] = {
+              peerId: row.peerId,
+              roomId: data.roomId,
+              sessionId: row.sessionId,
+              listenPort: row.listenPort,
+              connectUrlPublic: row.connectUrlPublic,
+            }
+          }
+        }
+        return next
+      })
+    }
+
+    const tick = async () => {
+      try {
+        const res = await fetch(
+          `${SERVER}/api/frontend/rooms/${encodeURIComponent(activeRoomId)}`,
+        )
+        if (!res.ok) return
+        const data = (await res.json()) as FrontendRoomDetail
+        mergeFromDetail(data)
+      } catch {
+        /* сеть / CORS */
+      }
+    }
+
+    tick()
+    const id = window.setInterval(tick, ROOM_POLL_MS)
+    return () => clearInterval(id)
+  }, [status, activeRoomId])
 
   // ─── Controls ────────────────────────────────────────────────────────────
 
@@ -285,6 +358,8 @@ export function useRoom() {
     setStatus('idle')
     setIsMuted(false)
     setIsCamOff(false)
+    setSessionMeta(null)
+    setSrtByPeer({})
   }, [localStream])
 
   return {
@@ -300,5 +375,8 @@ export function useRoom() {
     participants,
     isMuted,
     isCamOff,
+    roomId: sessionMeta?.roomId ?? null,
+    localPeerId: sessionMeta?.localPeerId ?? null,
+    srtByPeer,
   }
 }

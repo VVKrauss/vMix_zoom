@@ -8,7 +8,7 @@ import { useDevices } from '../hooks/useDevices'
 import type { TileAspect } from '../hooks/useTileLayout'
 import { VideoInfoOverlay } from './VideoInfoOverlay'
 import type { PipPos, PipSize } from './DraggablePip'
-import type { RemoteParticipant } from '../types'
+import type { RemoteParticipant, SrtSessionInfo } from '../types'
 
 export type LayoutMode = 'grid' | 'pip'
 export type ObjectFit = 'cover' | 'contain'
@@ -17,6 +17,9 @@ interface Props {
   name: string
   localStream: MediaStream | null
   participants: Map<string, RemoteParticipant>
+  roomId: string
+  localPeerId: string
+  srtByPeer: Record<string, SrtSessionInfo>
   isMuted: boolean
   isCamOff: boolean
   onToggleMute: () => void
@@ -28,6 +31,7 @@ interface Props {
 
 export function RoomPage({
   name, localStream, participants,
+  roomId, localPeerId, srtByPeer,
   isMuted, isCamOff,
   onToggleMute, onToggleCam, onLeave,
   onSwitchCamera, onSwitchMic,
@@ -116,6 +120,9 @@ export function RoomPage({
       tileAspect={tileAspect}
       onAspectChange={setTileAspect}
       showInfo={showInfo}
+      roomId={roomId}
+      peerId={localPeerId}
+      srtConnectUrl={srtByPeer[localPeerId]?.connectUrlPublic}
     />
   )
 
@@ -124,10 +131,7 @@ export function RoomPage({
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <header className="room-header">
         <div className="room-logo">
-          <svg width="24" height="24" viewBox="0 0 40 40" fill="none">
-            <rect width="40" height="40" rx="10" fill="#e53935" />
-            <path d="M8 13h14v14H8V13zm16 3l8-4v16l-8-4V16z" fill="white" />
-          </svg>
+          <img className="brand-logo brand-logo--header" src="/logo.png" alt="" width={28} height={28} />
           <span>redflow.online</span>
         </div>
 
@@ -184,7 +188,9 @@ export function RoomPage({
           {localTile(false)}
           {remoteList.map(p => (
             <ParticipantCard key={p.peerId} participant={p}
-              objectFit={objectFit} videoStyle={remoteVideoStyle} />
+              objectFit={objectFit} videoStyle={remoteVideoStyle}
+              showInfo={showInfo} roomId={roomId}
+              srtConnectUrl={srtByPeer[p.peerId]?.connectUrlPublic} />
           ))}
         </div>
       )}
@@ -197,7 +203,9 @@ export function RoomPage({
               ? <div className="pip-waiting">Ожидание участников…</div>
               : remoteList.map(p => (
                   <ParticipantCard key={p.peerId} participant={p}
-                    objectFit={objectFit} videoStyle={remoteVideoStyle} />
+                    objectFit={objectFit} videoStyle={remoteVideoStyle}
+                    showInfo={showInfo} roomId={roomId}
+                    srtConnectUrl={srtByPeer[p.peerId]?.connectUrlPublic} />
                 ))
             }
           </div>
@@ -232,6 +240,7 @@ export function RoomPage({
 
 function LocalTile({
   stream, name, isMuted, isCamOff, videoStyle, tileAspect, onAspectChange, showInfo,
+  roomId, peerId, srtConnectUrl,
 }: {
   stream: MediaStream | null
   name: string
@@ -241,6 +250,9 @@ function LocalTile({
   tileAspect?: TileAspect
   onAspectChange?: (a: TileAspect) => void
   showInfo?: boolean
+  roomId: string
+  peerId: string
+  srtConnectUrl?: string
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -259,7 +271,15 @@ function LocalTile({
         />
         {isCamOff && <div className="cam-off-avatar">{name.charAt(0).toUpperCase()}</div>}
         {!isMuted && <AudioMeter stream={stream} stereo />}
-        {showInfo && <VideoInfoOverlay stream={stream} videoRef={videoRef} />}
+        {showInfo && (
+          <VideoInfoOverlay
+            stream={stream}
+            videoRef={videoRef}
+            roomId={roomId}
+            peerId={peerId}
+            srtConnectUrl={srtConnectUrl}
+          />
+        )}
 
         {/* Aspect ratio overlay — only in grid mode (when onAspectChange is provided) */}
         {tileAspect && onAspectChange && (

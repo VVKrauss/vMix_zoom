@@ -52,6 +52,20 @@ html, body, #root {
   font-weight: 600;
 }
 
+.brand-logo {
+  display: block;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+.brand-logo--join {
+  width: 38px;
+  height: 38px;
+}
+.brand-logo--header {
+  width: 28px;
+  height: 28px;
+}
+
 .join-form {
   display: flex;
   flex-direction: column;
@@ -288,6 +302,27 @@ html, body, #root {
   gap: 12px;
 }
 
+button.vio-row--peer {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  pointer-events: auto;
+  border-radius: 4px;
+}
+button.vio-row--peer:hover {
+  background: rgba(255,255,255,.08);
+}
+button.vio-row--peer:focus-visible {
+  outline: 1px solid var(--red);
+  outline-offset: 1px;
+}
+
 .vio-key {
   color: rgba(255,255,255,.5);
   white-space: nowrap;
@@ -304,6 +339,17 @@ html, body, #root {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 200px;
+}
+
+.vio-val--mono {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+}
+.vio-val--id {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Info toggle button — active state */

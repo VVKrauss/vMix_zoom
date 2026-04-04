@@ -1,15 +1,22 @@
 import { CSSProperties, useEffect, useRef } from 'react'
 import type { RemoteParticipant } from '../types'
 import { AudioMeter } from './AudioMeter'
+import { VideoInfoOverlay } from './VideoInfoOverlay'
 
 interface Props {
   participant: RemoteParticipant
   objectFit?: 'cover' | 'contain'
   videoStyle?: CSSProperties
   style?: CSSProperties
+  showInfo?: boolean
+  roomId?: string
+  srtConnectUrl?: string
 }
 
-export function ParticipantCard({ participant, objectFit = 'cover', videoStyle, style }: Props) {
+export function ParticipantCard({
+  participant, objectFit = 'cover', videoStyle, style, showInfo, roomId = '',
+  srtConnectUrl,
+}: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
 
@@ -40,6 +47,15 @@ export function ParticipantCard({ participant, objectFit = 'cover', videoStyle, 
 
         {/* Audio level meter — right side */}
         <AudioMeter stream={participant.audioStream ?? null} />
+        {showInfo && (
+          <VideoInfoOverlay
+            stream={participant.videoStream ?? null}
+            videoRef={videoRef}
+            roomId={roomId}
+            peerId={participant.peerId}
+            srtConnectUrl={srtConnectUrl}
+          />
+        )}
       </div>
       <div className="card-bar">
         <span className="card-name">{participant.name}</span>
