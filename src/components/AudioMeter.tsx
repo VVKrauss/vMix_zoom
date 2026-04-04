@@ -33,6 +33,9 @@ export function AudioMeter({ stream, stereo = false }: Props) {
   const rafRef    = useRef<number>(0)
   const ctxARef   = useRef<AudioContext | null>(null)
 
+  const channels = stereo ? 2 : 1
+  const canvasW  = channels * CHAN_W + (channels - 1) * CHAN_GAP
+
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || !stream) return
@@ -68,9 +71,10 @@ export function AudioMeter({ stream, stereo = false }: Props) {
     const ctx2d = canvas.getContext('2d')!
 
     const draw = () => {
-      // Sync canvas size to CSS size
-      const h = canvas.clientHeight
-      const w = canvas.clientWidth
+      // Sync canvas buffer to its CSS-rendered size (parent div fills full height)
+      const wrap = canvas.parentElement as HTMLElement
+      const h = wrap ? wrap.clientHeight : 200
+      const w = wrap ? wrap.clientWidth  : canvasW
       if (canvas.height !== h) canvas.height = h
       if (canvas.width  !== w) canvas.width  = w
 
@@ -103,16 +107,9 @@ export function AudioMeter({ stream, stereo = false }: Props) {
     }
   }, [stream, stereo])
 
-  const channels   = stereo ? 2 : 1
-  const canvasW    = channels * CHAN_W + (channels - 1) * CHAN_GAP
-
   return (
-    <canvas
-      ref={canvasRef}
-      className="audio-meter"
-      width={canvasW}
-      height={200}        /* will be overwritten by draw() on each frame */
-      style={{ width: canvasW }}
-    />
+    <div className="audio-meter-wrap" style={{ width: canvasW + 6 }}>
+      <canvas ref={canvasRef} className="audio-meter-canvas" width={canvasW} height={4} />
+    </div>
   )
 }

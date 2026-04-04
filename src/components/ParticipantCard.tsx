@@ -1,13 +1,15 @@
-import { useEffect, useRef } from 'react'
+import { CSSProperties, useEffect, useRef } from 'react'
 import type { RemoteParticipant } from '../types'
 import { AudioMeter } from './AudioMeter'
 
 interface Props {
   participant: RemoteParticipant
   objectFit?: 'cover' | 'contain'
+  videoStyle?: CSSProperties
+  style?: CSSProperties
 }
 
-export function ParticipantCard({ participant, objectFit = 'cover' }: Props) {
+export function ParticipantCard({ participant, objectFit = 'cover', videoStyle, style }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
 
@@ -22,14 +24,14 @@ export function ParticipantCard({ participant, objectFit = 'cover' }: Props) {
   const hasVideo = !!participant.videoStream
 
   return (
-    <div className="participant-card">
+    <div className="participant-card" style={style}>
       <div className="card-video-wrap">
         <video
           ref={videoRef}
           autoPlay
           playsInline
           className={hasVideo ? '' : 'hidden'}
-          style={{ objectFit }}
+          style={videoStyle ?? { objectFit }}
         />
         {!hasVideo && (
           <div className="cam-off-avatar">{participant.name.charAt(0).toUpperCase()}</div>

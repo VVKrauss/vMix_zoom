@@ -219,7 +219,8 @@ html, body, #root {
   z-index: 20;
   border-radius: var(--radius);
   overflow: hidden;
-  box-shadow: 0 0 0 2px #43a047, 0 4px 24px rgba(0,0,0,.8);
+  /* Green border comes from participant-card--local::after — no duplicate here */
+  box-shadow: 0 4px 24px rgba(0,0,0,.8);
   user-select: none;
 }
 
@@ -255,6 +256,102 @@ html, body, #root {
   width: 100%;
   height: 100%;
   border-radius: 0;
+}
+
+/* When aspect ratio is forced, video drives its own height — pip clips overflow */
+.pip-float .card-video-wrap {
+  overflow: hidden;
+}
+
+/* ─── Video info overlay ─────────────────────────────────────────────────── */
+.video-info-overlay {
+  position: absolute;
+  bottom: 36px;   /* above card-bar */
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  background: rgba(0,0,0,.62);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+  z-index: 5;
+  font-size: 11px;
+  font-family: var(--font);
+  line-height: 1.5;
+}
+
+.vio-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.vio-key {
+  color: rgba(255,255,255,.5);
+  white-space: nowrap;
+}
+
+.vio-val {
+  color: #fff;
+  font-weight: 500;
+  text-align: right;
+}
+
+.vio-val--label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+/* Info toggle button — active state */
+.info-toggle-btn--active {
+  color: var(--text);
+  border-color: var(--red);
+  background: rgba(229,57,53,.15);
+}
+
+/* ─── Tile aspect ratio overlay (on local preview) ──────────────────────── */
+.tile-aspect-overlay {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+  background: rgba(0,0,0,.55);
+  border-radius: 6px;
+  padding: 3px;
+  z-index: 6;
+  /* Always visible — small enough not to obstruct */
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tile-aspect-btn {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 4px;
+  color: rgba(255,255,255,.7);
+  font-size: 11px;
+  font-family: var(--font);
+  font-weight: 500;
+  padding: 2px 7px;
+  cursor: pointer;
+  line-height: 1.6;
+  transition: background .1s, color .1s, border-color .1s;
+  white-space: nowrap;
+}
+.tile-aspect-btn:hover {
+  background: rgba(255,255,255,.15);
+  color: #fff;
+}
+.tile-aspect-btn--active {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
 }
 
 /* fit toggle button */
@@ -302,39 +399,22 @@ html, body, #root {
   display: grid;
   gap: 6px;
   padding: 6px;
-  overflow: hidden;
+  /* grid-template-columns set inline by JS (gridCols) */
+  align-content: start;
+}
+
+/* Grid mode: direct flex child — grow to fill remaining height, scroll if needed */
+.room-page > .tile-grid {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Pip background grid: fill the whole pip-container */
+.pip-grid {
   height: 100%;
-  align-items: stretch;
-}
-
-/* 1 участник — во весь экран */
-.tile-grid--1 {
-  grid-template-columns: 1fr;
-  grid-template-rows: 1fr;
-}
-
-/* 2 участника — рядом 50/50 */
-.tile-grid--2 {
-  grid-template-columns: repeat(2, 1fr);
-  grid-template-rows: 1fr;
-}
-
-/* 3–4 участника — 2×2 */
-.tile-grid--4 {
-  grid-template-columns: repeat(2, 1fr);
-  grid-template-rows: repeat(2, 1fr);
-}
-
-/* 5–6 участников — 3×2 */
-.tile-grid--6 {
-  grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(2, 1fr);
-}
-
-/* 7–9 участников — 3×3 */
-.tile-grid--9 {
-  grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(3, 1fr);
+  align-content: stretch;
+  overflow: hidden;
+  grid-auto-rows: 1fr;
 }
 
 /* ─── Participant card ───────────────────────────────────────────────────── */
@@ -360,19 +440,24 @@ html, body, #root {
 }
 
 .card-video-wrap {
-  flex: 1;
   position: relative;
   overflow: hidden;
+  background: #000;
+  /* In pip background tiles, flex: 1 lets the wrap fill the card */
+  flex: 1;
+  min-height: 0;
 }
 
 .card-video-wrap video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
   display: block;
+  max-width: 100%;
+  /* Safe default: never stretch/squish the stream.
+     Inline style overrides this when user selects 'cover'. */
+  object-fit: contain;
+  background: #000;
 }
 
-.participant-card--local video {
+.participant-card--local .card-video-wrap video {
   transform: scaleX(-1);
 }
 
@@ -425,20 +510,24 @@ html, body, #root {
 }
 
 /* ─── Audio meter ────────────────────────────────────────────────────────── */
-.audio-meter {
+/* Wrapper div fills full height (canvas alone won't stretch as a replaced element) */
+.audio-meter-wrap {
   position: absolute;
   right: 6px;
   top: 6px;
-  bottom: 34px;   /* above card-bar */
-  height: auto;   /* fill vertically via inset */
-  display: block;
+  bottom: 6px;
   pointer-events: none;
   z-index: 4;
-  /* subtle background panel */
-  background: rgba(0,0,0,.35);
-  border-radius: 3px;
-  padding: 3px 2px;
-  box-sizing: content-box;
+  background: rgba(0,0,0,.4);
+  border-radius: 4px;
+  padding: 3px;
+  box-sizing: border-box;
+}
+
+.audio-meter-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 /* ─── Controls bar ───────────────────────────────────────────────────────── */
