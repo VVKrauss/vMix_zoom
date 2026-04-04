@@ -1,33 +1,96 @@
+import { useState } from 'react'
+import { DevicePopover } from './DevicePopover'
+
 interface Props {
   isMuted: boolean
   isCamOff: boolean
   layout?: string
+  cameras: MediaDeviceInfo[]
+  microphones: MediaDeviceInfo[]
+  selectedCameraId: string
+  selectedMicId: string
   onToggleMute: () => void
   onToggleCam: () => void
   onLeave: () => void
+  onSwitchCamera: (deviceId: string) => void
+  onSwitchMic: (deviceId: string) => void
 }
 
-export function ControlsBar({ isMuted, isCamOff, onToggleMute, onToggleCam, onLeave }: Props) {
+type OpenPopover = 'mic' | 'cam' | null
+
+export function ControlsBar({
+  isMuted, isCamOff,
+  cameras, microphones, selectedCameraId, selectedMicId,
+  onToggleMute, onToggleCam, onLeave,
+  onSwitchCamera, onSwitchMic,
+}: Props) {
+  const [open, setOpen] = useState<OpenPopover>(null)
+
+  const toggleOpen = (which: OpenPopover) =>
+    setOpen(prev => prev === which ? null : which)
+
   return (
     <div className="controls-bar">
-      <button
-        className={`ctrl-btn ${isMuted ? 'ctrl-btn--off' : ''}`}
-        onClick={onToggleMute}
-        title={isMuted ? 'Включить микрофон' : 'Выключить микрофон'}
-      >
-        {isMuted ? <MicOffIcon /> : <MicIcon />}
-        <span>{isMuted ? 'Включить' : 'Звук'}</span>
-      </button>
 
-      <button
-        className={`ctrl-btn ${isCamOff ? 'ctrl-btn--off' : ''}`}
-        onClick={onToggleCam}
-        title={isCamOff ? 'Включить камеру' : 'Выключить камеру'}
-      >
-        {isCamOff ? <CamOffIcon /> : <CamIcon />}
-        <span>{isCamOff ? 'Включить' : 'Камера'}</span>
-      </button>
+      {/* ── Microphone ─────────────────────────────────────────────────── */}
+      <div className="ctrl-group">
+        <button
+          className={`ctrl-btn ${isMuted ? 'ctrl-btn--off' : ''}`}
+          onClick={onToggleMute}
+          title={isMuted ? 'Включить микрофон' : 'Выключить микрофон'}
+        >
+          {isMuted ? <MicOffIcon /> : <MicIcon />}
+          <span>{isMuted ? 'Включить' : 'Звук'}</span>
+        </button>
+        <button
+          className={`ctrl-chevron ${isMuted ? 'ctrl-btn--off' : ''} ${open === 'mic' ? 'ctrl-chevron--open' : ''}`}
+          onClick={() => toggleOpen('mic')}
+          title="Выбрать микрофон"
+        >
+          <ChevronIcon />
+        </button>
 
+        {open === 'mic' && (
+          <DevicePopover
+            label="Микрофон"
+            devices={microphones}
+            selectedId={selectedMicId}
+            onSelect={id => { onSwitchMic(id) }}
+            onClose={() => setOpen(null)}
+          />
+        )}
+      </div>
+
+      {/* ── Camera ─────────────────────────────────────────────────────── */}
+      <div className="ctrl-group">
+        <button
+          className={`ctrl-btn ${isCamOff ? 'ctrl-btn--off' : ''}`}
+          onClick={onToggleCam}
+          title={isCamOff ? 'Включить камеру' : 'Выключить камеру'}
+        >
+          {isCamOff ? <CamOffIcon /> : <CamIcon />}
+          <span>{isCamOff ? 'Включить' : 'Камера'}</span>
+        </button>
+        <button
+          className={`ctrl-chevron ${isCamOff ? 'ctrl-btn--off' : ''} ${open === 'cam' ? 'ctrl-chevron--open' : ''}`}
+          onClick={() => toggleOpen('cam')}
+          title="Выбрать камеру"
+        >
+          <ChevronIcon />
+        </button>
+
+        {open === 'cam' && (
+          <DevicePopover
+            label="Камера"
+            devices={cameras}
+            selectedId={selectedCameraId}
+            onSelect={id => { onSwitchCamera(id) }}
+            onClose={() => setOpen(null)}
+          />
+        )}
+      </div>
+
+      {/* ── Leave ──────────────────────────────────────────────────────── */}
       <button className="ctrl-btn ctrl-btn--leave" onClick={onLeave}>
         <LeaveIcon />
         <span>Выйти</span>
@@ -35,6 +98,8 @@ export function ControlsBar({ isMuted, isCamOff, onToggleMute, onToggleCam, onLe
     </div>
   )
 }
+
+// ─── Icons ────────────────────────────────────────────────────────────────────
 
 function MicIcon() {
   return (
@@ -44,7 +109,6 @@ function MicIcon() {
     </svg>
   )
 }
-
 function MicOffIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -54,7 +118,6 @@ function MicOffIcon() {
     </svg>
   )
 }
-
 function CamIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -63,7 +126,6 @@ function CamIcon() {
     </svg>
   )
 }
-
 function CamOffIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -73,11 +135,17 @@ function CamOffIcon() {
     </svg>
   )
 }
-
 function LeaveIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+    </svg>
+  )
+}
+function ChevronIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+      <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
     </svg>
   )
 }

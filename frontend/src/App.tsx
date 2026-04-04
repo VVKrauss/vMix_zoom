@@ -8,6 +8,7 @@ export function App() {
 
   const {
     join, leave, toggleMute, toggleCam,
+    switchCamera, switchMic,
     status, error,
     localStream, participants,
     isMuted, isCamOff,
@@ -38,6 +39,8 @@ export function App() {
         onToggleMute={toggleMute}
         onToggleCam={toggleCam}
         onLeave={leave}
+        onSwitchCamera={switchCamera}
+        onSwitchMic={switchMic}
       />
     )
   }

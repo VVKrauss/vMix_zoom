@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ControlsBar } from './ControlsBar'
 import { ParticipantCard } from './ParticipantCard'
 import { DraggablePip } from './DraggablePip'
+import { useDevices } from '../hooks/useDevices'
 import type { RemoteParticipant } from '../types'
 
 export type LayoutMode = 'grid' | 'pip'
@@ -16,16 +17,29 @@ interface Props {
   onToggleMute: () => void
   onToggleCam: () => void
   onLeave: () => void
+  onSwitchCamera: (id: string) => void
+  onSwitchMic: (id: string) => void
 }
 
 export function RoomPage({
   name, localStream, participants,
   isMuted, isCamOff,
   onToggleMute, onToggleCam, onLeave,
+  onSwitchCamera, onSwitchMic,
 }: Props) {
   const [layout, setLayout] = useState<LayoutMode>('pip')
   const [objectFit, setObjectFit] = useState<ObjectFit>('contain')
   const [pipKey, setPipKey] = useState(0)
+
+  const {
+    cameras, microphones,
+    selectedCameraId, selectedMicId,
+    setSelectedCameraId, setSelectedMicId,
+    enumerate,
+  } = useDevices()
+
+  // Enumerate devices once stream is available
+  useEffect(() => { if (localStream) enumerate() }, [localStream, enumerate])
 
   const resetView = () => {
     setLayout('pip')
@@ -130,9 +144,15 @@ export function RoomPage({
       <ControlsBar
         isMuted={isMuted}
         isCamOff={isCamOff}
+        cameras={cameras}
+        microphones={microphones}
+        selectedCameraId={selectedCameraId}
+        selectedMicId={selectedMicId}
         onToggleMute={onToggleMute}
         onToggleCam={onToggleCam}
         onLeave={onLeave}
+        onSwitchCamera={id => { setSelectedCameraId(id); onSwitchCamera(id) }}
+        onSwitchMic={id => { setSelectedMicId(id); onSwitchMic(id) }}
       />
     </div>
   )

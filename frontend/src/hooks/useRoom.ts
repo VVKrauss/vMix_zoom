@@ -25,6 +25,7 @@ export function useRoom() {
   const videoProducerRef = useRef<Producer | null>(null)
   const consumersRef = useRef<Map<string, Consumer>>(new Map())
   const roomIdRef = useRef<string>(DEFAULT_ROOM)
+  const localStreamRef = useRef<MediaStream | null>(null)
 
   // ─── Consume one producer ────────────────────────────────────────────────
 
@@ -86,6 +87,7 @@ export function useRoom() {
         video: true,
         audio: true,
       })
+      localStreamRef.current = stream
       setLocalStream(stream)
 
       // 2. Connect socket
@@ -227,6 +229,49 @@ export function useRoom() {
     setIsCamOff((v) => !v)
   }, [isCamOff, localStream])
 
+  // ─── Device switching ────────────────────────────────────────────────────
+
+  const switchCamera = useCallback(async (deviceId: string) => {
+    const stream = localStreamRef.current
+    const producer = videoProducerRef.current
+    if (!stream) return
+
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { exact: deviceId } },
+    })
+    const newTrack = newStream.getVideoTracks()[0]
+    if (!newTrack) return
+
+    // Replace in preview
+    stream.getVideoTracks().forEach((t: MediaStreamTrack) => { t.stop(); stream.removeTrack(t) })
+    stream.addTrack(newTrack)
+    setLocalStream(new MediaStream(stream.getTracks()))
+
+    // Replace in mediasoup producer (live, no reconnect needed)
+    if (producer) await producer.replaceTrack({ track: newTrack })
+  }, [])
+
+  const switchMic = useCallback(async (deviceId: string) => {
+    const stream = localStreamRef.current
+    const producer = audioProducerRef.current
+    if (!stream) return
+
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      audio: { deviceId: { exact: deviceId } },
+    })
+    const newTrack = newStream.getAudioTracks()[0]
+    if (!newTrack) return
+
+    stream.getAudioTracks().forEach((t: MediaStreamTrack) => { t.stop(); stream.removeTrack(t) })
+    stream.addTrack(newTrack)
+    setLocalStream(new MediaStream(stream.getTracks()))
+
+    if (producer) await producer.replaceTrack({ track: newTrack })
+
+    // Keep mute state
+    if (isMuted) newTrack.enabled = false
+  }, [isMuted])
+
   const leave = useCallback(() => {
     videoProducerRef.current?.close()
     audioProducerRef.current?.close()
@@ -247,6 +292,8 @@ export function useRoom() {
     leave,
     toggleMute,
     toggleCam,
+    switchCamera,
+    switchMic,
     status,
     error,
     localStream,

@@ -472,3 +472,78 @@ html, body, #root {
   color: #fff;
 }
 .ctrl-btn--leave:hover { background: #ef5350; }
+
+/* ─── Control group (btn + chevron) ─────────────────────────────────────── */
+.ctrl-group {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+.ctrl-group .ctrl-btn {
+  border-radius: var(--radius) 0 0 var(--radius);
+  border-right: none;
+}
+
+.ctrl-chevron {
+  display: flex;
+  align-items: center;
+  padding: 0 7px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-left: 1px solid rgba(255,255,255,.08);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.ctrl-chevron:hover,
+.ctrl-chevron--open { color: var(--text); background: #2a2a2a; }
+
+/* ─── Device popover ─────────────────────────────────────────────────────── */
+.device-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  min-width: 260px;
+  background: #1e1e1e;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0,0,0,.7);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.device-popover__title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-dim);
+  padding: 10px 14px 6px;
+}
+
+.device-popover__empty {
+  padding: 8px 14px 12px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.device-popover__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 14px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font);
+  text-align: left;
+  cursor: pointer;
+  transition: background .1s;
+}
+.device-popover__item:hover { background: rgba(255,255,255,.07); }
+.device-popover__item--active { color: #69f0ae; }
+.device-popover__item svg { flex-shrink: 0; }
