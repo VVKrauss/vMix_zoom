@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { ControlsBar } from './ControlsBar'
 import { ParticipantCard } from './ParticipantCard'
+import { DraggablePip } from './DraggablePip'
 import type { RemoteParticipant } from '../types'
 
 export type LayoutMode = 'grid' | 'pip'
+export type ObjectFit = 'cover' | 'contain'
 
 interface Props {
   name: string
@@ -17,16 +19,12 @@ interface Props {
 }
 
 export function RoomPage({
-  name,
-  localStream,
-  participants,
-  isMuted,
-  isCamOff,
-  onToggleMute,
-  onToggleCam,
-  onLeave,
+  name, localStream, participants,
+  isMuted, isCamOff,
+  onToggleMute, onToggleCam, onLeave,
 }: Props) {
   const [layout, setLayout] = useState<LayoutMode>('grid')
+  const [objectFit, setObjectFit] = useState<ObjectFit>('cover')
   const remoteList = [...participants.values()]
   const total = remoteList.length + 1
 
@@ -36,12 +34,13 @@ export function RoomPage({
       name={name}
       isMuted={isMuted}
       isCamOff={isCamOff}
-      isPip={layout === 'pip'}
+      objectFit={objectFit}
     />
   )
 
   return (
     <div className="room-page">
+      {/* ── Header ─────────────────────────────────────────────────────── */}
       <header className="room-header">
         <div className="room-logo">
           <svg width="24" height="24" viewBox="0 0 40 40" fill="none">
@@ -53,7 +52,7 @@ export function RoomPage({
 
         <div className="header-right">
           {/* Layout switcher */}
-          <div className="layout-switcher">
+          <div className="layout-switcher" title="Раскладка">
             <button
               className={`layout-btn ${layout === 'grid' ? 'layout-btn--active' : ''}`}
               onClick={() => setLayout('grid')}
@@ -70,43 +69,54 @@ export function RoomPage({
             </button>
           </div>
 
+          {/* Object-fit toggle */}
+          <button
+            className={`layout-btn fit-btn ${objectFit === 'contain' ? 'layout-btn--active' : ''}`}
+            onClick={() => setObjectFit(f => f === 'cover' ? 'contain' : 'cover')}
+            title={objectFit === 'cover' ? 'Показать полный кадр (contain)' : 'Заполнить тайл (cover)'}
+          >
+            <FitIcon contain={objectFit === 'contain'} />
+            <span className="fit-label">{objectFit === 'contain' ? 'Полный' : 'Заполнить'}</span>
+          </button>
+
           <span className="room-count">
             {total} участник{total === 1 ? '' : total < 5 ? 'а' : 'ов'}
           </span>
         </div>
       </header>
 
-      {/* ── Grid layout ─────────────────────────────────────────────────── */}
+      {/* ── Grid layout ────────────────────────────────────────────────── */}
       {layout === 'grid' && (
         <div className={`tile-grid ${getGridClass(total)}`}>
           {localTile}
-          {remoteList.map((p) => (
-            <ParticipantCard key={p.peerId} participant={p} />
+          {remoteList.map(p => (
+            <ParticipantCard key={p.peerId} participant={p} objectFit={objectFit} />
           ))}
         </div>
       )}
 
-      {/* ── PiP layout ──────────────────────────────────────────────────── */}
+      {/* ── PiP layout ─────────────────────────────────────────────────── */}
       {layout === 'pip' && (
         <div className="pip-container">
-          {/* Remote fills the space */}
           <div className={`tile-grid ${getGridClass(remoteList.length || 1)}`}>
-            {remoteList.length === 0 ? (
-              <div className="pip-waiting">Ожидание участников…</div>
-            ) : (
-              remoteList.map((p) => <ParticipantCard key={p.peerId} participant={p} />)
-            )}
+            {remoteList.length === 0
+              ? <div className="pip-waiting">Ожидание участников…</div>
+              : remoteList.map(p => (
+                  <ParticipantCard key={p.peerId} participant={p} objectFit={objectFit} />
+                ))
+            }
           </div>
 
-          {/* Local floats over bottom-right */}
-          {localTile}
+          {/* Draggable + resizable local preview */}
+          <DraggablePip>
+            {localTile}
+          </DraggablePip>
         </div>
       )}
 
       <ControlsBar
         isMuted={isMuted}
         isCamOff={isCamOff}
-        layout={layout}
         onToggleMute={onToggleMute}
         onToggleCam={onToggleCam}
         onLeave={onLeave}
@@ -118,17 +128,13 @@ export function RoomPage({
 // ─── Local tile ───────────────────────────────────────────────────────────────
 
 function LocalTile({
-  stream,
-  name,
-  isMuted,
-  isCamOff,
-  isPip,
+  stream, name, isMuted, isCamOff, objectFit,
 }: {
   stream: MediaStream | null
   name: string
   isMuted: boolean
   isCamOff: boolean
-  isPip: boolean
+  objectFit: ObjectFit
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -137,9 +143,14 @@ function LocalTile({
   }, [stream])
 
   return (
-    <div className={`participant-card participant-card--local ${isPip ? 'participant-card--pip' : ''}`}>
+    <div className="participant-card participant-card--local">
       <div className="card-video-wrap">
-        <video ref={videoRef} autoPlay playsInline muted className={isCamOff ? 'hidden' : ''} />
+        <video
+          ref={videoRef}
+          autoPlay playsInline muted
+          className={isCamOff ? 'hidden' : ''}
+          style={{ objectFit }}
+        />
         {isCamOff && <div className="cam-off-avatar">{name.charAt(0).toUpperCase()}</div>}
       </div>
       <div className="card-bar">
@@ -184,8 +195,22 @@ function GridIcon() {
 function PipIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-      <rect x="1" y="1" width="14" height="14" rx="1.5" fillOpacity=".25" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+      <rect x="1" y="1" width="14" height="14" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
       <rect x="8" y="8" width="6" height="6" rx="1" />
+    </svg>
+  )
+}
+
+function FitIcon({ contain }: { contain: boolean }) {
+  return contain ? (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="2" y="2" width="12" height="12" rx="1" />
+      <rect x="4" y="5" width="8" height="6" rx=".5" fill="currentColor" stroke="none" />
+    </svg>
+  ) : (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="2" y="2" width="12" height="12" rx="1" />
+      <rect x="2" y="2" width="12" height="12" rx="1" fill="currentColor" stroke="none" fillOpacity=".4" />
     </svg>
   )
 }

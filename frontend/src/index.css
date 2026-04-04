@@ -213,6 +213,68 @@ html, body, #root {
   font-size: 14px;
 }
 
+/* ─── Draggable PiP float ────────────────────────────────────────────────── */
+.pip-float {
+  position: absolute;
+  z-index: 20;
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0,0,0,.8);
+  user-select: none;
+}
+
+/* Transparent overlay for drag (sits on top of video) */
+.pip-drag-handle {
+  position: absolute;
+  inset: 0;
+  bottom: 28px; /* leave card-bar for name */
+  cursor: grab;
+  z-index: 2;
+}
+.pip-drag-handle:active { cursor: grabbing; }
+
+/* Resize handle — bottom-right corner */
+.pip-resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 20px;
+  height: 20px;
+  cursor: nwse-resize;
+  z-index: 3;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 3px;
+  color: rgba(255,255,255,.5);
+}
+.pip-resize-handle:hover { color: #fff; }
+
+/* PiP card fills the float container */
+.pip-float .participant-card {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+
+/* fit toggle button */
+.fit-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  width: auto;
+  min-width: unset;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface2);
+}
+
+.fit-label {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 /* ─── Unified tile grid ──────────────────────────────────────────────────── */
 .tile-grid {
   display: grid;
