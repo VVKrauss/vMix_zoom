@@ -14,7 +14,7 @@ echo " vMix Streamer Setup — $(date)"
 echo "════════════════════════════════════════"
 
 # ── 0. Переменные ─────────────────────────────────────────────────────────────
-GITHUB_TOKEN="YOUR_GITHUB_TOKEN"          # ← заменить
+GITHUB_TOKEN="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"          # ← заменить
 REPO_URL="https://${GITHUB_TOKEN}@github.com/VVKrauss/vMix_zoom.git"
 APP_DIR="/opt/vmix-streamer"
 PUBLIC_IP=$(curl -s --max-time 5 https://api.ipify.org || hostname -I | awk '{print $1}')
@@ -43,7 +43,8 @@ npm -v
 echo ""
 echo "[ 3/8 ] Установка PM2..."
 npm install -g pm2
-pm2 startup systemd -u root --hp /root | tail -1 | bash
+pm2 startup systemd -u root --hp /root
+env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u root --hp /root
 
 # ── 4. Клонировать репозиторий ────────────────────────────────────────────────
 echo ""
