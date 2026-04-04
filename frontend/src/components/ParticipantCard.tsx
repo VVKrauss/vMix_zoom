@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { RemoteParticipant } from '../types'
+import { AudioMeter } from './AudioMeter'
 
 interface Props {
   participant: RemoteParticipant
@@ -34,6 +35,9 @@ export function ParticipantCard({ participant, objectFit = 'cover' }: Props) {
           <div className="cam-off-avatar">{participant.name.charAt(0).toUpperCase()}</div>
         )}
         <audio ref={audioRef} autoPlay playsInline />
+
+        {/* Audio level meter — right side */}
+        <AudioMeter stream={participant.audioStream ?? null} />
       </div>
       <div className="card-bar">
         <span className="card-name">{participant.name}</span>

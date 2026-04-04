@@ -424,6 +424,23 @@ html, body, #root {
   flex-shrink: 0;
 }
 
+/* ─── Audio meter ────────────────────────────────────────────────────────── */
+.audio-meter {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  bottom: 34px;   /* above card-bar */
+  height: auto;   /* fill vertically via inset */
+  display: block;
+  pointer-events: none;
+  z-index: 4;
+  /* subtle background panel */
+  background: rgba(0,0,0,.35);
+  border-radius: 3px;
+  padding: 3px 2px;
+  box-sizing: content-box;
+}
+
 /* ─── Controls bar ───────────────────────────────────────────────────────── */
 .controls-bar {
   display: flex;

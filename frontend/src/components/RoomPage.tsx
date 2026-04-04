@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ControlsBar } from './ControlsBar'
 import { ParticipantCard } from './ParticipantCard'
 import { DraggablePip } from './DraggablePip'
+import { AudioMeter } from './AudioMeter'
 import { useDevices } from '../hooks/useDevices'
 import type { RemoteParticipant } from '../types'
 
@@ -185,6 +186,9 @@ function LocalTile({
           style={{ objectFit }}
         />
         {isCamOff && <div className="cam-off-avatar">{name.charAt(0).toUpperCase()}</div>}
+
+        {/* Audio level meter — stereo for local */}
+        {!isMuted && <AudioMeter stream={stream} stereo />}
       </div>
       <div className="card-bar">
         <span className="card-name">{name} (вы)</span>
