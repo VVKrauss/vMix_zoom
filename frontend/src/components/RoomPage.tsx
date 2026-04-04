@@ -23,8 +23,15 @@ export function RoomPage({
   isMuted, isCamOff,
   onToggleMute, onToggleCam, onLeave,
 }: Props) {
-  const [layout, setLayout] = useState<LayoutMode>('grid')
-  const [objectFit, setObjectFit] = useState<ObjectFit>('cover')
+  const [layout, setLayout] = useState<LayoutMode>('pip')
+  const [objectFit, setObjectFit] = useState<ObjectFit>('contain')
+  const [pipKey, setPipKey] = useState(0)
+
+  const resetView = () => {
+    setLayout('pip')
+    setObjectFit('contain')
+    setPipKey(k => k + 1)
+  }
   const remoteList = [...participants.values()]
   const total = remoteList.length + 1
 
@@ -79,6 +86,12 @@ export function RoomPage({
             <span className="fit-label">{objectFit === 'contain' ? 'Полный' : 'Заполнить'}</span>
           </button>
 
+          {/* Reset view */}
+          <button className="reset-btn" onClick={resetView} title="Сбросить вид">
+            <ResetIcon />
+            Сброс
+          </button>
+
           <span className="room-count">
             {total} участник{total === 1 ? '' : total < 5 ? 'а' : 'ов'}
           </span>
@@ -108,7 +121,7 @@ export function RoomPage({
           </div>
 
           {/* Draggable + resizable local preview */}
-          <DraggablePip>
+          <DraggablePip key={pipKey}>
             {localTile}
           </DraggablePip>
         </div>
@@ -197,6 +210,15 @@ function PipIcon() {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
       <rect x="1" y="1" width="14" height="14" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
       <rect x="8" y="8" width="6" height="6" rx="1" />
+    </svg>
+  )
+}
+
+function ResetIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
     </svg>
   )
 }

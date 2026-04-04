@@ -17,12 +17,13 @@ export function DraggablePip({ children }: Props) {
     active: false, ox: 0, oy: 0, ow: 0, oh: 0,
   })
 
-  // Place initially in bottom-right on first render
+  // Place initially in top-right on first render / reset
   useEffect(() => {
     setPos({
       x: window.innerWidth - size.w - 16,
-      y: window.innerHeight - size.h - 88,  // above controls bar
+      y: 10,  // top-right
     })
+    setSize({ w: 220, h: 148 })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

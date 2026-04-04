@@ -219,7 +219,7 @@ html, body, #root {
   z-index: 20;
   border-radius: var(--radius);
   overflow: hidden;
-  box-shadow: 0 4px 24px rgba(0,0,0,.8);
+  box-shadow: 0 0 0 2px #43a047, 0 4px 24px rgba(0,0,0,.8);
   user-select: none;
 }
 
@@ -275,6 +275,28 @@ html, body, #root {
   white-space: nowrap;
 }
 
+/* Reset button */
+.reset-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface2);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-family: var(--font);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+.reset-btn:hover {
+  color: var(--text);
+  border-color: #555;
+}
+
 /* ─── Unified tile grid ──────────────────────────────────────────────────── */
 .tile-grid {
   display: grid;
@@ -326,25 +348,15 @@ html, body, #root {
   flex-direction: column;
 }
 
-/* Зелёная рамка для своего тайла */
-.participant-card--local {
-  border-color: #43a047;
-  box-shadow: 0 0 0 1px #43a047;
-}
-
-/* PiP: плавающее превью поверх */
-.participant-card--pip {
+/* Зелёная рамка через псевдоэлемент — не режется overflow:hidden */
+.participant-card--local::after {
+  content: '';
   position: absolute;
-  bottom: 14px;
-  right: 14px;
-  width: 200px;
-  height: 130px;
+  inset: 0;
+  border: 2px solid #43a047;
   border-radius: var(--radius);
-  z-index: 10;
-  box-shadow: 0 4px 20px rgba(0,0,0,.7);
-  border-color: #43a047;
-  box-shadow: 0 0 0 2px #43a047, 0 4px 20px rgba(0,0,0,.7);
-  cursor: default;
+  pointer-events: none;
+  z-index: 5;
 }
 
 .card-video-wrap {
