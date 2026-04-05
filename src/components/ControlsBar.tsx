@@ -193,6 +193,39 @@ export function ControlsBar({
         )}
       </div>
 
+      {isNarrow && (
+      <div className="ctrl-group">
+        <button
+          type="button"
+          className={`ctrl-btn ${playoutVolume < 0.02 ? 'ctrl-btn--off' : ''}`}
+          onClick={togglePlayoutMute}
+          title={playoutVolume < 0.02 ? 'Включить звук других участников' : 'Отключить звук других участников'}
+        >
+          {playoutVolume < 0.02 ? <HeadphonesMutedIcon /> : <HeadphonesIcon />}
+          <span>{playoutVolume < 0.02 ? 'Включить' : 'Наушники'}</span>
+        </button>
+        <button
+          type="button"
+          className={`ctrl-chevron ${playoutVolume < 0.02 ? 'ctrl-btn--off' : ''} ${open === 'headphones' ? 'ctrl-chevron--open' : ''}`}
+          onClick={() => toggleOpen('headphones')}
+          title="Громкость и устройство вывода"
+        >
+          <ChevronIcon />
+        </button>
+
+        {open === 'headphones' && (
+          <PlayoutPopover
+            onClose={() => setOpen(null)}
+            playoutVolume={playoutVolume}
+            onPlayoutVolumeChange={onPlayoutVolumeChange}
+            audioOutputs={audioOutputs}
+            playoutSinkId={playoutSinkId}
+            onPlayoutSinkChange={onPlayoutSinkChange}
+          />
+        )}
+      </div>
+      )}
+
       {!isNarrow && (
         <>
       {/* ── Headphones (громкость + выход) ─────────────────────────────── */}
@@ -226,10 +259,8 @@ export function ControlsBar({
           />
         )}
       </div>
-        </>
-      )}
 
-      {/* ── Чат ────────────────────────────────────────────────────────── */}
+      {/* ── Чат (только широкая полоса; на мобиле — в листе «Ещё») ───── */}
       <div className="ctrl-group ctrl-group--chat">
         <button
           type="button"
@@ -271,8 +302,6 @@ export function ControlsBar({
         )}
       </div>
 
-      {!isNarrow && (
-        <>
       {/* ── Layout (цикл по кнопке; меню — шеврон) ───────────────────── */}
       <div className="ctrl-group">
         <button
@@ -376,10 +405,12 @@ export function ControlsBar({
         </>
       )}
 
+      {!isNarrow && (
       <button type="button" className="ctrl-btn ctrl-btn--leave" onClick={onLeaveRequest}>
         <LeaveIcon />
         <span>Выйти</span>
       </button>
+      )}
 
       {isNarrow && (
         <button
@@ -393,6 +424,13 @@ export function ControlsBar({
           <MoreVerticalIcon />
           <span>Ещё</span>
         </button>
+      )}
+
+      {isNarrow && (
+      <button type="button" className="ctrl-btn ctrl-btn--leave" onClick={onLeaveRequest}>
+        <LeaveIcon />
+        <span>Выйти</span>
+      </button>
       )}
       </div>
 
@@ -447,32 +485,42 @@ export function ControlsBar({
           >
             <div className="mobile-controls-sheet__title">Ещё</div>
             <div className="mobile-controls-sheet__groups">
-              <div className="ctrl-group ctrl-group--sheet">
+              <div className="ctrl-group ctrl-group--chat ctrl-group--sheet">
                 <button
                   type="button"
-                  className={`ctrl-btn ${playoutVolume < 0.02 ? 'ctrl-btn--off' : ''}`}
-                  onClick={togglePlayoutMute}
-                  title={playoutVolume < 0.02 ? 'Включить звук других участников' : 'Отключить звук других участников'}
+                  className={`ctrl-btn ctrl-btn--chat${chatOpen ? ' ctrl-btn--chat-open' : ''}`}
+                  onClick={() => {
+                    setOpen(null)
+                    onToggleChat()
+                  }}
+                  title={chatOpen ? 'Закрыть чат' : 'Открыть чат'}
+                  aria-label={
+                    !chatOpen && chatUnreadCount > 0
+                      ? `Чат, непрочитано: ${chatUnreadCount > 99 ? 'более 99' : chatUnreadCount}`
+                      : undefined
+                  }
                 >
-                  {playoutVolume < 0.02 ? <HeadphonesMutedIcon /> : <HeadphonesIcon />}
-                  <span>{playoutVolume < 0.02 ? 'Включить' : 'Наушники'}</span>
+                  <ChatBubbleIcon />
+                  <span>Чат</span>
+                  {!chatOpen && chatUnreadCount > 0 ? (
+                    <span className="chat-unread-badge" aria-hidden>
+                      {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
+                    </span>
+                  ) : null}
                 </button>
                 <button
                   type="button"
-                  className={`ctrl-chevron ${playoutVolume < 0.02 ? 'ctrl-btn--off' : ''} ${open === 'headphones' ? 'ctrl-chevron--open' : ''}`}
-                  onClick={() => toggleOpen('headphones')}
-                  title="Громкость и устройство вывода"
+                  className={`ctrl-chevron ${open === 'chat' ? 'ctrl-chevron--open' : ''}`}
+                  onClick={() => toggleOpen('chat')}
+                  title="Режим чата"
                 >
                   <ChevronIcon />
                 </button>
-                {open === 'headphones' && (
-                  <PlayoutPopover
+                {open === 'chat' && (
+                  <ChatOptionsPopover
+                    chatEmbed={chatEmbed}
+                    onToggleChatEmbed={onToggleChatEmbed}
                     onClose={() => setOpen(null)}
-                    playoutVolume={playoutVolume}
-                    onPlayoutVolumeChange={onPlayoutVolumeChange}
-                    audioOutputs={audioOutputs}
-                    playoutSinkId={playoutSinkId}
-                    onPlayoutSinkChange={onPlayoutSinkChange}
                   />
                 )}
               </div>
