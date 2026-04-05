@@ -35,19 +35,14 @@ export function ParticipantCard({
   reactionBurst,
 }: Props) {
   const mainVideoRef = useRef<HTMLVideoElement>(null)
-  const pipVideoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
 
-  const mainStream = participant.screenStream ?? participant.videoStream ?? null
-  const pipStream = participant.screenStream && participant.videoStream ? participant.videoStream : null
+  /** Только камера; демонстрация — отдельная плитка `peerId::screen`. */
+  const mainStream = participant.videoStream ?? null
 
   useEffect(() => {
     if (mainVideoRef.current) mainVideoRef.current.srcObject = mainStream
   }, [mainStream])
-
-  useEffect(() => {
-    if (pipVideoRef.current) pipVideoRef.current.srcObject = pipStream
-  }, [pipStream])
 
   useEffect(() => {
     if (audioRef.current) audioRef.current.srcObject = participant.audioStream ?? null
@@ -74,15 +69,6 @@ export function ParticipantCard({
             className={hasVideo ? 'participant-card__main-video' : 'participant-card__main-video hidden'}
             style={videoStyle}
           />
-          {pipStream && (
-            <video
-              ref={pipVideoRef}
-              autoPlay
-              playsInline
-              muted
-              className="participant-card__pip-cam"
-            />
-          )}
           {!hasVideo && (
             <div className="cam-off-avatar">{participant.name.charAt(0).toUpperCase()}</div>
           )}

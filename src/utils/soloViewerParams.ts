@@ -25,6 +25,7 @@ export function getRoomFromSearch(search: string = typeof window !== 'undefined'
 
 /**
  * Параметры solo viewer: комната из `/r/:id` или legacy `?room=`, участник из `?peer=`.
+ * Камера и демонстрация — разные peerId в query (как отдаёт бэкенд).
  */
 export function parseSoloViewerParams(
   search: string = typeof window !== 'undefined' ? window.location.search : '',
@@ -48,7 +49,7 @@ export function buildRoomInviteAbsoluteUrl(roomId: string): string {
   return u.toString()
 }
 
-/** Полный URL страницы «только этот участник»: `origin/r/:roomId?peer=…`. */
+/** Полный URL соло-страницы: `?peer=` = конкретный peerId (камера или отдельный id демонстрации). */
 export function buildSoloViewerAbsoluteUrl(roomId: string, peerId: string): string {
   const u = new URL(window.location.href)
   u.pathname = `/r/${encodeURIComponent(roomId.trim())}`

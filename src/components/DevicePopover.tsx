@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { shouldClosePopoverOnOutsidePointer } from '../utils/popoverOutsideClick'
 
 interface Props {
   label: string
@@ -14,7 +15,7 @@ export function DevicePopover({ label, devices, selectedId, onSelect, onClose }:
   // Close on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+      if (shouldClosePopoverOnOutsidePointer(ref.current, e.target)) onClose()
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)

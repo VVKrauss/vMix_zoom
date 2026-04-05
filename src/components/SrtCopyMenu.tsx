@@ -41,7 +41,9 @@ export function useSrtCopyMenu(
   const canCopyUrl = url.length > 0
   const canCopySoloPage =
     Boolean(roomId?.trim()) && Boolean(tilePeerId?.trim())
-  const canOpen = canCopyPort || canCopyUrl || canCopySoloPage
+  /** Иначе на плитке экрана без SRT и до прихода screenPeerId меню не открывалось вовсе. */
+  const canOpen =
+    canCopyPort || canCopyUrl || canCopySoloPage || Boolean(roomId?.trim())
 
   const soloPageFullUrl = useMemo(() => {
     if (!canCopySoloPage) return ''

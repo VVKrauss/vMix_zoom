@@ -20,12 +20,15 @@ export const DEFAULT_VIDEO_PRESET = VIDEO_PRESETS[1]
 
 export type ProducerDescriptor = {
   producerId: string
+  /** Для демонстрации — отдельный id; камера/аудио участника — основной peerId. */
   peerId: string
   kind: 'audio' | 'video'
   name: string
   /** Явный источник видео (из producer.appData на бэке). */
   videoSource?: 'camera' | 'screen'
-  /** Сырой appData с бэка; часто `{ source: 'screen' }`. */
+  /** Если peerId у видео экрана — отдельный, здесь peerId «хозяина» (камера/имя в комнате). */
+  ownerPeerId?: string
+  /** Сырой appData с бэка; часто `{ source: 'screen', ownerPeerId }`. */
   appData?: Record<string, unknown>
 }
 
@@ -36,6 +39,8 @@ export type RemoteParticipant = {
   videoStream?: MediaStream
   /** Второй video producer (демонстрация экрана). */
   screenStream?: MediaStream
+  /** Отдельный peerId продюсера экрана (соло-ссылка и SRT), если отдаёт бэкенд. */
+  screenPeerId?: string
 }
 
 /** Socket.IO `srtStarted` и элементы `srt[]` из GET /api/frontend/rooms/:roomId */

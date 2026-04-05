@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { shouldClosePopoverOnOutsidePointer } from '../utils/popoverOutsideClick'
 import { REACTION_EMOJI_WHITELIST } from '../types/roomComms'
 
 export function ReactionEmojiPopover({
@@ -12,7 +13,7 @@ export function ReactionEmojiPopover({
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+      if (shouldClosePopoverOnOutsidePointer(ref.current, e.target)) onClose()
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)

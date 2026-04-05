@@ -6,6 +6,7 @@ import { VIDEO_PRESETS } from '../types'
 import type { LayoutMode, ObjectFit } from './RoomPage'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
 import { useMediaQuery } from '../hooks/useMediaQuery'
+import { shouldClosePopoverOnOutsidePointer } from '../utils/popoverOutsideClick'
 
 function layoutShowsObjectFitToggle(mode: LayoutMode): boolean {
   return (
@@ -727,7 +728,7 @@ function LayoutPopover({
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+      if (shouldClosePopoverOnOutsidePointer(ref.current, e.target)) onClose()
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -806,7 +807,7 @@ function ShareSourcePopover({
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+      if (shouldClosePopoverOnOutsidePointer(ref.current, e.target)) onClose()
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -860,7 +861,7 @@ function PlayoutPopover({
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+      if (shouldClosePopoverOnOutsidePointer(ref.current, e.target)) onClose()
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -911,7 +912,7 @@ function ChatOptionsPopover({
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+      if (shouldClosePopoverOnOutsidePointer(ref.current, e.target)) onClose()
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -956,7 +957,7 @@ function SettingsPopover({
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+      if (shouldClosePopoverOnOutsidePointer(ref.current, e.target)) onClose()
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -1073,8 +1074,8 @@ function ScreenShareIcon() {
 }
 function ChevronIcon() {
   return (
-    <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{ transform: 'rotate(180deg)' }}>
-      <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+    <svg className="ctrl-chevron__glyph" width="10" height="10" viewBox="0 0 10 10" fill="currentColor" aria-hidden>
+      <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
     </svg>
   )
 }

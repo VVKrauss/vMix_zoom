@@ -16,11 +16,28 @@ export function RoomSession({ roomId }: Props) {
   const [name, setName] = useState('')
   const [chatOpen, setChatOpen] = useState(false)
   const [chatUnreadCount, setChatUnreadCount] = useState(0)
+  const [chatIncomingPreview, setChatIncomingPreview] = useState<{
+    author: string
+    text: string
+  } | null>(null)
   const chatOpenRef = useRef(false)
+  const chatPreviewTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
 
   const roomActivityNotifyRef = useRef({
     isChatClosed: () => !chatOpenRef.current,
     bumpUnread: () => setChatUnreadCount((c) => c + 1),
+    flashChatPreview: (author: string, text: string) => {
+      const trimmed = text.trim()
+      if (!trimmed) return
+      const safeAuthor = author.trim() || 'Участник'
+      const snippet = trimmed.length > 160 ? `${trimmed.slice(0, 157)}…` : trimmed
+      setChatIncomingPreview({ author: safeAuthor, text: snippet })
+      if (chatPreviewTimerRef.current != null) window.clearTimeout(chatPreviewTimerRef.current)
+      chatPreviewTimerRef.current = window.setTimeout(() => {
+        setChatIncomingPreview(null)
+        chatPreviewTimerRef.current = null
+      }, 4200)
+    },
   })
 
   useLayoutEffect(() => {
@@ -31,6 +48,15 @@ export function RoomSession({ roomId }: Props) {
     if (chatOpen) setChatUnreadCount(0)
   }, [chatOpen])
 
+  useEffect(() => {
+    if (!chatOpen) return
+    setChatIncomingPreview(null)
+    if (chatPreviewTimerRef.current != null) {
+      window.clearTimeout(chatPreviewTimerRef.current)
+      chatPreviewTimerRef.current = null
+    }
+  }, [chatOpen])
+
   const {
     join, leave, toggleMute, toggleCam,
     switchCamera, switchMic, changePreset, activePreset,
@@ -38,7 +64,7 @@ export function RoomSession({ roomId }: Props) {
     localStream, participants,
     isMuted, isCamOff,
     roomId: connectedRoomId, localPeerId, srtByPeer,
-    localScreenStream, isScreenSharing, toggleScreenShare, startScreenShare,
+    localScreenStream, localScreenPeerId, isScreenSharing, toggleScreenShare, startScreenShare,
     chatMessages, sendChatMessage, sendReaction, reactionBursts,
   } = useRoom(roomActivityNotifyRef)
 
@@ -95,6 +121,7 @@ export function RoomSession({ roomId }: Props) {
         activePreset={activePreset}
         onChangePreset={changePreset}
         localScreenStream={localScreenStream}
+        localScreenPeerId={localScreenPeerId}
         isScreenSharing={isScreenSharing}
         onToggleScreenShare={toggleScreenShare}
         onStartScreenShare={startScreenShare}
@@ -105,6 +132,7 @@ export function RoomSession({ roomId }: Props) {
         chatOpen={chatOpen}
         setChatOpen={setChatOpen}
         chatUnreadCount={chatUnreadCount}
+        chatIncomingPreview={chatIncomingPreview}
       />
     )
   }

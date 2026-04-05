@@ -9,13 +9,19 @@ interface Props {
   /** Подпись в полоске (например имя + «экран») */
   label: string
   roomId: string
-  /** Реальный peerId владельца — для соло-ссылки и SRT */
-  ownerPeerId: string
+  /**
+   * Отдельный peerId продюсера экрана (с бэка / `screenPeerId` в ack produce).
+   * Только он попадает в соло-URL и «скопировать peerId»; без него эти пункты скрыты
+   * (не подставляем id камеры — иначе ссылка совпадает с плиткой гостя).
+   */
+  linkPeerId?: string
   videoStyle: CSSProperties
   showInfo?: boolean
   srtConnectUrl?: string
   srtListenPort?: number
   onStopShare: () => void
+  /** Локальный ведущий — показать «Завершить»; у зрителей — false */
+  showStopButton?: boolean
   showPin?: boolean
   pinActive?: boolean
   onRequestPin?: () => void
@@ -26,12 +32,13 @@ export function LocalScreenShareTile({
   stream,
   label,
   roomId,
-  ownerPeerId,
+  linkPeerId,
   videoStyle,
   showInfo,
   srtConnectUrl,
   srtListenPort,
   onStopShare,
+  showStopButton = true,
   showPin,
   pinActive,
   onRequestPin,
@@ -53,7 +60,7 @@ export function LocalScreenShareTile({
           connectUrl={srtConnectUrl}
           listenPort={srtListenPort}
           roomId={roomId}
-          tilePeerId={ownerPeerId}
+          tilePeerId={linkPeerId}
         >
           <video
             ref={videoRef}
@@ -63,12 +70,18 @@ export function LocalScreenShareTile({
             className="participant-card__main-video"
             style={videoStyle}
           />
+          <div
+            className={`screen-share-peer-badge${linkPeerId ? '' : ' screen-share-peer-badge--pending'}`}
+            title={linkPeerId ? 'peerId продюсера демонстрации' : 'Ожидание peerId от сервера (ack produce)'}
+          >
+            {linkPeerId ?? 'peerId…'}
+          </div>
           {showInfo && (
             <VideoInfoOverlay
               stream={stream}
               videoRef={videoRef}
               roomId={roomId}
-              peerId={ownerPeerId}
+              peerId={linkPeerId}
               srtConnectUrl={srtConnectUrl}
             />
           )}
@@ -78,17 +91,19 @@ export function LocalScreenShareTile({
       <div className="card-bar">
         <span className="card-name">{label}</span>
         <span className="card-bar-actions">
-          <button
-            type="button"
-            className="card-stop-share-btn"
-            onClick={(e) => {
-              e.stopPropagation()
-              onStopShare()
-            }}
-            title="Завершить демонстрацию для всех"
-          >
-            Завершить
-          </button>
+          {showStopButton ? (
+            <button
+              type="button"
+              className="card-stop-share-btn"
+              onClick={(e) => {
+                e.stopPropagation()
+                onStopShare()
+              }}
+              title="Завершить демонстрацию для всех"
+            >
+              Завершить
+            </button>
+          ) : null}
           {showPin && onRequestPin && (
             <button
               type="button"

@@ -434,6 +434,41 @@ html, body, #root {
   color: var(--text-dim);
 }
 
+.room-chat-preview-toast {
+  position: fixed;
+  left: 20px;
+  bottom: 108px;
+  z-index: 10038;
+  max-width: min(calc(100vw - 40px), 320px);
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.room-chat-preview-toast--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.room-chat-preview-toast__author {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 6px;
+}
+.room-chat-preview-toast__text {
+  display: block;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  word-break: break-word;
+}
+
 .header-right {
   display: flex;
   align-items: center;
@@ -1193,6 +1228,13 @@ button.vio-row--peer:focus-visible {
   display: none;
 }
 
+/* Иначе правило выше скрыло бы и счётчик (тоже <span>) */
+.controls-bar.controls-bar--icons-only .ctrl-btn .chat-unread-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .controls-bar.controls-bar--icons-only .ctrl-btn {
   gap: 0;
   padding: 10px 12px;
@@ -1272,6 +1314,15 @@ button.vio-row--peer:focus-visible {
   color: var(--text-dim);
   cursor: pointer;
   transition: background .15s, color .15s;
+}
+/* Закрыто: стрелка вверх (меню выше панели); открыто: вниз */
+.ctrl-chevron__glyph {
+  display: block;
+  transform: rotate(180deg);
+  transition: transform 0.18s ease;
+}
+.ctrl-chevron--open .ctrl-chevron__glyph {
+  transform: rotate(0deg);
 }
 .ctrl-chevron:hover,
 .ctrl-chevron--open { color: var(--text); background: #2a2a2a; }
@@ -1440,6 +1491,15 @@ button.vio-row--peer:focus-visible {
   }
   .room-invite-toast__title { font-size: 14px; }
   .room-invite-toast__text { font-size: 12px; }
+
+  .room-chat-preview-toast {
+    left: 12px;
+    bottom: 64px;
+    max-width: calc(100vw - 24px);
+    padding: 12px 14px;
+  }
+  .room-chat-preview-toast__author { font-size: 12px; }
+  .room-chat-preview-toast__text { font-size: 12px; }
 
   /* Controls bar */
   .controls-bar { gap: 6px; padding: 6px 8px; }
@@ -1925,6 +1985,32 @@ button.vio-row--peer:focus-visible {
 .participant-card--screen-share {
   outline: 1px solid rgba(105, 240, 174, .35);
   outline-offset: -1px;
+}
+
+/* peerId демонстрации — поверх видео, справа сверху */
+.screen-share-peer-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 6;
+  max-width: min(calc(100% - 16px), 52%);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: ui-monospace, 'Cascadia Mono', 'Consolas', monospace;
+  line-height: 1.35;
+  word-break: break-all;
+  text-align: right;
+  color: rgba(255, 255, 255, .92);
+  background: rgba(0, 0, 0, .78);
+  border: 1px solid rgba(255, 255, 255, .14);
+  pointer-events: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .45);
+}
+
+.screen-share-peer-badge--pending {
+  color: rgba(255, 255, 255, .55);
+  font-style: italic;
 }
 
 .card-stop-share-btn {

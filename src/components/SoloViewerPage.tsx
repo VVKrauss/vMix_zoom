@@ -66,7 +66,7 @@ export function SoloViewerPage({ roomId, watchPeerId, onExit }: Props) {
       return
     }
 
-    /* Сброс srcObject нужен при смене экран → камера: иначе Chromium часто оставляет чёрный кадр. */
+    /* Сброс srcObject при смене трека — иначе Chromium часто оставляет чёрный кадр. */
     el.srcObject = null
 
     let cancelled = false

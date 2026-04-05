@@ -13,7 +13,11 @@ import {
   REACTION_EMOJI_WHITELIST,
   REACTION_TTL_DEFAULT_MS,
 } from '../types/roomComms'
-import { resolveVideoProducerRole } from '../utils/producerVideoRole'
+import {
+  descriptorVideoSource,
+  ownerPeerFromDescriptor,
+  resolveVideoProducerRole,
+} from '../utils/producerVideoRole'
 import { signalingHttpBase, signalingSocketUrl } from '../utils/signalingBase'
 import { DEFAULT_VIDEO_PRESET } from '../types'
 
@@ -107,6 +111,8 @@ export type RoomStatus = 'idle' | 'connecting' | 'connected' | 'error'
 export type RoomActivityNotifyRef = MutableRefObject<{
   isChatClosed: () => boolean
   bumpUnread: () => void
+  /** Всплывашка нового сообщения (только при закрытом чате; не для реакций). */
+  flashChatPreview?: (author: string, text: string) => void
 }>
 
 export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
@@ -127,11 +133,14 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const localScreenStreamRef = useRef<MediaStream | null>(null)
   const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null)
   const [isScreenSharing, setIsScreenSharing] = useState(false)
+  /** Отдельный peerId демонстрации с бэка (ack produce); для соло-URL и SRT. */
+  const [localScreenPeerId, setLocalScreenPeerId] = useState<string | null>(null)
   const consumersRef = useRef<Map<string, Consumer>>(new Map())
   /** producerId → метаданные для producerClosed и очистки */
   const producerMetaRef = useRef<Map<string, {
     consumerId: string
-    peerId: string
+    anchorPeerId: string
+    producerPeerId: string
     kind: 'audio' | 'video'
     videoSource?: 'camera' | 'screen'
   }>>(new Map())
@@ -182,34 +191,51 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
     setParticipants((prev) => {
       const next = new Map(prev)
-      const existing: RemoteParticipant = next.get(producer.peerId) ?? {
-        peerId: producer.peerId,
-        name: producer.name,
-      }
 
       if (consumer.kind === 'audio') {
+        const anchorId = producer.peerId
+        const existing: RemoteParticipant = next.get(anchorId) ?? {
+          peerId: anchorId,
+          name: producer.name,
+        }
         producerMetaRef.current.set(producer.producerId, {
           consumerId: consumer.id,
-          peerId: producer.peerId,
+          anchorPeerId: anchorId,
+          producerPeerId: producer.peerId,
           kind: 'audio',
         })
-        next.set(producer.peerId, { ...existing, audioStream: stream })
+        next.set(anchorId, { ...existing, audioStream: stream })
         return next
+      }
+
+      const owner = ownerPeerFromDescriptor(producer)
+      const src = descriptorVideoSource(producer)
+      const anchorId = src === 'screen' && owner ? owner : producer.peerId
+
+      const existing: RemoteParticipant = next.get(anchorId) ?? {
+        peerId: anchorId,
+        name: producer.name,
       }
 
       const resolved = resolveVideoProducerRole(producer, !!existing.videoStream)
 
       producerMetaRef.current.set(producer.producerId, {
         consumerId: consumer.id,
-        peerId: producer.peerId,
+        anchorPeerId: anchorId,
+        producerPeerId: producer.peerId,
         kind: 'video',
         videoSource: resolved,
       })
 
       if (resolved === 'screen') {
-        next.set(producer.peerId, { ...existing, screenStream: stream })
+        const distinct = producer.peerId !== anchorId ? producer.peerId : undefined
+        next.set(anchorId, {
+          ...existing,
+          screenStream: stream,
+          ...(distinct ? { screenPeerId: distinct } : { screenPeerId: undefined }),
+        })
       } else {
-        next.set(producer.peerId, { ...existing, videoStream: stream })
+        next.set(anchorId, { ...existing, videoStream: stream })
       }
       return next
     })
@@ -232,6 +258,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
     setStatus('connecting')
     setError(null)
+    setLocalScreenPeerId(null)
     roomIdRef.current = roomId
     displayNameRef.current = name.trim() || 'Гость'
 
@@ -379,8 +406,17 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           kind,
           rtpParameters,
           appData: appData ?? {},
-        }, (res: { id?: string; error?: string }) => {
+        }, (res: { id?: string; error?: string; screenPeerId?: string }) => {
           if (res?.error) return errback(new Error(res.error))
+          const src = (appData as { source?: string } | undefined)?.source
+          if (kind === 'video' && src === 'screen') {
+            const raw = res as Record<string, unknown>
+            const sid =
+              (typeof res?.screenPeerId === 'string' && res.screenPeerId.trim()) ||
+              (typeof raw.screen_peer_id === 'string' && String(raw.screen_peer_id).trim()) ||
+              ''
+            if (sid) setLocalScreenPeerId(sid)
+          }
           callback({ id: res.id! })
         })
       })
@@ -456,14 +492,14 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
         setParticipants((prev) => {
           const next = new Map(prev)
-          const p = next.get(meta.peerId)
+          const p = next.get(meta.anchorPeerId)
           if (!p) return next
           if (meta.kind === 'audio') {
-            next.set(meta.peerId, { ...p, audioStream: undefined })
+            next.set(meta.anchorPeerId, { ...p, audioStream: undefined })
           } else if (meta.videoSource === 'screen') {
-            next.set(meta.peerId, { ...p, screenStream: undefined })
+            next.set(meta.anchorPeerId, { ...p, screenStream: undefined, screenPeerId: undefined })
           } else {
-            next.set(meta.peerId, { ...p, videoStream: undefined })
+            next.set(meta.anchorPeerId, { ...p, videoStream: undefined })
           }
           return next
         })
@@ -475,18 +511,14 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       })
 
       socket.on('peerLeft', ({ peerId }: { peerId: string }) => {
-        producerMetaRef.current.forEach((meta, prodId) => {
-          if (meta.peerId !== peerId) return
-          const c = consumersRef.current.get(meta.consumerId)
-          try {
-            c?.close()
-          } catch {
-            /* noop */
-          }
-          consumersRef.current.delete(meta.consumerId)
-          producerMetaRef.current.delete(prodId)
+        const toClose = [...producerMetaRef.current.keys()].filter((prodId) => {
+          const m = producerMetaRef.current.get(prodId)
+          return m && (m.producerPeerId === peerId || m.anchorPeerId === peerId)
         })
+        for (const prodId of toClose) dropProducerById(prodId)
+
         setParticipants((prev) => {
+          if (!prev.has(peerId)) return prev
           const next = new Map(prev)
           next.delete(peerId)
           return next
@@ -522,6 +554,17 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       const appendChat = (msg: RoomChatMessage) => {
         if (msg.roomId && msg.roomId !== roomIdRef.current) return
         maybeBumpUnread(msg.peerId)
+        const nr = activityNotifyRef?.current
+        const sid = socket.id
+        if (
+          nr?.flashChatPreview &&
+          sid &&
+          msg.peerId !== sid &&
+          msg.kind !== 'reaction' &&
+          nr.isChatClosed()
+        ) {
+          nr.flashChatPreview(msg.name, msg.text)
+        }
         setChatMessages((prev) => mergeIncomingChatMessage(prev, msg))
       }
 
@@ -752,6 +795,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     localScreenStreamRef.current?.getTracks().forEach((t) => t.stop())
     localScreenStreamRef.current = null
     setLocalScreenStream(null)
+    setLocalScreenPeerId(null)
     setIsScreenSharing(false)
   }, [])
 
@@ -782,9 +826,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         track.addEventListener('ended', () => {
           stopScreenShare()
         })
+        const ownerPeerId = socketRef.current?.id
         const producer = await sendTransport.produce({
           track,
-          appData: { source: 'screen' },
+          appData: {
+            source: 'screen',
+            ...(ownerPeerId ? { ownerPeerId } : {}),
+          },
           encodings: [{ maxBitrate: 4_000_000, maxFramerate: 30 }],
         })
         screenProducerRef.current = producer
@@ -876,6 +924,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     error,
     localStream,
     localScreenStream,
+    localScreenPeerId,
     isScreenSharing,
     toggleScreenShare,
     startScreenShare,

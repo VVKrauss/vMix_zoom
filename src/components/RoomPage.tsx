@@ -12,7 +12,12 @@ import { SrtCopySurface } from './SrtCopyMenu'
 import type { PipPos, PipSize } from './DraggablePip'
 import type { RemoteParticipant, SrtSessionInfo, VideoPreset } from '../types'
 import { ruParticipantsWord } from '../utils/ruPlural'
-import { isLocalScreenTileKey, localScreenTileKey } from '../utils/localScreenTile'
+import {
+  isScreenTileId,
+  localScreenTileKey,
+  parseScreenTilePeerId,
+  screenTileKey,
+} from '../utils/screenTileKey'
 import { LocalScreenShareTile } from './LocalScreenShareTile'
 import type { RoomChatMessage, RoomReactionBurst } from '../types/roomComms'
 import { pickLatestBurstForPeer } from '../types/roomComms'
@@ -21,6 +26,11 @@ import { ReactionBurstOverlay } from './ReactionBurstOverlay'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useVideoOrientation } from '../hooks/useVideoOrientation'
 import { buildRoomInviteAbsoluteUrl } from '../utils/soloViewerParams'
+
+function remoteScreenTileId(p: RemoteParticipant): string | null {
+  if (!p.screenStream) return null
+  return p.screenPeerId ?? screenTileKey(p.peerId)
+}
 
 export type LayoutMode = 'grid' | 'pip' | 'speaker' | 'meet' | 'filmstrip' | 'strip_v' | 'mosaic'
 
@@ -47,6 +57,8 @@ interface Props {
   activePreset: VideoPreset
   onChangePreset: (p: VideoPreset) => void
   localScreenStream: MediaStream | null
+  /** Отдельный peerId демонстрации с бэка; до ack — плитка по synthetic key. */
+  localScreenPeerId: string | null
   isScreenSharing: boolean
   onToggleScreenShare: () => void
   onStartScreenShare: (surface?: 'monitor' | 'window' | 'browser') => void
@@ -57,6 +69,7 @@ interface Props {
   chatOpen: boolean
   setChatOpen: (open: boolean) => void
   chatUnreadCount: number
+  chatIncomingPreview: { author: string; text: string } | null
 }
 
 export function RoomPage({
@@ -66,9 +79,9 @@ export function RoomPage({
   onToggleMute, onToggleCam, onLeave,
   onSwitchCamera, onSwitchMic,
   activePreset, onChangePreset,
-  localScreenStream, isScreenSharing, onToggleScreenShare, onStartScreenShare,
+  localScreenStream, localScreenPeerId, isScreenSharing, onToggleScreenShare, onStartScreenShare,
   chatMessages, onSendChatMessage, onSendReaction, reactionBursts,
-  chatOpen, setChatOpen, chatUnreadCount,
+  chatOpen, setChatOpen, chatUnreadCount, chatIncomingPreview,
 }: Props) {
   const isMobile = useMediaQuery('(max-width: 768px)')
   const [layout, setLayout]       = useState<LayoutMode>(() =>
@@ -152,14 +165,29 @@ export function RoomPage({
   })
 
   const remoteList = useMemo(() => [...participants.values()], [participants])
-  /** Камера + удалённые + отдельная плитка демонстрации */
-  const rosterCount = remoteList.length + 1 + (isScreenSharing && localScreenStream ? 1 : 0)
+
+  const localScreenTileId = useMemo(() => {
+    if (!isScreenSharing || !localScreenStream) return null
+    return localScreenPeerId ?? localScreenTileKey(localPeerId)
+  }, [isScreenSharing, localScreenStream, localScreenPeerId, localPeerId])
+
+  const remoteScreenTileCount = useMemo(
+    () => remoteList.filter((p) => p.screenStream).length,
+    [remoteList],
+  )
+  /** Локальная камера + удалённые + плитки демонстрации (своя и чужие) */
+  const rosterCount =
+    remoteList.length +
+    1 +
+    (isScreenSharing && localScreenStream ? 1 : 0) +
+    remoteScreenTileCount
 
   const mobileSoloTiles =
     isMobile &&
     layoutUsesTiledView(layout) &&
     remoteList.length === 0 &&
-    !(isScreenSharing && localScreenStream)
+    !(isScreenSharing && localScreenStream) &&
+    remoteScreenTileCount === 0
 
   const mobileMultiTiles = isMobile && layoutUsesTiledView(layout) && !mobileSoloTiles
 
@@ -219,9 +247,13 @@ export function RoomPage({
 
   const allTileIds = useMemo(() => {
     const ids: string[] = [localPeerId, ...remoteList.map((p) => p.peerId)]
-    if (isScreenSharing && localScreenStream) ids.push(localScreenTileKey(localPeerId))
+    if (localScreenTileId) ids.push(localScreenTileId)
+    for (const p of remoteList) {
+      const sid = remoteScreenTileId(p)
+      if (sid) ids.push(sid)
+    }
     return ids
-  }, [localPeerId, remoteList, isScreenSharing, localScreenStream])
+  }, [localPeerId, remoteList, localScreenTileId])
 
   const stageLayout = layout === 'speaker' || layout === 'meet'
 
@@ -231,22 +263,24 @@ export function RoomPage({
 
     if (layout === 'meet') {
       const remotePresenter = remoteList.find((p) => p.screenStream)
-      if (remotePresenter) return remotePresenter.peerId
-      if (isScreenSharing && localScreenStream) return localScreenTileKey(localPeerId)
+      if (remotePresenter) {
+        const sid = remoteScreenTileId(remotePresenter)
+        if (sid) return sid
+      }
+      if (localScreenTileId) return localScreenTileId
       if (remoteList.length > 0) return remoteList[0].peerId
       return localPeerId
     }
 
     if (remoteList.length > 0) return remoteList[0].peerId
-    return isScreenSharing && localScreenStream ? localScreenTileKey(localPeerId) : localPeerId
+    return localScreenTileId ?? localPeerId
   }, [
     stageLayout,
     layout,
     speakerPinnedPeerId,
     allTileIds,
     remoteList,
-    isScreenSharing,
-    localScreenStream,
+    localScreenTileId,
     localPeerId,
   ])
 
@@ -265,9 +299,19 @@ export function RoomPage({
 
   useEffect(() => {
     if (!isScreenSharing) {
-      setSpeakerPinnedPeerId((p) => (p === localScreenTileKey(localPeerId) ? null : p))
+      setSpeakerPinnedPeerId((p) => {
+        if (!p) return p
+        if (p === localScreenTileKey(localPeerId)) return null
+        if (localScreenPeerId && p === localScreenPeerId) return null
+        return p
+      })
     }
-  }, [isScreenSharing, localPeerId])
+  }, [isScreenSharing, localPeerId, localScreenPeerId])
+
+  useEffect(() => {
+    if (!speakerPinnedPeerId) return
+    if (!allTileIds.includes(speakerPinnedPeerId)) setSpeakerPinnedPeerId(null)
+  }, [allTileIds, speakerPinnedPeerId])
 
   useEffect(() => {
     if (!isScreenSharing) setScreenStopDialogOpen(false)
@@ -370,10 +414,25 @@ export function RoomPage({
 
   const orderedTileIds = useMemo(() => {
     const ids: string[] = [localPeerId]
-    if (isScreenSharing && localScreenStream) ids.push(localScreenTileKey(localPeerId))
-    ids.push(...remoteList.map((p) => p.peerId))
+    if (localScreenTileId) ids.push(localScreenTileId)
+    for (const p of remoteList) {
+      ids.push(p.peerId)
+      const sid = remoteScreenTileId(p)
+      if (sid) ids.push(sid)
+    }
     return ids
-  }, [localPeerId, isScreenSharing, localScreenStream, remoteList])
+  }, [localPeerId, localScreenTileId, remoteList])
+
+  const pipGridTileIds = useMemo(() => {
+    const ids: string[] = []
+    if (localScreenTileId) ids.push(localScreenTileId)
+    for (const p of remoteList) {
+      ids.push(p.peerId)
+      const sid = remoteScreenTileId(p)
+      if (sid) ids.push(sid)
+    }
+    return ids
+  }, [localPeerId, remoteList, localScreenTileId])
 
   const showSpeakerPinUi = layout === 'speaker' || layout === 'meet'
 
@@ -381,22 +440,89 @@ export function RoomPage({
     if (id === localPeerId) {
       return localTile(false, showSpeakerPinUi)
     }
-    if (isLocalScreenTileKey(id, localPeerId) && localScreenStream) {
+    if (localScreenTileId && id === localScreenTileId && localScreenStream) {
       return (
         <LocalScreenShareTile
           stream={localScreenStream}
           label={`${name} — экран`}
           roomId={roomId}
-          ownerPeerId={localPeerId}
+          linkPeerId={localScreenPeerId ?? undefined}
           videoStyle={remoteVideoStyle}
           showInfo={showInfo}
           srtConnectUrl={localSrt?.connectUrlPublic}
           srtListenPort={localSrt?.listenPort}
           onStopShare={requestStopScreenSharing}
+          showStopButton
           showPin={showSpeakerPinUi}
-          pinActive={speakerPinnedPeerId === localScreenTileKey(localPeerId)}
-          onRequestPin={() => toggleSpeakerPin(localScreenTileKey(localPeerId))}
+          pinActive={speakerPinnedPeerId === id}
+          onRequestPin={() => toggleSpeakerPin(id)}
           reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
+        />
+      )
+    }
+    const remotePresenter = remoteList.find((p) => remoteScreenTileId(p) === id)
+    if (remotePresenter?.screenStream) {
+      return (
+        <LocalScreenShareTile
+          stream={remotePresenter.screenStream}
+          label={`${remotePresenter.name} — экран`}
+          roomId={roomId}
+          linkPeerId={remotePresenter.screenPeerId ?? undefined}
+          videoStyle={remoteVideoStyle}
+          showInfo={showInfo}
+          srtConnectUrl={srtByPeer[remotePresenter.peerId]?.connectUrlPublic}
+          srtListenPort={srtByPeer[remotePresenter.peerId]?.listenPort}
+          onStopShare={() => {}}
+          showStopButton={false}
+          showPin={showSpeakerPinUi}
+          pinActive={speakerPinnedPeerId === id}
+          onRequestPin={() => toggleSpeakerPin(id)}
+          reactionBurst={pickLatestBurstForPeer(reactionBursts, remotePresenter.peerId)}
+        />
+      )
+    }
+    if (isScreenTileId(id)) {
+      const owner = parseScreenTilePeerId(id)
+      if (!owner) return null
+      if (owner === localPeerId) {
+        if (!localScreenStream) return null
+        return (
+          <LocalScreenShareTile
+            stream={localScreenStream}
+            label={`${name} — экран`}
+            roomId={roomId}
+            linkPeerId={localScreenPeerId ?? undefined}
+            videoStyle={remoteVideoStyle}
+            showInfo={showInfo}
+            srtConnectUrl={localSrt?.connectUrlPublic}
+            srtListenPort={localSrt?.listenPort}
+            onStopShare={requestStopScreenSharing}
+            showStopButton
+            showPin={showSpeakerPinUi}
+            pinActive={speakerPinnedPeerId === id}
+            onRequestPin={() => toggleSpeakerPin(id)}
+            reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
+          />
+        )
+      }
+      const p = participants.get(owner)
+      if (!p?.screenStream) return null
+      return (
+        <LocalScreenShareTile
+          stream={p.screenStream}
+          label={`${p.name} — экран`}
+          roomId={roomId}
+          linkPeerId={p.screenPeerId ?? undefined}
+          videoStyle={remoteVideoStyle}
+          showInfo={showInfo}
+          srtConnectUrl={srtByPeer[p.peerId]?.connectUrlPublic}
+          srtListenPort={srtByPeer[p.peerId]?.listenPort}
+          onStopShare={() => {}}
+          showStopButton={false}
+          showPin={showSpeakerPinUi}
+          pinActive={speakerPinnedPeerId === id}
+          onRequestPin={() => toggleSpeakerPin(id)}
+          reactionBurst={pickLatestBurstForPeer(reactionBursts, owner)}
         />
       )
     }
@@ -422,16 +548,25 @@ export function RoomPage({
 
   const mosaicStreamForId = (id: string): MediaStream | null => {
     if (id === localPeerId) return localStream
-    if (isLocalScreenTileKey(id, localPeerId) && localScreenStream) return localScreenStream
+    if (localScreenTileId && id === localScreenTileId) return localScreenStream
+    const rp = remoteList.find((p) => remoteScreenTileId(p) === id)
+    if (rp?.screenStream) return rp.screenStream
+    if (isScreenTileId(id)) {
+      const owner = parseScreenTilePeerId(id)
+      if (!owner) return null
+      if (owner === localPeerId && localScreenStream) return localScreenStream
+      return participants.get(owner)?.screenStream ?? null
+    }
     const p = participants.get(id)
     if (!p) return null
-    return p.screenStream ?? p.videoStream ?? null
+    return p.videoStream ?? null
   }
 
   const mosaicForceLandscape = (id: string): boolean => {
-    if (isLocalScreenTileKey(id, localPeerId)) return true
-    const p = participants.get(id)
-    return !!p?.screenStream
+    if (localScreenTileId && id === localScreenTileId) return true
+    if (remoteList.some((p) => remoteScreenTileId(p) === id)) return true
+    if (isScreenTileId(id)) return true
+    return false
   }
 
   return (
@@ -493,6 +628,20 @@ export function RoomPage({
       </div>
 
       <div
+        className={`room-chat-preview-toast${chatIncomingPreview ? ' room-chat-preview-toast--visible' : ''}`}
+        role="status"
+        aria-live="polite"
+        aria-hidden={!chatIncomingPreview}
+      >
+        {chatIncomingPreview ? (
+          <>
+            <span className="room-chat-preview-toast__author">{chatIncomingPreview.author}</span>
+            <span className="room-chat-preview-toast__text">{chatIncomingPreview.text}</span>
+          </>
+        ) : null}
+      </div>
+
+      <div
         className={`room-body${chatEmbed && chatOpen ? ' room-body--with-embed-chat' : ''}`}
       >
         <div
@@ -502,78 +651,12 @@ export function RoomPage({
       {stageLayout && featuredPeerId && (
         <>
           <div className={layout === 'meet' ? 'room-meet-main' : 'room-speaker-main'}>
-            {isLocalScreenTileKey(featuredPeerId, localPeerId) && localScreenStream ? (
-              <LocalScreenShareTile
-                stream={localScreenStream}
-                label={`${name} — экран`}
-                roomId={roomId}
-                ownerPeerId={localPeerId}
-                videoStyle={remoteVideoStyle}
-                showInfo={showInfo}
-                srtConnectUrl={localSrt?.connectUrlPublic}
-                srtListenPort={localSrt?.listenPort}
-                onStopShare={requestStopScreenSharing}
-                showPin
-                pinActive={speakerPinnedPeerId === localScreenTileKey(localPeerId)}
-                onRequestPin={() => toggleSpeakerPin(localScreenTileKey(localPeerId))}
-                reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
-              />
-            ) : featuredPeerId === localPeerId ? (
-              localTile(false, true)
-            ) : participants.has(featuredPeerId) ? (
-              <ParticipantCard
-                participant={participants.get(featuredPeerId) as RemoteParticipant}
-                videoStyle={remoteVideoStyle}
-                showInfo={showInfo}
-                showMeter={showMeter}
-                roomId={roomId}
-                srtConnectUrl={srtByPeer[featuredPeerId]?.connectUrlPublic}
-                srtListenPort={srtByPeer[featuredPeerId]?.listenPort}
-                {...cardPlayout}
-                showPin
-                pinActive={speakerPinnedPeerId === featuredPeerId}
-                onRequestPin={() => toggleSpeakerPin(featuredPeerId)}
-                reactionBurst={pickLatestBurstForPeer(reactionBursts, featuredPeerId)}
-              />
-            ) : null}
+            {renderConferenceTile(featuredPeerId)}
           </div>
           <div className={layout === 'meet' ? 'room-meet-strip' : 'room-speaker-strip'}>
             {stripPeerIds.map((id) => (
               <div key={id} className={layout === 'meet' ? 'room-meet-strip-tile' : 'room-speaker-strip-tile'}>
-                {isLocalScreenTileKey(id, localPeerId) && localScreenStream ? (
-                  <LocalScreenShareTile
-                    stream={localScreenStream}
-                    label={`${name} — экран`}
-                    roomId={roomId}
-                    ownerPeerId={localPeerId}
-                    videoStyle={remoteVideoStyle}
-                    showInfo={showInfo}
-                    srtConnectUrl={localSrt?.connectUrlPublic}
-                    srtListenPort={localSrt?.listenPort}
-                    onStopShare={requestStopScreenSharing}
-                    showPin
-                    pinActive={speakerPinnedPeerId === localScreenTileKey(localPeerId)}
-                    onRequestPin={() => toggleSpeakerPin(localScreenTileKey(localPeerId))}
-                    reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
-                  />
-                ) : id === localPeerId ? (
-                  localTile(false, true)
-                ) : participants.has(id) ? (
-                  <ParticipantCard
-                    participant={participants.get(id) as RemoteParticipant}
-                    videoStyle={remoteVideoStyle}
-                    showInfo={showInfo}
-                    showMeter={showMeter}
-                    roomId={roomId}
-                    srtConnectUrl={srtByPeer[id]?.connectUrlPublic}
-                    srtListenPort={srtByPeer[id]?.listenPort}
-                    {...cardPlayout}
-                    showPin
-                    pinActive={speakerPinnedPeerId === id}
-                    onRequestPin={() => toggleSpeakerPin(id)}
-                    reactionBurst={pickLatestBurstForPeer(reactionBursts, id)}
-                  />
-                ) : null}
+                {renderConferenceTile(id)}
               </div>
             ))}
           </div>
@@ -636,37 +719,14 @@ export function RoomPage({
         <div className="pip-container">
           <div
             className="tile-grid pip-grid"
-            style={gridStyle(gridCols(Math.max(1, remoteList.length + (isScreenSharing ? 1 : 0))))}
+            style={gridStyle(gridCols(Math.max(1, pipGridTileIds.length)))}
           >
-            {remoteList.length === 0 && !isScreenSharing ? (
+            {pipGridTileIds.length === 0 ? (
               <div className="pip-waiting">Ожидание участников…</div>
             ) : (
-              <>
-                {isScreenSharing && localScreenStream && (
-                  <LocalScreenShareTile
-                    stream={localScreenStream}
-                    label={`${name} — экран`}
-                    roomId={roomId}
-                    ownerPeerId={localPeerId}
-                    videoStyle={remoteVideoStyle}
-                    showInfo={showInfo}
-                    srtConnectUrl={localSrt?.connectUrlPublic}
-                    srtListenPort={localSrt?.listenPort}
-                    onStopShare={requestStopScreenSharing}
-                    reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
-                  />
-                )}
-                {remoteList.map(p => (
-                  <ParticipantCard key={p.peerId} participant={p}
-                    videoStyle={remoteVideoStyle}
-                    showInfo={showInfo} showMeter={showMeter} roomId={roomId}
-                    srtConnectUrl={srtByPeer[p.peerId]?.connectUrlPublic}
-                    srtListenPort={srtByPeer[p.peerId]?.listenPort}
-                    {...cardPlayout}
-                    reactionBurst={pickLatestBurstForPeer(reactionBursts, p.peerId)}
-                  />
-                ))}
-              </>
+              pipGridTileIds.map((id) => (
+                <React.Fragment key={id}>{renderConferenceTile(id)}</React.Fragment>
+              ))
             )}
           </div>
           <DraggablePip

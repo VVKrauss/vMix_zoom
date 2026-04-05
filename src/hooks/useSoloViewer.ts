@@ -22,7 +22,8 @@ export function useSoloViewer(roomId: string, watchPeerId: string) {
   const [camVideo, setCamVideo] = useState<MediaStream | null>(null)
   const [scrVideo, setScrVideo] = useState<MediaStream | null>(null)
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null)
-  const videoStream = scrVideo ?? camVideo
+  /** Один watchPeerId — один тип видео; при отдельном peerId демонстрации заполняется только один слот. */
+  const videoStream = camVideo ?? scrVideo
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
