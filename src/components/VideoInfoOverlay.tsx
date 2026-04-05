@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { buildSoloViewerAbsoluteUrl } from '../utils/soloViewerParams'
 
 interface VideoInfo {
   width:       number
@@ -41,9 +42,11 @@ export function VideoInfoOverlay({
   const [info, setInfo] = useState<VideoInfo | null>(null)
   const [copiedPeer, setCopiedPeer] = useState(false)
   const [copiedSrt, setCopiedSrt] = useState(false)
+  const [copiedSolo, setCopiedSolo] = useState(false)
   const timerRef = useRef<number>(0)
   const copyFlashRef = useRef<number>(0)
   const copySrtFlashRef = useRef<number>(0)
+  const copySoloFlashRef = useRef<number>(0)
 
   const copyPeerId = () => {
     if (!peerId) return
@@ -64,6 +67,18 @@ export function VideoInfoOverlay({
         setCopiedSrt(true)
         window.clearTimeout(copySrtFlashRef.current)
         copySrtFlashRef.current = window.setTimeout(() => setCopiedSrt(false), 1500)
+      },
+      () => {},
+    )
+  }
+
+  const copySoloPageUrl = () => {
+    if (!roomId || !peerId) return
+    void navigator.clipboard.writeText(buildSoloViewerAbsoluteUrl(roomId, peerId)).then(
+      () => {
+        setCopiedSolo(true)
+        window.clearTimeout(copySoloFlashRef.current)
+        copySoloFlashRef.current = window.setTimeout(() => setCopiedSolo(false), 1500)
       },
       () => {},
     )
@@ -100,6 +115,7 @@ export function VideoInfoOverlay({
       clearInterval(timerRef.current)
       window.clearTimeout(copyFlashRef.current)
       window.clearTimeout(copySrtFlashRef.current)
+      window.clearTimeout(copySoloFlashRef.current)
     }
   }, [stream, videoRef])
 
@@ -124,6 +140,19 @@ export function VideoInfoOverlay({
           <span className="vio-key">peerId</span>
           <span className="vio-val vio-val--mono vio-val--id">
             {copiedPeer ? 'Скопировано' : peerId}
+          </span>
+        </button>
+      ) : null}
+      {roomId && peerId ? (
+        <button
+          type="button"
+          className="vio-row vio-row--peer"
+          onClick={e => { e.stopPropagation(); copySoloPageUrl() }}
+          title="Ссылка на страницу только этого участника (?room=&peer=)"
+        >
+          <span className="vio-key">Соло-страница</span>
+          <span className="vio-val vio-val--mono vio-val--id">
+            {copiedSolo ? 'Скопировано' : 'Копировать URL'}
           </span>
         </button>
       ) : null}

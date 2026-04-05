@@ -1,6 +1,7 @@
-import { useState, FormEvent } from 'react'
+import { useState, useEffect, FormEvent } from 'react'
 import type { VideoPreset } from '../types'
 import { DEFAULT_VIDEO_PRESET } from '../types'
+import { getRoomFromSearch, replaceRoomInBrowserUrl } from '../utils/soloViewerParams'
 
 interface Props {
   onJoin: (name: string, roomId: string, preset: VideoPreset) => void
@@ -9,9 +10,28 @@ interface Props {
 
 const DEFAULT_ROOM = import.meta.env.VITE_DEFAULT_ROOM ?? 'test'
 
+function initialRoomFromUrl(): string {
+  return getRoomFromSearch() ?? DEFAULT_ROOM
+}
+
 export function JoinPage({ onJoin, error }: Props) {
   const [name, setName] = useState('')
-  const [room, setRoom] = useState(DEFAULT_ROOM)
+  const [room, setRoom] = useState(initialRoomFromUrl)
+
+  useEffect(() => {
+    const trimmed = room.trim()
+    if (!trimmed) {
+      if (getRoomFromSearch() !== null) {
+        const url = new URL(window.location.href)
+        url.searchParams.delete('room')
+        const qs = url.searchParams.toString()
+        window.history.replaceState({}, '', `${url.pathname}${qs ? `?${qs}` : ''}`)
+      }
+      return
+    }
+    if (getRoomFromSearch() === trimmed) return
+    replaceRoomInBrowserUrl(trimmed)
+  }, [room])
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()

@@ -6,6 +6,7 @@ import { DraggablePip } from './DraggablePip'
 import { AudioMeter } from './AudioMeter'
 import { useDevices } from '../hooks/useDevices'
 import { VideoInfoOverlay } from './VideoInfoOverlay'
+import { SrtCopySurface } from './SrtCopyMenu'
 import type { PipPos, PipSize } from './DraggablePip'
 import type { RemoteParticipant, SrtSessionInfo, VideoPreset } from '../types'
 
@@ -90,6 +91,8 @@ export function RoomPage({
     gridTemplateColumns: `repeat(${cols}, 1fr)`,
   })
 
+  const localSrt = srtByPeer[localPeerId]
+
   const localTile = (inPip: boolean) => (
     <LocalTile
       stream={localStream}
@@ -101,7 +104,9 @@ export function RoomPage({
       showMeter={showMeter}
       roomId={roomId}
       peerId={localPeerId}
-      srtConnectUrl={srtByPeer[localPeerId]?.connectUrlPublic}
+      inPip={inPip}
+      srtConnectUrl={localSrt?.connectUrlPublic}
+      srtListenPort={localSrt?.listenPort}
     />
   )
 
@@ -148,7 +153,8 @@ export function RoomPage({
             <ParticipantCard key={p.peerId} participant={p}
               videoStyle={remoteVideoStyle}
               showInfo={showInfo} showMeter={showMeter} roomId={roomId}
-              srtConnectUrl={srtByPeer[p.peerId]?.connectUrlPublic} />
+              srtConnectUrl={srtByPeer[p.peerId]?.connectUrlPublic}
+              srtListenPort={srtByPeer[p.peerId]?.listenPort} />
           ))}
         </div>
       )}
@@ -163,7 +169,8 @@ export function RoomPage({
                   <ParticipantCard key={p.peerId} participant={p}
                     videoStyle={remoteVideoStyle}
                     showInfo={showInfo} showMeter={showMeter} roomId={roomId}
-                    srtConnectUrl={srtByPeer[p.peerId]?.connectUrlPublic} />
+                    srtConnectUrl={srtByPeer[p.peerId]?.connectUrlPublic}
+                    srtListenPort={srtByPeer[p.peerId]?.listenPort} />
                 ))
             }
           </div>
@@ -171,6 +178,12 @@ export function RoomPage({
             pos={pipPos}   onPosChange={setPipPos}
             size={pipSize} onSizeChange={setPipSize}
             lockAspect={sourceAspect}
+            srtCopy={{
+              connectUrl: localSrt?.connectUrlPublic,
+              listenPort: localSrt?.listenPort,
+              roomId,
+              peerId: localPeerId,
+            }}
           >
             {localTile(true)}
           </DraggablePip>
@@ -208,7 +221,7 @@ export function RoomPage({
 
 function LocalTile({
   stream, name, isMuted, isCamOff, videoStyle, showInfo, showMeter,
-  roomId, peerId, srtConnectUrl,
+  roomId, peerId, inPip, srtConnectUrl, srtListenPort,
 }: {
   stream: MediaStream | null
   name: string
@@ -219,7 +232,9 @@ function LocalTile({
   showMeter?: boolean
   roomId: string
   peerId: string
+  inPip: boolean
   srtConnectUrl?: string
+  srtListenPort?: number
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -227,30 +242,65 @@ function LocalTile({
     if (videoRef.current) videoRef.current.srcObject = stream
   }, [stream])
 
+  const videoInner = (
+    <>
+      <video
+        ref={videoRef}
+        autoPlay playsInline muted
+        className={isCamOff ? 'hidden' : ''}
+        style={videoStyle}
+      />
+      {isCamOff && <div className="cam-off-avatar">{name.charAt(0).toUpperCase()}</div>}
+      {showMeter && !isMuted && <AudioMeter stream={stream} stereo />}
+      {showInfo && (
+        <VideoInfoOverlay
+          stream={stream}
+          videoRef={videoRef}
+          roomId={roomId}
+          peerId={peerId}
+          srtConnectUrl={srtConnectUrl}
+        />
+      )}
+    </>
+  )
+
+  const barInner = (
+    <>
+      <span className="card-name">{name} (вы)</span>
+      {isMuted && <MutedSvg />}
+    </>
+  )
+
   return (
     <div className="participant-card participant-card--local">
       <div className="card-video-wrap">
-        <video
-          ref={videoRef}
-          autoPlay playsInline muted
-          className={isCamOff ? 'hidden' : ''}
-          style={videoStyle}
-        />
-        {isCamOff && <div className="cam-off-avatar">{name.charAt(0).toUpperCase()}</div>}
-        {showMeter && !isMuted && <AudioMeter stream={stream} stereo />}
-        {showInfo && (
-          <VideoInfoOverlay
-            stream={stream}
-            videoRef={videoRef}
+        {inPip ? (
+          videoInner
+        ) : (
+          <SrtCopySurface
+            connectUrl={srtConnectUrl}
+            listenPort={srtListenPort}
             roomId={roomId}
-            peerId={peerId}
-            srtConnectUrl={srtConnectUrl}
-          />
+            tilePeerId={peerId}
+          >
+            {videoInner}
+          </SrtCopySurface>
         )}
       </div>
       <div className="card-bar">
-        <span className="card-name">{name} (вы)</span>
-        {isMuted && <MutedSvg />}
+        {inPip ? (
+          <SrtCopySurface
+            connectUrl={srtConnectUrl}
+            listenPort={srtListenPort}
+            roomId={roomId}
+            tilePeerId={peerId}
+            className="srt-copy-target--bar"
+          >
+            {barInner}
+          </SrtCopySurface>
+        ) : (
+          barInner
+        )}
       </div>
     </div>
   )

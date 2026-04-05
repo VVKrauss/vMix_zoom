@@ -1,7 +1,15 @@
 import { useEffect, useRef, useCallback, ReactNode } from 'react'
+import { useSrtCopyMenu } from './SrtCopyMenu'
 
 export interface PipPos  { x: number; y: number }
 export interface PipSize { w: number; h: number }
+
+export type PipSrtCopy = {
+  connectUrl?: string
+  listenPort?: number
+  roomId?: string
+  peerId?: string
+}
 
 interface Props {
   children:      ReactNode
@@ -10,6 +18,8 @@ interface Props {
   onPosChange:   (p: PipPos)  => void
   onSizeChange:  (s: PipSize) => void
   lockAspect?:   number | null
+  /** ПКМ на области превью (поверх видео) — копирование SRT; long-press не используем (конфликт с drag). */
+  srtCopy?:      PipSrtCopy
 }
 
 const MIN_W = 140
@@ -22,7 +32,7 @@ function clientXY(e: MouseEvent | TouchEvent): { cx: number; cy: number } {
   return { cx: (e as MouseEvent).clientX, cy: (e as MouseEvent).clientY }
 }
 
-export function DraggablePip({ children, pos, size, onPosChange, onSizeChange, lockAspect }: Props) {
+export function DraggablePip({ children, pos, size, onPosChange, onSizeChange, lockAspect, srtCopy }: Props) {
   const posRef    = useRef(pos)
   const sizeRef   = useRef(size)
   const aspectRef = useRef(lockAspect)
@@ -35,6 +45,12 @@ export function DraggablePip({ children, pos, size, onPosChange, onSizeChange, l
 
   const dragState   = useRef({ active: false, ox: 0, oy: 0 })
   const resizeState = useRef({ active: false, ox: 0, oy: 0, ow: 0, oh: 0 })
+
+  const srtMenu = useSrtCopyMenu(srtCopy?.connectUrl, srtCopy?.listenPort, {
+    enableLongPress: false,
+    roomId: srtCopy?.roomId,
+    tilePeerId: srtCopy?.peerId,
+  })
 
   useEffect(() => {
     if (lockAspect) {
@@ -120,8 +136,10 @@ export function DraggablePip({ children, pos, size, onPosChange, onSizeChange, l
         className="pip-drag-handle"
         onMouseDown={onDragStart}
         onTouchStart={onTouchDragStart}
+        {...srtMenu.surfaceProps}
       />
       {children}
+      {srtMenu.menuPortal}
       <div
         className="pip-resize-handle"
         onMouseDown={onResizeStart}

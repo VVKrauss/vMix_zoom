@@ -2,10 +2,13 @@ import { useState } from 'react'
 import { useRoom } from './hooks/useRoom'
 import { JoinPage } from './components/JoinPage'
 import { RoomPage } from './components/RoomPage'
+import { SoloViewerPage } from './components/SoloViewerPage'
 import type { VideoPreset } from './types'
+import { parseSoloViewerParams, replaceRoomInBrowserUrl } from './utils/soloViewerParams'
 
 export function App() {
   const [name, setName] = useState('')
+  const [soloQuery, setSoloQuery] = useState(() => parseSoloViewerParams())
 
   const {
     join, leave, toggleMute, toggleCam,
@@ -16,9 +19,34 @@ export function App() {
     roomId, localPeerId, srtByPeer,
   } = useRoom()
 
-  const handleJoin = (n: string, roomId: string, preset: VideoPreset) => {
+  const handleJoin = (n: string, roomIdParam: string, preset: VideoPreset) => {
     setName(n)
-    join(n, roomId, preset)
+    replaceRoomInBrowserUrl(roomIdParam, { removePeer: true })
+    join(n, roomIdParam, preset)
+  }
+
+  const handleLeaveRoom = () => {
+    const rid = roomId
+    leave()
+    if (rid) replaceRoomInBrowserUrl(rid, { removePeer: true })
+  }
+
+  const exitSoloViewer = () => {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('peer')
+    const qs = url.searchParams.toString()
+    window.history.replaceState({}, '', `${url.pathname}${qs ? `?${qs}` : ''}`)
+    setSoloQuery(null)
+  }
+
+  if (soloQuery) {
+    return (
+      <SoloViewerPage
+        roomId={soloQuery.room}
+        watchPeerId={soloQuery.peer}
+        onExit={exitSoloViewer}
+      />
+    )
   }
 
   if (status === 'connecting') {
@@ -43,7 +71,7 @@ export function App() {
         isCamOff={isCamOff}
         onToggleMute={toggleMute}
         onToggleCam={toggleCam}
-        onLeave={leave}
+        onLeave={handleLeaveRoom}
         onSwitchCamera={switchCamera}
         onSwitchMic={switchMic}
         activePreset={activePreset}
