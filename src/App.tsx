@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useRoom } from './hooks/useRoom'
+import { BrandLogoLoader } from './components/BrandLogoLoader'
 import { JoinPage } from './components/JoinPage'
 import { RoomPage } from './components/RoomPage'
 import { SoloViewerPage } from './components/SoloViewerPage'
@@ -52,7 +53,7 @@ export function App() {
   if (status === 'connecting') {
     return (
       <div className="loading-screen">
-        <div className="spinner" />
+        <BrandLogoLoader />
         <p>Подключение…</p>
       </div>
     )

@@ -137,15 +137,22 @@ html, body, #root {
   font-size: 14px;
 }
 
-.spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid var(--border);
-  border-top-color: var(--red);
-  border-radius: 50%;
-  animation: spin .7s linear infinite;
+.brand-logo-loader-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+
+.brand-logo-loader {
+  display: block;
+  object-fit: contain;
+  animation: brand-logo-breathe 1.35s ease-in-out infinite;
+}
+
+@keyframes brand-logo-breathe {
+  0%, 100% { opacity: .5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
 
 /* ─── Room ───────────────────────────────────────────────────────────────── */
 .room-page {

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { BrandLogoLoader } from './BrandLogoLoader'
 import { useSoloViewer } from '../hooks/useSoloViewer'
 
 interface Props {
@@ -40,18 +41,48 @@ export function SoloViewerPage({ roomId, watchPeerId, onExit }: Props) {
 
     const merged = mergeAV(videoStream, audioStream)
     el.srcObject = merged
-    el.muted = false
+    if (!merged) return
 
-    void el.play().catch(() => {
-      /* автозапуск со звуком может блокироваться — повтор после жеста пользователя */
-    })
+    let cancelled = false
+    const kick = async () => {
+      /* Сначала без звука — иначе Chromium блокирует play() без жеста (чёрный экран). */
+      el.muted = true
+      try {
+        await el.play()
+      } catch {
+        /* noop */
+      }
+      if (cancelled) return
+      el.muted = false
+      try {
+        await el.play()
+      } catch {
+        /* звук останется до клика */
+      }
+    }
+    void kick()
+
+    return () => {
+      cancelled = true
+    }
   }, [status, videoStream, audioStream])
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState !== 'visible') return
+      const el = videoRef.current
+      if (!el?.srcObject) return
+      void el.play().catch(() => {})
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [])
 
   if (status === 'connecting') {
     return (
       <div className="solo-viewer-page solo-viewer-page--state">
         <div className="solo-viewer-state-inner">
-          <div className="spinner" />
+          <BrandLogoLoader size={44} />
         </div>
       </div>
     )
@@ -94,7 +125,10 @@ export function SoloViewerPage({ roomId, watchPeerId, onExit }: Props) {
   }
 
   const tryPlay = () => {
-    void videoRef.current?.play()
+    const el = videoRef.current
+    if (!el) return
+    el.muted = false
+    void el.play()
   }
 
   return (
