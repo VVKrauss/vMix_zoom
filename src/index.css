@@ -117,6 +117,55 @@ html, body, #root {
 .join-btn:disabled { opacity: .4; cursor: not-allowed; }
 
 .join-btn--block { width: 100%; box-sizing: border-box; }
+
+.join-media-toggles {
+  display: flex;
+  gap: 12px;
+  margin-top: 2px;
+}
+
+.join-media-toggle {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 12px;
+  color: var(--text-dim);
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.join-media-toggle:hover {
+  border-color: rgba(229, 57, 53, 0.35);
+}
+
+.join-media-toggle--on {
+  border-color: rgba(229, 57, 53, 0.55);
+  color: #ffcdd2;
+  background: rgba(48, 10, 10, 0.42);
+}
+
+.join-media-toggle--off {
+  color: rgba(240, 240, 240, 0.45);
+}
+
+.join-media-toggle__icon svg {
+  display: block;
+  width: 28px;
+  height: 28px;
+}
+
+.join-media-toggle__text {
+  line-height: 1.2;
+  text-align: center;
+}
+
 .join-btn--secondary {
   margin-top: 0;
   background: var(--surface2);
@@ -436,36 +485,45 @@ html, body, #root {
 
 .room-chat-preview-toast {
   position: fixed;
-  left: 20px;
+  right: 20px;
+  left: auto;
   bottom: 108px;
   z-index: 10038;
   max-width: min(calc(100vw - 40px), 320px);
-  padding: 14px 16px;
+  padding: 14px 16px 14px 15px;
   border-radius: 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  background: linear-gradient(
+    155deg,
+    rgba(48, 10, 10, 0.98) 0%,
+    rgba(28, 14, 14, 0.97) 42%,
+    var(--surface) 100%
+  );
+  border: 1px solid rgba(229, 57, 53, 0.4);
+  border-left: 3px solid var(--red);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.55),
+    0 0 28px rgba(229, 57, 53, 0.14);
   pointer-events: none;
   opacity: 0;
-  transform: translateY(10px);
+  transform: translate(14px, 10px);
   transition: opacity 0.25s ease, transform 0.25s ease;
 }
 .room-chat-preview-toast--visible {
   opacity: 1;
-  transform: translateY(0);
+  transform: translate(0, 0);
 }
 .room-chat-preview-toast__author {
   display: block;
   font-size: 13px;
   font-weight: 600;
-  color: #fff;
+  color: #ffcdd2;
   margin-bottom: 6px;
 }
 .room-chat-preview-toast__text {
   display: block;
   font-size: 13px;
   line-height: 1.45;
-  color: var(--text-dim);
+  color: rgba(255, 235, 238, 0.82);
   word-break: break-word;
 }
 
@@ -1477,10 +1535,11 @@ button.vio-row--peer:focus-visible {
   .room-invite-toast__text { font-size: 12px; }
 
   .room-chat-preview-toast {
-    left: 12px;
+    right: 12px;
+    left: auto;
     bottom: 64px;
     max-width: calc(100vw - 24px);
-    padding: 12px 14px;
+    padding: 12px 14px 12px 13px;
   }
   .room-chat-preview-toast__author { font-size: 12px; }
   .room-chat-preview-toast__text { font-size: 12px; }

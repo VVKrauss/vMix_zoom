@@ -25,6 +25,13 @@ export type RoomReactionBurst = {
   emoji: string
 }
 
+/** Строки чата, похожие на системное уведомление о демонстрации (бэкенд) — убираем при остановке экрана. */
+export function isScreenShareChatNotice(text: string): boolean {
+  return /демонстрац|экран(а|ом|\))|\bscreen\s*share|sharing.{0,16}screen|презентац|presentation/i.test(
+    text,
+  )
+}
+
 export const CHAT_MESSAGE_MAX_LEN = 2000
 export const CHAT_MESSAGES_CAP = 200
 export const REACTION_TTL_DEFAULT_MS = 3500

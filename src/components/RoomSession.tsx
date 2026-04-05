@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useRoom, type RoomStatus } from '../hooks/useRoom'
+import { useRoom, type JoinRoomMediaOptions, type RoomStatus } from '../hooks/useRoom'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import { JoinPage } from './JoinPage'
 import { RoomPage } from './RoomPage'
@@ -66,6 +66,7 @@ export function RoomSession({ roomId }: Props) {
     roomId: connectedRoomId, localPeerId, srtByPeer,
     localScreenStream, localScreenPeerId, isScreenSharing, toggleScreenShare, startScreenShare,
     chatMessages, sendChatMessage, sendReaction, reactionBursts,
+    remoteScreenConsumePending,
   } = useRoom(roomActivityNotifyRef)
 
   const statusRef = useRef<RoomStatus>('idle')
@@ -81,10 +82,10 @@ export function RoomSession({ roomId }: Props) {
     leaveRef.current()
   }, [])
 
-  const handleJoin = (n: string, rid: string, preset: VideoPreset) => {
+  const handleJoin = (n: string, rid: string, preset: VideoPreset, media: JoinRoomMediaOptions) => {
     setName(n)
     replaceRoomInBrowserUrl(rid, { removePeer: true })
-    join(n, rid, preset)
+    join(n, rid, preset, media)
   }
 
   const handleLeaveRoom = () => {
@@ -133,6 +134,7 @@ export function RoomSession({ roomId }: Props) {
         setChatOpen={setChatOpen}
         chatUnreadCount={chatUnreadCount}
         chatIncomingPreview={chatIncomingPreview}
+        remoteScreenSharePending={remoteScreenConsumePending}
       />
     )
   }

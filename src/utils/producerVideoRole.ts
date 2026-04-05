@@ -24,3 +24,25 @@ export function resolveVideoProducerRole(
   if (t === 'camera') return 'camera'
   return hasCameraStream ? 'screen' : 'camera'
 }
+
+/** Плитка участника в UI: владелец камеры, либо peerId продюсера (если owner не задан). */
+export function videoAnchorPeerId(p: ProducerDescriptor): string {
+  const owner = ownerPeerFromDescriptor(p)
+  return owner ?? p.peerId
+}
+
+/**
+ * Роль видео при consume: если бэкенд выдаёт отдельный peerId для экрана и ownerPeerId —
+ * без appData это экран; иначе эвристика «второй video = screen».
+ */
+export function resolveConsumeVideoRole(
+  producer: ProducerDescriptor,
+  hasCameraStream: boolean,
+): 'camera' | 'screen' {
+  const src = descriptorVideoSource(producer)
+  const owner = ownerPeerFromDescriptor(producer)
+  const separateScreenPeer = Boolean(owner && producer.peerId !== owner)
+  if (src === 'screen' || separateScreenPeer) return 'screen'
+  if (src === 'camera') return 'camera'
+  return resolveVideoProducerRole(producer, hasCameraStream)
+}

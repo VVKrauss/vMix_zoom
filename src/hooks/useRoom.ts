@@ -10,13 +10,13 @@ import type { RoomChatMessage, RoomReactionBurst, RoomReactionEvent } from '../t
 import {
   CHAT_MESSAGE_MAX_LEN,
   CHAT_MESSAGES_CAP,
+  isScreenShareChatNotice,
   REACTION_EMOJI_WHITELIST,
   REACTION_TTL_DEFAULT_MS,
 } from '../types/roomComms'
 import {
-  descriptorVideoSource,
-  ownerPeerFromDescriptor,
-  resolveVideoProducerRole,
+  resolveConsumeVideoRole,
+  videoAnchorPeerId,
 } from '../utils/producerVideoRole'
 import { signalingHttpBase, signalingSocketUrl } from '../utils/signalingBase'
 import { DEFAULT_VIDEO_PRESET } from '../types'
@@ -29,6 +29,50 @@ const ROOM_POLL_MS = 4000
 /** Совпадение с недавним локальным сообщением (оптимистичным) — заменяем серверной версией. */
 const CHAT_ECHO_DEDUP_MS = 12_000
 const CHAT_ECHO_DEDUP_SCAN = 48
+
+function producerIdFromClosedPayload(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined
+  const o = payload as Record<string, unknown>
+  const v = o.producerId ?? o.producer_id
+  if (v == null) return undefined
+  const s = String(v).trim()
+  return s || undefined
+}
+
+function peerIdFromLeftPayload(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined
+  const o = payload as Record<string, unknown>
+  const v = o.peerId ?? o.peer_id
+  if (v == null) return undefined
+  const s = String(v).trim()
+  return s || undefined
+}
+
+function registerProducerMeta(
+  map: Map<string, {
+    consumerId: string
+    anchorPeerId: string
+    producerPeerId: string
+    kind: 'audio' | 'video'
+    videoSource?: 'camera' | 'screen'
+  }>,
+  signalingProducerId: string,
+  consumerProducerId: string,
+  meta: {
+    consumerId: string
+    anchorPeerId: string
+    producerPeerId: string
+    kind: 'audio' | 'video'
+    videoSource?: 'camera' | 'screen'
+  },
+) {
+  const sig = String(signalingProducerId).trim()
+  const cPid = String(consumerProducerId).trim()
+  map.set(sig, meta)
+  if (cPid && cPid !== sig) {
+    map.set(cPid, meta)
+  }
+}
 
 function mergeIncomingChatMessage(prev: RoomChatMessage[], msg: RoomChatMessage): RoomChatMessage[] {
   if (msg.kind === 'reaction') {
@@ -74,6 +118,29 @@ function buildSimulcastEncodings(
   ]
 }
 
+async function produceVideoFromTrack(
+  sendTransport: Transport,
+  track: MediaStreamTrack,
+  preset: VideoPreset,
+): Promise<Producer> {
+  const fpsCap = capVideoFramerate(preset.frameRate, track)
+  const codecOptions = { videoGoogleStartBitrate: preset.startBitrate }
+  try {
+    return await sendTransport.produce({
+      track,
+      encodings: buildSimulcastEncodings(preset, fpsCap),
+      codecOptions,
+    })
+  } catch (err) {
+    console.warn('[produce] simulcast failed, fallback single encoding', err)
+    return sendTransport.produce({
+      track,
+      encodings: [{ maxBitrate: preset.maxBitrate, maxFramerate: fpsCap }],
+      codecOptions,
+    })
+  }
+}
+
 function swapTrack(
   stream: MediaStream,
   kind: 'audio' | 'video',
@@ -107,6 +174,12 @@ function disposeSignalingSocket(s: Socket) {
 }
 
 export type RoomStatus = 'idle' | 'connecting' | 'connected' | 'error'
+
+/** Вход в комнату: какие дорожки запросить до подключения (остальное — кнопками в комнате). */
+export type JoinRoomMediaOptions = {
+  enableMic: boolean
+  enableCam: boolean
+}
 
 export type RoomActivityNotifyRef = MutableRefObject<{
   isChatClosed: () => boolean
@@ -153,6 +226,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
   const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([])
   const [reactionBursts, setReactionBursts] = useState<RoomReactionBurst[]>([])
+  /** Пока consume удалённого экрана не завершился — раскладка meet у гостей */
+  const [remoteScreenConsumePending, setRemoteScreenConsumePending] = useState(false)
   const lastLocalReactionAtRef = useRef(0)
   const displayNameRef = useRef('')
   /** Инкремент при leave или новом join — отмена незавершённого join без ложных ошибок в консоли. */
@@ -162,96 +237,217 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     participantsRef.current = participants
   }, [participants])
 
-  // ─── Consume one producer ────────────────────────────────────────────────
+  const remoteScreenConsumePendingRef = useRef(false)
+  useEffect(() => {
+    remoteScreenConsumePendingRef.current = remoteScreenConsumePending
+  }, [remoteScreenConsumePending])
 
-  const consumeProducer = useCallback(async (producer: ProducerDescriptor) => {
-    const device = deviceRef.current
-    const recvTransport = recvTransportRef.current
-    const socket = socketRef.current
-    if (!device || !recvTransport || !socket) return
-
-    const data = await new Promise<Record<string, unknown>>((res) => {
-      socket.emit('consume', {
-        roomId: roomIdRef.current,
-        producerId: producer.producerId,
-        transportId: recvTransport.id,
-        rtpCapabilities: device.rtpCapabilities,
-      }, res)
-    })
-
-    if (data?.error) {
-      console.error('[consume] error:', data.error)
-      return
-    }
-
-    const consumer = await recvTransport.consume(data as never)
-    consumersRef.current.set(consumer.id, consumer)
-
-    const stream = new MediaStream([consumer.track])
-
-    setParticipants((prev) => {
-      const next = new Map(prev)
-
-      if (consumer.kind === 'audio') {
-        const anchorId = producer.peerId
-        const existing: RemoteParticipant = next.get(anchorId) ?? {
-          peerId: anchorId,
-          name: producer.name,
-        }
-        producerMetaRef.current.set(producer.producerId, {
-          consumerId: consumer.id,
-          anchorPeerId: anchorId,
-          producerPeerId: producer.peerId,
-          kind: 'audio',
-        })
-        next.set(anchorId, { ...existing, audioStream: stream })
-        return next
-      }
-
-      const owner = ownerPeerFromDescriptor(producer)
-      const src = descriptorVideoSource(producer)
-      const anchorId = src === 'screen' && owner ? owner : producer.peerId
-
-      const existing: RemoteParticipant = next.get(anchorId) ?? {
-        peerId: anchorId,
-        name: producer.name,
-      }
-
-      const resolved = resolveVideoProducerRole(producer, !!existing.videoStream)
-
-      producerMetaRef.current.set(producer.producerId, {
-        consumerId: consumer.id,
-        anchorPeerId: anchorId,
-        producerPeerId: producer.peerId,
-        kind: 'video',
-        videoSource: resolved,
-      })
-
-      if (resolved === 'screen') {
-        const distinct = producer.peerId !== anchorId ? producer.peerId : undefined
-        next.set(anchorId, {
-          ...existing,
-          screenStream: stream,
-          ...(distinct ? { screenPeerId: distinct } : { screenPeerId: undefined }),
-        })
-      } else {
-        next.set(anchorId, { ...existing, videoStream: stream })
-      }
-      return next
-    })
-
-    socket.emit(
-      'resumeConsumer',
-      { roomId: roomIdRef.current, consumerId: consumer.id },
-      () => {}, // сервер ожидает Socket.IO ack — без колбэка падает callback is not a function
+  const stripScreenChatForPeer = useCallback((presenterPeerId: string) => {
+    if (!presenterPeerId) return
+    setChatMessages((prev) =>
+      prev.filter(
+        (m) =>
+          m.kind === 'reaction' ||
+          m.peerId !== presenterPeerId ||
+          !isScreenShareChatNotice(m.text),
+      ),
     )
   }, [])
 
+  const dropProducerById = useCallback(
+    (rawProducerId: string) => {
+      const producerId = String(rawProducerId ?? '').trim()
+      if (!producerId) return
+
+      let meta = producerMetaRef.current.get(producerId)
+      if (!meta) {
+        for (const m of producerMetaRef.current.values()) {
+          const c = consumersRef.current.get(m.consumerId)
+          if (c && String(c.producerId) === producerId) {
+            meta = m
+            break
+          }
+        }
+      }
+      if (!meta) return
+
+      const c = consumersRef.current.get(meta.consumerId)
+      try {
+        c?.close()
+      } catch {
+        /* noop */
+      }
+      consumersRef.current.delete(meta.consumerId)
+
+      for (const [k, m] of [...producerMetaRef.current.entries()]) {
+        if (m.consumerId === meta.consumerId) {
+          producerMetaRef.current.delete(k)
+        }
+      }
+
+      setParticipants((prev) => {
+        const next = new Map(prev)
+        const p = next.get(meta.anchorPeerId)
+        if (!p) return next
+        if (meta.kind === 'audio') {
+          const updated = { ...p, audioStream: undefined }
+          if (updated.videoStream || updated.screenStream) {
+            next.set(meta.anchorPeerId, updated)
+          } else {
+            next.delete(meta.anchorPeerId)
+          }
+        } else if (meta.videoSource === 'screen') {
+          const updated = { ...p, screenStream: undefined, screenPeerId: undefined }
+          if (updated.audioStream || updated.videoStream) {
+            next.set(meta.anchorPeerId, updated)
+          } else {
+            next.delete(meta.anchorPeerId)
+          }
+        } else {
+          const updated = { ...p, videoStream: undefined }
+          if (updated.audioStream || updated.screenStream) {
+            next.set(meta.anchorPeerId, updated)
+          } else {
+            next.delete(meta.anchorPeerId)
+          }
+        }
+        return next
+      })
+
+      if (meta.kind === 'video' && meta.videoSource === 'screen') {
+        stripScreenChatForPeer(meta.anchorPeerId)
+      }
+    },
+    [stripScreenChatForPeer],
+  )
+
+  // ─── Consume one producer ────────────────────────────────────────────────
+
+  const consumeProducer = useCallback(
+    async (producer: ProducerDescriptor) => {
+      const device = deviceRef.current
+      const recvTransport = recvTransportRef.current
+      const socket = socketRef.current
+      if (!device || !recvTransport || !socket) return
+
+      let endRemoteScreenPending: (() => void) | undefined
+      if (producer.kind === 'video') {
+        const aid = videoAnchorPeerId(producer)
+        const ex = participantsRef.current.get(aid)
+        if (resolveConsumeVideoRole(producer, !!ex?.videoStream) === 'screen') {
+          setRemoteScreenConsumePending(true)
+          endRemoteScreenPending = () => setRemoteScreenConsumePending(false)
+        }
+      }
+
+      try {
+        const data = await new Promise<Record<string, unknown>>((res) => {
+          socket.emit(
+            'consume',
+            {
+              roomId: roomIdRef.current,
+              producerId: producer.producerId,
+              transportId: recvTransport.id,
+              rtpCapabilities: device.rtpCapabilities,
+            },
+            res,
+          )
+        })
+
+        if (data?.error) {
+          console.error('[consume] error:', data.error)
+          return
+        }
+
+        const consumer = await recvTransport.consume(data as never)
+        consumersRef.current.set(consumer.id, consumer)
+
+        const stream = new MediaStream([consumer.track])
+
+        const signalingProducerId = producer.producerId
+        const onConsumerDead = () => {
+          dropProducerById(signalingProducerId)
+          if (consumer.producerId !== signalingProducerId) {
+            dropProducerById(consumer.producerId)
+          }
+        }
+        consumer.on('trackended', onConsumerDead)
+        consumer.on('transportclose', onConsumerDead)
+
+        setParticipants((prev) => {
+          const next = new Map(prev)
+
+          if (consumer.kind === 'audio') {
+            const anchorId = producer.peerId
+            const existing: RemoteParticipant = next.get(anchorId) ?? {
+              peerId: anchorId,
+              name: producer.name,
+            }
+            const audioMeta = {
+              consumerId: consumer.id,
+              anchorPeerId: anchorId,
+              producerPeerId: producer.peerId,
+              kind: 'audio' as const,
+            }
+            registerProducerMeta(producerMetaRef.current, producer.producerId, consumer.producerId, audioMeta)
+            next.set(anchorId, { ...existing, audioStream: stream })
+            return next
+          }
+
+          const anchorId = videoAnchorPeerId(producer)
+          const existing: RemoteParticipant = next.get(anchorId) ?? {
+            peerId: anchorId,
+            name: producer.name,
+          }
+
+          const resolved = resolveConsumeVideoRole(producer, !!existing.videoStream)
+
+          const videoMeta = {
+            consumerId: consumer.id,
+            anchorPeerId: anchorId,
+            producerPeerId: producer.peerId,
+            kind: 'video' as const,
+            videoSource: resolved,
+          }
+          registerProducerMeta(producerMetaRef.current, producer.producerId, consumer.producerId, videoMeta)
+
+          if (resolved === 'screen') {
+            const distinct = producer.peerId !== anchorId ? producer.peerId : undefined
+            next.set(anchorId, {
+              ...existing,
+              screenStream: stream,
+              ...(distinct ? { screenPeerId: distinct } : { screenPeerId: undefined }),
+            })
+          } else {
+            next.set(anchorId, { ...existing, videoStream: stream })
+          }
+          return next
+        })
+
+        socket.emit(
+          'resumeConsumer',
+          { roomId: roomIdRef.current, consumerId: consumer.id },
+          () => {}, // сервер ожидает Socket.IO ack — без колбэка падает callback is not a function
+        )
+      } finally {
+        endRemoteScreenPending?.()
+      }
+    },
+    [dropProducerById],
+  )
+
   // ─── Join ────────────────────────────────────────────────────────────────
 
-  const join = useCallback(async (name: string, roomId: string = DEFAULT_ROOM, preset?: VideoPreset) => {
+  const join = useCallback(async (
+    name: string,
+    roomId: string = DEFAULT_ROOM,
+    preset?: VideoPreset,
+    media?: JoinRoomMediaOptions,
+  ) => {
     if (preset) { presetRef.current = preset; setActivePreset(preset) }
     const p = presetRef.current
+    const wantMic = media?.enableMic !== false
+    const wantCam = media?.enableCam !== false
 
     joinGenerationRef.current += 1
     const gen = joinGenerationRef.current
@@ -259,6 +455,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     setStatus('connecting')
     setError(null)
     setLocalScreenPeerId(null)
+    setRemoteScreenConsumePending(false)
     roomIdRef.current = roomId
     displayNameRef.current = name.trim() || 'Гость'
 
@@ -269,15 +466,26 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     }
 
     try {
-      // 1. Get local media with requested resolution
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: {
-          width:     { ideal: p.width },
-          height:    { ideal: p.height },
-          frameRate: { ideal: p.frameRate },
-        },
-      })
+      // 1. Локальные медиа по выбранным на экране входа тумблерам
+      let stream: MediaStream
+      if (!wantMic && !wantCam) {
+        setIsMuted(true)
+        setIsCamOff(true)
+        stream = new MediaStream()
+      } else {
+        setIsMuted(!wantMic)
+        setIsCamOff(!wantCam)
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: wantMic,
+          video: wantCam
+            ? {
+                width:     { ideal: p.width },
+                height:    { ideal: p.height },
+                frameRate: { ideal: p.frameRate },
+              }
+            : false,
+        })
+      }
       if (aborted()) {
         stopStreamTracks(stream)
         setStatus('idle')
@@ -421,27 +629,10 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         })
       })
 
-      // 6. Produce tracks (видео: simulcast; при отказе браузера — один слой)
-      const codecOptions = { videoGoogleStartBitrate: p.startBitrate }
+      // 6. Produce tracks (без треков — только приём чужих потоков)
       for (const track of stream.getTracks()) {
         if (track.kind === 'video') {
-          const fpsCap = capVideoFramerate(p.frameRate, track)
-          let producer: Producer
-          try {
-            producer = await sendTransport.produce({
-              track,
-              encodings: buildSimulcastEncodings(p, fpsCap),
-              codecOptions,
-            })
-          } catch (err) {
-            console.warn('[produce] simulcast failed, fallback single encoding', err)
-            producer = await sendTransport.produce({
-              track,
-              encodings: [{ maxBitrate: p.maxBitrate, maxFramerate: fpsCap }],
-              codecOptions,
-            })
-          }
-          videoProducerRef.current = producer
+          videoProducerRef.current = await produceVideoFromTrack(sendTransport, track, p)
         } else {
           const producer = await sendTransport.produce({ track })
           audioProducerRef.current = producer
@@ -478,39 +669,15 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         await consumeProducer(producer)
       })
 
-      const dropProducerById = (producerId: string) => {
-        const meta = producerMetaRef.current.get(producerId)
-        if (!meta) return
-        const c = consumersRef.current.get(meta.consumerId)
-        try {
-          c?.close()
-        } catch {
-          /* noop */
-        }
-        consumersRef.current.delete(meta.consumerId)
-        producerMetaRef.current.delete(producerId)
-
-        setParticipants((prev) => {
-          const next = new Map(prev)
-          const p = next.get(meta.anchorPeerId)
-          if (!p) return next
-          if (meta.kind === 'audio') {
-            next.set(meta.anchorPeerId, { ...p, audioStream: undefined })
-          } else if (meta.videoSource === 'screen') {
-            next.set(meta.anchorPeerId, { ...p, screenStream: undefined, screenPeerId: undefined })
-          } else {
-            next.set(meta.anchorPeerId, { ...p, videoStream: undefined })
-          }
-          return next
-        })
-      }
-
-      socket.on('producerClosed', (payload: { producerId?: string }) => {
-        const id = payload?.producerId
+      socket.on('producerClosed', (payload: unknown) => {
+        const id = producerIdFromClosedPayload(payload)
         if (id) dropProducerById(id)
       })
 
-      socket.on('peerLeft', ({ peerId }: { peerId: string }) => {
+      socket.on('peerLeft', (raw: unknown) => {
+        const peerId = peerIdFromLeftPayload(raw)
+        if (!peerId) return
+
         const toClose = [...producerMetaRef.current.keys()].filter((prodId) => {
           const m = producerMetaRef.current.get(prodId)
           return m && (m.producerPeerId === peerId || m.anchorPeerId === peerId)
@@ -620,11 +787,72 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       setSrtByPeer({})
       setChatMessages([])
       setReactionBursts([])
+      setRemoteScreenConsumePending(false)
       const s = socketRef.current
       socketRef.current = null
       if (s) disposeSignalingSocket(s)
     }
-  }, [consumeProducer])
+  }, [consumeProducer, dropProducerById])
+
+  const ensureAudioProducer = useCallback(async () => {
+    const sendTransport = sendTransportRef.current
+    const prev = localStreamRef.current
+    if (!sendTransport || audioProducerRef.current) return
+    const a = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const track = a.getAudioTracks()[0]
+    if (!track) {
+      a.getTracks().forEach((t) => t.stop())
+      return
+    }
+    let next: MediaStream
+    if (!prev) {
+      next = new MediaStream([track])
+    } else {
+      prev.getAudioTracks().forEach((t) => {
+        t.stop()
+        prev.removeTrack(t)
+      })
+      prev.addTrack(track)
+      next = new MediaStream(prev.getTracks())
+    }
+    localStreamRef.current = next
+    setLocalStream(next)
+    const producer = await sendTransport.produce({ track })
+    audioProducerRef.current = producer
+  }, [])
+
+  const ensureVideoProducer = useCallback(async () => {
+    const sendTransport = sendTransportRef.current
+    const prev = localStreamRef.current
+    if (!sendTransport || videoProducerRef.current) return
+    const preset = presetRef.current
+    const v = await navigator.mediaDevices.getUserMedia({
+      video: {
+        width:     { ideal: preset.width },
+        height:    { ideal: preset.height },
+        frameRate: { ideal: preset.frameRate },
+      },
+    })
+    const track = v.getVideoTracks()[0]
+    if (!track) {
+      v.getTracks().forEach((t) => t.stop())
+      return
+    }
+    let next: MediaStream
+    if (!prev) {
+      next = new MediaStream([track])
+    } else {
+      prev.getVideoTracks().forEach((t) => {
+        t.stop()
+        prev.removeTrack(t)
+      })
+      prev.addTrack(track)
+      next = new MediaStream(prev.getTracks())
+    }
+    localStreamRef.current = next
+    setLocalStream(next)
+    videoProducerRef.current = await produceVideoFromTrack(sendTransport, track, preset)
+  }, [])
 
   // Поллинг дашборда — подтягивает srt[] после рестарта сервера и синхронизирует состав
   const activeRoomId = sessionMeta?.roomId
@@ -671,37 +899,59 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
   // ─── Controls ────────────────────────────────────────────────────────────
 
-  const toggleMute = useCallback(() => {
-    const producer = audioProducerRef.current
-    const stream = localStream
-    if (!producer || !stream) return
-    const track = stream.getAudioTracks()[0]
-    if (!track) return
+  const toggleMute = useCallback(async () => {
     if (isMuted) {
-      producer.resume()
-      track.enabled = true
+      try {
+        await ensureAudioProducer()
+      } catch {
+        return
+      }
+      const producer = audioProducerRef.current
+      const stream = localStreamRef.current
+      const track = stream?.getAudioTracks()[0]
+      if (producer && track) {
+        producer.resume()
+        track.enabled = true
+        setIsMuted(false)
+      }
     } else {
-      producer.pause()
-      track.enabled = false
+      const producer = audioProducerRef.current
+      const stream = localStreamRef.current
+      const track = stream?.getAudioTracks()[0]
+      if (producer && track) {
+        producer.pause()
+        track.enabled = false
+      }
+      setIsMuted(true)
     }
-    setIsMuted((v) => !v)
-  }, [isMuted, localStream])
+  }, [isMuted, ensureAudioProducer])
 
-  const toggleCam = useCallback(() => {
-    const producer = videoProducerRef.current
-    const stream = localStream
-    if (!producer || !stream) return
-    const track = stream.getVideoTracks()[0]
-    if (!track) return
+  const toggleCam = useCallback(async () => {
     if (isCamOff) {
-      producer.resume()
-      track.enabled = true
+      try {
+        await ensureVideoProducer()
+      } catch {
+        return
+      }
+      const producer = videoProducerRef.current
+      const stream = localStreamRef.current
+      const track = stream?.getVideoTracks()[0]
+      if (producer && track) {
+        producer.resume()
+        track.enabled = true
+        setIsCamOff(false)
+      }
     } else {
-      producer.pause()
-      track.enabled = false
+      const producer = videoProducerRef.current
+      const stream = localStreamRef.current
+      const track = stream?.getVideoTracks()[0]
+      if (producer && track) {
+        producer.pause()
+        track.enabled = false
+      }
+      setIsCamOff(true)
     }
-    setIsCamOff((v) => !v)
-  }, [isCamOff, localStream])
+  }, [isCamOff, ensureVideoProducer])
 
   // ─── Device switching ────────────────────────────────────────────────────
 
@@ -790,6 +1040,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   }, [])
 
   const stopScreenShare = useCallback(() => {
+    const sid = socketRef.current?.id
     screenProducerRef.current?.close()
     screenProducerRef.current = null
     localScreenStreamRef.current?.getTracks().forEach((t) => t.stop())
@@ -797,7 +1048,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     setLocalScreenStream(null)
     setLocalScreenPeerId(null)
     setIsScreenSharing(false)
-  }, [])
+    if (sid) stripScreenChatForPeer(sid)
+  }, [stripScreenChatForPeer])
 
   /** Подсказка диалогу getDisplayMedia: весь экран / окно / вкладка (где поддерживается). */
   const startScreenShare = useCallback(
@@ -805,6 +1057,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       if (screenProducerRef.current) return
       const sendTransport = sendTransportRef.current
       if (!sendTransport) return
+      if (remoteScreenConsumePendingRef.current) return
       for (const p of participantsRef.current.values()) {
         if (p.screenStream) return
       }
@@ -941,5 +1194,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     sendChatMessage,
     sendReaction,
     reactionBursts,
+    remoteScreenConsumePending,
   }
 }

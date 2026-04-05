@@ -41,9 +41,11 @@ export function LocalScreenShareTile({
   const videoRef = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
-    if (videoRef.current) videoRef.current.srcObject = stream
+    const el = videoRef.current
+    if (!el) return
+    el.srcObject = stream
     return () => {
-      if (videoRef.current) videoRef.current.srcObject = null
+      el.srcObject = null
     }
   }, [stream])
 
@@ -57,6 +59,7 @@ export function LocalScreenShareTile({
           tilePeerId={linkPeerId}
         >
           <video
+            key={stream.id}
             ref={videoRef}
             autoPlay
             playsInline

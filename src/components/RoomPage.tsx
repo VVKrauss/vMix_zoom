@@ -70,6 +70,8 @@ interface Props {
   setChatOpen: (open: boolean) => void
   chatUnreadCount: number
   chatIncomingPreview: { author: string; text: string } | null
+  /** У гостей: идёт приём newProducer экрана, ещё нет screenStream в state */
+  remoteScreenSharePending?: boolean
 }
 
 export function RoomPage({
@@ -82,6 +84,7 @@ export function RoomPage({
   localScreenStream, localScreenPeerId, isScreenSharing, onToggleScreenShare, onStartScreenShare,
   chatMessages, onSendChatMessage, onSendReaction, reactionBursts,
   chatOpen, setChatOpen, chatUnreadCount, chatIncomingPreview,
+  remoteScreenSharePending = false,
 }: Props) {
   const isMobile = useMediaQuery('(max-width: 768px)')
   const [layout, setLayout]       = useState<LayoutMode>(() =>
@@ -177,9 +180,10 @@ export function RoomPage({
     () => remoteList.some((p) => p.screenStream),
     [remoteList],
   )
-  const canStartScreenShare = !remoteScreenActive
+  const canStartScreenShare = !remoteScreenActive && !remoteScreenSharePending
 
-  const hasAnyScreenShare = isScreenSharing || remoteScreenActive
+  const hasAnyScreenShare =
+    isScreenSharing || remoteScreenActive || remoteScreenSharePending
   const hadScreenShareRef = useRef(false)
   useEffect(() => {
     if (hasAnyScreenShare && !hadScreenShareRef.current) {
