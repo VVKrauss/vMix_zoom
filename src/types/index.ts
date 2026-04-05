@@ -10,12 +10,13 @@ export type VideoPreset = {
 
 export const VIDEO_PRESETS: VideoPreset[] = [
   { label: '480p · 1.5 Mbps', width:  854, height:  480, frameRate: 30, maxBitrate: 1_500_000, startBitrate:  800 },
-  { label: '720p · 4 Mbps',   width: 1280, height:  720, frameRate: 30, maxBitrate: 4_000_000, startBitrate: 1500 },
+  { label: '720p · 4 Mbps',   width: 1280, height:  720, frameRate: 30, maxBitrate: 4_000_000, startBitrate: 1200 },
   { label: '1080p · 6 Mbps',  width: 1920, height: 1080, frameRate: 30, maxBitrate: 6_000_000, startBitrate: 2000 },
   { label: '1080p · 10 Mbps', width: 1920, height: 1080, frameRate: 30, maxBitrate: 10_000_000, startBitrate: 3000 },
 ]
 
-export const DEFAULT_VIDEO_PRESET = VIDEO_PRESETS[VIDEO_PRESETS.length - 1] // best available
+/** Умеренный дефолт для SRT/vMix; максимальные пресеты — в настройках комнаты. */
+export const DEFAULT_VIDEO_PRESET = VIDEO_PRESETS[1]
 
 export type ProducerDescriptor = {
   producerId: string

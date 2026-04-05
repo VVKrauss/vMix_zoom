@@ -13,6 +13,29 @@ const DEFAULT_ROOM = import.meta.env.VITE_DEFAULT_ROOM as string ?? 'test'
 
 const ROOM_POLL_MS = 4000
 
+function capVideoFramerate(presetFps: number, track?: MediaStreamTrack | null): number {
+  if (!track) return presetFps
+  const f = track.getSettings().frameRate
+  if (f != null && f > 0) return Math.min(presetFps, Math.round(f))
+  return presetFps
+}
+
+/**
+ * Simulcast как в типичном Meet: r0 / r1 / r2, scaleResolutionDownBy 4 / 2 / 1,
+ * maxBitrate снизу вверх (SFU может выбирать слой под сеть; SRT/egress может брать один слой — см. бэкенд).
+ */
+function buildSimulcastEncodings(
+  preset: VideoPreset,
+  maxFramerate: number,
+): { rid: string; scaleResolutionDownBy: number; maxBitrate: number; maxFramerate: number }[] {
+  const cap = preset.maxBitrate
+  return [
+    { rid: 'r0', scaleResolutionDownBy: 4, maxBitrate: Math.max(80_000, Math.round(cap * 0.12)), maxFramerate },
+    { rid: 'r1', scaleResolutionDownBy: 2, maxBitrate: Math.max(200_000, Math.round(cap * 0.32)), maxFramerate },
+    { rid: 'r2', scaleResolutionDownBy: 1, maxBitrate: cap, maxFramerate },
+  ]
+}
+
 function swapTrack(
   stream: MediaStream,
   kind: 'audio' | 'video',
@@ -174,18 +197,26 @@ export function useRoom() {
         })
       })
 
-      // 6. Produce tracks
+      // 6. Produce tracks (видео: simulcast; при отказе браузера — один слой)
+      const codecOptions = { videoGoogleStartBitrate: p.startBitrate }
       for (const track of stream.getTracks()) {
         if (track.kind === 'video') {
-          const producer = await sendTransport.produce({
-            track,
-            encodings: [
-              { maxBitrate: p.maxBitrate, maxFramerate: p.frameRate },
-            ],
-            codecOptions: {
-              videoGoogleStartBitrate: p.startBitrate,
-            },
-          })
+          const fpsCap = capVideoFramerate(p.frameRate, track)
+          let producer: Producer
+          try {
+            producer = await sendTransport.produce({
+              track,
+              encodings: buildSimulcastEncodings(p, fpsCap),
+              codecOptions,
+            })
+          } catch (err) {
+            console.warn('[produce] simulcast failed, fallback single encoding', err)
+            producer = await sendTransport.produce({
+              track,
+              encodings: [{ maxBitrate: p.maxBitrate, maxFramerate: fpsCap }],
+              codecOptions,
+            })
+          }
           videoProducerRef.current = producer
         } else {
           const producer = await sendTransport.produce({ track })
@@ -406,12 +437,21 @@ export function useRoom() {
 
     const sender = producer.rtpSender
     if (sender) {
+      const fpsCap = capVideoFramerate(preset.frameRate, newTrack)
+      const layered = buildSimulcastEncodings(preset, fpsCap)
       const params = sender.getParameters()
-      if (!params.encodings || params.encodings.length === 0) {
-        params.encodings = [{}]
+      const encs = params.encodings
+      if (encs && encs.length >= 3) {
+        layered.forEach((layer, i) => {
+          encs[i].maxBitrate = layer.maxBitrate
+          encs[i].maxFramerate = layer.maxFramerate
+        })
+      } else if (encs && encs.length >= 1) {
+        encs[0].maxBitrate = preset.maxBitrate
+        encs[0].maxFramerate = fpsCap
+      } else {
+        params.encodings = [{ maxBitrate: preset.maxBitrate, maxFramerate: fpsCap }]
       }
-      params.encodings[0].maxBitrate = preset.maxBitrate
-      params.encodings[0].maxFramerate = preset.frameRate
       await sender.setParameters(params)
     }
   }, [])
