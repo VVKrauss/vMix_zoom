@@ -1,6 +1,6 @@
 import { useState, FormEvent } from 'react'
 import type { VideoPreset } from '../types'
-import { VIDEO_PRESETS, DEFAULT_VIDEO_PRESET } from '../types'
+import { DEFAULT_VIDEO_PRESET } from '../types'
 
 interface Props {
   onJoin: (name: string, roomId: string, preset: VideoPreset) => void
@@ -12,13 +12,10 @@ const DEFAULT_ROOM = import.meta.env.VITE_DEFAULT_ROOM ?? 'test'
 export function JoinPage({ onJoin, error }: Props) {
   const [name, setName] = useState('')
   const [room, setRoom] = useState(DEFAULT_ROOM)
-  const [presetIdx, setPresetIdx] = useState(() =>
-    VIDEO_PRESETS.indexOf(DEFAULT_VIDEO_PRESET),
-  )
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-    if (name.trim()) onJoin(name.trim(), room.trim() || DEFAULT_ROOM, VIDEO_PRESETS[presetIdx])
+    if (name.trim()) onJoin(name.trim(), room.trim() || DEFAULT_ROOM, DEFAULT_VIDEO_PRESET)
   }
 
   return (
@@ -50,17 +47,6 @@ export function JoinPage({ onJoin, error }: Props) {
             onChange={(e) => setRoom(e.target.value)}
             maxLength={40}
           />
-
-          <label className="join-label">Качество видео</label>
-          <select
-            className="join-input"
-            value={presetIdx}
-            onChange={(e) => setPresetIdx(Number(e.target.value))}
-          >
-            {VIDEO_PRESETS.map((p, i) => (
-              <option key={i} value={i}>{p.label}</option>
-            ))}
-          </select>
 
           <button className="join-btn" type="submit" disabled={!name.trim()}>
             Войти

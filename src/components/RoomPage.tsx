@@ -38,14 +38,16 @@ export function RoomPage({
   onSwitchCamera, onSwitchMic,
   activePreset, onChangePreset,
 }: Props) {
-  const [layout, setLayout]       = useState<LayoutMode>('pip')
+  const isMobile = window.innerWidth <= 768
+  const [layout, setLayout]       = useState<LayoutMode>(isMobile ? 'grid' : 'pip')
   const [objectFit, setObjectFit] = useState<ObjectFit>('contain')
   const [showInfo, setShowInfo]   = useState(false)
   const [showMeter, setShowMeter] = useState(true)
   const [sourceAspect, setSourceAspect] = useState<number | null>(null)
-
   const [pipPos,  setPipPos]  = useState<PipPos> ({ x: 16,  y: 10  })
-  const [pipSize, setPipSize] = useState<PipSize>({ w: 220, h: 148 })
+  const [pipSize, setPipSize] = useState<PipSize>(
+    isMobile ? { w: 140, h: 94 } : { w: 220, h: 148 }
+  )
 
   const remoteList = useMemo(() => [...participants.values()], [participants])
   const total      = remoteList.length + 1
@@ -68,10 +70,10 @@ export function RoomPage({
   }, [localStream])
 
   const resetView = () => {
-    setLayout('pip')
+    setLayout(isMobile ? 'grid' : 'pip')
     setObjectFit('contain')
     setPipPos ({ x: 16,  y: 10  })
-    setPipSize({ w: 220, h: 148 })
+    setPipSize(isMobile ? { w: 140, h: 94 } : { w: 220, h: 148 })
   }
 
   const remoteVideoStyle: React.CSSProperties = useMemo(
@@ -124,16 +126,18 @@ export function RoomPage({
         </div>
 
         <div className="header-right">
-          <div className="layout-switcher" title="Раскладка">
-            <button
-              className={`layout-btn ${layout === 'grid' ? 'layout-btn--active' : ''}`}
-              onClick={() => setLayout('grid')} title="Сетка"
-            ><GridIcon /></button>
-            <button
-              className={`layout-btn ${layout === 'pip' ? 'layout-btn--active' : ''}`}
-              onClick={() => setLayout('pip')} title="Превью поверх"
-            ><PipIcon /></button>
-          </div>
+          {!isMobile && (
+            <div className="layout-switcher" title="Раскладка">
+              <button
+                className={`layout-btn ${layout === 'grid' ? 'layout-btn--active' : ''}`}
+                onClick={() => setLayout('grid')} title="Сетка"
+              ><GridIcon /></button>
+              <button
+                className={`layout-btn ${layout === 'pip' ? 'layout-btn--active' : ''}`}
+                onClick={() => setLayout('pip')} title="Превью поверх"
+              ><PipIcon /></button>
+            </div>
+          )}
         </div>
       </header>
 

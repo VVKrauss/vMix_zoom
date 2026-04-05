@@ -713,3 +713,59 @@ button.vio-row--peer:focus-visible {
 .device-popover__item:hover { background: rgba(255,255,255,.07); }
 .device-popover__item--active { color: #69f0ae; }
 .device-popover__item svg { flex-shrink: 0; }
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ─── Mobile (<= 768px) ────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  /* Join page */
+  .join-card {
+    width: calc(100% - 32px);
+    max-width: 360px;
+    padding: 28px 24px;
+  }
+
+  /* Room layout — smaller header & controls */
+  .room-page { grid-template-rows: 44px 1fr 56px; }
+
+  /* Header */
+  .room-header { padding: 0 10px; }
+  .room-logo span { display: none; }
+  .room-name { font-size: 13px; }
+  .room-count { font-size: 10px; }
+
+  /* Controls bar */
+  .controls-bar { gap: 6px; padding: 0 8px; }
+  .ctrl-btn {
+    padding: 6px 10px;
+    min-width: 0;
+    font-size: 10px;
+  }
+  .ctrl-btn span { display: none; }
+  .ctrl-btn svg { width: 22px; height: 22px; }
+  .ctrl-chevron { padding: 0 5px; }
+
+  /* Popovers — fixed to viewport so they don't overflow */
+  .device-popover,
+  .settings-popover {
+    position: fixed;
+    bottom: 60px;
+    left: 8px;
+    right: 8px;
+    min-width: 0;
+    transform: none;
+  }
+
+  /* Video info overlay */
+  .video-info-overlay { font-size: 9px; padding: 4px 8px; }
+  .vio-val--id { max-width: 140px; }
+  .vio-val--label { max-width: 120px; }
+
+  /* Tile grid gap */
+  .tile-grid { gap: 4px; padding: 4px; }
+}
+
+/* Very narrow screens — single column */
+@media (max-width: 480px) {
+  .tile-grid { grid-template-columns: 1fr !important; }
+}

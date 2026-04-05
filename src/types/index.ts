@@ -15,7 +15,7 @@ export const VIDEO_PRESETS: VideoPreset[] = [
   { label: '1080p · 10 Mbps', width: 1920, height: 1080, frameRate: 30, maxBitrate: 10_000_000, startBitrate: 3000 },
 ]
 
-export const DEFAULT_VIDEO_PRESET = VIDEO_PRESETS[1] // 720p · 4 Mbps
+export const DEFAULT_VIDEO_PRESET = VIDEO_PRESETS[VIDEO_PRESETS.length - 1] // best available
 
 export type ProducerDescriptor = {
   producerId: string

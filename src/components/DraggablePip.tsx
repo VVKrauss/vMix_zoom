@@ -14,6 +14,14 @@ interface Props {
 
 const MIN_W = 140
 
+function clientXY(e: MouseEvent | TouchEvent): { cx: number; cy: number } {
+  if ('touches' in e) {
+    const t = e.touches[0] ?? (e as TouchEvent).changedTouches[0]
+    return { cx: t.clientX, cy: t.clientY }
+  }
+  return { cx: (e as MouseEvent).clientX, cy: (e as MouseEvent).clientY }
+}
+
 export function DraggablePip({ children, pos, size, onPosChange, onSizeChange, lockAspect }: Props) {
   const posRef    = useRef(pos)
   const sizeRef   = useRef(size)
@@ -35,12 +43,21 @@ export function DraggablePip({ children, pos, size, onPosChange, onSizeChange, l
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lockAspect])
 
+  // ── Drag start (mouse + touch) ──────────────────────────────────────────
   const onDragStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     const p = posRef.current
     dragState.current = { active: true, ox: e.clientX - p.x, oy: e.clientY - p.y }
   }, [])
 
+  const onTouchDragStart = useCallback((e: React.TouchEvent) => {
+    e.stopPropagation()
+    const t = e.touches[0]
+    const p = posRef.current
+    dragState.current = { active: true, ox: t.clientX - p.x, oy: t.clientY - p.y }
+  }, [])
+
+  // ── Resize start (mouse + touch) ────────────────────────────────────────
   const onResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -48,33 +65,49 @@ export function DraggablePip({ children, pos, size, onPosChange, onSizeChange, l
     resizeState.current = { active: true, ox: e.clientX, oy: e.clientY, ow: s.w, oh: s.h }
   }, [])
 
+  const onTouchResizeStart = useCallback((e: React.TouchEvent) => {
+    e.stopPropagation()
+    const t = e.touches[0]
+    const s = sizeRef.current
+    resizeState.current = { active: true, ox: t.clientX, oy: t.clientY, ow: s.w, oh: s.h }
+  }, [])
+
+  // ── Global move / end (mouse + touch) ───────────────────────────────────
   useEffect(() => {
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: MouseEvent | TouchEvent) => {
+      const { cx, cy } = clientXY(e)
       if (dragState.current.active) {
         const s = sizeRef.current
-        const x = clamp(e.clientX - dragState.current.ox, 0, window.innerWidth  - s.w)
-        const y = clamp(e.clientY - dragState.current.oy, 0, window.innerHeight - s.h - 72)
+        const x = clamp(cx - dragState.current.ox, 0, window.innerWidth  - s.w)
+        const y = clamp(cy - dragState.current.oy, 0, window.innerHeight - s.h - 72)
         cbRef.current.onPosChange({ x, y })
+        if ('cancelable' in e && e.cancelable) e.preventDefault()
       }
       if (resizeState.current.active) {
         const r  = resizeState.current
         const la = aspectRef.current
-        const w  = Math.max(MIN_W, r.ow + (e.clientX - r.ox))
+        const w  = Math.max(MIN_W, r.ow + (cx - r.ox))
         const h  = la
           ? Math.round(w / la)
-          : Math.max(Math.round(MIN_W * 0.5), r.oh + (e.clientY - r.oy))
+          : Math.max(Math.round(MIN_W * 0.5), r.oh + (cy - r.oy))
         cbRef.current.onSizeChange({ w, h })
+        if ('cancelable' in e && e.cancelable) e.preventDefault()
       }
     }
-    const onUp = () => {
+    const onEnd = () => {
       dragState.current.active   = false
       resizeState.current.active = false
     }
+
     window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup',   onUp)
+    window.addEventListener('mouseup',   onEnd)
+    window.addEventListener('touchmove', onMove, { passive: false })
+    window.addEventListener('touchend',  onEnd)
     return () => {
       window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup',   onUp)
+      window.removeEventListener('mouseup',   onEnd)
+      window.removeEventListener('touchmove', onMove)
+      window.removeEventListener('touchend',  onEnd)
     }
   }, [])
 
@@ -83,9 +116,17 @@ export function DraggablePip({ children, pos, size, onPosChange, onSizeChange, l
       className="pip-float"
       style={{ left: pos.x, top: pos.y, width: size.w, height: size.h }}
     >
-      <div className="pip-drag-handle" onMouseDown={onDragStart} />
+      <div
+        className="pip-drag-handle"
+        onMouseDown={onDragStart}
+        onTouchStart={onTouchDragStart}
+      />
       {children}
-      <div className="pip-resize-handle" onMouseDown={onResizeStart}>
+      <div
+        className="pip-resize-handle"
+        onMouseDown={onResizeStart}
+        onTouchStart={onTouchResizeStart}
+      >
         <ResizeIcon />
       </div>
     </div>
