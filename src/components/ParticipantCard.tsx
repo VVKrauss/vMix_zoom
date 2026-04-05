@@ -5,16 +5,16 @@ import { VideoInfoOverlay } from './VideoInfoOverlay'
 
 interface Props {
   participant: RemoteParticipant
-  objectFit?: 'cover' | 'contain'
   videoStyle?: CSSProperties
   style?: CSSProperties
   showInfo?: boolean
+  showMeter?: boolean
   roomId?: string
   srtConnectUrl?: string
 }
 
 export function ParticipantCard({
-  participant, objectFit = 'cover', videoStyle, style, showInfo, roomId = '',
+  participant, videoStyle, style, showInfo, showMeter = true, roomId = '',
   srtConnectUrl,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -38,15 +38,14 @@ export function ParticipantCard({
           autoPlay
           playsInline
           className={hasVideo ? '' : 'hidden'}
-          style={videoStyle ?? { objectFit }}
+          style={videoStyle}
         />
         {!hasVideo && (
           <div className="cam-off-avatar">{participant.name.charAt(0).toUpperCase()}</div>
         )}
         <audio ref={audioRef} autoPlay playsInline />
 
-        {/* Audio level meter — right side */}
-        <AudioMeter stream={participant.audioStream ?? null} />
+        {showMeter && <AudioMeter stream={participant.audioStream ?? null} />}
         {showInfo && (
           <VideoInfoOverlay
             stream={participant.videoStream ?? null}

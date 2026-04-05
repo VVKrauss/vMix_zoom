@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { DevicePopover } from './DevicePopover'
+import type { VideoPreset } from '../types'
+import { VIDEO_PRESETS } from '../types'
+import type { LayoutMode, ObjectFit } from './RoomPage'
 
 interface Props {
   isMuted: boolean
   isCamOff: boolean
-  layout?: string
   cameras: MediaDeviceInfo[]
   microphones: MediaDeviceInfo[]
   selectedCameraId: string
@@ -14,20 +16,39 @@ interface Props {
   onLeave: () => void
   onSwitchCamera: (deviceId: string) => void
   onSwitchMic: (deviceId: string) => void
+  activePreset: VideoPreset
+  onChangePreset: (p: VideoPreset) => void
+  objectFit: ObjectFit
+  onObjectFitToggle: () => void
+  layout: LayoutMode
+  showMeter: boolean
+  onToggleMeter: () => void
+  showInfo: boolean
+  onToggleInfo: () => void
+  onResetView: () => void
 }
 
-type OpenPopover = 'mic' | 'cam' | null
+type OpenPopover = 'mic' | 'cam' | 'settings' | null
 
 export function ControlsBar({
   isMuted, isCamOff,
   cameras, microphones, selectedCameraId, selectedMicId,
   onToggleMute, onToggleCam, onLeave,
   onSwitchCamera, onSwitchMic,
+  activePreset, onChangePreset,
+  objectFit, onObjectFitToggle, layout,
+  showMeter, onToggleMeter,
+  showInfo, onToggleInfo,
+  onResetView,
 }: Props) {
   const [open, setOpen] = useState<OpenPopover>(null)
 
   const toggleOpen = (which: OpenPopover) =>
     setOpen(prev => prev === which ? null : which)
+
+  const handleLeave = () => {
+    if (window.confirm('Вы уверены, что хотите выйти?')) onLeave()
+  }
 
   return (
     <div className="controls-bar">
@@ -90,10 +111,119 @@ export function ControlsBar({
         )}
       </div>
 
+      {/* ── Settings ───────────────────────────────────────────────────── */}
+      <div className="ctrl-group ctrl-group--solo">
+        <button
+          className={`ctrl-btn ${open === 'settings' ? 'ctrl-btn--active' : ''}`}
+          onClick={() => toggleOpen('settings')}
+          title="Настройки"
+        >
+          <GearIcon />
+          <span>Настройки</span>
+        </button>
+
+        {open === 'settings' && (
+          <SettingsPopover
+            activePreset={activePreset}
+            onChangePreset={onChangePreset}
+            objectFit={objectFit}
+            onObjectFitToggle={onObjectFitToggle}
+            layout={layout}
+            showMeter={showMeter}
+            onToggleMeter={onToggleMeter}
+            showInfo={showInfo}
+            onToggleInfo={onToggleInfo}
+            onResetView={() => { onResetView(); setOpen(null) }}
+            onClose={() => setOpen(null)}
+          />
+        )}
+      </div>
+
       {/* ── Leave ──────────────────────────────────────────────────────── */}
-      <button className="ctrl-btn ctrl-btn--leave" onClick={onLeave}>
+      <button className="ctrl-btn ctrl-btn--leave" onClick={handleLeave}>
         <LeaveIcon />
         <span>Выйти</span>
+      </button>
+    </div>
+  )
+}
+
+// ─── Settings popover ────────────────────────────────────────────────────────
+
+function SettingsPopover({
+  activePreset, onChangePreset,
+  objectFit, onObjectFitToggle, layout,
+  showMeter, onToggleMeter,
+  showInfo, onToggleInfo,
+  onResetView, onClose,
+}: {
+  activePreset: VideoPreset
+  onChangePreset: (p: VideoPreset) => void
+  objectFit: ObjectFit
+  onObjectFitToggle: () => void
+  layout: LayoutMode
+  showMeter: boolean
+  onToggleMeter: () => void
+  showInfo: boolean
+  onToggleInfo: () => void
+  onResetView: () => void
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  return (
+    <div className="settings-popover" ref={ref}>
+      <div className="settings-popover__title">Настройки</div>
+
+      {/* Quality */}
+      <div className="settings-row">
+        <span className="settings-label">Качество видео</span>
+        <select
+          className="settings-select"
+          value={VIDEO_PRESETS.indexOf(activePreset)}
+          onChange={(e) => onChangePreset(VIDEO_PRESETS[Number(e.target.value)])}
+        >
+          {VIDEO_PRESETS.map((p, i) => (
+            <option key={i} value={i}>{p.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Object-fit (only in grid) */}
+      {layout === 'grid' && (
+        <button className="settings-row settings-row--btn" onClick={onObjectFitToggle}>
+          <span className="settings-label">Масштаб видео</span>
+          <span className="settings-value">{objectFit === 'contain' ? 'Полный' : 'Заполнить'}</span>
+        </button>
+      )}
+
+      {/* Audio meter toggle */}
+      <button className="settings-row settings-row--btn" onClick={onToggleMeter}>
+        <span className="settings-label">Аудиометр</span>
+        <span className={`settings-toggle ${showMeter ? 'settings-toggle--on' : ''}`}>
+          {showMeter ? 'Вкл' : 'Выкл'}
+        </span>
+      </button>
+
+      {/* Info toggle */}
+      <button className="settings-row settings-row--btn" onClick={onToggleInfo}>
+        <span className="settings-label">Инфо</span>
+        <span className={`settings-toggle ${showInfo ? 'settings-toggle--on' : ''}`}>
+          {showInfo ? 'Вкл' : 'Выкл'}
+        </span>
+      </button>
+
+      {/* Reset */}
+      <button className="settings-row settings-row--btn settings-row--reset" onClick={onResetView}>
+        <span className="settings-label">Сбросить вид</span>
       </button>
     </div>
   )
@@ -144,8 +274,16 @@ function LeaveIcon() {
 }
 function ChevronIcon() {
   return (
-    <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{ transform: 'rotate(180deg)' }}>
       <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+    </svg>
+  )
+}
+function GearIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1.08-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.68 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.32 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
     </svg>
   )
 }

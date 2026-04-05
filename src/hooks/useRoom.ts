@@ -2,12 +2,28 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Device } from 'mediasoup-client'
 import type { Transport, Producer, Consumer } from 'mediasoup-client/lib/types'
 import { io, Socket } from 'socket.io-client'
-import type { FrontendRoomDetail, ProducerDescriptor, RemoteParticipant, SrtSessionInfo } from '../types'
+import type {
+  FrontendRoomDetail, ProducerDescriptor, RemoteParticipant,
+  SrtSessionInfo, VideoPreset,
+} from '../types'
+import { DEFAULT_VIDEO_PRESET } from '../types'
 
 const SERVER = String(import.meta.env.VITE_SIGNALING_URL ?? '').replace(/\/$/, '')
 const DEFAULT_ROOM = import.meta.env.VITE_DEFAULT_ROOM as string ?? 'test'
 
 const ROOM_POLL_MS = 4000
+
+function swapTrack(
+  stream: MediaStream,
+  kind: 'audio' | 'video',
+  newTrack: MediaStreamTrack,
+  setLocalStream: (s: MediaStream) => void,
+) {
+  const oldTracks = kind === 'video' ? stream.getVideoTracks() : stream.getAudioTracks()
+  oldTracks.forEach((t: MediaStreamTrack) => { t.stop(); stream.removeTrack(t) })
+  stream.addTrack(newTrack)
+  setLocalStream(new MediaStream(stream.getTracks()))
+}
 
 export type RoomStatus = 'idle' | 'connecting' | 'connected' | 'error'
 
@@ -30,6 +46,8 @@ export function useRoom() {
   const localStreamRef = useRef<MediaStream | null>(null)
   const [sessionMeta, setSessionMeta] = useState<{ roomId: string; localPeerId: string } | null>(null)
   const [srtByPeer, setSrtByPeer] = useState<Record<string, SrtSessionInfo>>({})
+  const presetRef = useRef<VideoPreset>(DEFAULT_VIDEO_PRESET)
+  const [activePreset, setActivePreset] = useState<VideoPreset>(DEFAULT_VIDEO_PRESET)
 
   // ─── Consume one producer ────────────────────────────────────────────────
 
@@ -81,16 +99,23 @@ export function useRoom() {
 
   // ─── Join ────────────────────────────────────────────────────────────────
 
-  const join = useCallback(async (name: string, roomId: string = DEFAULT_ROOM) => {
+  const join = useCallback(async (name: string, roomId: string = DEFAULT_ROOM, preset?: VideoPreset) => {
+    if (preset) { presetRef.current = preset; setActivePreset(preset) }
+    const p = presetRef.current
+
     setStatus('connecting')
     setError(null)
     roomIdRef.current = roomId
 
     try {
-      // 1. Get local media
+      // 1. Get local media with requested resolution
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
         audio: true,
+        video: {
+          width:     { ideal: p.width },
+          height:    { ideal: p.height },
+          frameRate: { ideal: p.frameRate },
+        },
       })
       localStreamRef.current = stream
       setLocalStream(stream)
@@ -151,9 +176,21 @@ export function useRoom() {
 
       // 6. Produce tracks
       for (const track of stream.getTracks()) {
-        const producer = await sendTransport.produce({ track })
-        if (track.kind === 'audio') audioProducerRef.current = producer
-        if (track.kind === 'video') videoProducerRef.current = producer
+        if (track.kind === 'video') {
+          const producer = await sendTransport.produce({
+            track,
+            encodings: [
+              { maxBitrate: p.maxBitrate, maxFramerate: p.frameRate },
+            ],
+            codecOptions: {
+              videoGoogleStartBitrate: p.startBitrate,
+            },
+          })
+          videoProducerRef.current = producer
+        } else {
+          const producer = await sendTransport.produce({ track })
+          audioProducerRef.current = producer
+        }
       }
 
       // 7. Recv transport
@@ -309,18 +346,19 @@ export function useRoom() {
     const producer = videoProducerRef.current
     if (!stream) return
 
+    const p = presetRef.current
     const newStream = await navigator.mediaDevices.getUserMedia({
-      video: { deviceId: { exact: deviceId } },
+      video: {
+        deviceId:  { exact: deviceId },
+        width:     { ideal: p.width },
+        height:    { ideal: p.height },
+        frameRate: { ideal: p.frameRate },
+      },
     })
     const newTrack = newStream.getVideoTracks()[0]
     if (!newTrack) return
 
-    // Replace in preview
-    stream.getVideoTracks().forEach((t: MediaStreamTrack) => { t.stop(); stream.removeTrack(t) })
-    stream.addTrack(newTrack)
-    setLocalStream(new MediaStream(stream.getTracks()))
-
-    // Replace in mediasoup producer (live, no reconnect needed)
+    swapTrack(stream, 'video', newTrack, setLocalStream)
     if (producer) await producer.replaceTrack({ track: newTrack })
   }, [])
 
@@ -335,15 +373,48 @@ export function useRoom() {
     const newTrack = newStream.getAudioTracks()[0]
     if (!newTrack) return
 
-    stream.getAudioTracks().forEach((t: MediaStreamTrack) => { t.stop(); stream.removeTrack(t) })
-    stream.addTrack(newTrack)
-    setLocalStream(new MediaStream(stream.getTracks()))
-
+    swapTrack(stream, 'audio', newTrack, setLocalStream)
     if (producer) await producer.replaceTrack({ track: newTrack })
-
-    // Keep mute state
     if (isMuted) newTrack.enabled = false
   }, [isMuted])
+
+  /** Смена пресета на лету — перезапрос камеры + обновление encodings */
+  const changePreset = useCallback(async (preset: VideoPreset) => {
+    presetRef.current = preset
+    setActivePreset(preset)
+
+    const stream = localStreamRef.current
+    const producer = videoProducerRef.current
+    if (!stream || !producer) return
+
+    const currentVideoTrack = stream.getVideoTracks()[0]
+    const currentDeviceId = currentVideoTrack?.getSettings().deviceId
+
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        ...(currentDeviceId ? { deviceId: { exact: currentDeviceId } } : {}),
+        width:     { ideal: preset.width },
+        height:    { ideal: preset.height },
+        frameRate: { ideal: preset.frameRate },
+      },
+    })
+    const newTrack = newStream.getVideoTracks()[0]
+    if (!newTrack) return
+
+    swapTrack(stream, 'video', newTrack, setLocalStream)
+    await producer.replaceTrack({ track: newTrack })
+
+    const sender = producer.rtpSender
+    if (sender) {
+      const params = sender.getParameters()
+      if (!params.encodings || params.encodings.length === 0) {
+        params.encodings = [{}]
+      }
+      params.encodings[0].maxBitrate = preset.maxBitrate
+      params.encodings[0].maxFramerate = preset.frameRate
+      await sender.setParameters(params)
+    }
+  }, [])
 
   const leave = useCallback(() => {
     videoProducerRef.current?.close()
@@ -369,6 +440,8 @@ export function useRoom() {
     toggleCam,
     switchCamera,
     switchMic,
+    changePreset,
+    activePreset,
     status,
     error,
     localStream,

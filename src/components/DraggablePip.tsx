@@ -1,4 +1,4 @@
-import { useEffect, useRef, ReactNode } from 'react'
+import { useEffect, useRef, useCallback, ReactNode } from 'react'
 
 export interface PipPos  { x: number; y: number }
 export interface PipSize { w: number; h: number }
@@ -15,10 +15,19 @@ interface Props {
 const MIN_W = 140
 
 export function DraggablePip({ children, pos, size, onPosChange, onSizeChange, lockAspect }: Props) {
+  const posRef    = useRef(pos)
+  const sizeRef   = useRef(size)
+  const aspectRef = useRef(lockAspect)
+  const cbRef     = useRef({ onPosChange, onSizeChange })
+
+  posRef.current    = pos
+  sizeRef.current   = size
+  aspectRef.current = lockAspect
+  cbRef.current     = { onPosChange, onSizeChange }
+
   const dragState   = useRef({ active: false, ox: 0, oy: 0 })
   const resizeState = useRef({ active: false, ox: 0, oy: 0, ow: 0, oh: 0 })
 
-  // Correct height when lockAspect changes (e.g. user switches 16:9 / 4:3 / free)
   useEffect(() => {
     if (lockAspect) {
       onSizeChange({ w: size.w, h: Math.round(size.w / lockAspect) })
@@ -26,34 +35,35 @@ export function DraggablePip({ children, pos, size, onPosChange, onSizeChange, l
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lockAspect])
 
-  // ── Drag ───────────────────────────────────────────────────────────────────
-  const onDragStart = (e: React.MouseEvent) => {
+  const onDragStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    dragState.current = { active: true, ox: e.clientX - pos.x, oy: e.clientY - pos.y }
-  }
+    const p = posRef.current
+    dragState.current = { active: true, ox: e.clientX - p.x, oy: e.clientY - p.y }
+  }, [])
 
-  // ── Resize ─────────────────────────────────────────────────────────────────
-  const onResizeStart = (e: React.MouseEvent) => {
+  const onResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    resizeState.current = { active: true, ox: e.clientX, oy: e.clientY, ow: size.w, oh: size.h }
-  }
+    const s = sizeRef.current
+    resizeState.current = { active: true, ox: e.clientX, oy: e.clientY, ow: s.w, oh: s.h }
+  }, [])
 
-  // ── Global mouse events ────────────────────────────────────────────────────
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (dragState.current.active) {
-        const x = clamp(e.clientX - dragState.current.ox, 0, window.innerWidth  - size.w)
-        const y = clamp(e.clientY - dragState.current.oy, 0, window.innerHeight - size.h - 72)
-        onPosChange({ x, y })
+        const s = sizeRef.current
+        const x = clamp(e.clientX - dragState.current.ox, 0, window.innerWidth  - s.w)
+        const y = clamp(e.clientY - dragState.current.oy, 0, window.innerHeight - s.h - 72)
+        cbRef.current.onPosChange({ x, y })
       }
       if (resizeState.current.active) {
-        const dx = e.clientX - resizeState.current.ox
-        const w  = Math.max(MIN_W, resizeState.current.ow + dx)
-        const h  = lockAspect
-          ? Math.round(w / lockAspect)
-          : Math.max(Math.round(MIN_W * 0.5), resizeState.current.oh + (e.clientY - resizeState.current.oy))
-        onSizeChange({ w, h })
+        const r  = resizeState.current
+        const la = aspectRef.current
+        const w  = Math.max(MIN_W, r.ow + (e.clientX - r.ox))
+        const h  = la
+          ? Math.round(w / la)
+          : Math.max(Math.round(MIN_W * 0.5), r.oh + (e.clientY - r.oy))
+        cbRef.current.onSizeChange({ w, h })
       }
     }
     const onUp = () => {
@@ -66,7 +76,7 @@ export function DraggablePip({ children, pos, size, onPosChange, onSizeChange, l
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup',   onUp)
     }
-  }, [size.w, size.h, pos.x, pos.y, lockAspect, onPosChange, onSizeChange])
+  }, [])
 
   return (
     <div

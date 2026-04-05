@@ -5,24 +5,29 @@ interface Props {
   stereo?: boolean
 }
 
-// dB scale
 const MIN_DB = -60
 const MAX_DB = 3
-const SEGMENTS = 28        // number of segments per channel
-const SEG_GAP = 1          // px gap between segments
-const CHAN_GAP = 3          // px gap between L/R channels
-const CHAN_W = 7            // px width per channel
+const SEGMENTS = 28
+const SEG_GAP = 1
+const CHAN_GAP = 3
+const CHAN_W = 7
 
-// Colour zones (by dB threshold of that segment's position)
-function segmentColour(db: number, active: boolean): string {
-  if (!active) return 'rgba(255,255,255,0.07)'
-  if (db >= -2)  return '#f44336'   // red
-  if (db >= -6)  return '#ffb300'   // yellow/amber
-  return '#43a047'                   // green
+let sharedAudioCtx: AudioContext | null = null
+function getAudioContext(): AudioContext {
+  if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+    sharedAudioCtx = new AudioContext()
+  }
+  return sharedAudioCtx
 }
 
-function getRms(analyser: AnalyserNode): number {
-  const buf = new Float32Array(analyser.fftSize)
+function segmentColour(db: number, active: boolean): string {
+  if (!active) return 'rgba(255,255,255,0.07)'
+  if (db >= -2)  return '#f44336'
+  if (db >= -6)  return '#ffb300'
+  return '#43a047'
+}
+
+function getRms(analyser: AnalyserNode, buf: Float32Array<ArrayBuffer>): number {
   analyser.getFloatTimeDomainData(buf)
   const rms = Math.sqrt(buf.reduce((s, v) => s + v * v, 0) / buf.length)
   return rms === 0 ? MIN_DB : Math.max(MIN_DB, 20 * Math.log10(rms))
@@ -31,7 +36,6 @@ function getRms(analyser: AnalyserNode): number {
 export function AudioMeter({ stream, stereo = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rafRef    = useRef<number>(0)
-  const ctxARef   = useRef<AudioContext | null>(null)
 
   const channels = stereo ? 2 : 1
   const canvasW  = channels * CHAN_W + (channels - 1) * CHAN_GAP
@@ -43,11 +47,8 @@ export function AudioMeter({ stream, stereo = false }: Props) {
     const audioTracks = stream.getAudioTracks()
     if (audioTracks.length === 0) return
 
-    const audioCtx = new AudioContext()
-    ctxARef.current = audioCtx
-
+    const audioCtx = getAudioContext()
     const source   = audioCtx.createMediaStreamSource(stream)
-    const channels = stereo ? 2 : 1
     const analysers: AnalyserNode[] = []
 
     if (stereo) {
@@ -68,10 +69,10 @@ export function AudioMeter({ stream, stereo = false }: Props) {
       analysers.push(a)
     }
 
+    const buf = new Float32Array(analysers[0].fftSize)
     const ctx2d = canvas.getContext('2d')!
 
     const draw = () => {
-      // Sync canvas buffer to its CSS-rendered size (parent div fills full height)
       const wrap = canvas.parentElement as HTMLElement
       const h = wrap ? wrap.clientHeight : 200
       const w = wrap ? wrap.clientWidth  : canvasW
@@ -83,12 +84,11 @@ export function AudioMeter({ stream, stereo = false }: Props) {
       const segH = Math.max(2, (h - SEGMENTS * SEG_GAP) / SEGMENTS)
 
       analysers.forEach((analyser, ch) => {
-        const db      = getRms(analyser)
+        const db      = getRms(analyser, buf)
         const active  = Math.round(((db - MIN_DB) / (MAX_DB - MIN_DB)) * SEGMENTS)
         const xOffset = ch * (CHAN_W + CHAN_GAP)
 
         for (let s = 0; s < SEGMENTS; s++) {
-          // s=0 is bottom segment
           const segDb = MIN_DB + (s / SEGMENTS) * (MAX_DB - MIN_DB)
           const y     = h - (s + 1) * (segH + SEG_GAP) + SEG_GAP
           ctx2d.fillStyle = segmentColour(segDb, s < active)
@@ -103,9 +103,10 @@ export function AudioMeter({ stream, stereo = false }: Props) {
 
     return () => {
       cancelAnimationFrame(rafRef.current)
-      audioCtx.close().catch(() => {})
+      source.disconnect()
+      analysers.forEach(a => a.disconnect())
     }
-  }, [stream, stereo])
+  }, [stream, stereo, canvasW])
 
   return (
     <div className="audio-meter-wrap" style={{ width: canvasW + 6 }}>

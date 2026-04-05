@@ -1,14 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import React from 'react'
 import { ControlsBar } from './ControlsBar'
 import { ParticipantCard } from './ParticipantCard'
 import { DraggablePip } from './DraggablePip'
 import { AudioMeter } from './AudioMeter'
 import { useDevices } from '../hooks/useDevices'
-import type { TileAspect } from '../hooks/useTileLayout'
 import { VideoInfoOverlay } from './VideoInfoOverlay'
 import type { PipPos, PipSize } from './DraggablePip'
-import type { RemoteParticipant, SrtSessionInfo } from '../types'
+import type { RemoteParticipant, SrtSessionInfo, VideoPreset } from '../types'
 
 export type LayoutMode = 'grid' | 'pip'
 export type ObjectFit = 'cover' | 'contain'
@@ -27,6 +26,8 @@ interface Props {
   onLeave: () => void
   onSwitchCamera: (id: string) => void
   onSwitchMic: (id: string) => void
+  activePreset: VideoPreset
+  onChangePreset: (p: VideoPreset) => void
 }
 
 export function RoomPage({
@@ -35,18 +36,18 @@ export function RoomPage({
   isMuted, isCamOff,
   onToggleMute, onToggleCam, onLeave,
   onSwitchCamera, onSwitchMic,
+  activePreset, onChangePreset,
 }: Props) {
-  const [layout, setLayout]         = useState<LayoutMode>('pip')
-  const [objectFit, setObjectFit]   = useState<ObjectFit>('contain')
-  const [tileAspect, setTileAspect] = useState<TileAspect>('free')
-  const [showInfo, setShowInfo]     = useState(false)
+  const [layout, setLayout]       = useState<LayoutMode>('pip')
+  const [objectFit, setObjectFit] = useState<ObjectFit>('contain')
+  const [showInfo, setShowInfo]   = useState(false)
+  const [showMeter, setShowMeter] = useState(true)
   const [sourceAspect, setSourceAspect] = useState<number | null>(null)
 
-  // PiP position & size — persisted across layout switches, reset only on "Сброс"
   const [pipPos,  setPipPos]  = useState<PipPos> ({ x: 16,  y: 10  })
   const [pipSize, setPipSize] = useState<PipSize>({ w: 220, h: 148 })
 
-  const remoteList = [...participants.values()]
+  const remoteList = useMemo(() => [...participants.values()], [participants])
   const total      = remoteList.length + 1
 
   const {
@@ -58,7 +59,6 @@ export function RoomPage({
 
   useEffect(() => { if (localStream) enumerate() }, [localStream, enumerate])
 
-  // Track native aspect ratio of the local video source
   useEffect(() => {
     if (!localStream) { setSourceAspect(null); return }
     const track = localStream.getVideoTracks()[0]
@@ -70,41 +70,19 @@ export function RoomPage({
   const resetView = () => {
     setLayout('pip')
     setObjectFit('contain')
-    setTileAspect('free')
     setPipPos ({ x: 16,  y: 10  })
     setPipSize({ w: 220, h: 148 })
   }
 
-  // Remote video: fill tile, honour objectFit (cover/contain)
-  const remoteVideoStyle: React.CSSProperties = {
-    width: '100%', height: '100%', objectFit,
-  }
+  const remoteVideoStyle: React.CSSProperties = useMemo(
+    () => ({ width: '100%', height: '100%', objectFit }),
+    [objectFit],
+  )
 
-  // Local preview video style
   const localVideoStyle = (inPip: boolean): React.CSSProperties => {
-    if (inPip) {
-      // PiP: video always fills the (possibly aspect-locked) container 100%×100%
-      return { width: '100%', height: '100%', objectFit: 'fill' }
-    }
-    // Grid mode
-    if (tileAspect === 'free') {
-      return { width: '100%', height: 'auto', objectFit, display: 'block' }
-    }
-    return {
-      width: '100%',
-      height: 'auto',
-      aspectRatio: tileAspect === '16:9' ? '16 / 9' : '4 / 3',
-      objectFit: 'fill',
-      display: 'block',
-    }
+    if (inPip) return { width: '100%', height: '100%', objectFit: 'fill' }
+    return { width: '100%', height: 'auto', objectFit, display: 'block' }
   }
-
-  // In PiP: container is always aspect-locked (no "cover/free resize" mode)
-  // tileAspect drives the lock ratio; 'free' uses the source's native ratio
-  const pipLockAspect: number | null =
-    tileAspect === '16:9' ? 16 / 9 :
-    tileAspect === '4:3'  ? 4  / 3 :
-    sourceAspect
 
   const gridStyle = (cols: number): React.CSSProperties => ({
     gridTemplateColumns: `repeat(${cols}, 1fr)`,
@@ -117,14 +95,19 @@ export function RoomPage({
       isMuted={isMuted}
       isCamOff={isCamOff}
       videoStyle={localVideoStyle(inPip)}
-      tileAspect={tileAspect}
-      onAspectChange={setTileAspect}
       showInfo={showInfo}
+      showMeter={showMeter}
       roomId={roomId}
       peerId={localPeerId}
       srtConnectUrl={srtByPeer[localPeerId]?.connectUrlPublic}
     />
   )
+
+  const participantCount = total === 1
+    ? '1 участник'
+    : total < 5
+      ? `${total} участника`
+      : `${total} участников`
 
   return (
     <div className="room-page">
@@ -135,8 +118,12 @@ export function RoomPage({
           <span>redflow.online</span>
         </div>
 
+        <div className="room-center">
+          <span className="room-name">{roomId}</span>
+          <span className="room-count">({participantCount})</span>
+        </div>
+
         <div className="header-right">
-          {/* Layout switcher */}
           <div className="layout-switcher" title="Раскладка">
             <button
               className={`layout-btn ${layout === 'grid' ? 'layout-btn--active' : ''}`}
@@ -147,38 +134,6 @@ export function RoomPage({
               onClick={() => setLayout('pip')} title="Превью поверх"
             ><PipIcon /></button>
           </div>
-
-          {/* Object-fit toggle — only in grid mode */}
-          {layout === 'grid' && (
-            <button
-              className={`layout-btn fit-btn ${objectFit === 'contain' ? 'layout-btn--active' : ''}`}
-              onClick={() => setObjectFit(f => f === 'cover' ? 'contain' : 'cover')}
-              title={objectFit === 'cover' ? 'Показать полный кадр' : 'Заполнить тайл'}
-            >
-              <FitIcon contain={objectFit === 'contain'} />
-              <span className="fit-label">{objectFit === 'contain' ? 'Полный' : 'Заполнить'}</span>
-            </button>
-          )}
-
-          {/* Reset view */}
-          <button className="reset-btn" onClick={resetView} title="Сбросить вид">
-            <ResetIcon />
-            Сброс
-          </button>
-
-          {/* Tech info toggle */}
-          <button
-            className={`reset-btn info-toggle-btn ${showInfo ? 'info-toggle-btn--active' : ''}`}
-            onClick={() => setShowInfo(v => !v)}
-            title="Техническая информация о потоке"
-          >
-            <InfoIcon />
-            Инфо
-          </button>
-
-          <span className="room-count">
-            {total} участник{total === 1 ? '' : total < 5 ? 'а' : 'ов'}
-          </span>
         </div>
       </header>
 
@@ -188,8 +143,8 @@ export function RoomPage({
           {localTile(false)}
           {remoteList.map(p => (
             <ParticipantCard key={p.peerId} participant={p}
-              objectFit={objectFit} videoStyle={remoteVideoStyle}
-              showInfo={showInfo} roomId={roomId}
+              videoStyle={remoteVideoStyle}
+              showInfo={showInfo} showMeter={showMeter} roomId={roomId}
               srtConnectUrl={srtByPeer[p.peerId]?.connectUrlPublic} />
           ))}
         </div>
@@ -203,8 +158,8 @@ export function RoomPage({
               ? <div className="pip-waiting">Ожидание участников…</div>
               : remoteList.map(p => (
                   <ParticipantCard key={p.peerId} participant={p}
-                    objectFit={objectFit} videoStyle={remoteVideoStyle}
-                    showInfo={showInfo} roomId={roomId}
+                    videoStyle={remoteVideoStyle}
+                    showInfo={showInfo} showMeter={showMeter} roomId={roomId}
                     srtConnectUrl={srtByPeer[p.peerId]?.connectUrlPublic} />
                 ))
             }
@@ -212,7 +167,7 @@ export function RoomPage({
           <DraggablePip
             pos={pipPos}   onPosChange={setPipPos}
             size={pipSize} onSizeChange={setPipSize}
-            lockAspect={pipLockAspect}
+            lockAspect={sourceAspect}
           >
             {localTile(true)}
           </DraggablePip>
@@ -231,6 +186,16 @@ export function RoomPage({
         onLeave={onLeave}
         onSwitchCamera={id => { setSelectedCameraId(id); onSwitchCamera(id) }}
         onSwitchMic={id => { setSelectedMicId(id); onSwitchMic(id) }}
+        activePreset={activePreset}
+        onChangePreset={onChangePreset}
+        objectFit={objectFit}
+        onObjectFitToggle={() => setObjectFit(f => f === 'cover' ? 'contain' : 'cover')}
+        layout={layout}
+        showMeter={showMeter}
+        onToggleMeter={() => setShowMeter(v => !v)}
+        showInfo={showInfo}
+        onToggleInfo={() => setShowInfo(v => !v)}
+        onResetView={resetView}
       />
     </div>
   )
@@ -239,7 +204,7 @@ export function RoomPage({
 // ─── Local tile ───────────────────────────────────────────────────────────────
 
 function LocalTile({
-  stream, name, isMuted, isCamOff, videoStyle, tileAspect, onAspectChange, showInfo,
+  stream, name, isMuted, isCamOff, videoStyle, showInfo, showMeter,
   roomId, peerId, srtConnectUrl,
 }: {
   stream: MediaStream | null
@@ -247,9 +212,8 @@ function LocalTile({
   isMuted: boolean
   isCamOff: boolean
   videoStyle: React.CSSProperties
-  tileAspect?: TileAspect
-  onAspectChange?: (a: TileAspect) => void
   showInfo?: boolean
+  showMeter?: boolean
   roomId: string
   peerId: string
   srtConnectUrl?: string
@@ -270,7 +234,7 @@ function LocalTile({
           style={videoStyle}
         />
         {isCamOff && <div className="cam-off-avatar">{name.charAt(0).toUpperCase()}</div>}
-        {!isMuted && <AudioMeter stream={stream} stereo />}
+        {showMeter && !isMuted && <AudioMeter stream={stream} stereo />}
         {showInfo && (
           <VideoInfoOverlay
             stream={stream}
@@ -279,22 +243,6 @@ function LocalTile({
             peerId={peerId}
             srtConnectUrl={srtConnectUrl}
           />
-        )}
-
-        {/* Aspect ratio overlay — only in grid mode (when onAspectChange is provided) */}
-        {tileAspect && onAspectChange && (
-          <div className="tile-aspect-overlay">
-            {(['16:9', '4:3', 'free'] as TileAspect[]).map(a => (
-              <button
-                key={a}
-                className={`tile-aspect-btn ${tileAspect === a ? 'tile-aspect-btn--active' : ''}`}
-                onClick={e => { e.stopPropagation(); onAspectChange(a) }}
-                title={a === 'free' ? 'Свободно' : a}
-              >
-                {a === 'free' ? '⊡' : a}
-              </button>
-            ))}
-          </div>
         )}
       </div>
       <div className="card-bar">
@@ -341,39 +289,6 @@ function PipIcon() {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
       <rect x="1" y="1" width="14" height="14" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
       <rect x="8" y="8" width="6" height="6" rx="1" />
-    </svg>
-  )
-}
-
-function ResetIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-      <path d="M3 3v5h5" />
-    </svg>
-  )
-}
-
-function InfoIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="12" cy="12" r="10" />
-      <line x1="12" y1="8" x2="12" y2="8" strokeLinecap="round" strokeWidth="3" />
-      <line x1="12" y1="12" x2="12" y2="16" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function FitIcon({ contain }: { contain: boolean }) {
-  return contain ? (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="2" y="2" width="12" height="12" rx="1" />
-      <rect x="4" y="5" width="8" height="6" rx=".5" fill="currentColor" stroke="none" />
-    </svg>
-  ) : (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <rect x="2" y="2" width="12" height="12" rx="1" />
-      <rect x="2" y="2" width="12" height="12" rx="1" fill="currentColor" stroke="none" fillOpacity=".4" />
     </svg>
   )
 }
