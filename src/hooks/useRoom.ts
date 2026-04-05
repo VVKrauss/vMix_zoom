@@ -805,6 +805,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       if (screenProducerRef.current) return
       const sendTransport = sendTransportRef.current
       if (!sendTransport) return
+      for (const p of participantsRef.current.values()) {
+        if (p.screenStream) return
+      }
       try {
         const video: Record<string, unknown> = {
           frameRate: { max: 30 },

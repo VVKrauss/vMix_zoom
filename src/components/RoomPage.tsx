@@ -24,7 +24,7 @@ import { pickLatestBurstForPeer } from '../types/roomComms'
 import { RoomChatPanel } from './RoomChatPanel'
 import { ReactionBurstOverlay } from './ReactionBurstOverlay'
 import { useMediaQuery } from '../hooks/useMediaQuery'
-import { useVideoOrientation } from '../hooks/useVideoOrientation'
+import { useActiveSpeaker } from '../hooks/useActiveSpeaker'
 import { buildRoomInviteAbsoluteUrl } from '../utils/soloViewerParams'
 
 function remoteScreenTileId(p: RemoteParticipant): string | null {
@@ -32,11 +32,11 @@ function remoteScreenTileId(p: RemoteParticipant): string | null {
   return p.screenPeerId ?? screenTileKey(p.peerId)
 }
 
-export type LayoutMode = 'grid' | 'pip' | 'speaker' | 'meet' | 'filmstrip' | 'strip_v' | 'mosaic'
+export type LayoutMode = 'grid' | 'pip' | 'speaker' | 'meet'
 
 /** Раскладки с «плитками» (в т.ч. мобильное заполнение и object-fit) */
 export function layoutUsesTiledView(mode: LayoutMode): boolean {
-  return mode === 'grid' || mode === 'filmstrip' || mode === 'strip_v' || mode === 'mosaic'
+  return mode === 'grid'
 }
 export type ObjectFit = 'cover' | 'contain'
 
@@ -100,7 +100,6 @@ export function RoomPage({
 
   const [leaveDialog, setLeaveDialog] = useState<null | { mode: 'home' | 'leave'; others: number }>(null)
   const [screenStopDialogOpen, setScreenStopDialogOpen] = useState(false)
-  const [speakerPinnedPeerId, setSpeakerPinnedPeerId] = useState<string | null>(null)
   const [inviteToast, setInviteToast] = useState(false)
   const inviteToastTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
 
@@ -165,6 +164,29 @@ export function RoomPage({
   })
 
   const remoteList = useMemo(() => [...participants.values()], [participants])
+
+  const activeSpeakerPeerId = useActiveSpeaker(
+    layout === 'speaker',
+    localPeerId,
+    localStream,
+    isMuted,
+    remoteList,
+  )
+
+  const remoteScreenActive = useMemo(
+    () => remoteList.some((p) => p.screenStream),
+    [remoteList],
+  )
+  const canStartScreenShare = !remoteScreenActive
+
+  const hasAnyScreenShare = isScreenSharing || remoteScreenActive
+  const hadScreenShareRef = useRef(false)
+  useEffect(() => {
+    if (hasAnyScreenShare && !hadScreenShareRef.current) {
+      setLayout('meet')
+    }
+    hadScreenShareRef.current = hasAnyScreenShare
+  }, [hasAnyScreenShare])
 
   const localScreenTileId = useMemo(() => {
     if (!isScreenSharing || !localScreenStream) return null
@@ -259,7 +281,6 @@ export function RoomPage({
 
   const featuredPeerId = useMemo(() => {
     if (!stageLayout) return null
-    if (speakerPinnedPeerId && allTileIds.includes(speakerPinnedPeerId)) return speakerPinnedPeerId
 
     if (layout === 'meet') {
       const remotePresenter = remoteList.find((p) => p.screenStream)
@@ -272,46 +293,26 @@ export function RoomPage({
       return localPeerId
     }
 
-    if (remoteList.length > 0) return remoteList[0].peerId
-    return localScreenTileId ?? localPeerId
+    const fallbackSpeaker = remoteList[0]?.peerId ?? localPeerId
+    const pick =
+      allTileIds.includes(activeSpeakerPeerId) && !isScreenTileId(activeSpeakerPeerId)
+        ? activeSpeakerPeerId
+        : fallbackSpeaker
+    return pick
   }, [
     stageLayout,
     layout,
-    speakerPinnedPeerId,
-    allTileIds,
     remoteList,
     localScreenTileId,
     localPeerId,
+    allTileIds,
+    activeSpeakerPeerId,
   ])
 
   const stripPeerIds = useMemo(() => {
     if (!stageLayout || !featuredPeerId) return []
     return allTileIds.filter((id) => id !== featuredPeerId)
   }, [stageLayout, featuredPeerId, allTileIds])
-
-  const toggleSpeakerPin = (id: string) => {
-    setSpeakerPinnedPeerId((p) => (p === id ? null : id))
-  }
-
-  useEffect(() => {
-    if (layout !== 'speaker' && layout !== 'meet') setSpeakerPinnedPeerId(null)
-  }, [layout])
-
-  useEffect(() => {
-    if (!isScreenSharing) {
-      setSpeakerPinnedPeerId((p) => {
-        if (!p) return p
-        if (p === localScreenTileKey(localPeerId)) return null
-        if (localScreenPeerId && p === localScreenPeerId) return null
-        return p
-      })
-    }
-  }, [isScreenSharing, localPeerId, localScreenPeerId])
-
-  useEffect(() => {
-    if (!speakerPinnedPeerId) return
-    if (!allTileIds.includes(speakerPinnedPeerId)) setSpeakerPinnedPeerId(null)
-  }, [allTileIds, speakerPinnedPeerId])
 
   useEffect(() => {
     if (!isScreenSharing) setScreenStopDialogOpen(false)
@@ -348,7 +349,7 @@ export function RoomPage({
 
   const localSrt = srtByPeer[localPeerId]
 
-  const localTile = (inPip: boolean, showSpeakerPin?: boolean) => (
+  const localTile = (inPip: boolean) => (
     <LocalTile
       stream={localStream}
       name={name}
@@ -362,9 +363,6 @@ export function RoomPage({
       inPip={inPip}
       srtConnectUrl={localSrt?.connectUrlPublic}
       srtListenPort={localSrt?.listenPort}
-      showPin={!!showSpeakerPin}
-      pinActive={speakerPinnedPeerId === localPeerId}
-      onRequestPin={() => toggleSpeakerPin(localPeerId)}
       reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
     />
   )
@@ -434,11 +432,9 @@ export function RoomPage({
     return ids
   }, [localPeerId, remoteList, localScreenTileId])
 
-  const showSpeakerPinUi = layout === 'speaker' || layout === 'meet'
-
   const renderConferenceTile = (id: string) => {
     if (id === localPeerId) {
-      return localTile(false, showSpeakerPinUi)
+      return localTile(false)
     }
     if (localScreenTileId && id === localScreenTileId && localScreenStream) {
       return (
@@ -453,9 +449,6 @@ export function RoomPage({
           srtListenPort={localSrt?.listenPort}
           onStopShare={requestStopScreenSharing}
           showStopButton
-          showPin={showSpeakerPinUi}
-          pinActive={speakerPinnedPeerId === id}
-          onRequestPin={() => toggleSpeakerPin(id)}
           reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
         />
       )
@@ -474,9 +467,6 @@ export function RoomPage({
           srtListenPort={srtByPeer[remotePresenter.peerId]?.listenPort}
           onStopShare={() => {}}
           showStopButton={false}
-          showPin={showSpeakerPinUi}
-          pinActive={speakerPinnedPeerId === id}
-          onRequestPin={() => toggleSpeakerPin(id)}
           reactionBurst={pickLatestBurstForPeer(reactionBursts, remotePresenter.peerId)}
         />
       )
@@ -498,9 +488,6 @@ export function RoomPage({
             srtListenPort={localSrt?.listenPort}
             onStopShare={requestStopScreenSharing}
             showStopButton
-            showPin={showSpeakerPinUi}
-            pinActive={speakerPinnedPeerId === id}
-            onRequestPin={() => toggleSpeakerPin(id)}
             reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
           />
         )
@@ -519,9 +506,6 @@ export function RoomPage({
           srtListenPort={srtByPeer[p.peerId]?.listenPort}
           onStopShare={() => {}}
           showStopButton={false}
-          showPin={showSpeakerPinUi}
-          pinActive={speakerPinnedPeerId === id}
-          onRequestPin={() => toggleSpeakerPin(id)}
           reactionBurst={pickLatestBurstForPeer(reactionBursts, owner)}
         />
       )
@@ -538,35 +522,9 @@ export function RoomPage({
         srtConnectUrl={srtByPeer[id]?.connectUrlPublic}
         srtListenPort={srtByPeer[id]?.listenPort}
         {...cardPlayout}
-        showPin={showSpeakerPinUi}
-        pinActive={speakerPinnedPeerId === id}
-        onRequestPin={() => toggleSpeakerPin(id)}
         reactionBurst={pickLatestBurstForPeer(reactionBursts, p.peerId)}
       />
     )
-  }
-
-  const mosaicStreamForId = (id: string): MediaStream | null => {
-    if (id === localPeerId) return localStream
-    if (localScreenTileId && id === localScreenTileId) return localScreenStream
-    const rp = remoteList.find((p) => remoteScreenTileId(p) === id)
-    if (rp?.screenStream) return rp.screenStream
-    if (isScreenTileId(id)) {
-      const owner = parseScreenTilePeerId(id)
-      if (!owner) return null
-      if (owner === localPeerId && localScreenStream) return localScreenStream
-      return participants.get(owner)?.screenStream ?? null
-    }
-    const p = participants.get(id)
-    if (!p) return null
-    return p.videoStream ?? null
-  }
-
-  const mosaicForceLandscape = (id: string): boolean => {
-    if (localScreenTileId && id === localScreenTileId) return true
-    if (remoteList.some((p) => remoteScreenTileId(p) === id)) return true
-    if (isScreenTileId(id)) return true
-    return false
   }
 
   return (
@@ -675,45 +633,6 @@ export function RoomPage({
         </div>
       )}
 
-      {/* ── Горизонтальная полоса (скролл на мобильных) ───────────────── */}
-      {layout === 'filmstrip' && (
-        <div className={`room-filmstrip${mobileSoloTiles ? ' room-filmstrip--solo' : ''}`}>
-          <div className="room-filmstrip__scroll">
-            {orderedTileIds.map((id) => (
-              <div key={id} className="room-filmstrip__cell">
-                {renderConferenceTile(id)}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Вертикальная колонка плиток ────────────────────────────────── */}
-      {layout === 'strip_v' && (
-        <div className={`room-strip-v${mobileSoloTiles ? ' room-strip-v--solo' : ''}`}>
-          {orderedTileIds.map((id) => (
-            <div key={id} className="room-strip-v__cell">
-              {renderConferenceTile(id)}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ── Мозаика: портрет/ландшафт по дорожке ───────────────────────── */}
-      {layout === 'mosaic' && (
-        <div className={`room-mosaic${mobileSoloTiles ? ' room-mosaic--solo' : ''}`}>
-          {orderedTileIds.map((id) => (
-            <MosaicTileShell
-              key={id}
-              stream={mosaicStreamForId(id)}
-              forceLandscape={mosaicForceLandscape(id)}
-            >
-              {renderConferenceTile(id)}
-            </MosaicTileShell>
-          ))}
-        </div>
-      )}
-
       {/* ── PiP layout ─────────────────────────────────────────────────── */}
       {layout === 'pip' && (
         <div className="pip-container">
@@ -784,6 +703,7 @@ export function RoomPage({
         onToggleInfo={() => setShowInfo(v => !v)}
         onResetView={resetView}
         isScreenSharing={isScreenSharing}
+        canStartScreenShare={canStartScreenShare}
         onToggleScreenShare={requestStopScreenSharing}
         onStartScreenShare={onStartScreenShare}
         playoutVolume={playoutVolume}
@@ -815,29 +735,11 @@ export function RoomPage({
   )
 }
 
-function MosaicTileShell({
-  stream,
-  forceLandscape,
-  children,
-}: {
-  stream: MediaStream | null
-  forceLandscape: boolean
-  children: React.ReactNode
-}) {
-  const orientation = useVideoOrientation(stream, { forceLandscape })
-  return (
-    <div className={`room-mosaic-cell room-mosaic-cell--${orientation}`}>
-      {children}
-    </div>
-  )
-}
-
 // ─── Local tile ───────────────────────────────────────────────────────────────
 
 function LocalTile({
   stream, name, isMuted, isCamOff, videoStyle, showInfo, showMeter,
   roomId, peerId, inPip, srtConnectUrl, srtListenPort,
-  showPin, pinActive, onRequestPin,
   reactionBurst,
 }: {
   stream: MediaStream | null
@@ -852,9 +754,6 @@ function LocalTile({
   inPip: boolean
   srtConnectUrl?: string
   srtListenPort?: number
-  showPin?: boolean
-  pinActive?: boolean
-  onRequestPin?: () => void
   reactionBurst?: RoomReactionBurst | null
 }) {
   const mainVideoRef = useRef<HTMLVideoElement>(null)
@@ -896,20 +795,6 @@ function LocalTile({
       <span className="card-name">{name} (вы)</span>
       <span className="card-bar-actions">
         {isMuted && <MutedSvg />}
-        {showPin && onRequestPin && (
-          <button
-            type="button"
-            className={`card-pin-btn ${pinActive ? 'card-pin-btn--on' : ''}`}
-            title={pinActive ? 'Снять закрепление' : 'Закрепить в режиме спикера'}
-            aria-pressed={pinActive}
-            onClick={(e) => {
-              e.stopPropagation()
-              onRequestPin()
-            }}
-          >
-            <PinIconLocal />
-          </button>
-        )}
       </span>
     </>
   )
@@ -969,14 +854,6 @@ function MutedSvg() {
       <line x1="1" y1="1" x2="23" y2="23" />
       <path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6" />
       <path d="M17 16.95A7 7 0 015 12v-2m14 0v2a7 7 0 01-.11 1.23M12 19v4M8 23h8" />
-    </svg>
-  )
-}
-
-function PinIconLocal() {
-  return (
-    <svg className="card-pin-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-      <path d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z" />
     </svg>
   )
 }

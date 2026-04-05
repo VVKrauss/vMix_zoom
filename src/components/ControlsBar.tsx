@@ -9,17 +9,10 @@ import { useMediaQuery } from '../hooks/useMediaQuery'
 import { shouldClosePopoverOnOutsidePointer } from '../utils/popoverOutsideClick'
 
 function layoutShowsObjectFitToggle(mode: LayoutMode): boolean {
-  return (
-    mode === 'grid' ||
-    mode === 'filmstrip' ||
-    mode === 'strip_v' ||
-    mode === 'mosaic' ||
-    mode === 'meet' ||
-    mode === 'speaker'
-  )
+  return mode === 'grid' || mode === 'meet' || mode === 'speaker'
 }
 
-const LAYOUT_CYCLE: LayoutMode[] = ['grid', 'filmstrip', 'strip_v', 'mosaic', 'meet', 'speaker', 'pip']
+const LAYOUT_CYCLE: LayoutMode[] = ['grid', 'meet', 'speaker', 'pip']
 
 function nextLayoutMode(current: LayoutMode): LayoutMode {
   const i = LAYOUT_CYCLE.indexOf(current)
@@ -31,14 +24,8 @@ function layoutModeLabel(mode: LayoutMode): string {
   switch (mode) {
     case 'grid':
       return 'Галерея'
-    case 'filmstrip':
-      return 'Полоса'
-    case 'strip_v':
-      return 'Колонка'
-    case 'mosaic':
-      return 'Микс'
     case 'meet':
-      return 'Meet'
+      return 'Демонстрация'
     case 'speaker':
       return 'Спикер'
     default:
@@ -50,12 +37,6 @@ function layoutModeIcon(mode: LayoutMode): ReactNode {
   switch (mode) {
     case 'grid':
       return <GridIcon />
-    case 'filmstrip':
-      return <FilmstripIcon />
-    case 'strip_v':
-      return <StripVIcon />
-    case 'mosaic':
-      return <MosaicIcon />
     case 'meet':
       return <MeetIconG />
     case 'speaker':
@@ -89,6 +70,7 @@ interface Props {
   onToggleInfo: () => void
   onResetView: () => void
   isScreenSharing: boolean
+  canStartScreenShare: boolean
   onToggleScreenShare: () => void
   onStartScreenShare: (surface?: 'monitor' | 'window' | 'browser') => void
   playoutVolume: number
@@ -118,7 +100,7 @@ export function ControlsBar({
   showMeter, onToggleMeter,
   showInfo, onToggleInfo,
   onResetView,
-  isScreenSharing, onToggleScreenShare, onStartScreenShare,
+  isScreenSharing, canStartScreenShare, onToggleScreenShare, onStartScreenShare,
   playoutVolume, onPlayoutVolumeChange,
   audioOutputs, playoutSinkId, onPlayoutSinkChange,
   showButtonLabels, onToggleButtonLabels,
@@ -378,11 +360,18 @@ export function ControlsBar({
         <button
           type="button"
           className={`ctrl-btn ${isScreenSharing ? 'ctrl-btn--active ctrl-btn--screen' : ''}`}
+          disabled={!isScreenSharing && !canStartScreenShare}
           onClick={() => {
             if (isScreenSharing) onToggleScreenShare()
-            else setScreenPickerOpen(true)
+            else if (canStartScreenShare) setScreenPickerOpen(true)
           }}
-          title={isScreenSharing ? 'Остановить демонстрацию' : 'Демонстрация экрана'}
+          title={
+            isScreenSharing
+              ? 'Остановить демонстрацию'
+              : canStartScreenShare
+                ? 'Демонстрация экрана'
+                : 'В комнате уже идёт демонстрация экрана'
+          }
         >
           <ScreenShareIcon />
           <span>{isScreenSharing ? 'Стоп экран' : 'Экран'}</span>
@@ -390,7 +379,10 @@ export function ControlsBar({
         <button
           type="button"
           className={`ctrl-chevron ${isScreenSharing ? 'ctrl-btn--active ctrl-btn--screen' : ''} ${open === 'screen' ? 'ctrl-chevron--open' : ''}`}
-          onClick={() => toggleOpen('screen')}
+          disabled={!isScreenSharing && !canStartScreenShare}
+          onClick={() => {
+            if (isScreenSharing || canStartScreenShare) toggleOpen('screen')
+          }}
           title={isScreenSharing ? 'Меню демонстрации' : 'Тип источника демонстрации'}
         >
           <ChevronIcon />
@@ -401,7 +393,7 @@ export function ControlsBar({
             isSharing={isScreenSharing}
             onClose={() => setOpen(null)}
             onPick={(surface) => {
-              void onStartScreenShare(surface)
+              if (canStartScreenShare) void onStartScreenShare(surface)
               setOpen(null)
             }}
             onStop={() => {
@@ -598,11 +590,18 @@ export function ControlsBar({
                 <button
                   type="button"
                   className={`ctrl-btn ${isScreenSharing ? 'ctrl-btn--active ctrl-btn--screen' : ''}`}
+                  disabled={!isScreenSharing && !canStartScreenShare}
                   onClick={() => {
                     if (isScreenSharing) onToggleScreenShare()
-                    else setScreenPickerOpen(true)
+                    else if (canStartScreenShare) setScreenPickerOpen(true)
                   }}
-                  title={isScreenSharing ? 'Остановить демонстрацию' : 'Демонстрация экрана'}
+                  title={
+                    isScreenSharing
+                      ? 'Остановить демонстрацию'
+                      : canStartScreenShare
+                        ? 'Демонстрация экрана'
+                        : 'В комнате уже идёт демонстрация экрана'
+                  }
                 >
                   <ScreenShareIcon />
                   <span>{isScreenSharing ? 'Стоп экран' : 'Экран'}</span>
@@ -610,7 +609,10 @@ export function ControlsBar({
                 <button
                   type="button"
                   className={`ctrl-chevron ${isScreenSharing ? 'ctrl-btn--active ctrl-btn--screen' : ''} ${open === 'screen' ? 'ctrl-chevron--open' : ''}`}
-                  onClick={() => toggleOpen('screen')}
+                  disabled={!isScreenSharing && !canStartScreenShare}
+                  onClick={() => {
+                    if (isScreenSharing || canStartScreenShare) toggleOpen('screen')
+                  }}
                   title={isScreenSharing ? 'Меню демонстрации' : 'Тип источника демонстрации'}
                 >
                   <ChevronIcon />
@@ -620,7 +622,7 @@ export function ControlsBar({
                     isSharing={isScreenSharing}
                     onClose={() => setOpen(null)}
                     onPick={(surface) => {
-                      void onStartScreenShare(surface)
+                      if (canStartScreenShare) void onStartScreenShare(surface)
                       setOpen(null)
                     }}
                     onStop={() => {
@@ -736,10 +738,7 @@ function LayoutPopover({
 
   const rows: { mode: LayoutMode; label: string; icon: ReactNode }[] = [
     { mode: 'grid', label: 'Галерея', icon: <GridIcon /> },
-    { mode: 'filmstrip', label: 'Полоса (гориз.)', icon: <FilmstripIcon /> },
-    { mode: 'strip_v', label: 'Колонка (верт.)', icon: <StripVIcon /> },
-    { mode: 'mosaic', label: 'Микс (портрет/ландшафт)', icon: <MosaicIcon /> },
-    { mode: 'meet', label: 'Meet (сцена + полоса)', icon: <MeetIconG /> },
+    { mode: 'meet', label: 'Демонстрация (сцена + полоса)', icon: <MeetIconG /> },
     { mode: 'speaker', label: 'Спикер', icon: <SpeakerIcon /> },
     { mode: 'pip', label: 'Превью поверх', icon: <PipIcon /> },
   ]
@@ -1158,33 +1157,3 @@ function MeetIconG() {
   )
 }
 
-function FilmstripIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-      <rect x="1" y="5" width="4" height="8" rx="0.75" />
-      <rect x="6" y="5" width="4" height="8" rx="0.75" />
-      <rect x="11" y="5" width="4" height="8" rx="0.75" />
-    </svg>
-  )
-}
-
-function StripVIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-      <rect x="5" y="1" width="8" height="4" rx="0.75" />
-      <rect x="5" y="6" width="8" height="4" rx="0.75" />
-      <rect x="5" y="11" width="8" height="4" rx="0.75" />
-    </svg>
-  )
-}
-
-function MosaicIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-      <rect x="1" y="1" width="5" height="8" rx="0.75" />
-      <rect x="7" y="1" width="8" height="5" rx="0.75" />
-      <rect x="7" y="7" width="4" height="8" rx="0.75" />
-      <rect x="1" y="10" width="5" height="5" rx="0.75" />
-    </svg>
-  )
-}
