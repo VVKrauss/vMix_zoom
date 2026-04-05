@@ -19,9 +19,7 @@ interface Props {
   showInfo?: boolean
   srtConnectUrl?: string
   srtListenPort?: number
-  onStopShare: () => void
-  /** Локальный ведущий — показать «Завершить»; у зрителей — false */
-  showStopButton?: boolean
+  onStopShare?: () => void
   reactionBurst?: RoomReactionBurst | null
 }
 
@@ -35,7 +33,6 @@ export function LocalScreenShareTile({
   srtConnectUrl,
   srtListenPort,
   onStopShare,
-  showStopButton = true,
   reactionBurst,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -82,7 +79,7 @@ export function LocalScreenShareTile({
       <div className="card-bar">
         <span className="card-name">{label}</span>
         <span className="card-bar-actions">
-          {showStopButton ? (
+          {onStopShare ? (
             <button
               type="button"
               className="card-stop-share-btn"

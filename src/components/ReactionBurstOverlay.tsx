@@ -4,7 +4,7 @@ import type { RoomReactionBurst } from '../types/roomComms'
 export function ReactionBurstOverlay({ burst }: { burst: RoomReactionBurst }) {
   return (
     <div className="reaction-burst" aria-hidden>
-      {burst.emoji}
+      <span className="reaction-burst__emoji">{burst.emoji}</span>
     </div>
   )
 }

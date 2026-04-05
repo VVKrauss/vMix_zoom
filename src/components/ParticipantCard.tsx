@@ -24,7 +24,7 @@ interface Props {
 }
 
 export function ParticipantCard({
-  participant, videoStyle, style, showInfo, showMeter = true, roomId = '',
+  participant, videoStyle, style, showInfo, showMeter = false, roomId = '',
   srtConnectUrl, srtListenPort,
   playoutVolume = 1,
   playoutSinkId = '',
@@ -66,7 +66,9 @@ export function ParticipantCard({
             style={videoStyle}
           />
           {!hasVideo && (
-            <div className="cam-off-avatar">{participant.name.charAt(0).toUpperCase()}</div>
+            <div className="cam-off-avatar">
+              <span className="cam-off-avatar__label">{participant.name}</span>
+            </div>
           )}
           <audio ref={audioRef} autoPlay playsInline />
 

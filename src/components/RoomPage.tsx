@@ -1,12 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import React from 'react'
+import { BrandLogoLoader } from './BrandLogoLoader'
+import { GridTilePlaceholder } from './GridTilePlaceholder'
 import { ConfirmDialog } from './ConfirmDialog'
 import { ControlsBar } from './ControlsBar'
 import { ParticipantCard } from './ParticipantCard'
 import { DraggablePip } from './DraggablePip'
 import { AudioMeter } from './AudioMeter'
+import { MicOffIcon } from './icons'
 import { useAudioOutputs } from '../hooks/useAudioOutputs'
 import { useDevices } from '../hooks/useDevices'
+import { useLocalStorageNumber, useLocalStorageString, useLocalStorageBool } from '../hooks/useLocalStorage'
 import { VideoInfoOverlay } from './VideoInfoOverlay'
 import { SrtCopySurface } from './SrtCopyMenu'
 import type { PipPos, PipSize } from './DraggablePip'
@@ -34,11 +38,13 @@ function remoteScreenTileId(p: RemoteParticipant): string | null {
 
 export type LayoutMode = 'grid' | 'pip' | 'speaker' | 'meet'
 
-/** Раскладки с «плитками» (в т.ч. мобильное заполнение и object-fit) */
+/** Раскладки с «плитками» (мобильное заполнение сетки). */
 export function layoutUsesTiledView(mode: LayoutMode): boolean {
   return mode === 'grid'
 }
-export type ObjectFit = 'cover' | 'contain'
+
+/** Единый масштаб видео в плитках (раньше был переключатель в настройках). */
+const TILE_VIDEO_OBJECT_FIT: React.CSSProperties['objectFit'] = 'cover'
 
 interface Props {
   name: string
@@ -90,9 +96,8 @@ export function RoomPage({
   const [layout, setLayout]       = useState<LayoutMode>(() =>
     typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches ? 'grid' : 'pip',
   )
-  const [objectFit, setObjectFit] = useState<ObjectFit>('contain')
   const [showInfo, setShowInfo]   = useState(false)
-  const [showMeter, setShowMeter] = useState(true)
+  const [showMeter, setShowMeter] = useState(false)
   const [sourceAspect, setSourceAspect] = useState<number | null>(null)
   const [pipPos,  setPipPos]  = useState<PipPos> ({ x: 16,  y: 10  })
   const [pipSize, setPipSize] = useState<PipSize>(() =>
@@ -128,43 +133,10 @@ export function RoomPage({
   }, [])
 
   const { audioOutputs, refreshAudioOutputs } = useAudioOutputs()
-  const [playoutVolume, setPlayoutVolume] = useState(() => {
-    try {
-      const v = localStorage.getItem('vmix_playout_volume')
-      if (v == null) return 1
-      const n = Number(v)
-      return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1
-    } catch {
-      return 1
-    }
-  })
-  const [playoutSinkId, setPlayoutSinkId] = useState(() => {
-    try {
-      return localStorage.getItem('vmix_playout_sink') ?? ''
-    } catch {
-      return ''
-    }
-  })
-
-  const [showControlButtonLabels, setShowControlButtonLabels] = useState(() => {
-    try {
-      const v = localStorage.getItem('vmix_control_button_labels')
-      if (v === null) return false
-      return v === '1' || v === 'true'
-    } catch {
-      return false
-    }
-  })
-
-  const [chatEmbed, setChatEmbed] = useState(() => {
-    try {
-      const v = localStorage.getItem('vmix_chat_embed')
-      if (v === null) return true
-      return v === '1' || v === 'true'
-    } catch {
-      return true
-    }
-  })
+  const [playoutVolume, setPlayoutVolume] = useLocalStorageNumber('vmix_playout_volume', 1, 0, 1)
+  const [playoutSinkId, setPlayoutSinkId] = useLocalStorageString('vmix_playout_sink', '')
+  const [showControlButtonLabels, setShowControlButtonLabels] = useLocalStorageBool('vmix_control_button_labels', false)
+  const [chatEmbed, setChatEmbed] = useLocalStorageBool('vmix_chat_embed', true)
 
   const remoteList = useMemo(() => [...participants.values()], [participants])
 
@@ -226,37 +198,6 @@ export function RoomPage({
 
   useEffect(() => { if (localStream) enumerate() }, [localStream, enumerate])
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('vmix_playout_volume', String(playoutVolume))
-    } catch {
-      /* noop */
-    }
-  }, [playoutVolume])
-
-  useEffect(() => {
-    try {
-      if (playoutSinkId) localStorage.setItem('vmix_playout_sink', playoutSinkId)
-    } catch {
-      /* noop */
-    }
-  }, [playoutSinkId])
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('vmix_control_button_labels', showControlButtonLabels ? '1' : '0')
-    } catch {
-      /* noop */
-    }
-  }, [showControlButtonLabels])
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('vmix_chat_embed', chatEmbed ? '1' : '0')
-    } catch {
-      /* noop */
-    }
-  }, [chatEmbed])
 
   useEffect(() => {
     void refreshAudioOutputs()
@@ -271,52 +212,62 @@ export function RoomPage({
     return () => window.removeEventListener('keydown', onKey)
   }, [chatOpen])
 
-  const allTileIds = useMemo(() => {
-    const ids: string[] = [localPeerId, ...remoteList.map((p) => p.peerId)]
+  const orderedTileIds = useMemo(() => {
+    const ids: string[] = [localPeerId]
     if (localScreenTileId) ids.push(localScreenTileId)
     for (const p of remoteList) {
+      ids.push(p.peerId)
       const sid = remoteScreenTileId(p)
       if (sid) ids.push(sid)
     }
     return ids
-  }, [localPeerId, remoteList, localScreenTileId])
+  }, [localPeerId, localScreenTileId, remoteList])
+
+  const allTileIdsSet = useMemo(() => new Set(orderedTileIds), [orderedTileIds])
 
   const stageLayout = layout === 'speaker' || layout === 'meet'
 
-  const featuredPeerId = useMemo(() => {
-    if (!stageLayout) return null
-
-    if (layout === 'meet') {
-      const remotePresenter = remoteList.find((p) => p.screenStream)
-      if (remotePresenter) {
-        const sid = remoteScreenTileId(remotePresenter)
-        if (sid) return sid
+  const meetPickDefault = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return localPeerId
+      for (const id of ids) {
+        if (isScreenTileId(id)) return id
       }
-      if (localScreenTileId) return localScreenTileId
-      if (remoteList.length > 0) return remoteList[0].peerId
-      return localPeerId
-    }
+      if (ids.includes(localPeerId)) return localPeerId
+      return ids[0]!
+    },
+    [localPeerId],
+  )
 
+  const [meetStageTileId, setMeetStageTileId] = useState<string | null>(null)
+
+  useLayoutEffect(() => {
+    if (layout !== 'meet') return
+    setMeetStageTileId((prev) => {
+      if (prev && orderedTileIds.includes(prev)) return prev
+      return meetPickDefault(orderedTileIds)
+    })
+  }, [layout, orderedTileIds, meetPickDefault])
+
+  const meetFeaturedId = useMemo(() => {
+    if (layout !== 'meet') return null
+    if (meetStageTileId && orderedTileIds.includes(meetStageTileId)) return meetStageTileId
+    return meetPickDefault(orderedTileIds)
+  }, [layout, meetStageTileId, orderedTileIds, meetPickDefault])
+
+  const speakerFeaturedPeerId = useMemo(() => {
     const fallbackSpeaker = remoteList[0]?.peerId ?? localPeerId
-    const pick =
-      allTileIds.includes(activeSpeakerPeerId) && !isScreenTileId(activeSpeakerPeerId)
-        ? activeSpeakerPeerId
-        : fallbackSpeaker
-    return pick
-  }, [
-    stageLayout,
-    layout,
-    remoteList,
-    localScreenTileId,
-    localPeerId,
-    allTileIds,
-    activeSpeakerPeerId,
-  ])
+    return allTileIdsSet.has(activeSpeakerPeerId) && !isScreenTileId(activeSpeakerPeerId)
+      ? activeSpeakerPeerId
+      : fallbackSpeaker
+  }, [remoteList, localPeerId, allTileIdsSet, activeSpeakerPeerId])
+
+  const featuredPeerId = layout === 'meet' ? meetFeaturedId : layout === 'speaker' ? speakerFeaturedPeerId : null
 
   const stripPeerIds = useMemo(() => {
-    if (!stageLayout || !featuredPeerId) return []
-    return allTileIds.filter((id) => id !== featuredPeerId)
-  }, [stageLayout, featuredPeerId, allTileIds])
+    if (layout !== 'speaker' || !speakerFeaturedPeerId) return []
+    return orderedTileIds.filter((id) => id !== speakerFeaturedPeerId)
+  }, [layout, speakerFeaturedPeerId, orderedTileIds])
 
   useEffect(() => {
     if (!isScreenSharing) setScreenStopDialogOpen(false)
@@ -332,20 +283,40 @@ export function RoomPage({
 
   const resetView = () => {
     setLayout(isMobile ? 'grid' : 'pip')
-    setObjectFit('contain')
     setPipPos ({ x: 16,  y: 10  })
     setPipSize(isMobile ? { w: 140, h: 94 } : { w: 220, h: 148 })
   }
 
-  const remoteVideoStyle: React.CSSProperties = useMemo(
-    () => ({ width: '100%', height: '100%', objectFit }),
-    [objectFit],
+  const cameraTileVideoStyle: React.CSSProperties = useMemo(
+    () => ({
+      width: '100%',
+      height: '100%',
+      objectFit: TILE_VIDEO_OBJECT_FIT,
+      objectPosition: 'center',
+    }),
+    [],
   )
 
-  const localVideoStyle = (inPip: boolean): React.CSSProperties => {
-    if (inPip) return { width: '100%', height: '100%', objectFit: 'fill' }
-    return { width: '100%', height: 'auto', objectFit, display: 'block' }
-  }
+  const screenShareVideoStyle: React.CSSProperties = useMemo(
+    () => ({
+      width: '100%',
+      height: '100%',
+      objectFit: 'contain',
+      objectPosition: 'center',
+    }),
+    [],
+  )
+
+  const localCameraTileVideoStyle: React.CSSProperties = useMemo(
+    () => ({
+      width: '100%',
+      height: '100%',
+      objectFit: TILE_VIDEO_OBJECT_FIT,
+      objectPosition: 'center',
+      display: 'block',
+    }),
+    [],
+  )
 
   const gridStyle = (cols: number): React.CSSProperties => ({
     gridTemplateColumns: `repeat(${cols}, 1fr)`,
@@ -359,7 +330,7 @@ export function RoomPage({
       name={name}
       isMuted={isMuted}
       isCamOff={isCamOff}
-      videoStyle={localVideoStyle(inPip)}
+      videoStyle={localCameraTileVideoStyle}
       showInfo={showInfo}
       showMeter={showMeter}
       roomId={roomId}
@@ -371,11 +342,7 @@ export function RoomPage({
     />
   )
 
-  const participantCount = rosterCount === 1
-    ? '1 участник'
-    : rosterCount < 5
-      ? `${rosterCount} участника`
-      : `${rosterCount} участников`
+  const participantCount = `${rosterCount} ${ruParticipantsWord(rosterCount)}`
 
   const leaveMessage =
     leaveDialog && leaveDialog.others > 0
@@ -409,32 +376,22 @@ export function RoomPage({
     onToggleScreenShare()
   }
 
-  const cardPlayout = {
+  const cardPlayout = useMemo(() => ({
     playoutVolume,
     playoutSinkId,
-  }
+  }), [playoutVolume, playoutSinkId])
 
-  const orderedTileIds = useMemo(() => {
-    const ids: string[] = [localPeerId]
-    if (localScreenTileId) ids.push(localScreenTileId)
-    for (const p of remoteList) {
-      ids.push(p.peerId)
-      const sid = remoteScreenTileId(p)
-      if (sid) ids.push(sid)
-    }
-    return ids
-  }, [localPeerId, localScreenTileId, remoteList])
+  const pipGridTileIds = useMemo(
+    () => orderedTileIds.slice(1),
+    [orderedTileIds],
+  )
 
-  const pipGridTileIds = useMemo(() => {
-    const ids: string[] = []
-    if (localScreenTileId) ids.push(localScreenTileId)
-    for (const p of remoteList) {
-      ids.push(p.peerId)
-      const sid = remoteScreenTileId(p)
-      if (sid) ids.push(sid)
-    }
-    return ids
-  }, [localPeerId, remoteList, localScreenTileId])
+  const galleryGridCols = mobileSoloTiles ? 1 : 2
+  const galleryPlaceholderCount = gridTrailingPlaceholders(orderedTileIds.length, galleryGridCols)
+
+  const pipGridCols = gridCols(Math.max(1, pipGridTileIds.length))
+  const pipPlaceholderCount =
+    pipGridTileIds.length > 0 ? gridTrailingPlaceholders(pipGridTileIds.length, pipGridCols) : 0
 
   const renderConferenceTile = (id: string) => {
     if (id === localPeerId) {
@@ -447,12 +404,11 @@ export function RoomPage({
           label={`${name} — экран`}
           roomId={roomId}
           linkPeerId={localScreenPeerId ?? undefined}
-          videoStyle={remoteVideoStyle}
+          videoStyle={screenShareVideoStyle}
           showInfo={showInfo}
           srtConnectUrl={localSrt?.connectUrlPublic}
           srtListenPort={localSrt?.listenPort}
           onStopShare={requestStopScreenSharing}
-          showStopButton
           reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
         />
       )
@@ -465,12 +421,10 @@ export function RoomPage({
           label={`${remotePresenter.name} — экран`}
           roomId={roomId}
           linkPeerId={remotePresenter.screenPeerId ?? undefined}
-          videoStyle={remoteVideoStyle}
+          videoStyle={screenShareVideoStyle}
           showInfo={showInfo}
           srtConnectUrl={srtByPeer[remotePresenter.peerId]?.connectUrlPublic}
           srtListenPort={srtByPeer[remotePresenter.peerId]?.listenPort}
-          onStopShare={() => {}}
-          showStopButton={false}
           reactionBurst={pickLatestBurstForPeer(reactionBursts, remotePresenter.peerId)}
         />
       )
@@ -486,12 +440,11 @@ export function RoomPage({
             label={`${name} — экран`}
             roomId={roomId}
             linkPeerId={localScreenPeerId ?? undefined}
-            videoStyle={remoteVideoStyle}
+            videoStyle={screenShareVideoStyle}
             showInfo={showInfo}
             srtConnectUrl={localSrt?.connectUrlPublic}
             srtListenPort={localSrt?.listenPort}
             onStopShare={requestStopScreenSharing}
-            showStopButton
             reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
           />
         )
@@ -504,12 +457,10 @@ export function RoomPage({
           label={`${p.name} — экран`}
           roomId={roomId}
           linkPeerId={p.screenPeerId ?? undefined}
-          videoStyle={remoteVideoStyle}
+          videoStyle={screenShareVideoStyle}
           showInfo={showInfo}
           srtConnectUrl={srtByPeer[p.peerId]?.connectUrlPublic}
           srtListenPort={srtByPeer[p.peerId]?.listenPort}
-          onStopShare={() => {}}
-          showStopButton={false}
           reactionBurst={pickLatestBurstForPeer(reactionBursts, owner)}
         />
       )
@@ -519,7 +470,7 @@ export function RoomPage({
     return (
       <ParticipantCard
         participant={p}
-        videoStyle={remoteVideoStyle}
+        videoStyle={cameraTileVideoStyle}
         showInfo={showInfo}
         showMeter={showMeter}
         roomId={roomId}
@@ -615,24 +566,42 @@ export function RoomPage({
           <div className={layout === 'meet' ? 'room-meet-main' : 'room-speaker-main'}>
             {renderConferenceTile(featuredPeerId)}
           </div>
-          <div className={layout === 'meet' ? 'room-meet-strip' : 'room-speaker-strip'}>
-            {stripPeerIds.map((id) => (
-              <div key={id} className={layout === 'meet' ? 'room-meet-strip-tile' : 'room-speaker-strip-tile'}>
-                {renderConferenceTile(id)}
-              </div>
-            ))}
-          </div>
+          {layout === 'meet' ? (
+            <div className="room-meet-strip">
+              {orderedTileIds.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`room-meet-strip-tile${id === meetFeaturedId ? ' room-meet-strip-tile--active' : ''}`}
+                  onClick={() => setMeetStageTileId(id)}
+                >
+                  {renderConferenceTile(id)}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="room-speaker-strip">
+              {stripPeerIds.map((id) => (
+                <div key={id} className="room-speaker-strip-tile">
+                  {renderConferenceTile(id)}
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
 
       {/* ── Grid layout ────────────────────────────────────────────────── */}
       {layout === 'grid' && (
         <div
-          className={`tile-grid${mobileSoloTiles ? ' tile-grid--mobile-solo' : ''}${mobileMultiTiles ? ' tile-grid--mobile-multi' : ''}`}
-          style={gridStyle(gridCols(rosterCount))}
+          className={`tile-grid tile-grid--gallery${mobileSoloTiles ? ' tile-grid--mobile-solo' : ''}${mobileMultiTiles ? ' tile-grid--mobile-multi' : ''}`}
+          style={gridStyle(galleryGridCols)}
         >
           {orderedTileIds.map((id) => (
             <React.Fragment key={id}>{renderConferenceTile(id)}</React.Fragment>
+          ))}
+          {Array.from({ length: galleryPlaceholderCount }, (_, i) => (
+            <GridTilePlaceholder key={`gallery-ph-${i}`} />
           ))}
         </div>
       )}
@@ -642,14 +611,22 @@ export function RoomPage({
         <div className="pip-container">
           <div
             className="tile-grid pip-grid"
-            style={gridStyle(gridCols(Math.max(1, pipGridTileIds.length)))}
+            style={gridStyle(pipGridCols)}
           >
             {pipGridTileIds.length === 0 ? (
-              <div className="pip-waiting">Ожидание участников…</div>
+              <div className="pip-waiting" role="status" aria-live="polite">
+                <BrandLogoLoader size={56} />
+                <span className="pip-waiting__text">Ожидание участников…</span>
+              </div>
             ) : (
-              pipGridTileIds.map((id) => (
-                <React.Fragment key={id}>{renderConferenceTile(id)}</React.Fragment>
-              ))
+              <>
+                {pipGridTileIds.map((id) => (
+                  <React.Fragment key={id}>{renderConferenceTile(id)}</React.Fragment>
+                ))}
+                {Array.from({ length: pipPlaceholderCount }, (_, i) => (
+                  <GridTilePlaceholder key={`pip-ph-${i}`} />
+                ))}
+              </>
             )}
           </div>
           <DraggablePip
@@ -697,8 +674,6 @@ export function RoomPage({
         onSwitchMic={id => { setSelectedMicId(id); onSwitchMic(id) }}
         activePreset={activePreset}
         onChangePreset={onChangePreset}
-        objectFit={objectFit}
-        onObjectFitToggle={() => setObjectFit(f => f === 'cover' ? 'contain' : 'cover')}
         layout={layout}
         onLayoutChange={setLayout}
         showMeter={showMeter}
@@ -780,7 +755,11 @@ function LocalTile({
         className={showMainVideo ? 'participant-card__main-video' : 'participant-card__main-video hidden'}
         style={videoStyle}
       />
-      {showAvatar && <div className="cam-off-avatar">{name.charAt(0).toUpperCase()}</div>}
+      {showAvatar && (
+        <div className="cam-off-avatar">
+          <span className="cam-off-avatar__label">{name}</span>
+        </div>
+      )}
       {showMeter && !isMuted && <AudioMeter stream={stream} stereo />}
       {showInfo && (
         <VideoInfoOverlay
@@ -798,7 +777,7 @@ function LocalTile({
     <>
       <span className="card-name">{name} (вы)</span>
       <span className="card-bar-actions">
-        {isMuted && <MutedSvg />}
+        {isMuted && <MicOffIcon className="muted-icon" />}
       </span>
     </>
   )
@@ -852,13 +831,10 @@ function gridCols(n: number): number {
   return 3
 }
 
-function MutedSvg() {
-  return (
-    <svg className="muted-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <line x1="1" y1="1" x2="23" y2="23" />
-      <path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6" />
-      <path d="M17 16.95A7 7 0 015 12v-2m14 0v2a7 7 0 01-.11 1.23M12 19v4M8 23h8" />
-    </svg>
-  )
+/** Сколько пустых ячеек добавить в последний ряд сетки (cols ≥ 1). */
+function gridTrailingPlaceholders(itemCount: number, cols: number): number {
+  if (itemCount <= 0 || cols <= 0) return 0
+  const r = itemCount % cols
+  return r === 0 ? 0 : cols - r
 }
 

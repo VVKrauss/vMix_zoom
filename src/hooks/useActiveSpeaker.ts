@@ -6,10 +6,8 @@ const POLL_MS = 90
 const SPEAK_RMS = 0.022
 /** После тишины вернуться на «я или первый гость» */
 const SILENCE_REVERT_MS = 1400
-/** Не переключать спикера чаще (кроме сильного перекрытия) */
-const MIN_SWITCH_MS = 280
-/** Новый кандидат должен быть заметно громче текущего */
-const DOMINANCE_RATIO = 1.45
+/** Режим «Спикер»: не чаще одного автопереключения на сцену за этот интервал (параллельная речь). */
+const MIN_SWITCH_MS = 2500
 
 let sharedCtx: AudioContext | null = null
 function getCtx(): AudioContext {
@@ -107,10 +105,8 @@ export function useActiveSpeaker(
       const cur = activeRef.current
       let bestId = ''
       let bestR = 0
-      let curR = 0
       for (const [id, { analyser, buf }] of nodes) {
         const r = rmsLinear(analyser, buf)
-        if (id === cur) curR = r
         if (r > bestR) {
           bestR = r
           bestId = id
@@ -121,16 +117,10 @@ export function useActiveSpeaker(
 
       if (bestR >= SPEAK_RMS && bestId) {
         silenceSinceRef.current = null
-        if (bestId !== cur) {
-          const strongEnough =
-            now - lastSwitchRef.current >= MIN_SWITCH_MS ||
-            bestR >= curR * DOMINANCE_RATIO ||
-            curR < SPEAK_RMS * 0.85
-          if (strongEnough) {
-            activeRef.current = bestId
-            setActive(bestId)
-            lastSwitchRef.current = now
-          }
+        if (bestId !== cur && now - lastSwitchRef.current >= MIN_SWITCH_MS) {
+          activeRef.current = bestId
+          setActive(bestId)
+          lastSwitchRef.current = now
         }
       } else {
         if (silenceSinceRef.current == null) silenceSinceRef.current = now

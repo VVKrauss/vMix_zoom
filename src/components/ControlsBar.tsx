@@ -1,16 +1,13 @@
-import { useEffect, useRef, useState, useCallback, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { DevicePopover } from './DevicePopover'
 import { ScreenSharePickerModal } from './ScreenSharePickerModal'
 import type { VideoPreset } from '../types'
 import { VIDEO_PRESETS } from '../types'
-import type { LayoutMode, ObjectFit } from './RoomPage'
+import type { LayoutMode } from './RoomPage'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
 import { useMediaQuery } from '../hooks/useMediaQuery'
-import { shouldClosePopoverOnOutsidePointer } from '../utils/popoverOutsideClick'
-
-function layoutShowsObjectFitToggle(mode: LayoutMode): boolean {
-  return mode === 'grid' || mode === 'meet' || mode === 'speaker'
-}
+import { MicIcon, MicOffIcon, CamIcon, CamOffIcon } from './icons'
+import { useOnOutsideClick } from '../hooks/useOnOutsideClick'
 
 const LAYOUT_CYCLE: LayoutMode[] = ['grid', 'meet', 'speaker', 'pip']
 
@@ -23,27 +20,26 @@ function nextLayoutMode(current: LayoutMode): LayoutMode {
 function layoutModeLabel(mode: LayoutMode): string {
   switch (mode) {
     case 'grid':
-      return 'Галерея'
+      return 'Плитки'
     case 'meet':
-      return 'Демонстрация'
+      return 'Лента'
     case 'speaker':
       return 'Спикер'
     default:
-      return 'Превью поверх'
+      return 'Картинка в картинке'
   }
 }
 
-function layoutModeIcon(mode: LayoutMode): ReactNode {
-  switch (mode) {
-    case 'grid':
-      return <GridIcon />
-    case 'meet':
-      return <MeetIconG />
-    case 'speaker':
-      return <SpeakerIcon />
-    default:
-      return <PipIcon />
-  }
+/** Одна иконка для смены раскладки: 2×2, верхний левый — только рамка, остальные залиты. */
+function LayoutModePickerIcon() {
+  return (
+    <svg className="layout-mode-picker-icon" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+      <rect x="0.5" y="0.5" width="6" height="6" rx="0.75" fill="none" stroke="currentColor" strokeWidth="1" />
+      <rect x="9" y="0" width="7" height="7" rx="0.75" />
+      <rect x="0" y="9" width="7" height="7" rx="0.75" />
+      <rect x="9" y="9" width="7" height="7" rx="0.75" />
+    </svg>
+  )
 }
 
 interface Props {
@@ -60,8 +56,6 @@ interface Props {
   onSwitchMic: (deviceId: string) => void
   activePreset: VideoPreset
   onChangePreset: (p: VideoPreset) => void
-  objectFit: ObjectFit
-  onObjectFitToggle: () => void
   layout: LayoutMode
   onLayoutChange: (l: LayoutMode) => void
   showMeter: boolean
@@ -96,7 +90,7 @@ export function ControlsBar({
   onToggleMute, onToggleCam, onLeaveRequest,
   onSwitchCamera, onSwitchMic,
   activePreset, onChangePreset,
-  objectFit, onObjectFitToggle, layout, onLayoutChange,
+  layout, onLayoutChange,
   showMeter, onToggleMeter,
   showInfo, onToggleInfo,
   onResetView,
@@ -153,6 +147,196 @@ export function ControlsBar({
     setMobileMoreOpen(false)
   }
 
+  const sh = (base: string, sheet?: boolean) => sheet ? `${base} ctrl-group--sheet` : base
+
+  const headphonesGroup = (sheet?: boolean) => (
+    <div className={sh('ctrl-group', sheet)}>
+      <button
+        type="button"
+        className={`ctrl-btn ${playoutVolume < 0.02 ? 'ctrl-btn--off' : ''}`}
+        onClick={togglePlayoutMute}
+        title={playoutVolume < 0.02 ? 'Включить звук других участников' : 'Отключить звук других участников'}
+      >
+        {playoutVolume < 0.02 ? <HeadphonesMutedIcon /> : <HeadphonesIcon />}
+        <span>{playoutVolume < 0.02 ? 'Включить' : 'Наушники'}</span>
+      </button>
+      <button
+        type="button"
+        className={`ctrl-chevron ${playoutVolume < 0.02 ? 'ctrl-btn--off' : ''} ${open === 'headphones' ? 'ctrl-chevron--open' : ''}`}
+        onClick={() => toggleOpen('headphones')}
+        title="Громкость и устройство вывода"
+      >
+        <ChevronIcon />
+      </button>
+      {open === 'headphones' && (
+        <PlayoutPopover
+          onClose={() => setOpen(null)}
+          playoutVolume={playoutVolume}
+          onPlayoutVolumeChange={onPlayoutVolumeChange}
+          audioOutputs={audioOutputs}
+          playoutSinkId={playoutSinkId}
+          onPlayoutSinkChange={onPlayoutSinkChange}
+        />
+      )}
+    </div>
+  )
+
+  const chatGroup = (sheet?: boolean) => (
+    <div className={sh('ctrl-group ctrl-group--chat', sheet)}>
+      <button
+        type="button"
+        className={`ctrl-btn ctrl-btn--chat${chatOpen ? ' ctrl-btn--chat-open' : ''}`}
+        onClick={() => { setOpen(null); onToggleChat() }}
+        title={chatOpen ? 'Закрыть чат' : 'Открыть чат'}
+        aria-label={
+          !chatOpen && chatUnreadCount > 0
+            ? `Чат, непрочитано: ${chatUnreadCount > 99 ? 'более 99' : chatUnreadCount}`
+            : undefined
+        }
+      >
+        <ChatBubbleIcon />
+        <span>Чат</span>
+        {!chatOpen && chatUnreadCount > 0 ? (
+          <span className="chat-unread-badge" aria-hidden>
+            {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
+          </span>
+        ) : null}
+      </button>
+      <button
+        type="button"
+        className={`ctrl-chevron ${open === 'chat' ? 'ctrl-chevron--open' : ''}`}
+        onClick={() => toggleOpen('chat')}
+        title="Режим чата"
+      >
+        <ChevronIcon />
+      </button>
+      {open === 'chat' && (
+        <ChatOptionsPopover
+          chatEmbed={chatEmbed}
+          onToggleChatEmbed={onToggleChatEmbed}
+          onClose={() => setOpen(null)}
+        />
+      )}
+    </div>
+  )
+
+  const layoutGroup = (sheet?: boolean) => (
+    <div className={sh('ctrl-group', sheet)}>
+      <button
+        type="button"
+        className="ctrl-btn"
+        onClick={() => onLayoutChange(nextLayoutMode(layout))}
+        title={`Сейчас: ${layoutModeLabel(layout)}. Следующий вид: ${layoutModeLabel(nextLayoutMode(layout))}`}
+      >
+        <LayoutModePickerIcon />
+        <span>{layoutModeLabel(layout)}</span>
+      </button>
+      <button
+        type="button"
+        className={`ctrl-chevron ${open === 'layout' ? 'ctrl-chevron--open' : ''}`}
+        onClick={() => toggleOpen('layout')}
+        title="Выбрать раскладку"
+      >
+        <ChevronIcon />
+      </button>
+      {open === 'layout' && (
+        <LayoutPopover
+          layout={layout}
+          onClose={() => setOpen(null)}
+          onPick={(l) => { onLayoutChange(l); setOpen(null) }}
+        />
+      )}
+    </div>
+  )
+
+  const screenShareGroup = (sheet?: boolean) => (
+    <div className={sh('ctrl-group', sheet)}>
+      <button
+        type="button"
+        className={`ctrl-btn ${isScreenSharing ? 'ctrl-btn--active ctrl-btn--screen' : ''}`}
+        disabled={!isScreenSharing && !canStartScreenShare}
+        onClick={() => {
+          if (isScreenSharing) onToggleScreenShare()
+          else if (canStartScreenShare) setScreenPickerOpen(true)
+        }}
+        title={
+          isScreenSharing
+            ? 'Остановить демонстрацию'
+            : canStartScreenShare
+              ? 'Демонстрация экрана'
+              : 'В комнате уже идёт демонстрация экрана'
+        }
+      >
+        <ScreenShareIcon />
+        <span>{isScreenSharing ? 'Стоп экран' : 'Экран'}</span>
+      </button>
+      <button
+        type="button"
+        className={`ctrl-chevron ${isScreenSharing ? 'ctrl-btn--active ctrl-btn--screen' : ''} ${open === 'screen' ? 'ctrl-chevron--open' : ''}`}
+        disabled={!isScreenSharing && !canStartScreenShare}
+        onClick={() => { if (isScreenSharing || canStartScreenShare) toggleOpen('screen') }}
+        title={isScreenSharing ? 'Меню демонстрации' : 'Тип источника демонстрации'}
+      >
+        <ChevronIcon />
+      </button>
+      {open === 'screen' && (
+        <ShareSourcePopover
+          isSharing={isScreenSharing}
+          onClose={() => setOpen(null)}
+          onPick={(surface) => { if (canStartScreenShare) void onStartScreenShare(surface); setOpen(null) }}
+          onStop={() => { onToggleScreenShare(); setOpen(null) }}
+        />
+      )}
+    </div>
+  )
+
+  const settingsGroup = (sheet?: boolean) => (
+    <div className={sh('ctrl-group ctrl-group--solo', sheet)}>
+      <button
+        className={`ctrl-btn ${open === 'settings' ? 'ctrl-btn--active' : ''}`}
+        onClick={() => toggleOpen('settings')}
+        title="Настройки"
+      >
+        <GearIcon />
+        <span>Настройки</span>
+      </button>
+      {open === 'settings' && (
+        <SettingsPopover
+          activePreset={activePreset}
+          onChangePreset={onChangePreset}
+          showMeter={showMeter}
+          onToggleMeter={onToggleMeter}
+          showInfo={showInfo}
+          onToggleInfo={onToggleInfo}
+          showButtonLabels={showButtonLabels}
+          onToggleButtonLabels={onToggleButtonLabels}
+          onResetView={() => { onResetView(); setOpen(null) }}
+          onClose={() => setOpen(null)}
+        />
+      )}
+    </div>
+  )
+
+  const reactionGroup = (sheet?: boolean) => (
+    <div className={sh('ctrl-group ctrl-group--solo', sheet)}>
+      <button
+        type="button"
+        className={`ctrl-btn ${open === 'reaction' ? 'ctrl-btn--active' : ''}`}
+        onClick={() => toggleOpen('reaction')}
+        title="Отправить реакцию"
+      >
+        <ReactionEmojiIcon />
+        <span>Реакция</span>
+      </button>
+      {open === 'reaction' && (
+        <ReactionEmojiPopover
+          onClose={() => setOpen(null)}
+          onPick={(emoji) => { onSendReaction(emoji); setOpen(null) }}
+        />
+      )}
+    </div>
+  )
+
   return (
     <div className={`controls-bar${showButtonLabels ? '' : ' controls-bar--icons-only'}${isNarrow ? ' controls-bar--narrow' : ''}`}>
       <div className="controls-bar__main">
@@ -173,7 +357,6 @@ export function ControlsBar({
         >
           <ChevronIcon />
         </button>
-
         {open === 'cam' && (
           <DevicePopover
             label="Камера"
@@ -202,7 +385,6 @@ export function ControlsBar({
         >
           <ChevronIcon />
         </button>
-
         {open === 'mic' && (
           <DevicePopover
             label="Микрофон"
@@ -214,233 +396,22 @@ export function ControlsBar({
         )}
       </div>
 
-      {isNarrow && (
-      <div className="ctrl-group">
-        <button
-          type="button"
-          className={`ctrl-btn ${playoutVolume < 0.02 ? 'ctrl-btn--off' : ''}`}
-          onClick={togglePlayoutMute}
-          title={playoutVolume < 0.02 ? 'Включить звук других участников' : 'Отключить звук других участников'}
-        >
-          {playoutVolume < 0.02 ? <HeadphonesMutedIcon /> : <HeadphonesIcon />}
-          <span>{playoutVolume < 0.02 ? 'Включить' : 'Наушники'}</span>
-        </button>
-        <button
-          type="button"
-          className={`ctrl-chevron ${playoutVolume < 0.02 ? 'ctrl-btn--off' : ''} ${open === 'headphones' ? 'ctrl-chevron--open' : ''}`}
-          onClick={() => toggleOpen('headphones')}
-          title="Громкость и устройство вывода"
-        >
-          <ChevronIcon />
-        </button>
-
-        {open === 'headphones' && (
-          <PlayoutPopover
-            onClose={() => setOpen(null)}
-            playoutVolume={playoutVolume}
-            onPlayoutVolumeChange={onPlayoutVolumeChange}
-            audioOutputs={audioOutputs}
-            playoutSinkId={playoutSinkId}
-            onPlayoutSinkChange={onPlayoutSinkChange}
-          />
-        )}
-      </div>
-      )}
+      {headphonesGroup()}
 
       {!isNarrow && (
         <>
-      {/* ── Headphones (громкость + выход) ─────────────────────────────── */}
-      <div className="ctrl-group">
-        <button
-          type="button"
-          className={`ctrl-btn ${playoutVolume < 0.02 ? 'ctrl-btn--off' : ''}`}
-          onClick={togglePlayoutMute}
-          title={playoutVolume < 0.02 ? 'Включить звук других участников' : 'Отключить звук других участников'}
-        >
-          {playoutVolume < 0.02 ? <HeadphonesMutedIcon /> : <HeadphonesIcon />}
-          <span>{playoutVolume < 0.02 ? 'Включить' : 'Наушники'}</span>
-        </button>
-        <button
-          type="button"
-          className={`ctrl-chevron ${playoutVolume < 0.02 ? 'ctrl-btn--off' : ''} ${open === 'headphones' ? 'ctrl-chevron--open' : ''}`}
-          onClick={() => toggleOpen('headphones')}
-          title="Громкость и устройство вывода"
-        >
-          <ChevronIcon />
-        </button>
-
-        {open === 'headphones' && (
-          <PlayoutPopover
-            onClose={() => setOpen(null)}
-            playoutVolume={playoutVolume}
-            onPlayoutVolumeChange={onPlayoutVolumeChange}
-            audioOutputs={audioOutputs}
-            playoutSinkId={playoutSinkId}
-            onPlayoutSinkChange={onPlayoutSinkChange}
-          />
-        )}
-      </div>
-
-      {/* ── Чат (только широкая полоса; на мобиле — в листе «Ещё») ───── */}
-      <div className="ctrl-group ctrl-group--chat">
-        <button
-          type="button"
-          className={`ctrl-btn ctrl-btn--chat${chatOpen ? ' ctrl-btn--chat-open' : ''}`}
-          onClick={() => {
-            setOpen(null)
-            onToggleChat()
-          }}
-          title={chatOpen ? 'Закрыть чат' : 'Открыть чат'}
-          aria-label={
-            !chatOpen && chatUnreadCount > 0
-              ? `Чат, непрочитано: ${chatUnreadCount > 99 ? 'более 99' : chatUnreadCount}`
-              : undefined
-          }
-        >
-          <ChatBubbleIcon />
-          <span>Чат</span>
-          {!chatOpen && chatUnreadCount > 0 ? (
-            <span className="chat-unread-badge" aria-hidden>
-              {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
-            </span>
-          ) : null}
-        </button>
-        <button
-          type="button"
-          className={`ctrl-chevron ${open === 'chat' ? 'ctrl-chevron--open' : ''}`}
-          onClick={() => toggleOpen('chat')}
-          title="Режим чата"
-        >
-          <ChevronIcon />
-        </button>
-
-        {open === 'chat' && (
-          <ChatOptionsPopover
-            chatEmbed={chatEmbed}
-            onToggleChatEmbed={onToggleChatEmbed}
-            onClose={() => setOpen(null)}
-          />
-        )}
-      </div>
-
-      {/* ── Layout (цикл по кнопке; меню — шеврон) ───────────────────── */}
-      <div className="ctrl-group">
-        <button
-          type="button"
-          className="ctrl-btn"
-          onClick={() => onLayoutChange(nextLayoutMode(layout))}
-          title={`Сейчас: ${layoutModeLabel(layout)}. Следующий вид: ${layoutModeLabel(nextLayoutMode(layout))}`}
-        >
-          {layoutModeIcon(layout)}
-          <span>{layoutModeLabel(layout)}</span>
-        </button>
-        <button
-          type="button"
-          className={`ctrl-chevron ${open === 'layout' ? 'ctrl-chevron--open' : ''}`}
-          onClick={() => toggleOpen('layout')}
-          title="Выбрать раскладку"
-        >
-          <ChevronIcon />
-        </button>
-
-        {open === 'layout' && (
-          <LayoutPopover
-            layout={layout}
-            onClose={() => setOpen(null)}
-            onPick={(l) => {
-              onLayoutChange(l)
-              setOpen(null)
-            }}
-          />
-        )}
-      </div>
-
-      {/* ── Screen share (кастомный выбор → системный диалог; плитка в комнате) ─ */}
-      <div className="ctrl-group">
-        <button
-          type="button"
-          className={`ctrl-btn ${isScreenSharing ? 'ctrl-btn--active ctrl-btn--screen' : ''}`}
-          disabled={!isScreenSharing && !canStartScreenShare}
-          onClick={() => {
-            if (isScreenSharing) onToggleScreenShare()
-            else if (canStartScreenShare) setScreenPickerOpen(true)
-          }}
-          title={
-            isScreenSharing
-              ? 'Остановить демонстрацию'
-              : canStartScreenShare
-                ? 'Демонстрация экрана'
-                : 'В комнате уже идёт демонстрация экрана'
-          }
-        >
-          <ScreenShareIcon />
-          <span>{isScreenSharing ? 'Стоп экран' : 'Экран'}</span>
-        </button>
-        <button
-          type="button"
-          className={`ctrl-chevron ${isScreenSharing ? 'ctrl-btn--active ctrl-btn--screen' : ''} ${open === 'screen' ? 'ctrl-chevron--open' : ''}`}
-          disabled={!isScreenSharing && !canStartScreenShare}
-          onClick={() => {
-            if (isScreenSharing || canStartScreenShare) toggleOpen('screen')
-          }}
-          title={isScreenSharing ? 'Меню демонстрации' : 'Тип источника демонстрации'}
-        >
-          <ChevronIcon />
-        </button>
-
-        {open === 'screen' && (
-          <ShareSourcePopover
-            isSharing={isScreenSharing}
-            onClose={() => setOpen(null)}
-            onPick={(surface) => {
-              if (canStartScreenShare) void onStartScreenShare(surface)
-              setOpen(null)
-            }}
-            onStop={() => {
-              onToggleScreenShare()
-              setOpen(null)
-            }}
-          />
-        )}
-      </div>
-
-      {/* ── Settings ───────────────────────────────────────────────────── */}
-      <div className="ctrl-group ctrl-group--solo">
-        <button
-          className={`ctrl-btn ${open === 'settings' ? 'ctrl-btn--active' : ''}`}
-          onClick={() => toggleOpen('settings')}
-          title="Настройки"
-        >
-          <GearIcon />
-          <span>Настройки</span>
-        </button>
-
-        {open === 'settings' && (
-          <SettingsPopover
-            activePreset={activePreset}
-            onChangePreset={onChangePreset}
-            objectFit={objectFit}
-            onObjectFitToggle={onObjectFitToggle}
-            layout={layout}
-            showMeter={showMeter}
-            onToggleMeter={onToggleMeter}
-            showInfo={showInfo}
-            onToggleInfo={onToggleInfo}
-            showButtonLabels={showButtonLabels}
-            onToggleButtonLabels={onToggleButtonLabels}
-            onResetView={() => { onResetView(); setOpen(null) }}
-            onClose={() => setOpen(null)}
-          />
-        )}
-      </div>
+          {chatGroup()}
+          {layoutGroup()}
+          {screenShareGroup()}
+          {settingsGroup()}
         </>
       )}
 
       {!isNarrow && (
-      <button type="button" className="ctrl-btn ctrl-btn--leave" onClick={onLeaveRequest}>
-        <LeaveIcon />
-        <span>Выйти</span>
-      </button>
+        <button type="button" className="ctrl-btn ctrl-btn--leave" onClick={onLeaveRequest}>
+          <LeaveIcon />
+          <span>Выйти</span>
+        </button>
       )}
 
       {isNarrow && (
@@ -458,10 +429,10 @@ export function ControlsBar({
       )}
 
       {isNarrow && (
-      <button type="button" className="ctrl-btn ctrl-btn--leave" onClick={onLeaveRequest}>
-        <LeaveIcon />
-        <span>Выйти</span>
-      </button>
+        <button type="button" className="ctrl-btn ctrl-btn--leave" onClick={onLeaveRequest}>
+          <LeaveIcon />
+          <span>Выйти</span>
+        </button>
       )}
       </div>
 
@@ -476,37 +447,14 @@ export function ControlsBar({
       )}
 
       {!isNarrow && (
-      <div className="controls-bar__reaction-floater">
-        <div className="ctrl-group ctrl-group--solo">
-          <button
-            type="button"
-            className={`ctrl-btn ${open === 'reaction' ? 'ctrl-btn--active' : ''}`}
-            onClick={() => toggleOpen('reaction')}
-            title="Отправить реакцию"
-          >
-            <ReactionEmojiIcon />
-            <span>Реакция</span>
-          </button>
-          {open === 'reaction' && (
-            <ReactionEmojiPopover
-              onClose={() => setOpen(null)}
-              onPick={(emoji) => {
-                onSendReaction(emoji)
-                setOpen(null)
-              }}
-            />
-          )}
+        <div className="controls-bar__reaction-floater">
+          {reactionGroup()}
         </div>
-      </div>
       )}
 
       {isNarrow && mobileMoreOpen && (
         <>
-          <div
-            className="mobile-controls-sheet-backdrop"
-            role="presentation"
-            onClick={closeMobileMore}
-          />
+          <div className="mobile-controls-sheet-backdrop" role="presentation" onClick={closeMobileMore} />
           <div
             className="mobile-controls-sheet"
             role="dialog"
@@ -516,172 +464,11 @@ export function ControlsBar({
           >
             <div className="mobile-controls-sheet__title">Ещё</div>
             <div className="mobile-controls-sheet__groups">
-              <div className="ctrl-group ctrl-group--chat ctrl-group--sheet">
-                <button
-                  type="button"
-                  className={`ctrl-btn ctrl-btn--chat${chatOpen ? ' ctrl-btn--chat-open' : ''}`}
-                  onClick={() => {
-                    setOpen(null)
-                    onToggleChat()
-                  }}
-                  title={chatOpen ? 'Закрыть чат' : 'Открыть чат'}
-                  aria-label={
-                    !chatOpen && chatUnreadCount > 0
-                      ? `Чат, непрочитано: ${chatUnreadCount > 99 ? 'более 99' : chatUnreadCount}`
-                      : undefined
-                  }
-                >
-                  <ChatBubbleIcon />
-                  <span>Чат</span>
-                  {!chatOpen && chatUnreadCount > 0 ? (
-                    <span className="chat-unread-badge" aria-hidden>
-                      {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
-                    </span>
-                  ) : null}
-                </button>
-                <button
-                  type="button"
-                  className={`ctrl-chevron ${open === 'chat' ? 'ctrl-chevron--open' : ''}`}
-                  onClick={() => toggleOpen('chat')}
-                  title="Режим чата"
-                >
-                  <ChevronIcon />
-                </button>
-                {open === 'chat' && (
-                  <ChatOptionsPopover
-                    chatEmbed={chatEmbed}
-                    onToggleChatEmbed={onToggleChatEmbed}
-                    onClose={() => setOpen(null)}
-                  />
-                )}
-              </div>
-
-              <div className="ctrl-group ctrl-group--sheet">
-                <button
-                  type="button"
-                  className="ctrl-btn"
-                  onClick={() => onLayoutChange(nextLayoutMode(layout))}
-                  title={`Сейчас: ${layoutModeLabel(layout)}. Следующий вид: ${layoutModeLabel(nextLayoutMode(layout))}`}
-                >
-                  {layoutModeIcon(layout)}
-                  <span>{layoutModeLabel(layout)}</span>
-                </button>
-                <button
-                  type="button"
-                  className={`ctrl-chevron ${open === 'layout' ? 'ctrl-chevron--open' : ''}`}
-                  onClick={() => toggleOpen('layout')}
-                  title="Выбрать раскладку"
-                >
-                  <ChevronIcon />
-                </button>
-                {open === 'layout' && (
-                  <LayoutPopover
-                    layout={layout}
-                    onClose={() => setOpen(null)}
-                    onPick={(l) => {
-                      onLayoutChange(l)
-                      setOpen(null)
-                    }}
-                  />
-                )}
-              </div>
-
-              <div className="ctrl-group ctrl-group--sheet">
-                <button
-                  type="button"
-                  className={`ctrl-btn ${isScreenSharing ? 'ctrl-btn--active ctrl-btn--screen' : ''}`}
-                  disabled={!isScreenSharing && !canStartScreenShare}
-                  onClick={() => {
-                    if (isScreenSharing) onToggleScreenShare()
-                    else if (canStartScreenShare) setScreenPickerOpen(true)
-                  }}
-                  title={
-                    isScreenSharing
-                      ? 'Остановить демонстрацию'
-                      : canStartScreenShare
-                        ? 'Демонстрация экрана'
-                        : 'В комнате уже идёт демонстрация экрана'
-                  }
-                >
-                  <ScreenShareIcon />
-                  <span>{isScreenSharing ? 'Стоп экран' : 'Экран'}</span>
-                </button>
-                <button
-                  type="button"
-                  className={`ctrl-chevron ${isScreenSharing ? 'ctrl-btn--active ctrl-btn--screen' : ''} ${open === 'screen' ? 'ctrl-chevron--open' : ''}`}
-                  disabled={!isScreenSharing && !canStartScreenShare}
-                  onClick={() => {
-                    if (isScreenSharing || canStartScreenShare) toggleOpen('screen')
-                  }}
-                  title={isScreenSharing ? 'Меню демонстрации' : 'Тип источника демонстрации'}
-                >
-                  <ChevronIcon />
-                </button>
-                {open === 'screen' && (
-                  <ShareSourcePopover
-                    isSharing={isScreenSharing}
-                    onClose={() => setOpen(null)}
-                    onPick={(surface) => {
-                      if (canStartScreenShare) void onStartScreenShare(surface)
-                      setOpen(null)
-                    }}
-                    onStop={() => {
-                      onToggleScreenShare()
-                      setOpen(null)
-                    }}
-                  />
-                )}
-              </div>
-
-              <div className="ctrl-group ctrl-group--solo ctrl-group--sheet">
-                <button
-                  type="button"
-                  className={`ctrl-btn ${open === 'settings' ? 'ctrl-btn--active' : ''}`}
-                  onClick={() => toggleOpen('settings')}
-                  title="Настройки"
-                >
-                  <GearIcon />
-                  <span>Настройки</span>
-                </button>
-                {open === 'settings' && (
-                  <SettingsPopover
-                    activePreset={activePreset}
-                    onChangePreset={onChangePreset}
-                    objectFit={objectFit}
-                    onObjectFitToggle={onObjectFitToggle}
-                    layout={layout}
-                    showMeter={showMeter}
-                    onToggleMeter={onToggleMeter}
-                    showInfo={showInfo}
-                    onToggleInfo={onToggleInfo}
-                    showButtonLabels={showButtonLabels}
-                    onToggleButtonLabels={onToggleButtonLabels}
-                    onResetView={() => { onResetView(); setOpen(null) }}
-                    onClose={() => setOpen(null)}
-                  />
-                )}
-              </div>
-
-              <div className="ctrl-group ctrl-group--solo ctrl-group--sheet">
-                <button
-                  type="button"
-                  className={`ctrl-btn ${open === 'reaction' ? 'ctrl-btn--active' : ''}`}
-                  onClick={() => toggleOpen('reaction')}
-                  title="Отправить реакцию"
-                >
-                  <ReactionEmojiIcon />
-                  <span>Реакция</span>
-                </button>
-                {open === 'reaction' && (
-                  <ReactionEmojiPopover
-                    onClose={() => setOpen(null)}
-                    onPick={(emoji) => {
-                      onSendReaction(emoji)
-                      setOpen(null)
-                    }}
-                  />
-                )}
-              </div>
+              {chatGroup(true)}
+              {layoutGroup(true)}
+              {screenShareGroup(true)}
+              {settingsGroup(true)}
+              {reactionGroup(true)}
             </div>
           </div>
         </>
@@ -727,33 +514,25 @@ function LayoutPopover({
   onPick: (l: LayoutMode) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  useOnOutsideClick(ref, onClose)
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (shouldClosePopoverOnOutsidePointer(ref.current, e.target)) onClose()
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [onClose])
-
-  const rows: { mode: LayoutMode; label: string; icon: ReactNode }[] = [
-    { mode: 'grid', label: 'Галерея', icon: <GridIcon /> },
-    { mode: 'meet', label: 'Демонстрация (сцена + полоса)', icon: <MeetIconG /> },
-    { mode: 'speaker', label: 'Спикер', icon: <SpeakerIcon /> },
-    { mode: 'pip', label: 'Превью поверх', icon: <PipIcon /> },
+  const rows: { mode: LayoutMode; label: string }[] = [
+    { mode: 'grid', label: 'Плитки' },
+    { mode: 'meet', label: 'Лента' },
+    { mode: 'speaker', label: 'Спикер' },
+    { mode: 'pip', label: 'Картинка в картинке' },
   ]
 
   return (
     <div className="device-popover device-popover--layout-pick" ref={ref}>
       <div className="device-popover__title">Раскладка</div>
-      {rows.map(({ mode, label, icon }) => (
+      {rows.map(({ mode, label }) => (
         <button
           key={mode}
           type="button"
-          className={`device-popover__item${layout === mode ? ' device-popover__item--active' : ''}`}
+          className={`device-popover__item device-popover__item--text-only${layout === mode ? ' device-popover__item--active' : ''}`}
           onClick={() => onPick(mode)}
         >
-          {icon}
           {label}
         </button>
       ))}
@@ -803,14 +582,7 @@ function ShareSourcePopover({
   onStop: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (shouldClosePopoverOnOutsidePointer(ref.current, e.target)) onClose()
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [onClose])
+  useOnOutsideClick(ref, onClose)
 
   return (
     <div className="device-popover device-popover--share-source" ref={ref}>
@@ -857,14 +629,7 @@ function PlayoutPopover({
   onPlayoutSinkChange: (deviceId: string) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (shouldClosePopoverOnOutsidePointer(ref.current, e.target)) onClose()
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [onClose])
+  useOnOutsideClick(ref, onClose)
 
   return (
     <div className="device-popover device-popover--playout" ref={ref}>
@@ -908,14 +673,7 @@ function ChatOptionsPopover({
   onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (shouldClosePopoverOnOutsidePointer(ref.current, e.target)) onClose()
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [onClose])
+  useOnOutsideClick(ref, onClose)
 
   return (
     <div className="settings-popover" ref={ref}>
@@ -932,7 +690,6 @@ function ChatOptionsPopover({
 
 function SettingsPopover({
   activePreset, onChangePreset,
-  objectFit, onObjectFitToggle, layout,
   showMeter, onToggleMeter,
   showInfo, onToggleInfo,
   showButtonLabels, onToggleButtonLabels,
@@ -940,9 +697,6 @@ function SettingsPopover({
 }: {
   activePreset: VideoPreset
   onChangePreset: (p: VideoPreset) => void
-  objectFit: ObjectFit
-  onObjectFitToggle: () => void
-  layout: LayoutMode
   showMeter: boolean
   onToggleMeter: () => void
   showInfo: boolean
@@ -953,14 +707,7 @@ function SettingsPopover({
   onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (shouldClosePopoverOnOutsidePointer(ref.current, e.target)) onClose()
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [onClose])
+  useOnOutsideClick(ref, onClose)
 
   return (
     <div className="settings-popover" ref={ref}>
@@ -979,14 +726,6 @@ function SettingsPopover({
           ))}
         </select>
       </div>
-
-      {/* Object-fit (плитки и спикер) */}
-      {layoutShowsObjectFitToggle(layout) && (
-        <button className="settings-row settings-row--btn" onClick={onObjectFitToggle}>
-          <span className="settings-label">Масштаб видео</span>
-          <span className="settings-value">{objectFit === 'contain' ? 'Полный' : 'Заполнить'}</span>
-        </button>
-      )}
 
       {/* Audio meter toggle */}
       <button className="settings-row settings-row--btn" onClick={onToggleMeter}>
@@ -1021,40 +760,6 @@ function SettingsPopover({
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
-function MicIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
-      <path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8" />
-    </svg>
-  )
-}
-function MicOffIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <line x1="1" y1="1" x2="23" y2="23" />
-      <path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6" />
-      <path d="M17 16.95A7 7 0 015 12v-2m14 0v2a7 7 0 01-.11 1.23M12 19v4M8 23h8" />
-    </svg>
-  )
-}
-function CamIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M23 7l-7 5 7 5V7z" />
-      <rect x="1" y="5" width="15" height="14" rx="2" />
-    </svg>
-  )
-}
-function CamOffIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <line x1="1" y1="1" x2="23" y2="23" />
-      <path d="M21 21H3a2 2 0 01-2-2V8a2 2 0 012-2h3m3-3h6l2 3h3a2 2 0 012 2v9.34" />
-      <path d="M16 11.37A4 4 0 1112.63 8L16 11.37z" />
-    </svg>
-  )
-}
 function LeaveIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1107,53 +812,3 @@ function GearIcon() {
     </svg>
   )
 }
-
-function GridIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-      <rect x="1" y="1" width="6" height="6" rx="1" />
-      <rect x="9" y="1" width="6" height="6" rx="1" />
-      <rect x="1" y="9" width="6" height="6" rx="1" />
-      <rect x="9" y="9" width="6" height="6" rx="1" />
-    </svg>
-  )
-}
-
-function SpeakerIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-      <rect x="1" y="2" width="10" height="12" rx="1" />
-      <rect x="12" y="4" width="3" height="8" rx="0.5" opacity="0.85" />
-    </svg>
-  )
-}
-
-function PipIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-      <rect x="1" y="1" width="14" height="14" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      <rect x="8" y="8" width="6" height="6" rx="1" />
-    </svg>
-  )
-}
-
-/** Как в Google Meet — маркер буквой G в стиле панели */
-function MeetIconG() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden className="meet-layout-icon-g">
-      <text
-        x="8"
-        y="8"
-        dominantBaseline="central"
-        textAnchor="middle"
-        fill="currentColor"
-        fontSize="11"
-        fontWeight="700"
-        fontFamily="Segoe UI, Roboto, system-ui, sans-serif"
-      >
-        G
-      </text>
-    </svg>
-  )
-}
-

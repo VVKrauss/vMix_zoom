@@ -45,11 +45,8 @@ export function RoomSession({ roomId }: Props) {
   }, [chatOpen])
 
   useEffect(() => {
-    if (chatOpen) setChatUnreadCount(0)
-  }, [chatOpen])
-
-  useEffect(() => {
     if (!chatOpen) return
+    setChatUnreadCount(0)
     setChatIncomingPreview(null)
     if (chatPreviewTimerRef.current != null) {
       window.clearTimeout(chatPreviewTimerRef.current)

@@ -19,23 +19,58 @@
 
 Если `appData` не пробрасывать, клиент использует эвристику: **второй** video producer того же участника считается экраном.
 
-## 2. Событие `producerClosed` (критично для снятия «фриза»)
+## 2. Событие `closeProducer` от клиента (КРИТИЧНО)
 
-Когда producer закрывается (пользователь нажал «Стоп экран», `track ended`, выход из комнаты), **каждый другой клиент в комнате** должен получить событие с **тем же `producerId`**, что был в `newProducer` / ответе `consume`.
+**Фронт теперь шлёт:**
 
-- Рассылать **всем сокетам комнаты** (например `io.to(roomId).emit(...)`), а не только инициатору и не только отправителю `produce`.
-- В payload поддерживать и camelCase, и snake_case (фронт читает оба):
-
-```ts
-// достаточно одного из полей
-{ producerId: string } | { producer_id: string }
+```js
+socket.emit('closeProducer', { producerId: '<mediasoup producer id>' })
 ```
 
-Фронт по `producerId` закрывает consumer, очищает `screenStream` / `videoStream` и снимает плитку демонстрации. Если зрители **не** получают это событие (или id не совпадает с тем, что в `producerMeta` клиента), остаётся **замороженный последний кадр** — это почти всегда ошибка сигналинга, а не только UI.
+Это происходит когда пользователь останавливает демонстрацию экрана (или трек заканчивается). `producer.close()` в mediasoup-client — **локальная** операция, она НЕ закрывает серверный producer автоматически.
 
-Дополнительно на фронте включены обработчики mediasoup `Consumer` `trackended` / `transportclose`, но без корректного закрытия producer на SFU и без рассылки `producerClosed` поведение может оставаться нестабильным.
+**Бэк должен:**
 
-## 3. Одна активная демонстрация на комнату
+```js
+socket.on('closeProducer', ({ producerId }) => {
+  // 1. Найти серверный producer по producerId
+  const producer = findProducerById(producerId)  // из Map/объекта комнаты
+  if (!producer) return
+
+  // 2. Закрыть серверный producer
+  producer.close()
+  // → это вызовет producer.observer.on('close')
+
+  // 3. Удалить из внутреннего списка producers комнаты
+  //    (чтобы новые гости НЕ получали его в existingProducers)
+  room.producers.delete(producerId)
+
+  // 4. Разослать producerClosed всем в комнате
+  io.to(roomId).emit('producerClosed', { producerId })
+
+  // 5. Если был виртуальный screenPeerId — разослать peerLeft
+  if (producer.appData?.source === 'screen' && producer.appData?.screenPeerId) {
+    io.to(roomId).emit('peerLeft', { peerId: producer.appData.screenPeerId })
+  }
+})
+```
+
+**Без этого обработчика:** серверный producer остаётся живым → новые гости получают его в `existingProducers` → видят замороженный последний кадр.
+
+## 3. Событие `producerClosed` (рассылка зрителям)
+
+Когда producer закрывается (через `closeProducer` от клиента, `producer.observer.on('close')`, disconnect), **каждый другой клиент в комнате** должен получить событие с **тем же `producerId`**, что был в `newProducer` / ответе `consume`.
+
+- Рассылать **всем сокетам комнаты** (например `io.to(roomId).emit(...)`), а не только инициатору.
+- В payload:
+
+```ts
+{ producerId: string }
+```
+
+Фронт по `producerId` закрывает consumer, очищает `screenStream` / `videoStream` и снимает плитку демонстрации.
+
+## 4. Одна активная демонстрация на комнату
 
 На фронте уже блокируется старт второго экрана, если в `participants` есть чужой `screenStream` или идёт приём экрана. **Обход возможен** (другой клиент, гонка, старый клиент), поэтому на бэке в обработчике `produce` нужно:
 
@@ -45,7 +80,7 @@
 
 Без этой проверки два человека смогут поднять два screen producer, даже если UI у одного из них кнопку отключит.
 
-## 4. Соло-зритель
+## 5. Соло-зритель
 
 Те же правила для `joinRoomAsViewer` / списка producers и для `producerClosed`, чтобы при остановке шаринга картинка не «зависала».
 

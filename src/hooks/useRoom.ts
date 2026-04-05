@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react'
 import { Device } from 'mediasoup-client'
-import type { Transport, Producer, Consumer } from 'mediasoup-client/lib/types'
+import type { Transport, Producer, Consumer, RtpCapabilities, TransportOptions, ConsumerOptions } from 'mediasoup-client/lib/types'
 import { io, Socket } from 'socket.io-client'
 import type {
   FrontendRoomDetail, ProducerDescriptor, RemoteParticipant,
@@ -30,23 +30,17 @@ const ROOM_POLL_MS = 4000
 const CHAT_ECHO_DEDUP_MS = 12_000
 const CHAT_ECHO_DEDUP_SCAN = 48
 
-function producerIdFromClosedPayload(payload: unknown): string | undefined {
+function extractField(payload: unknown, camel: string, snake: string): string | undefined {
   if (!payload || typeof payload !== 'object') return undefined
   const o = payload as Record<string, unknown>
-  const v = o.producerId ?? o.producer_id
+  const v = o[camel] ?? o[snake]
   if (v == null) return undefined
   const s = String(v).trim()
   return s || undefined
 }
 
-function peerIdFromLeftPayload(payload: unknown): string | undefined {
-  if (!payload || typeof payload !== 'object') return undefined
-  const o = payload as Record<string, unknown>
-  const v = o.peerId ?? o.peer_id
-  if (v == null) return undefined
-  const s = String(v).trim()
-  return s || undefined
-}
+const producerIdFromClosedPayload = (p: unknown) => extractField(p, 'producerId', 'producer_id')
+const peerIdFromLeftPayload = (p: unknown) => extractField(p, 'peerId', 'peer_id')
 
 function registerProducerMeta(
   map: Map<string, {
@@ -259,6 +253,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       const producerId = String(rawProducerId ?? '').trim()
       if (!producerId) return
 
+      if (import.meta.env.DEV) {
+        console.log('[dropProducerById] looking for', producerId,
+          '| meta keys:', [...producerMetaRef.current.keys()],
+          '| consumers:', [...consumersRef.current.entries()].map(([cid, c]) => ({ cid, cProducerId: c.producerId, closed: c.closed })),
+        )
+      }
+
       let meta = producerMetaRef.current.get(producerId)
       if (!meta) {
         for (const m of producerMetaRef.current.values()) {
@@ -269,7 +270,11 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           }
         }
       }
-      if (!meta) return
+      if (!meta) {
+        if (import.meta.env.DEV) console.warn('[dropProducerById] NO META FOUND for', producerId)
+        return
+      }
+      if (import.meta.env.DEV) console.log('[dropProducerById] found meta', { ...meta })
 
       const c = consumersRef.current.get(meta.consumerId)
       try {
@@ -289,27 +294,15 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         const next = new Map(prev)
         const p = next.get(meta.anchorPeerId)
         if (!p) return next
-        if (meta.kind === 'audio') {
-          const updated = { ...p, audioStream: undefined }
-          if (updated.videoStream || updated.screenStream) {
-            next.set(meta.anchorPeerId, updated)
-          } else {
-            next.delete(meta.anchorPeerId)
-          }
-        } else if (meta.videoSource === 'screen') {
-          const updated = { ...p, screenStream: undefined, screenPeerId: undefined }
-          if (updated.audioStream || updated.videoStream) {
-            next.set(meta.anchorPeerId, updated)
-          } else {
-            next.delete(meta.anchorPeerId)
-          }
+        const cleared: Partial<RemoteParticipant> =
+          meta.kind === 'audio' ? { audioStream: undefined }
+          : meta.videoSource === 'screen' ? { screenStream: undefined, screenPeerId: undefined }
+          : { videoStream: undefined }
+        const updated = { ...p, ...cleared }
+        if (updated.audioStream || updated.videoStream || updated.screenStream) {
+          next.set(meta.anchorPeerId, updated)
         } else {
-          const updated = { ...p, videoStream: undefined }
-          if (updated.audioStream || updated.screenStream) {
-            next.set(meta.anchorPeerId, updated)
-          } else {
-            next.delete(meta.anchorPeerId)
-          }
+          next.delete(meta.anchorPeerId)
         }
         return next
       })
@@ -359,8 +352,18 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           return
         }
 
-        const consumer = await recvTransport.consume(data as never)
+        const consumer = await recvTransport.consume(data as ConsumerOptions)
         consumersRef.current.set(consumer.id, consumer)
+
+        if (import.meta.env.DEV) {
+          console.log('[consumeProducer] IDs:',
+            'signaling=', producer.producerId,
+            'consumer.producerId=', consumer.producerId,
+            'consumer.id=', consumer.id,
+            'kind=', consumer.kind,
+            'descriptor=', producer,
+          )
+        }
 
         const stream = new MediaStream([consumer.track])
 
@@ -554,7 +557,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         return
       }
 
-      console.log('[join] existingProducers:', joinData.existingProducers)
+      if (import.meta.env.DEV) console.log('[join] existingProducers:', joinData.existingProducers)
 
       if (Array.isArray(joinData.chatHistory)) {
         const h = joinData.chatHistory
@@ -575,7 +578,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
       // 4. Load mediasoup device
       const device = new Device()
-      await device.load({ routerRtpCapabilities: joinData.rtpCapabilities as never })
+      await device.load({ routerRtpCapabilities: joinData.rtpCapabilities as RtpCapabilities })
       if (aborted()) {
         stopStreamTracks(stream)
         disposeSignalingSocket(socket)
@@ -593,19 +596,23 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         socket.emit('createWebRtcTransport', { roomId }, res)
       })
 
-      const sendTransport = device.createSendTransport(sendData as never)
+      const sendTransport = device.createSendTransport(sendData as TransportOptions)
       sendTransportRef.current = sendTransport
 
-      sendTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
-        socket.emit('connectTransport', {
-          roomId,
-          transportId: sendTransport.id,
-          dtlsParameters,
-        }, (res: { error?: string }) => {
-          if (res?.error) return errback(new Error(res.error))
-          callback()
+      const bindConnect = (t: Transport) => {
+        t.on('connect', ({ dtlsParameters }, callback, errback) => {
+          socket.emit('connectTransport', {
+            roomId,
+            transportId: t.id,
+            dtlsParameters,
+          }, (res: { error?: string }) => {
+            if (res?.error) return errback(new Error(res.error))
+            callback()
+          })
         })
-      })
+      }
+
+      bindConnect(sendTransport)
 
       sendTransport.on('produce', ({ kind, rtpParameters, appData }, callback, errback) => {
         socket.emit('produce', {
@@ -644,19 +651,10 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         socket.emit('createWebRtcTransport', { roomId }, res)
       })
 
-      const recvTransport = device.createRecvTransport(recvData as never)
+      const recvTransport = device.createRecvTransport(recvData as TransportOptions)
       recvTransportRef.current = recvTransport
 
-      recvTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
-        socket.emit('connectTransport', {
-          roomId,
-          transportId: recvTransport.id,
-          dtlsParameters,
-        }, (res: { error?: string }) => {
-          if (res?.error) return errback(new Error(res.error))
-          callback()
-        })
-      })
+      bindConnect(recvTransport)
 
       // 8. Consume existing producers
       for (const p of joinData.existingProducers ?? []) {
@@ -664,17 +662,28 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       }
 
       // 9. Socket events
+      if (import.meta.env.DEV) {
+        socket.onAny((event: string, ...args: unknown[]) => {
+          if (['newProducer', 'producerClosed', 'peerLeft'].includes(event)) {
+            console.log(`[socket.onAny] ${event}`, JSON.stringify(args))
+          }
+        })
+      }
+
       socket.on('newProducer', async (producer: ProducerDescriptor) => {
-        console.log('[newProducer]', producer)
+        if (import.meta.env.DEV) console.log('[newProducer]', producer)
         await consumeProducer(producer)
       })
 
       socket.on('producerClosed', (payload: unknown) => {
+        if (import.meta.env.DEV) console.log('[producerClosed] raw payload:', JSON.stringify(payload))
         const id = producerIdFromClosedPayload(payload)
         if (id) dropProducerById(id)
+        else if (import.meta.env.DEV) console.warn('[producerClosed] could not extract id from payload')
       })
 
       socket.on('peerLeft', (raw: unknown) => {
+        if (import.meta.env.DEV) console.log('[peerLeft] raw payload:', JSON.stringify(raw))
         const peerId = peerIdFromLeftPayload(raw)
         if (!peerId) return
 
@@ -794,63 +803,46 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     }
   }, [consumeProducer, dropProducerById])
 
-  const ensureAudioProducer = useCallback(async () => {
-    const sendTransport = sendTransportRef.current
+  const mergeTrackIntoLocalStream = (track: MediaStreamTrack) => {
     const prev = localStreamRef.current
-    if (!sendTransport || audioProducerRef.current) return
-    const a = await navigator.mediaDevices.getUserMedia({ audio: true })
-    const track = a.getAudioTracks()[0]
-    if (!track) {
-      a.getTracks().forEach((t) => t.stop())
-      return
-    }
+    const kind = track.kind
     let next: MediaStream
     if (!prev) {
       next = new MediaStream([track])
     } else {
-      prev.getAudioTracks().forEach((t) => {
-        t.stop()
-        prev.removeTrack(t)
-      })
+      const existing = kind === 'audio' ? prev.getAudioTracks() : prev.getVideoTracks()
+      existing.forEach((t) => { t.stop(); prev.removeTrack(t) })
       prev.addTrack(track)
       next = new MediaStream(prev.getTracks())
     }
     localStreamRef.current = next
     setLocalStream(next)
-    const producer = await sendTransport.produce({ track })
-    audioProducerRef.current = producer
+  }
+
+  const ensureAudioProducer = useCallback(async () => {
+    const sendTransport = sendTransportRef.current
+    if (!sendTransport || audioProducerRef.current) return
+    const a = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const track = a.getAudioTracks()[0]
+    if (!track) { a.getTracks().forEach((t) => t.stop()); return }
+    mergeTrackIntoLocalStream(track)
+    audioProducerRef.current = await sendTransport.produce({ track })
   }, [])
 
   const ensureVideoProducer = useCallback(async () => {
     const sendTransport = sendTransportRef.current
-    const prev = localStreamRef.current
     if (!sendTransport || videoProducerRef.current) return
     const preset = presetRef.current
     const v = await navigator.mediaDevices.getUserMedia({
       video: {
-        width:     { ideal: preset.width },
-        height:    { ideal: preset.height },
+        width: { ideal: preset.width },
+        height: { ideal: preset.height },
         frameRate: { ideal: preset.frameRate },
       },
     })
     const track = v.getVideoTracks()[0]
-    if (!track) {
-      v.getTracks().forEach((t) => t.stop())
-      return
-    }
-    let next: MediaStream
-    if (!prev) {
-      next = new MediaStream([track])
-    } else {
-      prev.getVideoTracks().forEach((t) => {
-        t.stop()
-        prev.removeTrack(t)
-      })
-      prev.addTrack(track)
-      next = new MediaStream(prev.getTracks())
-    }
-    localStreamRef.current = next
-    setLocalStream(next)
+    if (!track) { v.getTracks().forEach((t) => t.stop()); return }
+    mergeTrackIntoLocalStream(track)
     videoProducerRef.current = await produceVideoFromTrack(sendTransport, track, preset)
   }, [])
 
@@ -1040,8 +1032,15 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   }, [])
 
   const stopScreenShare = useCallback(() => {
-    const sid = socketRef.current?.id
-    screenProducerRef.current?.close()
+    const socket = socketRef.current
+    const sid = socket?.id
+    const producer = screenProducerRef.current
+    if (producer && socket) {
+      const pid = producer.id
+      socket.emit('closeProducer', { roomId: roomIdRef.current, producerId: pid })
+      if (import.meta.env.DEV) console.log('[stopScreenShare] emit closeProducer', pid, 'room', roomIdRef.current)
+    }
+    producer?.close()
     screenProducerRef.current = null
     localScreenStreamRef.current?.getTracks().forEach((t) => t.stop())
     localScreenStreamRef.current = null
@@ -1155,7 +1154,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     const s = socketRef.current
     socketRef.current = null
     if (s) disposeSignalingSocket(s)
-    localStream?.getTracks().forEach((t) => t.stop())
+    localStreamRef.current?.getTracks().forEach((t) => t.stop())
+    localStreamRef.current = null
     setLocalStream(null)
     setParticipants(new Map())
     setStatus('idle')
@@ -1165,7 +1165,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     setSrtByPeer({})
     setChatMessages([])
     setReactionBursts([])
-  }, [localStream, stopScreenShare])
+  }, [stopScreenShare])
 
   return {
     join,
