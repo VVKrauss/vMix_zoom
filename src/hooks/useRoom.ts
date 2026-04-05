@@ -14,9 +14,10 @@ import {
   REACTION_TTL_DEFAULT_MS,
 } from '../types/roomComms'
 import { resolveVideoProducerRole } from '../utils/producerVideoRole'
+import { signalingHttpBase, signalingSocketUrl } from '../utils/signalingBase'
 import { DEFAULT_VIDEO_PRESET } from '../types'
 
-const SERVER = String(import.meta.env.VITE_SIGNALING_URL ?? '').replace(/\/$/, '')
+const SIGNALING_HTTP = signalingHttpBase()
 const DEFAULT_ROOM = import.meta.env.VITE_DEFAULT_ROOM as string ?? 'test'
 
 const ROOM_POLL_MS = 4000
@@ -81,6 +82,26 @@ function swapTrack(
   setLocalStream(new MediaStream(stream.getTracks()))
 }
 
+/** Закрыть socket.io-клиент; при незавершённом handshake `disconnect()` часто даёт лишний шум в консоли браузера. */
+function disposeSignalingSocket(s: Socket) {
+  try {
+    s.removeAllListeners()
+    if (s.connected) {
+      s.disconnect()
+      return
+    }
+    const engine = s.io?.engine
+    if (engine && typeof engine.close === 'function') {
+      engine.removeAllListeners?.()
+      engine.close()
+      return
+    }
+    s.disconnect()
+  } catch {
+    /* noop */
+  }
+}
+
 export type RoomStatus = 'idle' | 'connecting' | 'connected' | 'error'
 
 export type RoomActivityNotifyRef = MutableRefObject<{
@@ -125,6 +146,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const [reactionBursts, setReactionBursts] = useState<RoomReactionBurst[]>([])
   const lastLocalReactionAtRef = useRef(0)
   const displayNameRef = useRef('')
+  /** Инкремент при leave или новом join — отмена незавершённого join без ложных ошибок в консоли. */
+  const joinGenerationRef = useRef(0)
   const participantsRef = useRef(participants)
   useEffect(() => {
     participantsRef.current = participants
@@ -204,10 +227,19 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     if (preset) { presetRef.current = preset; setActivePreset(preset) }
     const p = presetRef.current
 
+    joinGenerationRef.current += 1
+    const gen = joinGenerationRef.current
+
     setStatus('connecting')
     setError(null)
     roomIdRef.current = roomId
     displayNameRef.current = name.trim() || 'Гость'
+
+    const aborted = () => gen !== joinGenerationRef.current
+
+    const stopStreamTracks = (stream: MediaStream | null) => {
+      stream?.getTracks().forEach((t) => t.stop())
+    }
 
     try {
       // 1. Get local media with requested resolution
@@ -219,17 +251,52 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           frameRate: { ideal: p.frameRate },
         },
       })
+      if (aborted()) {
+        stopStreamTracks(stream)
+        setStatus('idle')
+        return
+      }
       localStreamRef.current = stream
       setLocalStream(stream)
 
       // 2. Connect socket
-      const socket = io(SERVER, { transports: ['websocket'] })
+      // Сначала long-polling — стабильнее через Vite proxy; затем upgrade до WebSocket.
+      const socket = io(signalingSocketUrl(), { transports: ['polling', 'websocket'] })
       socketRef.current = socket
 
       await new Promise<void>((resolve, reject) => {
-        socket.once('connect', resolve)
-        socket.once('connect_error', reject)
+        const onConnect = () => {
+          socket.off('connect', onConnect)
+          socket.off('connect_error', onErr)
+          socket.off('disconnect', onDisconnect)
+          resolve()
+        }
+        const onErr = (e: Error) => {
+          socket.off('connect', onConnect)
+          socket.off('connect_error', onErr)
+          socket.off('disconnect', onDisconnect)
+          reject(e)
+        }
+        const onDisconnect = (reason: string) => {
+          socket.off('connect', onConnect)
+          socket.off('connect_error', onErr)
+          socket.off('disconnect', onDisconnect)
+          reject(new Error(reason === 'io client disconnect' ? 'aborted' : (reason || 'disconnect')))
+        }
+        socket.once('connect', onConnect)
+        socket.once('connect_error', onErr)
+        socket.once('disconnect', onDisconnect)
       })
+
+      if (aborted()) {
+        stopStreamTracks(stream)
+        disposeSignalingSocket(socket)
+        if (socketRef.current === socket) socketRef.current = null
+        localStreamRef.current = null
+        setLocalStream(null)
+        setStatus('idle')
+        return
+      }
 
       setSessionMeta({ roomId: roomIdRef.current, localPeerId: socket.id ?? '' })
 
@@ -241,6 +308,16 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       }>((res) => {
         socket.emit('joinRoom', { roomId, name }, res)
       })
+
+      if (aborted()) {
+        stopStreamTracks(stream)
+        disposeSignalingSocket(socket)
+        if (socketRef.current === socket) socketRef.current = null
+        localStreamRef.current = null
+        setLocalStream(null)
+        setStatus('idle')
+        return
+      }
 
       console.log('[join] existingProducers:', joinData.existingProducers)
 
@@ -264,6 +341,16 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       // 4. Load mediasoup device
       const device = new Device()
       await device.load({ routerRtpCapabilities: joinData.rtpCapabilities as never })
+      if (aborted()) {
+        stopStreamTracks(stream)
+        disposeSignalingSocket(socket)
+        if (socketRef.current === socket) socketRef.current = null
+        deviceRef.current = null
+        localStreamRef.current = null
+        setLocalStream(null)
+        setStatus('idle')
+        return
+      }
       deviceRef.current = device
 
       // 5. Send transport
@@ -480,6 +567,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
       setStatus('connected')
     } catch (err) {
+      if (gen !== joinGenerationRef.current) {
+        return
+      }
       console.error('[join] error:', err)
       setError(String(err))
       setStatus('error')
@@ -487,8 +577,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       setSrtByPeer({})
       setChatMessages([])
       setReactionBursts([])
-      socketRef.current?.disconnect()
+      const s = socketRef.current
       socketRef.current = null
+      if (s) disposeSignalingSocket(s)
     }
   }, [consumeProducer])
 
@@ -520,7 +611,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     const tick = async () => {
       try {
         const res = await fetch(
-          `${SERVER}/api/frontend/rooms/${encodeURIComponent(activeRoomId)}`,
+          `${SIGNALING_HTTP}/api/frontend/rooms/${encodeURIComponent(activeRoomId)}`,
         )
         if (!res.ok) return
         const data = (await res.json()) as FrontendRoomDetail
@@ -748,6 +839,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   }, [])
 
   const leave = useCallback(() => {
+    joinGenerationRef.current += 1
     stopScreenShare()
     videoProducerRef.current?.close()
     audioProducerRef.current?.close()
@@ -756,7 +848,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     producerMetaRef.current.clear()
     sendTransportRef.current?.close()
     recvTransportRef.current?.close()
-    socketRef.current?.disconnect()
+    const s = socketRef.current
+    socketRef.current = null
+    if (s) disposeSignalingSocket(s)
     localStream?.getTracks().forEach((t) => t.stop())
     setLocalStream(null)
     setParticipants(new Map())

@@ -19,8 +19,14 @@ import { pickLatestBurstForPeer } from '../types/roomComms'
 import { RoomChatPanel } from './RoomChatPanel'
 import { ReactionBurstOverlay } from './ReactionBurstOverlay'
 import { useMediaQuery } from '../hooks/useMediaQuery'
+import { useVideoOrientation } from '../hooks/useVideoOrientation'
 
-export type LayoutMode = 'grid' | 'pip' | 'speaker'
+export type LayoutMode = 'grid' | 'pip' | 'speaker' | 'meet' | 'filmstrip' | 'strip_v' | 'mosaic'
+
+/** Раскладки с «плитками» (в т.ч. мобильное заполнение и object-fit) */
+export function layoutUsesTiledView(mode: LayoutMode): boolean {
+  return mode === 'grid' || mode === 'filmstrip' || mode === 'strip_v' || mode === 'mosaic'
+}
 export type ObjectFit = 'cover' | 'contain'
 
 interface Props {
@@ -125,13 +131,13 @@ export function RoomPage({
   /** Камера + удалённые + отдельная плитка демонстрации */
   const rosterCount = remoteList.length + 1 + (isScreenSharing && localScreenStream ? 1 : 0)
 
-  const mobileSoloGrid =
+  const mobileSoloTiles =
     isMobile &&
-    layout === 'grid' &&
+    layoutUsesTiledView(layout) &&
     remoteList.length === 0 &&
     !(isScreenSharing && localScreenStream)
 
-  const mobileMultiGrid = isMobile && layout === 'grid' && !mobileSoloGrid
+  const mobileMultiTiles = isMobile && layoutUsesTiledView(layout) && !mobileSoloTiles
 
   const {
     cameras, microphones,
@@ -193,24 +199,44 @@ export function RoomPage({
     return ids
   }, [localPeerId, remoteList, isScreenSharing, localScreenStream])
 
+  const stageLayout = layout === 'speaker' || layout === 'meet'
+
   const featuredPeerId = useMemo(() => {
-    if (layout !== 'speaker') return null
+    if (!stageLayout) return null
     if (speakerPinnedPeerId && allTileIds.includes(speakerPinnedPeerId)) return speakerPinnedPeerId
+
+    if (layout === 'meet') {
+      const remotePresenter = remoteList.find((p) => p.screenStream)
+      if (remotePresenter) return remotePresenter.peerId
+      if (isScreenSharing && localScreenStream) return localScreenTileKey(localPeerId)
+      if (remoteList.length > 0) return remoteList[0].peerId
+      return localPeerId
+    }
+
     if (remoteList.length > 0) return remoteList[0].peerId
     return isScreenSharing && localScreenStream ? localScreenTileKey(localPeerId) : localPeerId
-  }, [layout, speakerPinnedPeerId, allTileIds, remoteList, isScreenSharing, localScreenStream, localPeerId])
+  }, [
+    stageLayout,
+    layout,
+    speakerPinnedPeerId,
+    allTileIds,
+    remoteList,
+    isScreenSharing,
+    localScreenStream,
+    localPeerId,
+  ])
 
   const stripPeerIds = useMemo(() => {
-    if (layout !== 'speaker' || !featuredPeerId) return []
+    if (!stageLayout || !featuredPeerId) return []
     return allTileIds.filter((id) => id !== featuredPeerId)
-  }, [layout, featuredPeerId, allTileIds])
+  }, [stageLayout, featuredPeerId, allTileIds])
 
   const toggleSpeakerPin = (id: string) => {
     setSpeakerPinnedPeerId((p) => (p === id ? null : id))
   }
 
   useEffect(() => {
-    if (layout !== 'speaker') setSpeakerPinnedPeerId(null)
+    if (layout !== 'speaker' && layout !== 'meet') setSpeakerPinnedPeerId(null)
   }, [layout])
 
   useEffect(() => {
@@ -318,6 +344,72 @@ export function RoomPage({
     playoutSinkId,
   }
 
+  const orderedTileIds = useMemo(() => {
+    const ids: string[] = [localPeerId]
+    if (isScreenSharing && localScreenStream) ids.push(localScreenTileKey(localPeerId))
+    ids.push(...remoteList.map((p) => p.peerId))
+    return ids
+  }, [localPeerId, isScreenSharing, localScreenStream, remoteList])
+
+  const showSpeakerPinUi = layout === 'speaker' || layout === 'meet'
+
+  const renderConferenceTile = (id: string) => {
+    if (id === localPeerId) {
+      return localTile(false, showSpeakerPinUi)
+    }
+    if (isLocalScreenTileKey(id, localPeerId) && localScreenStream) {
+      return (
+        <LocalScreenShareTile
+          stream={localScreenStream}
+          label={`${name} — экран`}
+          roomId={roomId}
+          ownerPeerId={localPeerId}
+          videoStyle={remoteVideoStyle}
+          showInfo={showInfo}
+          srtConnectUrl={localSrt?.connectUrlPublic}
+          srtListenPort={localSrt?.listenPort}
+          onStopShare={requestStopScreenSharing}
+          showPin={showSpeakerPinUi}
+          pinActive={speakerPinnedPeerId === localScreenTileKey(localPeerId)}
+          onRequestPin={() => toggleSpeakerPin(localScreenTileKey(localPeerId))}
+          reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
+        />
+      )
+    }
+    const p = participants.get(id)
+    if (!p) return null
+    return (
+      <ParticipantCard
+        participant={p}
+        videoStyle={remoteVideoStyle}
+        showInfo={showInfo}
+        showMeter={showMeter}
+        roomId={roomId}
+        srtConnectUrl={srtByPeer[id]?.connectUrlPublic}
+        srtListenPort={srtByPeer[id]?.listenPort}
+        {...cardPlayout}
+        showPin={showSpeakerPinUi}
+        pinActive={speakerPinnedPeerId === id}
+        onRequestPin={() => toggleSpeakerPin(id)}
+        reactionBurst={pickLatestBurstForPeer(reactionBursts, p.peerId)}
+      />
+    )
+  }
+
+  const mosaicStreamForId = (id: string): MediaStream | null => {
+    if (id === localPeerId) return localStream
+    if (isLocalScreenTileKey(id, localPeerId) && localScreenStream) return localScreenStream
+    const p = participants.get(id)
+    if (!p) return null
+    return p.screenStream ?? p.videoStream ?? null
+  }
+
+  const mosaicForceLandscape = (id: string): boolean => {
+    if (isLocalScreenTileKey(id, localPeerId)) return true
+    const p = participants.get(id)
+    return !!p?.screenStream
+  }
+
   return (
     <div className="room-page">
       <ConfirmDialog
@@ -358,12 +450,12 @@ export function RoomPage({
         className={`room-body${chatEmbed && chatOpen ? ' room-body--with-embed-chat' : ''}`}
       >
         <div
-          className={`room-main${mobileSoloGrid ? ' room-main--mobile-solo-grid' : ''}${mobileMultiGrid ? ' room-main--mobile-multi-grid' : ''}`}
+          className={`room-main${mobileSoloTiles ? ' room-main--mobile-solo-grid' : ''}${mobileMultiTiles ? ' room-main--mobile-multi-grid' : ''}`}
         >
-      {/* ── Speaker layout ─────────────────────────────────────────────── */}
-      {layout === 'speaker' && featuredPeerId && (
+      {/* ── Speaker / Meet (сцена + полоса превью) ─────────────────────── */}
+      {stageLayout && featuredPeerId && (
         <>
-          <div className="room-speaker-main">
+          <div className={layout === 'meet' ? 'room-meet-main' : 'room-speaker-main'}>
             {isLocalScreenTileKey(featuredPeerId, localPeerId) && localScreenStream ? (
               <LocalScreenShareTile
                 stream={localScreenStream}
@@ -399,9 +491,9 @@ export function RoomPage({
               />
             ) : null}
           </div>
-          <div className="room-speaker-strip">
+          <div className={layout === 'meet' ? 'room-meet-strip' : 'room-speaker-strip'}>
             {stripPeerIds.map((id) => (
-              <div key={id} className="room-speaker-strip-tile">
+              <div key={id} className={layout === 'meet' ? 'room-meet-strip-tile' : 'room-speaker-strip-tile'}>
                 {isLocalScreenTileKey(id, localPeerId) && localScreenStream ? (
                   <LocalScreenShareTile
                     stream={localScreenStream}
@@ -445,33 +537,50 @@ export function RoomPage({
       {/* ── Grid layout ────────────────────────────────────────────────── */}
       {layout === 'grid' && (
         <div
-          className={`tile-grid${mobileSoloGrid ? ' tile-grid--mobile-solo' : ''}${mobileMultiGrid ? ' tile-grid--mobile-multi' : ''}`}
+          className={`tile-grid${mobileSoloTiles ? ' tile-grid--mobile-solo' : ''}${mobileMultiTiles ? ' tile-grid--mobile-multi' : ''}`}
           style={gridStyle(gridCols(rosterCount))}
         >
-          {localTile(false)}
-          {isScreenSharing && localScreenStream && (
-            <LocalScreenShareTile
-              stream={localScreenStream}
-              label={`${name} — экран`}
-              roomId={roomId}
-              ownerPeerId={localPeerId}
-              videoStyle={remoteVideoStyle}
-              showInfo={showInfo}
-              srtConnectUrl={localSrt?.connectUrlPublic}
-              srtListenPort={localSrt?.listenPort}
-              onStopShare={requestStopScreenSharing}
-              reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
-            />
-          )}
-          {remoteList.map(p => (
-            <ParticipantCard key={p.peerId} participant={p}
-              videoStyle={remoteVideoStyle}
-              showInfo={showInfo} showMeter={showMeter} roomId={roomId}
-              srtConnectUrl={srtByPeer[p.peerId]?.connectUrlPublic}
-              srtListenPort={srtByPeer[p.peerId]?.listenPort}
-              {...cardPlayout}
-              reactionBurst={pickLatestBurstForPeer(reactionBursts, p.peerId)}
-            />
+          {orderedTileIds.map((id) => (
+            <React.Fragment key={id}>{renderConferenceTile(id)}</React.Fragment>
+          ))}
+        </div>
+      )}
+
+      {/* ── Горизонтальная полоса (скролл на мобильных) ───────────────── */}
+      {layout === 'filmstrip' && (
+        <div className={`room-filmstrip${mobileSoloTiles ? ' room-filmstrip--solo' : ''}`}>
+          <div className="room-filmstrip__scroll">
+            {orderedTileIds.map((id) => (
+              <div key={id} className="room-filmstrip__cell">
+                {renderConferenceTile(id)}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Вертикальная колонка плиток ────────────────────────────────── */}
+      {layout === 'strip_v' && (
+        <div className={`room-strip-v${mobileSoloTiles ? ' room-strip-v--solo' : ''}`}>
+          {orderedTileIds.map((id) => (
+            <div key={id} className="room-strip-v__cell">
+              {renderConferenceTile(id)}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Мозаика: портрет/ландшафт по дорожке ───────────────────────── */}
+      {layout === 'mosaic' && (
+        <div className={`room-mosaic${mobileSoloTiles ? ' room-mosaic--solo' : ''}`}>
+          {orderedTileIds.map((id) => (
+            <MosaicTileShell
+              key={id}
+              stream={mosaicStreamForId(id)}
+              forceLandscape={mosaicForceLandscape(id)}
+            >
+              {renderConferenceTile(id)}
+            </MosaicTileShell>
           ))}
         </div>
       )}
@@ -596,6 +705,23 @@ export function RoomPage({
           onSend={onSendChatMessage}
         />
       )}
+    </div>
+  )
+}
+
+function MosaicTileShell({
+  stream,
+  forceLandscape,
+  children,
+}: {
+  stream: MediaStream | null
+  forceLandscape: boolean
+  children: React.ReactNode
+}) {
+  const orientation = useVideoOrientation(stream, { forceLandscape })
+  return (
+    <div className={`room-mosaic-cell room-mosaic-cell--${orientation}`}>
+      {children}
     </div>
   )
 }

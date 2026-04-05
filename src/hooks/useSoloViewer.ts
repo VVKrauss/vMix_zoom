@@ -5,7 +5,7 @@ import { io, Socket } from 'socket.io-client'
 import type { ProducerDescriptor } from '../types'
 import { resolveVideoProducerRole } from '../utils/producerVideoRole'
 
-const SERVER = String(import.meta.env.VITE_SIGNALING_URL ?? '').replace(/\/$/, '')
+import { signalingSocketUrl } from '../utils/signalingBase'
 
 /** Ответ ack на `joinRoomAsViewer` (см. docs/BACKEND_SOLO_VIEWER.md). */
 export type JoinRoomAsViewerAck = {
@@ -60,7 +60,7 @@ export function useSoloViewer(roomId: string, watchPeerId: string) {
       setAudioStream(null)
 
       try {
-        socket = io(SERVER, { transports: ['websocket'] })
+        socket = io(signalingSocketUrl(), { transports: ['polling', 'websocket'] })
 
         await new Promise<void>((resolve, reject) => {
           socket!.once('connect', resolve)

@@ -7,7 +7,18 @@ import type { LayoutMode, ObjectFit } from './RoomPage'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 
-const LAYOUT_CYCLE: LayoutMode[] = ['grid', 'speaker', 'pip']
+function layoutShowsObjectFitToggle(mode: LayoutMode): boolean {
+  return (
+    mode === 'grid' ||
+    mode === 'filmstrip' ||
+    mode === 'strip_v' ||
+    mode === 'mosaic' ||
+    mode === 'meet' ||
+    mode === 'speaker'
+  )
+}
+
+const LAYOUT_CYCLE: LayoutMode[] = ['grid', 'filmstrip', 'strip_v', 'mosaic', 'meet', 'speaker', 'pip']
 
 function nextLayoutMode(current: LayoutMode): LayoutMode {
   const i = LAYOUT_CYCLE.indexOf(current)
@@ -19,10 +30,37 @@ function layoutModeLabel(mode: LayoutMode): string {
   switch (mode) {
     case 'grid':
       return 'Галерея'
+    case 'filmstrip':
+      return 'Полоса'
+    case 'strip_v':
+      return 'Колонка'
+    case 'mosaic':
+      return 'Микс'
+    case 'meet':
+      return 'Meet'
     case 'speaker':
       return 'Спикер'
     default:
       return 'Превью поверх'
+  }
+}
+
+function layoutModeIcon(mode: LayoutMode): ReactNode {
+  switch (mode) {
+    case 'grid':
+      return <GridIcon />
+    case 'filmstrip':
+      return <FilmstripIcon />
+    case 'strip_v':
+      return <StripVIcon />
+    case 'mosaic':
+      return <MosaicIcon />
+    case 'meet':
+      return <MeetIconG />
+    case 'speaker':
+      return <SpeakerIcon />
+    default:
+      return <PipIcon />
   }
 }
 
@@ -310,7 +348,7 @@ export function ControlsBar({
           onClick={() => onLayoutChange(nextLayoutMode(layout))}
           title={`Сейчас: ${layoutModeLabel(layout)}. Следующий вид: ${layoutModeLabel(nextLayoutMode(layout))}`}
         >
-          {layout === 'grid' ? <GridIcon /> : layout === 'speaker' ? <SpeakerIcon /> : <PipIcon />}
+          {layoutModeIcon(layout)}
           <span>{layoutModeLabel(layout)}</span>
         </button>
         <button
@@ -532,7 +570,7 @@ export function ControlsBar({
                   onClick={() => onLayoutChange(nextLayoutMode(layout))}
                   title={`Сейчас: ${layoutModeLabel(layout)}. Следующий вид: ${layoutModeLabel(nextLayoutMode(layout))}`}
                 >
-                  {layout === 'grid' ? <GridIcon /> : layout === 'speaker' ? <SpeakerIcon /> : <PipIcon />}
+                  {layoutModeIcon(layout)}
                   <span>{layoutModeLabel(layout)}</span>
                 </button>
                 <button
@@ -697,6 +735,10 @@ function LayoutPopover({
 
   const rows: { mode: LayoutMode; label: string; icon: ReactNode }[] = [
     { mode: 'grid', label: 'Галерея', icon: <GridIcon /> },
+    { mode: 'filmstrip', label: 'Полоса (гориз.)', icon: <FilmstripIcon /> },
+    { mode: 'strip_v', label: 'Колонка (верт.)', icon: <StripVIcon /> },
+    { mode: 'mosaic', label: 'Микс (портрет/ландшафт)', icon: <MosaicIcon /> },
+    { mode: 'meet', label: 'Meet (сцена + полоса)', icon: <MeetIconG /> },
     { mode: 'speaker', label: 'Спикер', icon: <SpeakerIcon /> },
     { mode: 'pip', label: 'Превью поверх', icon: <PipIcon /> },
   ]
@@ -938,8 +980,8 @@ function SettingsPopover({
         </select>
       </div>
 
-      {/* Object-fit (галерея и спикер) */}
-      {(layout === 'grid' || layout === 'speaker') && (
+      {/* Object-fit (плитки и спикер) */}
+      {layoutShowsObjectFitToggle(layout) && (
         <button className="settings-row settings-row--btn" onClick={onObjectFitToggle}>
           <span className="settings-label">Масштаб видео</span>
           <span className="settings-value">{objectFit === 'contain' ? 'Полный' : 'Заполнить'}</span>
@@ -1091,6 +1133,57 @@ function PipIcon() {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
       <rect x="1" y="1" width="14" height="14" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
       <rect x="8" y="8" width="6" height="6" rx="1" />
+    </svg>
+  )
+}
+
+/** Как в Google Meet — маркер буквой G в стиле панели */
+function MeetIconG() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden className="meet-layout-icon-g">
+      <text
+        x="8"
+        y="8"
+        dominantBaseline="central"
+        textAnchor="middle"
+        fill="currentColor"
+        fontSize="11"
+        fontWeight="700"
+        fontFamily="Segoe UI, Roboto, system-ui, sans-serif"
+      >
+        G
+      </text>
+    </svg>
+  )
+}
+
+function FilmstripIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+      <rect x="1" y="5" width="4" height="8" rx="0.75" />
+      <rect x="6" y="5" width="4" height="8" rx="0.75" />
+      <rect x="11" y="5" width="4" height="8" rx="0.75" />
+    </svg>
+  )
+}
+
+function StripVIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+      <rect x="5" y="1" width="8" height="4" rx="0.75" />
+      <rect x="5" y="6" width="8" height="4" rx="0.75" />
+      <rect x="5" y="11" width="8" height="4" rx="0.75" />
+    </svg>
+  )
+}
+
+function MosaicIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+      <rect x="1" y="1" width="5" height="8" rx="0.75" />
+      <rect x="7" y="1" width="8" height="5" rx="0.75" />
+      <rect x="7" y="7" width="4" height="8" rx="0.75" />
+      <rect x="1" y="10" width="5" height="5" rx="0.75" />
     </svg>
   )
 }

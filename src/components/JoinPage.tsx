@@ -1,47 +1,26 @@
-import { useState, useEffect, FormEvent } from 'react'
+import { useState, FormEvent } from 'react'
 import type { VideoPreset } from '../types'
 import { DEFAULT_VIDEO_PRESET } from '../types'
-import { getRoomFromSearch, replaceRoomInBrowserUrl } from '../utils/soloViewerParams'
 
 interface Props {
+  roomId: string
   onJoin: (name: string, roomId: string, preset: VideoPreset) => void
+  onBackToHome: () => void
   error: string | null
 }
 
-const DEFAULT_ROOM = import.meta.env.VITE_DEFAULT_ROOM ?? 'test'
-
-function initialRoomFromUrl(): string {
-  return getRoomFromSearch() ?? DEFAULT_ROOM
-}
-
-export function JoinPage({ onJoin, error }: Props) {
+export function JoinPage({ roomId, onJoin, onBackToHome, error }: Props) {
   const [name, setName] = useState('')
-  const [room, setRoom] = useState(initialRoomFromUrl)
-
-  useEffect(() => {
-    const trimmed = room.trim()
-    if (!trimmed) {
-      if (getRoomFromSearch() !== null) {
-        const url = new URL(window.location.href)
-        url.searchParams.delete('room')
-        const qs = url.searchParams.toString()
-        window.history.replaceState({}, '', `${url.pathname}${qs ? `?${qs}` : ''}`)
-      }
-      return
-    }
-    if (getRoomFromSearch() === trimmed) return
-    replaceRoomInBrowserUrl(trimmed)
-  }, [room])
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-    if (name.trim()) onJoin(name.trim(), room.trim() || DEFAULT_ROOM, DEFAULT_VIDEO_PRESET)
+    const rid = roomId.trim()
+    if (name.trim() && rid) onJoin(name.trim(), rid, DEFAULT_VIDEO_PRESET)
   }
 
   const goMain = () => {
-    window.history.replaceState({}, '', window.location.pathname)
     setName('')
-    setRoom(DEFAULT_ROOM)
+    onBackToHome()
   }
 
   return (
@@ -65,15 +44,15 @@ export function JoinPage({ onJoin, error }: Props) {
 
           <label className="join-label">Комната</label>
           <input
-            className="join-input"
+            className="join-input join-input--readonly"
             type="text"
-            placeholder="ID комнаты"
-            value={room}
-            onChange={(e) => setRoom(e.target.value)}
-            maxLength={40}
+            readOnly
+            value={roomId}
+            title={roomId}
+            aria-readonly="true"
           />
 
-          <button className="join-btn" type="submit" disabled={!name.trim()}>
+          <button className="join-btn" type="submit" disabled={!name.trim() || !roomId.trim()}>
             Войти
           </button>
         </form>
