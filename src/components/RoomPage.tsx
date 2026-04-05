@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import React from 'react'
 import { ConfirmDialog } from './ConfirmDialog'
 import { ControlsBar } from './ControlsBar'
@@ -20,6 +20,7 @@ import { RoomChatPanel } from './RoomChatPanel'
 import { ReactionBurstOverlay } from './ReactionBurstOverlay'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useVideoOrientation } from '../hooks/useVideoOrientation'
+import { buildRoomInviteAbsoluteUrl } from '../utils/soloViewerParams'
 
 export type LayoutMode = 'grid' | 'pip' | 'speaker' | 'meet' | 'filmstrip' | 'strip_v' | 'mosaic'
 
@@ -87,6 +88,29 @@ export function RoomPage({
   const [leaveDialog, setLeaveDialog] = useState<null | { mode: 'home' | 'leave'; others: number }>(null)
   const [screenStopDialogOpen, setScreenStopDialogOpen] = useState(false)
   const [speakerPinnedPeerId, setSpeakerPinnedPeerId] = useState<string | null>(null)
+  const [inviteToast, setInviteToast] = useState(false)
+  const inviteToastTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
+
+  const handleInviteParticipants = useCallback(() => {
+    const id = roomId.trim()
+    if (!id) return
+    const url = buildRoomInviteAbsoluteUrl(id)
+    void navigator.clipboard.writeText(url).then(
+      () => {
+        if (inviteToastTimerRef.current != null) window.clearTimeout(inviteToastTimerRef.current)
+        setInviteToast(true)
+        inviteToastTimerRef.current = window.setTimeout(() => {
+          setInviteToast(false)
+          inviteToastTimerRef.current = null
+        }, 3800)
+      },
+      () => {},
+    )
+  }, [roomId])
+
+  useEffect(() => () => {
+    if (inviteToastTimerRef.current != null) window.clearTimeout(inviteToastTimerRef.current)
+  }, [])
 
   const { audioOutputs, refreshAudioOutputs } = useAudioOutputs()
   const [playoutVolume, setPlayoutVolume] = useState(() => {
@@ -439,12 +463,34 @@ export function RoomPage({
         </button>
 
         <div className="room-center">
-          <span className="room-name">{roomId}</span>
-          <span className="room-count">({participantCount})</span>
+          <div className="room-center__row">
+            <div className="room-center__titles">
+              <span className="room-name">{roomId}</span>
+              <span className="room-count">({participantCount})</span>
+            </div>
+            <button
+              type="button"
+              className="room-invite-btn"
+              onClick={handleInviteParticipants}
+              title="Скопировать ссылку на комнату"
+            >
+              Пригласить участников
+            </button>
+          </div>
         </div>
 
         <div className="header-right" />
       </header>
+
+      <div
+        className={`room-invite-toast${inviteToast ? ' room-invite-toast--visible' : ''}`}
+        role="status"
+        aria-live="polite"
+        aria-hidden={!inviteToast}
+      >
+        <span className="room-invite-toast__title">Ссылка скопирована</span>
+        <span className="room-invite-toast__text">Отправьте её участникам — по ней можно войти в эту комнату.</span>
+      </div>
 
       <div
         className={`room-body${chatEmbed && chatOpen ? ' room-body--with-embed-chat' : ''}`}

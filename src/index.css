@@ -348,13 +348,89 @@ html, body, #root {
   flex-direction: column;
   align-items: center;
   line-height: 1.2;
+  min-width: 0;
+}
+.room-center__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 14px;
+  max-width: min(100vw - 120px, 560px);
+}
+.room-center__titles {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
 }
 .room-name {
   font-size: 15px;
   font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .room-count {
   font-size: 11px;
+  color: var(--text-dim);
+}
+.room-invite-btn {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font);
+  padding: 7px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.room-invite-btn:hover {
+  border-color: var(--red);
+  background: rgba(229, 57, 53, 0.12);
+  color: #fff;
+}
+.room-invite-btn:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.room-invite-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 108px;
+  z-index: 10040;
+  max-width: min(calc(100vw - 32px), 380px);
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid rgba(229, 57, 53, 0.35);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-50%) translateY(12px);
+  transition: opacity 0.28s ease, transform 0.28s ease;
+}
+.room-invite-toast--visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.room-invite-toast__title {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 6px;
+}
+.room-invite-toast__text {
+  display: block;
+  font-size: 13px;
+  line-height: 1.45;
   color: var(--text-dim);
 }
 
@@ -1350,6 +1426,20 @@ button.vio-row--peer:focus-visible {
   .brand-logo--header-h { height: 32px; }
   .room-name { font-size: 13px; }
   .room-count { font-size: 10px; }
+  .room-center__row {
+    max-width: min(100vw - 72px, 100%);
+    gap: 8px 10px;
+  }
+  .room-invite-btn {
+    font-size: 11px;
+    padding: 6px 10px;
+  }
+  .room-invite-toast {
+    bottom: 72px;
+    padding: 14px 16px;
+  }
+  .room-invite-toast__title { font-size: 14px; }
+  .room-invite-toast__text { font-size: 12px; }
 
   /* Controls bar */
   .controls-bar { gap: 6px; padding: 6px 8px; }

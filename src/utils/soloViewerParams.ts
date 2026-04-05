@@ -39,6 +39,15 @@ export function parseSoloViewerParams(
   return { room, peer }
 }
 
+/** Полный URL страницы входа в комнату: `origin/r/:roomId` (для приглашения). */
+export function buildRoomInviteAbsoluteUrl(roomId: string): string {
+  const u = new URL(typeof window !== 'undefined' ? window.location.href : 'http://localhost/')
+  u.pathname = `/r/${encodeURIComponent(roomId.trim())}`
+  u.search = ''
+  u.hash = ''
+  return u.toString()
+}
+
 /** Полный URL страницы «только этот участник»: `origin/r/:roomId?peer=…`. */
 export function buildSoloViewerAbsoluteUrl(roomId: string, peerId: string): string {
   const u = new URL(window.location.href)
