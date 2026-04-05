@@ -22,8 +22,7 @@ export function JoinPage({ onJoin, error }: Props) {
     <div className="join-screen">
       <div className="join-card">
         <div className="join-logo">
-          <img className="brand-logo brand-logo--join" src="/logo.png" alt="" width={38} height={38} />
-          <span>redflow.online</span>
+          <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="redflow.online" />
         </div>
 
         <form onSubmit={handleSubmit} className="join-form">

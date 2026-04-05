@@ -116,8 +116,7 @@ export function RoomPage({
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <header className="room-header">
         <div className="room-logo">
-          <img className="brand-logo brand-logo--header" src="/logo.png" alt="" width={28} height={28} />
-          <span>redflow.online</span>
+          <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="redflow.online" />
         </div>
 
         <div className="room-center">

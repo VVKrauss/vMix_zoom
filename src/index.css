@@ -61,9 +61,17 @@ html, body, #root {
   width: 38px;
   height: 38px;
 }
+.brand-logo--join-h {
+  height: 48px;
+  width: auto;
+}
 .brand-logo--header {
   width: 28px;
   height: 28px;
+}
+.brand-logo--header-h {
+  height: 42px;
+  width: auto;
 }
 
 .join-form {
@@ -730,7 +738,7 @@ button.vio-row--peer:focus-visible {
 
   /* Header */
   .room-header { padding: 0 10px; }
-  .room-logo span { display: none; }
+  .brand-logo--header-h { height: 32px; }
   .room-name { font-size: 13px; }
   .room-count { font-size: 10px; }
 
