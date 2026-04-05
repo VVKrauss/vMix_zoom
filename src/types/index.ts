@@ -23,6 +23,10 @@ export type ProducerDescriptor = {
   peerId: string
   kind: 'audio' | 'video'
   name: string
+  /** Явный источник видео (из producer.appData на бэке). */
+  videoSource?: 'camera' | 'screen'
+  /** Сырой appData с бэка; часто `{ source: 'screen' }`. */
+  appData?: Record<string, unknown>
 }
 
 export type RemoteParticipant = {
@@ -30,6 +34,8 @@ export type RemoteParticipant = {
   name: string
   audioStream?: MediaStream
   videoStream?: MediaStream
+  /** Второй video producer (демонстрация экрана). */
+  screenStream?: MediaStream
 }
 
 /** Socket.IO `srtStarted` и элементы `srt[]` из GET /api/frontend/rooms/:roomId */

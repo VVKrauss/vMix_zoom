@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import { useSoloViewer } from '../hooks/useSoloViewer'
 
@@ -9,10 +9,37 @@ interface Props {
 }
 
 /** Собираем один MediaStream: видео + аудио в одном элементе — так надёжнее для звука и автозапуска. */
+function SoloViewerStateTopLogo({ onExit }: { onExit: () => void }) {
+  return (
+    <div className="solo-viewer-state-topbar">
+      <button type="button" className="room-logo-btn" onClick={onExit} title="Главная" aria-label="Главная">
+        <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
+      </button>
+    </div>
+  )
+}
+
+function SoloViewerStateLayout({ onExit, children }: { onExit: () => void; children: ReactNode }) {
+  return (
+    <>
+      <SoloViewerStateTopLogo onExit={onExit} />
+      {children}
+    </>
+  )
+}
+
 function mergeAV(video: MediaStream | null, audio: MediaStream | null): MediaStream | null {
   const tracks: MediaStreamTrack[] = []
-  if (video) tracks.push(...video.getVideoTracks())
-  if (audio) tracks.push(...audio.getAudioTracks())
+  if (video) {
+    for (const t of video.getVideoTracks()) {
+      if (t.readyState === 'live') tracks.push(t)
+    }
+  }
+  if (audio) {
+    for (const t of audio.getAudioTracks()) {
+      if (t.readyState === 'live') tracks.push(t)
+    }
+  }
   if (!tracks.length) return null
   return new MediaStream(tracks)
 }
@@ -20,7 +47,7 @@ function mergeAV(video: MediaStream | null, audio: MediaStream | null): MediaStr
 export function SoloViewerPage({ roomId, watchPeerId, onExit }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
 
-  const { status, error, videoStream, audioStream, retry } = useSoloViewer(roomId, watchPeerId)
+  const { status, error, videoStream, audioStream, camVideo, scrVideo, retry } = useSoloViewer(roomId, watchPeerId)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -39,12 +66,15 @@ export function SoloViewerPage({ roomId, watchPeerId, onExit }: Props) {
       return
     }
 
-    const merged = mergeAV(videoStream, audioStream)
-    el.srcObject = merged
-    if (!merged) return
+    /* Сброс srcObject нужен при смене экран → камера: иначе Chromium часто оставляет чёрный кадр. */
+    el.srcObject = null
 
     let cancelled = false
     const kick = async () => {
+      const merged = mergeAV(videoStream, audioStream)
+      if (cancelled || !el.isConnected) return
+      el.srcObject = merged
+      if (!merged) return
       /* Сначала без звука — иначе Chromium блокирует play() без жеста (чёрный экран). */
       el.muted = true
       try {
@@ -65,7 +95,7 @@ export function SoloViewerPage({ roomId, watchPeerId, onExit }: Props) {
     return () => {
       cancelled = true
     }
-  }, [status, videoStream, audioStream])
+  }, [status, videoStream, audioStream, camVideo, scrVideo])
 
   useEffect(() => {
     const onVis = () => {
@@ -91,17 +121,19 @@ export function SoloViewerPage({ roomId, watchPeerId, onExit }: Props) {
   if (status === 'error') {
     return (
       <div className="solo-viewer-page solo-viewer-page--state">
-        <div className="solo-viewer-state-inner solo-viewer-state-inner--msg">
-          <p>{error ?? 'Ошибка подключения'}</p>
-          <div className="solo-viewer-actions">
-            <button type="button" className="solo-viewer-btn" onClick={retry}>
-              Повторить
-            </button>
-            <button type="button" className="solo-viewer-btn solo-viewer-btn--ghost" onClick={onExit}>
-              Назад
-            </button>
+        <SoloViewerStateLayout onExit={onExit}>
+          <div className="solo-viewer-state-inner solo-viewer-state-inner--msg">
+            <p>{error ?? 'Ошибка подключения'}</p>
+            <div className="solo-viewer-actions">
+              <button type="button" className="solo-viewer-btn" onClick={retry}>
+                Повторить
+              </button>
+              <button type="button" className="solo-viewer-btn solo-viewer-btn--ghost" onClick={onExit}>
+                Назад
+              </button>
+            </div>
           </div>
-        </div>
+        </SoloViewerStateLayout>
       </div>
     )
   }
@@ -109,17 +141,19 @@ export function SoloViewerPage({ roomId, watchPeerId, onExit }: Props) {
   if (status === 'peer_left') {
     return (
       <div className="solo-viewer-page solo-viewer-page--state">
-        <div className="solo-viewer-state-inner solo-viewer-state-inner--msg">
-          <p>Нет сигнала</p>
-          <div className="solo-viewer-actions">
-            <button type="button" className="solo-viewer-btn" onClick={retry}>
-              Повторить
-            </button>
-            <button type="button" className="solo-viewer-btn solo-viewer-btn--ghost" onClick={onExit}>
-              Назад
-            </button>
+        <SoloViewerStateLayout onExit={onExit}>
+          <div className="solo-viewer-state-inner solo-viewer-state-inner--msg">
+            <p>Нет сигнала</p>
+            <div className="solo-viewer-actions">
+              <button type="button" className="solo-viewer-btn" onClick={retry}>
+                Повторить
+              </button>
+              <button type="button" className="solo-viewer-btn solo-viewer-btn--ghost" onClick={onExit}>
+                Назад
+              </button>
+            </div>
           </div>
-        </div>
+        </SoloViewerStateLayout>
       </div>
     )
   }
@@ -138,6 +172,7 @@ export function SoloViewerPage({ roomId, watchPeerId, onExit }: Props) {
       role="presentation"
     >
       <video
+        key={`solo-${camVideo?.id ?? 'c'}-${scrVideo?.id ?? 's'}`}
         ref={videoRef}
         className={videoStream || audioStream ? 'solo-viewer-fullvideo' : 'solo-viewer-fullvideo solo-viewer-fullvideo--empty'}
         autoPlay

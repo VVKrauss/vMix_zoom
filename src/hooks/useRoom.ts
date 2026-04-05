@@ -6,6 +6,7 @@ import type {
   FrontendRoomDetail, ProducerDescriptor, RemoteParticipant,
   SrtSessionInfo, VideoPreset,
 } from '../types'
+import { resolveVideoProducerRole } from '../utils/producerVideoRole'
 import { DEFAULT_VIDEO_PRESET } from '../types'
 
 const SERVER = String(import.meta.env.VITE_SIGNALING_URL ?? '').replace(/\/$/, '')
@@ -64,7 +65,18 @@ export function useRoom() {
   const recvTransportRef = useRef<Transport | null>(null)
   const audioProducerRef = useRef<Producer | null>(null)
   const videoProducerRef = useRef<Producer | null>(null)
+  const screenProducerRef = useRef<Producer | null>(null)
+  const localScreenStreamRef = useRef<MediaStream | null>(null)
+  const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null)
+  const [isScreenSharing, setIsScreenSharing] = useState(false)
   const consumersRef = useRef<Map<string, Consumer>>(new Map())
+  /** producerId → метаданные для producerClosed и очистки */
+  const producerMetaRef = useRef<Map<string, {
+    consumerId: string
+    peerId: string
+    kind: 'audio' | 'video'
+    videoSource?: 'camera' | 'screen'
+  }>>(new Map())
   const roomIdRef = useRef<string>(DEFAULT_ROOM)
   const localStreamRef = useRef<MediaStream | null>(null)
   const [sessionMeta, setSessionMeta] = useState<{ roomId: string; localPeerId: string } | null>(null)
@@ -105,10 +117,30 @@ export function useRoom() {
         peerId: producer.peerId,
         name: producer.name,
       }
-      if (consumer.kind === 'video') {
-        next.set(producer.peerId, { ...existing, videoStream: stream })
-      } else {
+
+      if (consumer.kind === 'audio') {
+        producerMetaRef.current.set(producer.producerId, {
+          consumerId: consumer.id,
+          peerId: producer.peerId,
+          kind: 'audio',
+        })
         next.set(producer.peerId, { ...existing, audioStream: stream })
+        return next
+      }
+
+      const resolved = resolveVideoProducerRole(producer, !!existing.videoStream)
+
+      producerMetaRef.current.set(producer.producerId, {
+        consumerId: consumer.id,
+        peerId: producer.peerId,
+        kind: 'video',
+        videoSource: resolved,
+      })
+
+      if (resolved === 'screen') {
+        next.set(producer.peerId, { ...existing, screenStream: stream })
+      } else {
+        next.set(producer.peerId, { ...existing, videoStream: stream })
       }
       return next
     })
@@ -185,12 +217,13 @@ export function useRoom() {
         })
       })
 
-      sendTransport.on('produce', ({ kind, rtpParameters }, callback, errback) => {
+      sendTransport.on('produce', ({ kind, rtpParameters, appData }, callback, errback) => {
         socket.emit('produce', {
           roomId,
           transportId: sendTransport.id,
           kind,
           rtpParameters,
+          appData: appData ?? {},
         }, (res: { id?: string; error?: string }) => {
           if (res?.error) return errback(new Error(res.error))
           callback({ id: res.id! })
@@ -254,7 +287,50 @@ export function useRoom() {
         await consumeProducer(producer)
       })
 
+      const dropProducerById = (producerId: string) => {
+        const meta = producerMetaRef.current.get(producerId)
+        if (!meta) return
+        const c = consumersRef.current.get(meta.consumerId)
+        try {
+          c?.close()
+        } catch {
+          /* noop */
+        }
+        consumersRef.current.delete(meta.consumerId)
+        producerMetaRef.current.delete(producerId)
+
+        setParticipants((prev) => {
+          const next = new Map(prev)
+          const p = next.get(meta.peerId)
+          if (!p) return next
+          if (meta.kind === 'audio') {
+            next.set(meta.peerId, { ...p, audioStream: undefined })
+          } else if (meta.videoSource === 'screen') {
+            next.set(meta.peerId, { ...p, screenStream: undefined })
+          } else {
+            next.set(meta.peerId, { ...p, videoStream: undefined })
+          }
+          return next
+        })
+      }
+
+      socket.on('producerClosed', (payload: { producerId?: string }) => {
+        const id = payload?.producerId
+        if (id) dropProducerById(id)
+      })
+
       socket.on('peerLeft', ({ peerId }: { peerId: string }) => {
+        producerMetaRef.current.forEach((meta, prodId) => {
+          if (meta.peerId !== peerId) return
+          const c = consumersRef.current.get(meta.consumerId)
+          try {
+            c?.close()
+          } catch {
+            /* noop */
+          }
+          consumersRef.current.delete(meta.consumerId)
+          producerMetaRef.current.delete(prodId)
+        })
         setParticipants((prev) => {
           const next = new Map(prev)
           next.delete(peerId)
@@ -456,10 +532,73 @@ export function useRoom() {
     }
   }, [])
 
+  const stopScreenShare = useCallback(() => {
+    screenProducerRef.current?.close()
+    screenProducerRef.current = null
+    localScreenStreamRef.current?.getTracks().forEach((t) => t.stop())
+    localScreenStreamRef.current = null
+    setLocalScreenStream(null)
+    setIsScreenSharing(false)
+  }, [])
+
+  /** Подсказка диалогу getDisplayMedia: весь экран / окно / вкладка (где поддерживается). */
+  const startScreenShare = useCallback(
+    async (surface?: 'monitor' | 'window' | 'browser') => {
+      if (screenProducerRef.current) return
+      const sendTransport = sendTransportRef.current
+      if (!sendTransport) return
+      try {
+        const video: Record<string, unknown> = {
+          frameRate: { max: 30 },
+        }
+        if (surface) video.displaySurface = surface
+        const opts: Record<string, unknown> = {
+          video,
+          audio: false,
+          preferCurrentTab: false,
+        }
+        const stream = await navigator.mediaDevices.getDisplayMedia(opts as DisplayMediaStreamOptions)
+        const track = stream.getVideoTracks()[0]
+        if (!track) {
+          stream.getTracks().forEach((t) => t.stop())
+          return
+        }
+        localScreenStreamRef.current = stream
+        setLocalScreenStream(stream)
+        track.addEventListener('ended', () => {
+          stopScreenShare()
+        })
+        const producer = await sendTransport.produce({
+          track,
+          appData: { source: 'screen' },
+          encodings: [{ maxBitrate: 4_000_000, maxFramerate: 30 }],
+        })
+        screenProducerRef.current = producer
+        setIsScreenSharing(true)
+      } catch {
+        localScreenStreamRef.current?.getTracks().forEach((t) => t.stop())
+        localScreenStreamRef.current = null
+        setLocalScreenStream(null)
+      }
+    },
+    [stopScreenShare],
+  )
+
+  const toggleScreenShare = useCallback(async () => {
+    if (screenProducerRef.current) {
+      stopScreenShare()
+      return
+    }
+    await startScreenShare(undefined)
+  }, [stopScreenShare, startScreenShare])
+
   const leave = useCallback(() => {
+    stopScreenShare()
     videoProducerRef.current?.close()
     audioProducerRef.current?.close()
     consumersRef.current.forEach((c) => c.close())
+    consumersRef.current.clear()
+    producerMetaRef.current.clear()
     sendTransportRef.current?.close()
     recvTransportRef.current?.close()
     socketRef.current?.disconnect()
@@ -471,7 +610,7 @@ export function useRoom() {
     setIsCamOff(false)
     setSessionMeta(null)
     setSrtByPeer({})
-  }, [localStream])
+  }, [localStream, stopScreenShare])
 
   return {
     join,
@@ -485,6 +624,10 @@ export function useRoom() {
     status,
     error,
     localStream,
+    localScreenStream,
+    isScreenSharing,
+    toggleScreenShare,
+    startScreenShare,
     participants,
     isMuted,
     isCamOff,

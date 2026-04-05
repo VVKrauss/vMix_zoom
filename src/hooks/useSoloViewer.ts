@@ -3,6 +3,7 @@ import { Device } from 'mediasoup-client'
 import type { Transport, Consumer } from 'mediasoup-client/lib/types'
 import { io, Socket } from 'socket.io-client'
 import type { ProducerDescriptor } from '../types'
+import { resolveVideoProducerRole } from '../utils/producerVideoRole'
 
 const SERVER = String(import.meta.env.VITE_SIGNALING_URL ?? '').replace(/\/$/, '')
 
@@ -18,8 +19,10 @@ export type SoloViewerStatus = 'idle' | 'connecting' | 'connected' | 'error' | '
 export function useSoloViewer(roomId: string, watchPeerId: string) {
   const [status, setStatus] = useState<SoloViewerStatus>('idle')
   const [error, setError] = useState<string | null>(null)
-  const [videoStream, setVideoStream] = useState<MediaStream | null>(null)
+  const [camVideo, setCamVideo] = useState<MediaStream | null>(null)
+  const [scrVideo, setScrVideo] = useState<MediaStream | null>(null)
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null)
+  const videoStream = scrVideo ?? camVideo
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
@@ -28,10 +31,16 @@ export function useSoloViewer(roomId: string, watchPeerId: string) {
     let recvTransport: Transport | null = null
     let device: Device | null = null
     let socket: Socket | null = null
+    const producerMeta = new Map<string,
+      | { consumerId: string; kind: 'audio' }
+      | { consumerId: string; kind: 'video'; videoRole: 'camera' | 'screen' }
+    >()
+    let hadCameraVideo = false
 
     const cleanup = () => {
       consumers.forEach((c) => c.close())
       consumers.clear()
+      producerMeta.clear()
       try {
         recvTransport?.close()
       } catch {
@@ -46,7 +55,8 @@ export function useSoloViewer(roomId: string, watchPeerId: string) {
     const run = async () => {
       setStatus('connecting')
       setError(null)
-      setVideoStream(null)
+      setCamVideo(null)
+      setScrVideo(null)
       setAudioStream(null)
 
       try {
@@ -120,8 +130,20 @@ export function useSoloViewer(roomId: string, watchPeerId: string) {
           consumers.set(consumer.id, consumer)
 
           const stream = new MediaStream([consumer.track])
-          if (consumer.kind === 'video') setVideoStream(stream)
-          else setAudioStream(stream)
+          if (consumer.kind === 'video') {
+            const role = resolveVideoProducerRole(producer, hadCameraVideo)
+            if (role === 'camera') hadCameraVideo = true
+            producerMeta.set(producer.producerId, {
+              consumerId: consumer.id,
+              kind: 'video',
+              videoRole: role === 'screen' ? 'screen' : 'camera',
+            })
+            if (role === 'screen') setScrVideo(stream)
+            else setCamVideo(stream)
+          } else {
+            producerMeta.set(producer.producerId, { consumerId: consumer.id, kind: 'audio' })
+            setAudioStream(stream)
+          }
 
           socket!.emit('resumeConsumer', { roomId, consumerId: consumer.id }, () => {})
         }
@@ -135,6 +157,31 @@ export function useSoloViewer(roomId: string, watchPeerId: string) {
           await consumeOne(producer)
         }
 
+        const onProducerClosed = (payload: { producerId?: string }) => {
+          const pid = payload?.producerId
+          if (!pid) return
+          const m = producerMeta.get(pid)
+          if (!m) return
+          const c = consumers.get(m.consumerId)
+          try {
+            c?.close()
+          } catch {
+            /* noop */
+          }
+          consumers.delete(m.consumerId)
+          producerMeta.delete(pid)
+          if (m.kind === 'audio') setAudioStream(null)
+          else if (m.videoRole === 'screen') {
+            setScrVideo(null)
+            /* Новый MediaStream с теми же треками — иначе videoStream может совпасть по ссылке
+               с состоянием до шаринга и React/Chromium не обновят <video> (чёрный экран). */
+            setCamVideo((prev) => (prev ? new MediaStream(prev.getTracks()) : prev))
+          } else {
+            setCamVideo(null)
+            hadCameraVideo = false
+          }
+        }
+
         const onPeerLeft = ({ peerId }: { peerId: string }) => {
           if (peerId !== watchPeerId) return
           cleanup()
@@ -142,6 +189,7 @@ export function useSoloViewer(roomId: string, watchPeerId: string) {
         }
 
         socket.on('newProducer', onNewProducer)
+        socket.on('producerClosed', onProducerClosed)
         socket.on('peerLeft', onPeerLeft)
 
         if (!cancelled) setStatus('connected')
@@ -170,6 +218,8 @@ export function useSoloViewer(roomId: string, watchPeerId: string) {
     status,
     error,
     videoStream,
+    camVideo,
+    scrVideo,
     audioStream,
     retry,
   }

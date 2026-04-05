@@ -18,6 +18,7 @@ export function App() {
     localStream, participants,
     isMuted, isCamOff,
     roomId, localPeerId, srtByPeer,
+    localScreenStream, isScreenSharing, toggleScreenShare, startScreenShare,
   } = useRoom()
 
   const handleJoin = (n: string, roomIdParam: string, preset: VideoPreset) => {
@@ -77,6 +78,10 @@ export function App() {
         onSwitchMic={switchMic}
         activePreset={activePreset}
         onChangePreset={changePreset}
+        localScreenStream={localScreenStream}
+        isScreenSharing={isScreenSharing}
+        onToggleScreenShare={toggleScreenShare}
+        onStartScreenShare={startScreenShare}
       />
     )
   }

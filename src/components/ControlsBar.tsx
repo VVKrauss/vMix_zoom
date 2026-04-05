@@ -1,8 +1,28 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback, type ReactNode } from 'react'
 import { DevicePopover } from './DevicePopover'
+import { ScreenSharePickerModal } from './ScreenSharePickerModal'
 import type { VideoPreset } from '../types'
 import { VIDEO_PRESETS } from '../types'
 import type { LayoutMode, ObjectFit } from './RoomPage'
+
+const LAYOUT_CYCLE: LayoutMode[] = ['grid', 'speaker', 'pip']
+
+function nextLayoutMode(current: LayoutMode): LayoutMode {
+  const i = LAYOUT_CYCLE.indexOf(current)
+  const idx = i < 0 ? 0 : (i + 1) % LAYOUT_CYCLE.length
+  return LAYOUT_CYCLE[idx]!
+}
+
+function layoutModeLabel(mode: LayoutMode): string {
+  switch (mode) {
+    case 'grid':
+      return 'Галерея'
+    case 'speaker':
+      return 'Спикер'
+    default:
+      return 'Превью поверх'
+  }
+}
 
 interface Props {
   isMuted: boolean
@@ -21,14 +41,25 @@ interface Props {
   objectFit: ObjectFit
   onObjectFitToggle: () => void
   layout: LayoutMode
+  onLayoutChange: (l: LayoutMode) => void
   showMeter: boolean
   onToggleMeter: () => void
   showInfo: boolean
   onToggleInfo: () => void
   onResetView: () => void
+  isScreenSharing: boolean
+  onToggleScreenShare: () => void
+  onStartScreenShare: (surface?: 'monitor' | 'window' | 'browser') => void
+  playoutVolume: number
+  onPlayoutVolumeChange: (v: number) => void
+  audioOutputs: MediaDeviceInfo[]
+  playoutSinkId: string
+  onPlayoutSinkChange: (deviceId: string) => void
+  showButtonLabels: boolean
+  onToggleButtonLabels: () => void
 }
 
-type OpenPopover = 'mic' | 'cam' | 'settings' | null
+type OpenPopover = 'mic' | 'cam' | 'headphones' | 'layout' | 'screen' | 'settings' | null
 
 export function ControlsBar({
   isMuted, isCamOff,
@@ -36,47 +67,38 @@ export function ControlsBar({
   onToggleMute, onToggleCam, onLeaveRequest,
   onSwitchCamera, onSwitchMic,
   activePreset, onChangePreset,
-  objectFit, onObjectFitToggle, layout,
+  objectFit, onObjectFitToggle, layout, onLayoutChange,
   showMeter, onToggleMeter,
   showInfo, onToggleInfo,
   onResetView,
+  isScreenSharing, onToggleScreenShare, onStartScreenShare,
+  playoutVolume, onPlayoutVolumeChange,
+  audioOutputs, playoutSinkId, onPlayoutSinkChange,
+  showButtonLabels, onToggleButtonLabels,
 }: Props) {
   const [open, setOpen] = useState<OpenPopover>(null)
+  const [screenPickerOpen, setScreenPickerOpen] = useState(false)
+  const playoutSavedRef = useRef(1)
+
+  useEffect(() => {
+    if (playoutVolume >= 0.02) playoutSavedRef.current = playoutVolume
+  }, [playoutVolume])
 
   const toggleOpen = (which: OpenPopover) =>
     setOpen(prev => prev === which ? null : which)
 
+  const togglePlayoutMute = useCallback(() => {
+    setOpen((o) => (o === 'headphones' ? null : o))
+    if (playoutVolume < 0.02) {
+      onPlayoutVolumeChange(Math.min(1, Math.max(0.02, playoutSavedRef.current)))
+    } else {
+      playoutSavedRef.current = playoutVolume
+      onPlayoutVolumeChange(0)
+    }
+  }, [playoutVolume, onPlayoutVolumeChange])
+
   return (
-    <div className="controls-bar">
-
-      {/* ── Microphone ─────────────────────────────────────────────────── */}
-      <div className="ctrl-group">
-        <button
-          className={`ctrl-btn ${isMuted ? 'ctrl-btn--off' : ''}`}
-          onClick={onToggleMute}
-          title={isMuted ? 'Включить микрофон' : 'Выключить микрофон'}
-        >
-          {isMuted ? <MicOffIcon /> : <MicIcon />}
-          <span>{isMuted ? 'Включить' : 'Звук'}</span>
-        </button>
-        <button
-          className={`ctrl-chevron ${isMuted ? 'ctrl-btn--off' : ''} ${open === 'mic' ? 'ctrl-chevron--open' : ''}`}
-          onClick={() => toggleOpen('mic')}
-          title="Выбрать микрофон"
-        >
-          <ChevronIcon />
-        </button>
-
-        {open === 'mic' && (
-          <DevicePopover
-            label="Микрофон"
-            devices={microphones}
-            selectedId={selectedMicId}
-            onSelect={id => { onSwitchMic(id) }}
-            onClose={() => setOpen(null)}
-          />
-        )}
-      </div>
+    <div className={`controls-bar${showButtonLabels ? '' : ' controls-bar--icons-only'}`}>
 
       {/* ── Camera ─────────────────────────────────────────────────────── */}
       <div className="ctrl-group">
@@ -107,6 +129,148 @@ export function ControlsBar({
         )}
       </div>
 
+      {/* ── Microphone ─────────────────────────────────────────────────── */}
+      <div className="ctrl-group">
+        <button
+          className={`ctrl-btn ${isMuted ? 'ctrl-btn--off' : ''}`}
+          onClick={onToggleMute}
+          title={isMuted ? 'Включить микрофон' : 'Выключить микрофон'}
+        >
+          {isMuted ? <MicOffIcon /> : <MicIcon />}
+          <span>{isMuted ? 'Включить' : 'Микрофон'}</span>
+        </button>
+        <button
+          className={`ctrl-chevron ${isMuted ? 'ctrl-btn--off' : ''} ${open === 'mic' ? 'ctrl-chevron--open' : ''}`}
+          onClick={() => toggleOpen('mic')}
+          title="Выбрать микрофон"
+        >
+          <ChevronIcon />
+        </button>
+
+        {open === 'mic' && (
+          <DevicePopover
+            label="Микрофон"
+            devices={microphones}
+            selectedId={selectedMicId}
+            onSelect={id => { onSwitchMic(id) }}
+            onClose={() => setOpen(null)}
+          />
+        )}
+      </div>
+
+      {/* ── Headphones (громкость + выход) ─────────────────────────────── */}
+      <div className="ctrl-group">
+        <button
+          type="button"
+          className={`ctrl-btn ${playoutVolume < 0.02 ? 'ctrl-btn--off' : ''}`}
+          onClick={togglePlayoutMute}
+          title={playoutVolume < 0.02 ? 'Включить звук других участников' : 'Отключить звук других участников'}
+        >
+          {playoutVolume < 0.02 ? <HeadphonesMutedIcon /> : <HeadphonesIcon />}
+          <span>{playoutVolume < 0.02 ? 'Включить' : 'Наушники'}</span>
+        </button>
+        <button
+          type="button"
+          className={`ctrl-chevron ${playoutVolume < 0.02 ? 'ctrl-btn--off' : ''} ${open === 'headphones' ? 'ctrl-chevron--open' : ''}`}
+          onClick={() => toggleOpen('headphones')}
+          title="Громкость и устройство вывода"
+        >
+          <ChevronIcon />
+        </button>
+
+        {open === 'headphones' && (
+          <PlayoutPopover
+            onClose={() => setOpen(null)}
+            playoutVolume={playoutVolume}
+            onPlayoutVolumeChange={onPlayoutVolumeChange}
+            audioOutputs={audioOutputs}
+            playoutSinkId={playoutSinkId}
+            onPlayoutSinkChange={onPlayoutSinkChange}
+          />
+        )}
+      </div>
+
+      {/* ── Layout (цикл по кнопке; меню — шеврон) ───────────────────── */}
+      <div className="ctrl-group">
+        <button
+          type="button"
+          className="ctrl-btn"
+          onClick={() => onLayoutChange(nextLayoutMode(layout))}
+          title={`Сейчас: ${layoutModeLabel(layout)}. Следующий вид: ${layoutModeLabel(nextLayoutMode(layout))}`}
+        >
+          {layout === 'grid' ? <GridIcon /> : layout === 'speaker' ? <SpeakerIcon /> : <PipIcon />}
+          <span>{layoutModeLabel(layout)}</span>
+        </button>
+        <button
+          type="button"
+          className={`ctrl-chevron ${open === 'layout' ? 'ctrl-chevron--open' : ''}`}
+          onClick={() => toggleOpen('layout')}
+          title="Выбрать раскладку"
+        >
+          <ChevronIcon />
+        </button>
+
+        {open === 'layout' && (
+          <LayoutPopover
+            layout={layout}
+            onClose={() => setOpen(null)}
+            onPick={(l) => {
+              onLayoutChange(l)
+              setOpen(null)
+            }}
+          />
+        )}
+      </div>
+
+      {/* ── Screen share (кастомный выбор → системный диалог; плитка в комнате) ─ */}
+      <div className="ctrl-group">
+        <button
+          type="button"
+          className={`ctrl-btn ${isScreenSharing ? 'ctrl-btn--active ctrl-btn--screen' : ''}`}
+          onClick={() => {
+            if (isScreenSharing) onToggleScreenShare()
+            else setScreenPickerOpen(true)
+          }}
+          title={isScreenSharing ? 'Остановить демонстрацию' : 'Демонстрация экрана'}
+        >
+          <ScreenShareIcon />
+          <span>{isScreenSharing ? 'Стоп экран' : 'Экран'}</span>
+        </button>
+        <button
+          type="button"
+          className={`ctrl-chevron ${isScreenSharing ? 'ctrl-btn--active ctrl-btn--screen' : ''} ${open === 'screen' ? 'ctrl-chevron--open' : ''}`}
+          onClick={() => toggleOpen('screen')}
+          title={isScreenSharing ? 'Меню демонстрации' : 'Тип источника демонстрации'}
+        >
+          <ChevronIcon />
+        </button>
+
+        {screenPickerOpen && (
+          <ScreenSharePickerModal
+            onClose={() => setScreenPickerOpen(false)}
+            onPickSurface={(surface) => {
+              setScreenPickerOpen(false)
+              void onStartScreenShare(surface)
+            }}
+          />
+        )}
+
+        {open === 'screen' && (
+          <ShareSourcePopover
+            isSharing={isScreenSharing}
+            onClose={() => setOpen(null)}
+            onPick={(surface) => {
+              void onStartScreenShare(surface)
+              setOpen(null)
+            }}
+            onStop={() => {
+              onToggleScreenShare()
+              setOpen(null)
+            }}
+          />
+        )}
+      </div>
+
       {/* ── Settings ───────────────────────────────────────────────────── */}
       <div className="ctrl-group ctrl-group--solo">
         <button
@@ -129,6 +293,8 @@ export function ControlsBar({
             onToggleMeter={onToggleMeter}
             showInfo={showInfo}
             onToggleInfo={onToggleInfo}
+            showButtonLabels={showButtonLabels}
+            onToggleButtonLabels={onToggleButtonLabels}
             onResetView={() => { onResetView(); setOpen(null) }}
             onClose={() => setOpen(null)}
           />
@@ -144,13 +310,192 @@ export function ControlsBar({
   )
 }
 
+function LayoutPopover({
+  layout,
+  onClose,
+  onPick,
+}: {
+  layout: LayoutMode
+  onClose: () => void
+  onPick: (l: LayoutMode) => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  const rows: { mode: LayoutMode; label: string; icon: ReactNode }[] = [
+    { mode: 'grid', label: 'Галерея', icon: <GridIcon /> },
+    { mode: 'speaker', label: 'Спикер', icon: <SpeakerIcon /> },
+    { mode: 'pip', label: 'Превью поверх', icon: <PipIcon /> },
+  ]
+
+  return (
+    <div className="device-popover device-popover--layout-pick" ref={ref}>
+      <div className="device-popover__title">Раскладка</div>
+      {rows.map(({ mode, label, icon }) => (
+        <button
+          key={mode}
+          type="button"
+          className={`device-popover__item${layout === mode ? ' device-popover__item--active' : ''}`}
+          onClick={() => onPick(mode)}
+        >
+          {icon}
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function ScreenPickIconMonitor() {
+  return (
+    <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+      <rect x="6" y="8" width="36" height="26" rx="3" />
+      <path d="M16 38h16M24 34v4" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function ScreenPickIconWindow() {
+  return (
+    <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+      <rect x="8" y="12" width="32" height="28" rx="2" />
+      <path d="M8 18h32" />
+      <circle cx="14" cy="15" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="15" r="1.5" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+function ScreenPickIconTab() {
+  return (
+    <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+      <path d="M6 14h36v22a3 3 0 01-3 3H9a3 3 0 01-3-3V14z" />
+      <path d="M6 14V11a3 3 0 013-3h30a3 3 0 013 3v3" />
+      <path d="M18 22h16M18 28h10" strokeLinecap="round" opacity="0.6" />
+    </svg>
+  )
+}
+
+function ShareSourcePopover({
+  isSharing,
+  onClose,
+  onPick,
+  onStop,
+}: {
+  isSharing: boolean
+  onClose: () => void
+  onPick: (surface: 'monitor' | 'window' | 'browser') => void
+  onStop: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  return (
+    <div className="device-popover device-popover--share-source" ref={ref}>
+      <div className="device-popover__title">{isSharing ? 'Демонстрация' : 'Что показать'}</div>
+      {isSharing ? (
+        <button type="button" className="device-popover__item" onClick={onStop}>
+          Остановить демонстрацию
+        </button>
+      ) : (
+        <>
+          <button type="button" className="device-popover__item" onClick={() => onPick('monitor')}>
+            <span className="screen-share-source-popover__icon" aria-hidden><ScreenPickIconMonitor /></span>
+            Весь экран
+          </button>
+          <button type="button" className="device-popover__item" onClick={() => onPick('window')}>
+            <span className="screen-share-source-popover__icon" aria-hidden><ScreenPickIconWindow /></span>
+            Окно приложения
+          </button>
+          <button type="button" className="device-popover__item" onClick={() => onPick('browser')}>
+            <span className="screen-share-source-popover__icon" aria-hidden><ScreenPickIconTab /></span>
+            Вкладка браузера
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ─── Settings popover ────────────────────────────────────────────────────────
+
+function PlayoutPopover({
+  onClose,
+  playoutVolume,
+  onPlayoutVolumeChange,
+  audioOutputs,
+  playoutSinkId,
+  onPlayoutSinkChange,
+}: {
+  onClose: () => void
+  playoutVolume: number
+  onPlayoutVolumeChange: (v: number) => void
+  audioOutputs: MediaDeviceInfo[]
+  playoutSinkId: string
+  onPlayoutSinkChange: (deviceId: string) => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  return (
+    <div className="device-popover device-popover--playout" ref={ref}>
+      <div className="device-popover__title">Наушники</div>
+      <div className="device-popover__section">
+        <span className="device-popover__label">Громкость других</span>
+        <input
+          type="range"
+          className="device-popover__volume"
+          min={0}
+          max={100}
+          value={Math.round(playoutVolume * 100)}
+          onChange={(e) => onPlayoutVolumeChange(Number(e.target.value) / 100)}
+        />
+      </div>
+      {audioOutputs.length > 0 && (
+        <div className="device-popover__section">
+          <span className="device-popover__label">Выход звука</span>
+          <select
+            className="settings-select device-popover__select-full"
+            value={playoutSinkId || audioOutputs[0]?.deviceId || ''}
+            onChange={(e) => onPlayoutSinkChange(e.target.value)}
+          >
+            {audioOutputs.map((d) => (
+              <option key={d.deviceId} value={d.deviceId}>{d.label || d.deviceId}</option>
+            ))}
+          </select>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function SettingsPopover({
   activePreset, onChangePreset,
   objectFit, onObjectFitToggle, layout,
   showMeter, onToggleMeter,
   showInfo, onToggleInfo,
+  showButtonLabels, onToggleButtonLabels,
   onResetView, onClose,
 }: {
   activePreset: VideoPreset
@@ -162,6 +507,8 @@ function SettingsPopover({
   onToggleMeter: () => void
   showInfo: boolean
   onToggleInfo: () => void
+  showButtonLabels: boolean
+  onToggleButtonLabels: () => void
   onResetView: () => void
   onClose: () => void
 }) {
@@ -193,8 +540,8 @@ function SettingsPopover({
         </select>
       </div>
 
-      {/* Object-fit (only in grid) */}
-      {layout === 'grid' && (
+      {/* Object-fit (галерея и спикер) */}
+      {(layout === 'grid' || layout === 'speaker') && (
         <button className="settings-row settings-row--btn" onClick={onObjectFitToggle}>
           <span className="settings-label">Масштаб видео</span>
           <span className="settings-value">{objectFit === 'contain' ? 'Полный' : 'Заполнить'}</span>
@@ -214,6 +561,13 @@ function SettingsPopover({
         <span className="settings-label">Инфо</span>
         <span className={`settings-toggle ${showInfo ? 'settings-toggle--on' : ''}`}>
           {showInfo ? 'Вкл' : 'Выкл'}
+        </span>
+      </button>
+
+      <button type="button" className="settings-row settings-row--btn" onClick={onToggleButtonLabels}>
+        <span className="settings-label">Подписи кнопок</span>
+        <span className={`settings-toggle ${showButtonLabels ? 'settings-toggle--on' : ''}`}>
+          {showButtonLabels ? 'Вкл' : 'Выкл'}
         </span>
       </button>
 
@@ -268,10 +622,40 @@ function LeaveIcon() {
     </svg>
   )
 }
+
+function ScreenShareIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </svg>
+  )
+}
 function ChevronIcon() {
   return (
     <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{ transform: 'rotate(180deg)' }}>
       <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+    </svg>
+  )
+}
+
+function HeadphonesIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 18v-6a9 9 0 0118 0v6" />
+      <path d="M21 19a2 2 0 01-2 2h-1v-8h1a2 2 0 012 2v4z" />
+      <path d="M3 19a2 2 0 002 2h1v-8H5a2 2 0 00-2 2v4z" />
+    </svg>
+  )
+}
+
+function HeadphonesMutedIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 18v-6a9 9 0 0118 0v6" />
+      <path d="M21 19a2 2 0 01-2 2h-1v-8h1a2 2 0 012 2v4z" />
+      <path d="M3 19a2 2 0 002 2h1v-8H5a2 2 0 00-2 2v4z" />
+      <line x1="1" y1="1" x2="23" y2="23" />
     </svg>
   )
 }
@@ -280,6 +664,35 @@ function GearIcon() {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1.08-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.68 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.32 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+    </svg>
+  )
+}
+
+function GridIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+      <rect x="1" y="1" width="6" height="6" rx="1" />
+      <rect x="9" y="1" width="6" height="6" rx="1" />
+      <rect x="1" y="9" width="6" height="6" rx="1" />
+      <rect x="9" y="9" width="6" height="6" rx="1" />
+    </svg>
+  )
+}
+
+function SpeakerIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+      <rect x="1" y="2" width="10" height="12" rx="1" />
+      <rect x="12" y="4" width="3" height="8" rx="0.5" opacity="0.85" />
+    </svg>
+  )
+}
+
+function PipIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+      <rect x="1" y="1" width="14" height="14" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="8" y="8" width="6" height="6" rx="1" />
     </svg>
   )
 }
