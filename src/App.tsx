@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useRoom } from './hooks/useRoom'
 import { BrandLogoLoader } from './components/BrandLogoLoader'
 import { JoinPage } from './components/JoinPage'
@@ -10,6 +10,22 @@ import { parseSoloViewerParams, replaceRoomInBrowserUrl } from './utils/soloView
 export function App() {
   const [name, setName] = useState('')
   const [soloQuery, setSoloQuery] = useState(() => parseSoloViewerParams())
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatUnreadCount, setChatUnreadCount] = useState(0)
+  const chatOpenRef = useRef(false)
+
+  const roomActivityNotifyRef = useRef({
+    isChatClosed: () => !chatOpenRef.current,
+    bumpUnread: () => setChatUnreadCount((c) => c + 1),
+  })
+
+  useLayoutEffect(() => {
+    chatOpenRef.current = chatOpen
+  }, [chatOpen])
+
+  useEffect(() => {
+    if (chatOpen) setChatUnreadCount(0)
+  }, [chatOpen])
 
   const {
     join, leave, toggleMute, toggleCam,
@@ -19,7 +35,8 @@ export function App() {
     isMuted, isCamOff,
     roomId, localPeerId, srtByPeer,
     localScreenStream, isScreenSharing, toggleScreenShare, startScreenShare,
-  } = useRoom()
+    chatMessages, sendChatMessage, sendReaction, reactionBursts,
+  } = useRoom(roomActivityNotifyRef)
 
   const handleJoin = (n: string, roomIdParam: string, preset: VideoPreset) => {
     setName(n)
@@ -29,6 +46,7 @@ export function App() {
 
   const handleLeaveRoom = () => {
     const rid = roomId
+    setChatOpen(false)
     leave()
     if (rid) replaceRoomInBrowserUrl(rid, { removePeer: true })
   }
@@ -82,6 +100,13 @@ export function App() {
         isScreenSharing={isScreenSharing}
         onToggleScreenShare={toggleScreenShare}
         onStartScreenShare={startScreenShare}
+        chatMessages={chatMessages}
+        onSendChatMessage={sendChatMessage}
+        onSendReaction={sendReaction}
+        reactionBursts={reactionBursts}
+        chatOpen={chatOpen}
+        setChatOpen={setChatOpen}
+        chatUnreadCount={chatUnreadCount}
       />
     )
   }

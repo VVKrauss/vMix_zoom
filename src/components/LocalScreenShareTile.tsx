@@ -1,6 +1,8 @@
 import { useEffect, useRef, type CSSProperties } from 'react'
 import { SrtCopySurface } from './SrtCopyMenu'
 import { VideoInfoOverlay } from './VideoInfoOverlay'
+import type { RoomReactionBurst } from '../types/roomComms'
+import { ReactionBurstOverlay } from './ReactionBurstOverlay'
 
 interface Props {
   stream: MediaStream
@@ -17,6 +19,7 @@ interface Props {
   showPin?: boolean
   pinActive?: boolean
   onRequestPin?: () => void
+  reactionBurst?: RoomReactionBurst | null
 }
 
 export function LocalScreenShareTile({
@@ -32,6 +35,7 @@ export function LocalScreenShareTile({
   showPin,
   pinActive,
   onRequestPin,
+  reactionBurst,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -68,6 +72,7 @@ export function LocalScreenShareTile({
               srtConnectUrl={srtConnectUrl}
             />
           )}
+          {reactionBurst ? <ReactionBurstOverlay key={reactionBurst.id} burst={reactionBurst} /> : null}
         </SrtCopySurface>
       </div>
       <div className="card-bar">

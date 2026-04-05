@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react'
 import { Device } from 'mediasoup-client'
 import type { Transport, Producer, Consumer } from 'mediasoup-client/lib/types'
 import { io, Socket } from 'socket.io-client'
@@ -6,6 +6,13 @@ import type {
   FrontendRoomDetail, ProducerDescriptor, RemoteParticipant,
   SrtSessionInfo, VideoPreset,
 } from '../types'
+import type { RoomChatMessage, RoomReactionBurst, RoomReactionEvent } from '../types/roomComms'
+import {
+  CHAT_MESSAGE_MAX_LEN,
+  CHAT_MESSAGES_CAP,
+  REACTION_EMOJI_WHITELIST,
+  REACTION_TTL_DEFAULT_MS,
+} from '../types/roomComms'
 import { resolveVideoProducerRole } from '../utils/producerVideoRole'
 import { DEFAULT_VIDEO_PRESET } from '../types'
 
@@ -13,6 +20,31 @@ const SERVER = String(import.meta.env.VITE_SIGNALING_URL ?? '').replace(/\/$/, '
 const DEFAULT_ROOM = import.meta.env.VITE_DEFAULT_ROOM as string ?? 'test'
 
 const ROOM_POLL_MS = 4000
+
+/** Совпадение с недавним локальным сообщением (оптимистичным) — заменяем серверной версией. */
+const CHAT_ECHO_DEDUP_MS = 12_000
+const CHAT_ECHO_DEDUP_SCAN = 48
+
+function mergeIncomingChatMessage(prev: RoomChatMessage[], msg: RoomChatMessage): RoomChatMessage[] {
+  if (msg.kind === 'reaction') {
+    return [...prev, msg].slice(-CHAT_MESSAGES_CAP)
+  }
+  const scan = Math.min(CHAT_ECHO_DEDUP_SCAN, prev.length)
+  for (let k = 1; k <= scan; k++) {
+    const i = prev.length - k
+    const p = prev[i]!
+    if (
+      p.peerId === msg.peerId &&
+      p.text === msg.text &&
+      Math.abs(p.ts - msg.ts) < CHAT_ECHO_DEDUP_MS
+    ) {
+      const next = [...prev]
+      next[i] = msg
+      return next.slice(-CHAT_MESSAGES_CAP)
+    }
+  }
+  return [...prev, msg].slice(-CHAT_MESSAGES_CAP)
+}
 
 function capVideoFramerate(presetFps: number, track?: MediaStreamTrack | null): number {
   if (!track) return presetFps
@@ -51,7 +83,12 @@ function swapTrack(
 
 export type RoomStatus = 'idle' | 'connecting' | 'connected' | 'error'
 
-export function useRoom() {
+export type RoomActivityNotifyRef = MutableRefObject<{
+  isChatClosed: () => boolean
+  bumpUnread: () => void
+}>
+
+export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const [status, setStatus] = useState<RoomStatus>('idle')
   const [error, setError] = useState<string | null>(null)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
@@ -83,6 +120,15 @@ export function useRoom() {
   const [srtByPeer, setSrtByPeer] = useState<Record<string, SrtSessionInfo>>({})
   const presetRef = useRef<VideoPreset>(DEFAULT_VIDEO_PRESET)
   const [activePreset, setActivePreset] = useState<VideoPreset>(DEFAULT_VIDEO_PRESET)
+
+  const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([])
+  const [reactionBursts, setReactionBursts] = useState<RoomReactionBurst[]>([])
+  const lastLocalReactionAtRef = useRef(0)
+  const displayNameRef = useRef('')
+  const participantsRef = useRef(participants)
+  useEffect(() => {
+    participantsRef.current = participants
+  }, [participants])
 
   // ─── Consume one producer ────────────────────────────────────────────────
 
@@ -161,6 +207,7 @@ export function useRoom() {
     setStatus('connecting')
     setError(null)
     roomIdRef.current = roomId
+    displayNameRef.current = name.trim() || 'Гость'
 
     try {
       // 1. Get local media with requested resolution
@@ -187,11 +234,32 @@ export function useRoom() {
       setSessionMeta({ roomId: roomIdRef.current, localPeerId: socket.id ?? '' })
 
       // 3. Join room
-      const joinData = await new Promise<{ rtpCapabilities: object; existingProducers: ProducerDescriptor[] }>((res) => {
+      const joinData = await new Promise<{
+        rtpCapabilities: object
+        existingProducers?: ProducerDescriptor[]
+        chatHistory?: RoomChatMessage[]
+      }>((res) => {
         socket.emit('joinRoom', { roomId, name }, res)
       })
 
       console.log('[join] existingProducers:', joinData.existingProducers)
+
+      if (Array.isArray(joinData.chatHistory)) {
+        const h = joinData.chatHistory
+          .filter(
+            (m): m is RoomChatMessage =>
+              !!m &&
+              typeof m.peerId === 'string' &&
+              typeof m.name === 'string' &&
+              typeof m.text === 'string' &&
+              typeof m.ts === 'number',
+          )
+          .slice(-CHAT_MESSAGES_CAP)
+        setChatMessages(h)
+      } else {
+        setChatMessages([])
+      }
+      setReactionBursts([])
 
       // 4. Load mediasoup device
       const device = new Device()
@@ -357,6 +425,59 @@ export function useRoom() {
         }))
       })
 
+      const maybeBumpUnread = (fromPeerId: string) => {
+        const sid = socket.id
+        const nr = activityNotifyRef?.current
+        if (!sid || fromPeerId === sid || !nr?.isChatClosed()) return
+        nr.bumpUnread()
+      }
+
+      const appendChat = (msg: RoomChatMessage) => {
+        if (msg.roomId && msg.roomId !== roomIdRef.current) return
+        maybeBumpUnread(msg.peerId)
+        setChatMessages((prev) => mergeIncomingChatMessage(prev, msg))
+      }
+
+      socket.on('chat:message', (raw: unknown) => {
+        const m = raw as Partial<RoomChatMessage>
+        if (!m?.peerId || typeof m.name !== 'string' || typeof m.text !== 'string' || typeof m.ts !== 'number') return
+        appendChat(m as RoomChatMessage)
+      })
+
+      socket.on('reaction', (raw: unknown) => {
+        const r = raw as Partial<RoomReactionEvent>
+        if (!r?.peerId || typeof r.emoji !== 'string') return
+        if (r.roomId && r.roomId !== roomIdRef.current) return
+        maybeBumpUnread(r.peerId)
+        const ttl =
+          typeof r.ttlMs === 'number' && r.ttlMs > 0 ? Math.min(r.ttlMs, 10_000) : REACTION_TTL_DEFAULT_MS
+        const id =
+          typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random()}`
+        const burst: RoomReactionBurst = { id, peerId: r.peerId, emoji: r.emoji }
+        setReactionBursts((prev) => [...prev, burst].slice(-50))
+        window.setTimeout(() => {
+          setReactionBursts((prev) => prev.filter((b) => b.id !== id))
+        }, ttl)
+
+        const sid = socket.id
+        const rname =
+          r.peerId === sid
+            ? displayNameRef.current
+            : (participantsRef.current.get(r.peerId)?.name ?? 'Участник')
+        const rts = typeof r.ts === 'number' ? r.ts : Date.now()
+        const reactionLine: RoomChatMessage = {
+          peerId: r.peerId,
+          name: rname,
+          text: r.emoji,
+          ts: rts,
+          kind: 'reaction',
+          roomId: roomIdRef.current,
+        }
+        setChatMessages((prev) => [...prev, reactionLine].slice(-CHAT_MESSAGES_CAP))
+      })
+
       setStatus('connected')
     } catch (err) {
       console.error('[join] error:', err)
@@ -364,6 +485,8 @@ export function useRoom() {
       setStatus('error')
       setSessionMeta(null)
       setSrtByPeer({})
+      setChatMessages([])
+      setReactionBursts([])
       socketRef.current?.disconnect()
       socketRef.current = null
     }
@@ -592,6 +715,38 @@ export function useRoom() {
     await startScreenShare(undefined)
   }, [stopScreenShare, startScreenShare])
 
+  const sendChatMessage = useCallback((text: string) => {
+    const socket = socketRef.current
+    if (!socket?.connected) return
+    const trimmed = text.trim().slice(0, CHAT_MESSAGE_MAX_LEN)
+    if (!trimmed) return
+    const peerId = socket.id
+    if (!peerId) return
+    const optimistic: RoomChatMessage = {
+      peerId,
+      name: displayNameRef.current,
+      text: trimmed,
+      ts: Date.now(),
+      roomId: roomIdRef.current,
+    }
+    setChatMessages((prev) => [...prev, optimistic].slice(-CHAT_MESSAGES_CAP))
+    socket.emit('chat:message', { roomId: roomIdRef.current, text: trimmed })
+  }, [])
+
+  const sendReaction = useCallback((emoji: string) => {
+    if (!REACTION_EMOJI_WHITELIST.includes(emoji as (typeof REACTION_EMOJI_WHITELIST)[number])) return
+    const now = Date.now()
+    if (now - lastLocalReactionAtRef.current < 700) return
+    lastLocalReactionAtRef.current = now
+    const socket = socketRef.current
+    if (!socket) return
+    socket.emit('reaction', {
+      roomId: roomIdRef.current,
+      emoji,
+      ttlMs: REACTION_TTL_DEFAULT_MS,
+    })
+  }, [])
+
   const leave = useCallback(() => {
     stopScreenShare()
     videoProducerRef.current?.close()
@@ -610,6 +765,8 @@ export function useRoom() {
     setIsCamOff(false)
     setSessionMeta(null)
     setSrtByPeer({})
+    setChatMessages([])
+    setReactionBursts([])
   }, [localStream, stopScreenShare])
 
   return {
@@ -634,5 +791,9 @@ export function useRoom() {
     roomId: sessionMeta?.roomId ?? null,
     localPeerId: sessionMeta?.localPeerId ?? null,
     srtByPeer,
+    chatMessages,
+    sendChatMessage,
+    sendReaction,
+    reactionBursts,
   }
 }

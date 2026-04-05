@@ -14,6 +14,11 @@ import type { RemoteParticipant, SrtSessionInfo, VideoPreset } from '../types'
 import { ruParticipantsWord } from '../utils/ruPlural'
 import { isLocalScreenTileKey, localScreenTileKey } from '../utils/localScreenTile'
 import { LocalScreenShareTile } from './LocalScreenShareTile'
+import type { RoomChatMessage, RoomReactionBurst } from '../types/roomComms'
+import { pickLatestBurstForPeer } from '../types/roomComms'
+import { RoomChatPanel } from './RoomChatPanel'
+import { ReactionBurstOverlay } from './ReactionBurstOverlay'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 
 export type LayoutMode = 'grid' | 'pip' | 'speaker'
 export type ObjectFit = 'cover' | 'contain'
@@ -38,6 +43,13 @@ interface Props {
   isScreenSharing: boolean
   onToggleScreenShare: () => void
   onStartScreenShare: (surface?: 'monitor' | 'window' | 'browser') => void
+  chatMessages: RoomChatMessage[]
+  onSendChatMessage: (text: string) => void
+  onSendReaction: (emoji: string) => void
+  reactionBursts: RoomReactionBurst[]
+  chatOpen: boolean
+  setChatOpen: (open: boolean) => void
+  chatUnreadCount: number
 }
 
 export function RoomPage({
@@ -48,16 +60,22 @@ export function RoomPage({
   onSwitchCamera, onSwitchMic,
   activePreset, onChangePreset,
   localScreenStream, isScreenSharing, onToggleScreenShare, onStartScreenShare,
+  chatMessages, onSendChatMessage, onSendReaction, reactionBursts,
+  chatOpen, setChatOpen, chatUnreadCount,
 }: Props) {
-  const isMobile = window.innerWidth <= 768
-  const [layout, setLayout]       = useState<LayoutMode>(isMobile ? 'grid' : 'pip')
+  const isMobile = useMediaQuery('(max-width: 768px)')
+  const [layout, setLayout]       = useState<LayoutMode>(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches ? 'grid' : 'pip',
+  )
   const [objectFit, setObjectFit] = useState<ObjectFit>('contain')
   const [showInfo, setShowInfo]   = useState(false)
   const [showMeter, setShowMeter] = useState(true)
   const [sourceAspect, setSourceAspect] = useState<number | null>(null)
   const [pipPos,  setPipPos]  = useState<PipPos> ({ x: 16,  y: 10  })
-  const [pipSize, setPipSize] = useState<PipSize>(
-    isMobile ? { w: 140, h: 94 } : { w: 220, h: 148 }
+  const [pipSize, setPipSize] = useState<PipSize>(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
+      ? { w: 140, h: 94 }
+      : { w: 220, h: 148 },
   )
 
   const [leaveDialog, setLeaveDialog] = useState<null | { mode: 'home' | 'leave'; others: number }>(null)
@@ -93,9 +111,27 @@ export function RoomPage({
     }
   })
 
+  const [chatEmbed, setChatEmbed] = useState(() => {
+    try {
+      const v = localStorage.getItem('vmix_chat_embed')
+      if (v === null) return true
+      return v === '1' || v === 'true'
+    } catch {
+      return true
+    }
+  })
+
   const remoteList = useMemo(() => [...participants.values()], [participants])
   /** Камера + удалённые + отдельная плитка демонстрации */
   const rosterCount = remoteList.length + 1 + (isScreenSharing && localScreenStream ? 1 : 0)
+
+  const mobileSoloGrid =
+    isMobile &&
+    layout === 'grid' &&
+    remoteList.length === 0 &&
+    !(isScreenSharing && localScreenStream)
+
+  const mobileMultiGrid = isMobile && layout === 'grid' && !mobileSoloGrid
 
   const {
     cameras, microphones,
@@ -131,8 +167,25 @@ export function RoomPage({
   }, [showControlButtonLabels])
 
   useEffect(() => {
+    try {
+      localStorage.setItem('vmix_chat_embed', chatEmbed ? '1' : '0')
+    } catch {
+      /* noop */
+    }
+  }, [chatEmbed])
+
+  useEffect(() => {
     void refreshAudioOutputs()
   }, [localStream, refreshAudioOutputs])
+
+  useEffect(() => {
+    if (!chatOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setChatOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [chatOpen])
 
   const allTileIds = useMemo(() => {
     const ids: string[] = [localPeerId, ...remoteList.map((p) => p.peerId)]
@@ -218,6 +271,7 @@ export function RoomPage({
       showPin={!!showSpeakerPin}
       pinActive={speakerPinnedPeerId === localPeerId}
       onRequestPin={() => toggleSpeakerPin(localPeerId)}
+      reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
     />
   )
 
@@ -265,7 +319,7 @@ export function RoomPage({
   }
 
   return (
-    <div className={`room-page${layout === 'speaker' ? ' room-page--speaker' : ''}`}>
+    <div className="room-page">
       <ConfirmDialog
         open={leaveDialog !== null}
         title={leaveDialog?.mode === 'home' ? 'Выйти на главную?' : 'Покинуть комнату?'}
@@ -300,6 +354,12 @@ export function RoomPage({
         <div className="header-right" />
       </header>
 
+      <div
+        className={`room-body${chatEmbed && chatOpen ? ' room-body--with-embed-chat' : ''}`}
+      >
+        <div
+          className={`room-main${mobileSoloGrid ? ' room-main--mobile-solo-grid' : ''}${mobileMultiGrid ? ' room-main--mobile-multi-grid' : ''}`}
+        >
       {/* ── Speaker layout ─────────────────────────────────────────────── */}
       {layout === 'speaker' && featuredPeerId && (
         <>
@@ -318,6 +378,7 @@ export function RoomPage({
                 showPin
                 pinActive={speakerPinnedPeerId === localScreenTileKey(localPeerId)}
                 onRequestPin={() => toggleSpeakerPin(localScreenTileKey(localPeerId))}
+                reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
               />
             ) : featuredPeerId === localPeerId ? (
               localTile(false, true)
@@ -334,6 +395,7 @@ export function RoomPage({
                 showPin
                 pinActive={speakerPinnedPeerId === featuredPeerId}
                 onRequestPin={() => toggleSpeakerPin(featuredPeerId)}
+                reactionBurst={pickLatestBurstForPeer(reactionBursts, featuredPeerId)}
               />
             ) : null}
           </div>
@@ -354,6 +416,7 @@ export function RoomPage({
                     showPin
                     pinActive={speakerPinnedPeerId === localScreenTileKey(localPeerId)}
                     onRequestPin={() => toggleSpeakerPin(localScreenTileKey(localPeerId))}
+                    reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
                   />
                 ) : id === localPeerId ? (
                   localTile(false, true)
@@ -370,6 +433,7 @@ export function RoomPage({
                     showPin
                     pinActive={speakerPinnedPeerId === id}
                     onRequestPin={() => toggleSpeakerPin(id)}
+                    reactionBurst={pickLatestBurstForPeer(reactionBursts, id)}
                   />
                 ) : null}
               </div>
@@ -380,7 +444,10 @@ export function RoomPage({
 
       {/* ── Grid layout ────────────────────────────────────────────────── */}
       {layout === 'grid' && (
-        <div className="tile-grid" style={gridStyle(gridCols(rosterCount))}>
+        <div
+          className={`tile-grid${mobileSoloGrid ? ' tile-grid--mobile-solo' : ''}${mobileMultiGrid ? ' tile-grid--mobile-multi' : ''}`}
+          style={gridStyle(gridCols(rosterCount))}
+        >
           {localTile(false)}
           {isScreenSharing && localScreenStream && (
             <LocalScreenShareTile
@@ -393,6 +460,7 @@ export function RoomPage({
               srtConnectUrl={localSrt?.connectUrlPublic}
               srtListenPort={localSrt?.listenPort}
               onStopShare={requestStopScreenSharing}
+              reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
             />
           )}
           {remoteList.map(p => (
@@ -401,7 +469,9 @@ export function RoomPage({
               showInfo={showInfo} showMeter={showMeter} roomId={roomId}
               srtConnectUrl={srtByPeer[p.peerId]?.connectUrlPublic}
               srtListenPort={srtByPeer[p.peerId]?.listenPort}
-              {...cardPlayout} />
+              {...cardPlayout}
+              reactionBurst={pickLatestBurstForPeer(reactionBursts, p.peerId)}
+            />
           ))}
         </div>
       )}
@@ -428,6 +498,7 @@ export function RoomPage({
                     srtConnectUrl={localSrt?.connectUrlPublic}
                     srtListenPort={localSrt?.listenPort}
                     onStopShare={requestStopScreenSharing}
+                    reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
                   />
                 )}
                 {remoteList.map(p => (
@@ -436,7 +507,9 @@ export function RoomPage({
                     showInfo={showInfo} showMeter={showMeter} roomId={roomId}
                     srtConnectUrl={srtByPeer[p.peerId]?.connectUrlPublic}
                     srtListenPort={srtByPeer[p.peerId]?.listenPort}
-                    {...cardPlayout} />
+                    {...cardPlayout}
+                    reactionBurst={pickLatestBurstForPeer(reactionBursts, p.peerId)}
+                  />
                 ))}
               </>
             )}
@@ -456,6 +529,21 @@ export function RoomPage({
           </DraggablePip>
         </div>
       )}
+        </div>
+
+        {chatEmbed && chatOpen && (
+          <div className="room-chat-sidebar">
+            <RoomChatPanel
+              variant="embed"
+              open
+              onClose={() => setChatOpen(false)}
+              messages={chatMessages}
+              localPeerId={localPeerId}
+              onSend={onSendChatMessage}
+            />
+          </div>
+        )}
+      </div>
 
       <ControlsBar
         isMuted={isMuted}
@@ -490,7 +578,24 @@ export function RoomPage({
         onPlayoutSinkChange={setPlayoutSinkId}
         showButtonLabels={showControlButtonLabels}
         onToggleButtonLabels={() => setShowControlButtonLabels((v) => !v)}
+        chatOpen={chatOpen}
+        onToggleChat={() => setChatOpen(!chatOpen)}
+        chatUnreadCount={chatUnreadCount}
+        chatEmbed={chatEmbed}
+        onToggleChatEmbed={() => setChatEmbed((v) => !v)}
+        onSendReaction={onSendReaction}
       />
+
+      {chatOpen && !chatEmbed && (
+        <RoomChatPanel
+          variant="overlay"
+          open
+          onClose={() => setChatOpen(false)}
+          messages={chatMessages}
+          localPeerId={localPeerId}
+          onSend={onSendChatMessage}
+        />
+      )}
     </div>
   )
 }
@@ -501,6 +606,7 @@ function LocalTile({
   stream, name, isMuted, isCamOff, videoStyle, showInfo, showMeter,
   roomId, peerId, inPip, srtConnectUrl, srtListenPort,
   showPin, pinActive, onRequestPin,
+  reactionBurst,
 }: {
   stream: MediaStream | null
   name: string
@@ -517,6 +623,7 @@ function LocalTile({
   showPin?: boolean
   pinActive?: boolean
   onRequestPin?: () => void
+  reactionBurst?: RoomReactionBurst | null
 }) {
   const mainVideoRef = useRef<HTMLVideoElement>(null)
 
@@ -579,7 +686,10 @@ function LocalTile({
     <div className="participant-card participant-card--local">
       <div className="card-video-wrap">
         {inPip ? (
-          videoInner
+          <>
+            {videoInner}
+            {reactionBurst ? <ReactionBurstOverlay key={reactionBurst.id} burst={reactionBurst} /> : null}
+          </>
         ) : (
           <SrtCopySurface
             connectUrl={srtConnectUrl}
@@ -588,6 +698,7 @@ function LocalTile({
             tilePeerId={peerId}
           >
             {videoInner}
+            {reactionBurst ? <ReactionBurstOverlay key={reactionBurst.id} burst={reactionBurst} /> : null}
           </SrtCopySurface>
         )}
       </div>

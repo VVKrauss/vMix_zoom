@@ -162,8 +162,40 @@ html, body, #root {
   overflow: hidden;
 }
 
-.room-page--speaker {
-  grid-template-rows: 52px 1fr auto 72px;
+/* Середина: превью + опционально встроенный чат справа */
+.room-body {
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.room-body--with-embed-chat .room-main {
+  min-width: 0;
+}
+
+.room-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.room-chat-sidebar {
+  flex: 0 0 clamp(260px, 32vw, 380px);
+  max-width: min(380px, 42vw);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+}
+
+.room-main .room-speaker-main {
+  flex: 1;
+  min-height: 0;
 }
 
 .room-speaker-main {
@@ -481,6 +513,32 @@ button.vio-row--peer:focus-visible {
   border-color: #555;
 }
 
+.ctrl-group--chat .ctrl-btn--chat {
+  position: relative;
+}
+
+.chat-unread-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: var(--red);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.controls-bar.controls-bar--icons-only .ctrl-group--chat .ctrl-btn--chat {
+  overflow: visible;
+}
+
 /* Демонстрация активна — вся группа «Экран» заметно красная */
 .controls-bar .ctrl-group .ctrl-btn.ctrl-btn--screen,
 .controls-bar .ctrl-group .ctrl-chevron.ctrl-btn--screen {
@@ -511,10 +569,16 @@ button.vio-row--peer:focus-visible {
   align-content: start;
 }
 
-/* Grid mode: direct flex child — grow to fill remaining height, scroll if needed */
-.room-page > .tile-grid {
+/* Grid mode: заполняет room-main, скролл при переполнении */
+.room-main > .tile-grid {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+}
+
+.room-main > .pip-container {
+  flex: 1;
+  min-height: 0;
 }
 
 /* Pip background grid: fill the whole pip-container */
@@ -755,19 +819,37 @@ button.vio-row--peer:focus-visible {
 
 /* ─── Controls bar ───────────────────────────────────────────────────────── */
 .controls-bar {
+  position: relative;
+  display: block;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 8px 12px;
+  padding-right: 84px;
+}
+
+.controls-bar__main {
   display: flex;
   flex-wrap: wrap;
   align-items: stretch;
   justify-content: center;
   gap: 8px;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  padding: 8px 12px;
 }
 
-.controls-bar .ctrl-group,
-.controls-bar > .ctrl-btn--leave {
+.controls-bar__main .ctrl-group,
+.controls-bar__main > .ctrl-btn--leave {
   flex: 0 0 auto;
+}
+
+.controls-bar__reaction-floater {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+}
+
+.controls-bar.controls-bar--icons-only {
+  padding-right: 62px;
 }
 
 .ctrl-btn {
@@ -844,7 +926,21 @@ button.vio-row--peer:focus-visible {
   border-right: 1px solid var(--border);
 }
 
-.controls-bar > .ctrl-btn--leave {
+/* Чат открыт: выше специфичность, чем у .ctrl-btn и .ctrl-group .ctrl-btn (они ниже по файлу перетирали фон) */
+.controls-bar .ctrl-group--chat .ctrl-btn.ctrl-btn--chat-open {
+  background: rgba(67, 160, 71, .32);
+  border-color: rgba(105, 240, 174, .55);
+  color: #e8f5e9;
+  box-shadow: inset 0 0 0 1px rgba(105, 240, 174, .25);
+}
+
+.controls-bar .ctrl-group--chat .ctrl-btn.ctrl-btn--chat-open:hover {
+  background: rgba(67, 160, 71, .42);
+  border-color: rgba(105, 240, 174, .75);
+  color: #fff;
+}
+
+.controls-bar__main > .ctrl-btn--leave {
   min-width: 72px;
 }
 
@@ -889,7 +985,7 @@ button.vio-row--peer:focus-visible {
   padding: 0;
 }
 
-.controls-bar.controls-bar--icons-only > .ctrl-btn--leave {
+.controls-bar.controls-bar--icons-only .controls-bar__main > .ctrl-btn--leave {
   width: 48px;
   min-width: 48px;
   max-width: 48px;
@@ -905,6 +1001,19 @@ button.vio-row--peer:focus-visible {
   height: 48px;
   min-height: 48px;
   box-sizing: border-box;
+}
+
+.controls-bar.controls-bar--icons-only .ctrl-group--chat .ctrl-btn.ctrl-btn--chat-open {
+  background: rgba(67, 160, 71, .32);
+  border-color: rgba(105, 240, 174, .55);
+  color: #e8f5e9;
+  box-shadow: inset 0 0 0 1px rgba(105, 240, 174, .25);
+}
+
+.controls-bar.controls-bar--icons-only .ctrl-group--chat .ctrl-btn.ctrl-btn--chat-open:hover {
+  background: rgba(67, 160, 71, .42);
+  border-color: rgba(105, 240, 174, .75);
+  color: #fff;
 }
 
 .device-popover--share-source .device-popover__item:last-child,
@@ -1012,14 +1121,22 @@ button.vio-row--peer:focus-visible {
     padding: 8px 10px;
     font-size: 10px;
   }
+  .controls-bar {
+    padding-right: 58px;
+  }
+
+  .controls-bar.controls-bar--icons-only {
+    padding-right: 52px;
+  }
+
   .ctrl-group .ctrl-btn,
   .ctrl-group--solo .ctrl-btn,
-  .controls-bar > .ctrl-btn--leave {
+  .controls-bar__main > .ctrl-btn--leave {
     min-width: 56px;
   }
   .controls-bar.controls-bar--icons-only .ctrl-group .ctrl-btn,
   .controls-bar.controls-bar--icons-only .ctrl-group--solo .ctrl-btn,
-  .controls-bar.controls-bar--icons-only > .ctrl-btn--leave {
+  .controls-bar.controls-bar--icons-only .controls-bar__main > .ctrl-btn--leave {
     width: 44px;
     min-width: 44px;
     max-width: 44px;
@@ -1057,11 +1174,106 @@ button.vio-row--peer:focus-visible {
 
   /* Tile grid gap */
   .tile-grid { gap: 4px; padding: 4px; }
-}
 
-/* Very narrow screens — single column */
-@media (max-width: 480px) {
-  .tile-grid { grid-template-columns: 1fr !important; }
+  /* Узкая панель: не резервируем место под реакцию справа */
+  .controls-bar--narrow,
+  .controls-bar--narrow.controls-bar--icons-only {
+    padding-right: 8px;
+  }
+
+  .mobile-controls-sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1140;
+    background: rgba(0, 0, 0, 0.5);
+  }
+
+  .mobile-controls-sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1150;
+    max-height: min(78vh, 520px);
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    padding: 10px 12px 16px;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.55);
+    overflow-y: auto;
+  }
+
+  .mobile-controls-sheet__title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+    text-align: center;
+  }
+
+  .mobile-controls-sheet__groups {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: stretch;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .mobile-controls-sheet .ctrl-group--sheet {
+    flex: 0 0 auto;
+    width: auto;
+  }
+
+  .ctrl-btn--mobile-more {
+    flex-shrink: 0;
+  }
+
+  /* Сетка: один в комнате — превью на всю область под шапкой */
+  .room-main--mobile-solo-grid > .tile-grid.tile-grid--mobile-solo {
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+    gap: 0;
+    padding: 0;
+    align-content: stretch;
+    grid-template-columns: 1fr !important;
+    grid-template-rows: 1fr;
+    overflow: hidden;
+  }
+
+  .room-main--mobile-solo-grid > .tile-grid.tile-grid--mobile-solo > .participant-card {
+    min-height: 0;
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+
+  /* Несколько плиток — делим высоту, видео по центру кадра без полос */
+  .room-main--mobile-multi-grid > .tile-grid.tile-grid--mobile-multi {
+    flex: 1;
+    min-height: 0;
+    align-content: stretch;
+    grid-auto-rows: 1fr;
+    overflow-y: auto;
+  }
+
+  .room-main--mobile-multi-grid > .tile-grid.tile-grid--mobile-multi > .participant-card {
+    min-height: 0;
+    height: 100%;
+    max-height: none;
+  }
+
+  .room-main--mobile-solo-grid .participant-card__main-video,
+  .room-main--mobile-multi-grid .participant-card__main-video {
+    height: 100% !important;
+    width: 100% !important;
+    object-fit: cover !important;
+    max-height: none !important;
+  }
 }
 
 /* ─── Solo viewer (?room=&peer=) — полный экран, только картинка + звук ───── */
@@ -1437,4 +1649,319 @@ button.vio-row--peer:focus-visible {
 .room-logo-btn:focus-visible {
   outline: 2px solid var(--red);
   outline-offset: 2px;
+}
+
+/* ─── Phase B: реакции на плитке ─────────────────────────────────────────── */
+.reaction-burst {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: auto;
+  z-index: 4;
+  font-size: clamp(28px, 5vw, 40px);
+  line-height: 1;
+  pointer-events: none;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, .85);
+  animation: reaction-burst-pop 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes reaction-burst-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.35) translateY(8px);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.08) translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Попап реакций у правого края панели */
+.controls-bar__reaction-floater .device-popover--reaction-pick {
+  left: auto;
+  right: 0;
+}
+
+.device-popover--reaction-pick .reaction-emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  padding: 4px 0 2px;
+}
+
+.reaction-emoji-btn {
+  margin: 0;
+  padding: 8px 4px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background .12s, transform .12s;
+}
+
+.reaction-emoji-btn:hover {
+  background: rgba(255, 255, 255, .08);
+  transform: scale(1.08);
+}
+
+/* ─── Phase B: чат (ниже модалки демонстрации 12000) ─────────────────────── */
+.room-chat-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 8000;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  background: rgba(0, 0, 0, .35);
+}
+
+.room-chat-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 8001;
+  width: min(360px, 100vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: -12px 0 40px rgba(0, 0, 0, .45);
+  animation: room-chat-slide-in .2s ease;
+}
+
+.room-chat-panel--embed {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  border-left: none;
+  box-shadow: none;
+  animation: none;
+  flex: 1;
+  min-height: 0;
+}
+
+@keyframes room-chat-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: .85;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.room-chat-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.room-chat-panel__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.room-chat-panel__close {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+
+.room-chat-panel__close:hover {
+  background: rgba(255, 255, 255, .08);
+  color: var(--text);
+}
+
+/* Тонкий нейтральный скролл (Firefox + WebKit) */
+.room-chat-panel__messages,
+.room-chat-panel__input {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, .22) transparent;
+}
+
+.room-chat-panel__messages::-webkit-scrollbar,
+.room-chat-panel__input::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.room-chat-panel__messages::-webkit-scrollbar-track,
+.room-chat-panel__input::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.room-chat-panel__messages::-webkit-scrollbar-thumb,
+.room-chat-panel__input::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, .2);
+  border-radius: 10px;
+}
+
+.room-chat-panel__messages::-webkit-scrollbar-thumb:hover,
+.room-chat-panel__input::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, .32);
+}
+
+.room-chat-panel__messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.room-chat-panel__empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.room-chat-msg {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+}
+
+.room-chat-msg--own {
+  border-color: rgba(105, 240, 174, .35);
+  background: rgba(67, 160, 71, .12);
+}
+
+.room-chat-msg--reaction {
+  background: rgba(255, 255, 255, .04);
+}
+
+.room-chat-msg--reaction .room-chat-msg__meta {
+  margin-bottom: 2px;
+}
+
+.room-chat-msg__reaction-emoji {
+  font-size: 28px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.room-chat-msg__meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.room-chat-msg__name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-chat-msg__time {
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.room-chat-msg__text {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.room-chat-panel__composer {
+  flex-shrink: 0;
+  padding: 12px 14px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.room-chat-panel__input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  resize: none;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #0d0d0d;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 10px 10px 10px 12px;
+  min-height: 44px;
+  max-height: 120px;
+}
+
+.room-chat-panel__input:focus {
+  outline: 2px solid rgba(105, 240, 174, .45);
+  outline-offset: 1px;
+}
+
+.room-chat-panel__send-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--red);
+  cursor: pointer;
+  transition: color .15s, opacity .15s, transform .1s;
+}
+
+.room-chat-panel__send-btn svg {
+  width: 22px;
+  height: 22px;
+}
+
+.room-chat-panel__send-btn:hover:not(:disabled) {
+  color: #ff6e68;
+}
+
+.room-chat-panel__send-btn:active:not(:disabled) {
+  transform: scale(0.94);
+  color: var(--red-dk);
+}
+
+.room-chat-panel__send-btn:disabled {
+  color: var(--text-dim);
+  opacity: 0.4;
+  cursor: not-allowed;
 }

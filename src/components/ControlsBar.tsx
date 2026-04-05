@@ -4,6 +4,8 @@ import { ScreenSharePickerModal } from './ScreenSharePickerModal'
 import type { VideoPreset } from '../types'
 import { VIDEO_PRESETS } from '../types'
 import type { LayoutMode, ObjectFit } from './RoomPage'
+import { ReactionEmojiPopover } from './ReactionEmojiPopover'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 
 const LAYOUT_CYCLE: LayoutMode[] = ['grid', 'speaker', 'pip']
 
@@ -57,9 +59,15 @@ interface Props {
   onPlayoutSinkChange: (deviceId: string) => void
   showButtonLabels: boolean
   onToggleButtonLabels: () => void
+  chatOpen: boolean
+  onToggleChat: () => void
+  chatUnreadCount: number
+  chatEmbed: boolean
+  onToggleChatEmbed: () => void
+  onSendReaction: (emoji: string) => void
 }
 
-type OpenPopover = 'mic' | 'cam' | 'headphones' | 'layout' | 'screen' | 'settings' | null
+type OpenPopover = 'mic' | 'cam' | 'headphones' | 'chat' | 'reaction' | 'layout' | 'screen' | 'settings' | null
 
 export function ControlsBar({
   isMuted, isCamOff,
@@ -75,9 +83,15 @@ export function ControlsBar({
   playoutVolume, onPlayoutVolumeChange,
   audioOutputs, playoutSinkId, onPlayoutSinkChange,
   showButtonLabels, onToggleButtonLabels,
+  chatOpen, onToggleChat,
+  chatUnreadCount,
+  chatEmbed, onToggleChatEmbed,
+  onSendReaction,
 }: Props) {
+  const isNarrow = useMediaQuery('(max-width: 768px)')
   const [open, setOpen] = useState<OpenPopover>(null)
   const [screenPickerOpen, setScreenPickerOpen] = useState(false)
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
   const playoutSavedRef = useRef(1)
 
   useEffect(() => {
@@ -97,9 +111,30 @@ export function ControlsBar({
     }
   }, [playoutVolume, onPlayoutVolumeChange])
 
-  return (
-    <div className={`controls-bar${showButtonLabels ? '' : ' controls-bar--icons-only'}`}>
+  useEffect(() => {
+    if (!isNarrow) setMobileMoreOpen(false)
+  }, [isNarrow])
 
+  useEffect(() => {
+    if (!mobileMoreOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(null)
+        setMobileMoreOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mobileMoreOpen])
+
+  const closeMobileMore = () => {
+    setOpen(null)
+    setMobileMoreOpen(false)
+  }
+
+  return (
+    <div className={`controls-bar${showButtonLabels ? '' : ' controls-bar--icons-only'}${isNarrow ? ' controls-bar--narrow' : ''}`}>
+      <div className="controls-bar__main">
       {/* ── Camera ─────────────────────────────────────────────────────── */}
       <div className="ctrl-group">
         <button
@@ -158,6 +193,8 @@ export function ControlsBar({
         )}
       </div>
 
+      {!isNarrow && (
+        <>
       {/* ── Headphones (громкость + выход) ─────────────────────────────── */}
       <div className="ctrl-group">
         <button
@@ -189,7 +226,53 @@ export function ControlsBar({
           />
         )}
       </div>
+        </>
+      )}
 
+      {/* ── Чат ────────────────────────────────────────────────────────── */}
+      <div className="ctrl-group ctrl-group--chat">
+        <button
+          type="button"
+          className={`ctrl-btn ctrl-btn--chat${chatOpen ? ' ctrl-btn--chat-open' : ''}`}
+          onClick={() => {
+            setOpen(null)
+            onToggleChat()
+          }}
+          title={chatOpen ? 'Закрыть чат' : 'Открыть чат'}
+          aria-label={
+            !chatOpen && chatUnreadCount > 0
+              ? `Чат, непрочитано: ${chatUnreadCount > 99 ? 'более 99' : chatUnreadCount}`
+              : undefined
+          }
+        >
+          <ChatBubbleIcon />
+          <span>Чат</span>
+          {!chatOpen && chatUnreadCount > 0 ? (
+            <span className="chat-unread-badge" aria-hidden>
+              {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
+            </span>
+          ) : null}
+        </button>
+        <button
+          type="button"
+          className={`ctrl-chevron ${open === 'chat' ? 'ctrl-chevron--open' : ''}`}
+          onClick={() => toggleOpen('chat')}
+          title="Режим чата"
+        >
+          <ChevronIcon />
+        </button>
+
+        {open === 'chat' && (
+          <ChatOptionsPopover
+            chatEmbed={chatEmbed}
+            onToggleChatEmbed={onToggleChatEmbed}
+            onClose={() => setOpen(null)}
+          />
+        )}
+      </div>
+
+      {!isNarrow && (
+        <>
       {/* ── Layout (цикл по кнопке; меню — шеврон) ───────────────────── */}
       <div className="ctrl-group">
         <button
@@ -245,16 +328,6 @@ export function ControlsBar({
           <ChevronIcon />
         </button>
 
-        {screenPickerOpen && (
-          <ScreenSharePickerModal
-            onClose={() => setScreenPickerOpen(false)}
-            onPickSurface={(surface) => {
-              setScreenPickerOpen(false)
-              void onStartScreenShare(surface)
-            }}
-          />
-        )}
-
         {open === 'screen' && (
           <ShareSourcePopover
             isSharing={isScreenSharing}
@@ -300,13 +373,258 @@ export function ControlsBar({
           />
         )}
       </div>
+        </>
+      )}
 
-      {/* ── Leave ──────────────────────────────────────────────────────── */}
-      <button className="ctrl-btn ctrl-btn--leave" onClick={onLeaveRequest}>
+      <button type="button" className="ctrl-btn ctrl-btn--leave" onClick={onLeaveRequest}>
         <LeaveIcon />
         <span>Выйти</span>
       </button>
+
+      {isNarrow && (
+        <button
+          type="button"
+          className="ctrl-btn ctrl-btn--mobile-more"
+          onClick={() => { setOpen(null); setMobileMoreOpen(true) }}
+          title="Ещё действия"
+          aria-label="Ещё действия"
+          aria-expanded={mobileMoreOpen}
+        >
+          <MoreVerticalIcon />
+          <span>Ещё</span>
+        </button>
+      )}
+      </div>
+
+      {screenPickerOpen && (
+        <ScreenSharePickerModal
+          onClose={() => setScreenPickerOpen(false)}
+          onPickSurface={(surface) => {
+            setScreenPickerOpen(false)
+            void onStartScreenShare(surface)
+          }}
+        />
+      )}
+
+      {!isNarrow && (
+      <div className="controls-bar__reaction-floater">
+        <div className="ctrl-group ctrl-group--solo">
+          <button
+            type="button"
+            className={`ctrl-btn ${open === 'reaction' ? 'ctrl-btn--active' : ''}`}
+            onClick={() => toggleOpen('reaction')}
+            title="Отправить реакцию"
+          >
+            <ReactionEmojiIcon />
+            <span>Реакция</span>
+          </button>
+          {open === 'reaction' && (
+            <ReactionEmojiPopover
+              onClose={() => setOpen(null)}
+              onPick={(emoji) => {
+                onSendReaction(emoji)
+                setOpen(null)
+              }}
+            />
+          )}
+        </div>
+      </div>
+      )}
+
+      {isNarrow && mobileMoreOpen && (
+        <>
+          <div
+            className="mobile-controls-sheet-backdrop"
+            role="presentation"
+            onClick={closeMobileMore}
+          />
+          <div
+            className="mobile-controls-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Дополнительные действия"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mobile-controls-sheet__title">Ещё</div>
+            <div className="mobile-controls-sheet__groups">
+              <div className="ctrl-group ctrl-group--sheet">
+                <button
+                  type="button"
+                  className={`ctrl-btn ${playoutVolume < 0.02 ? 'ctrl-btn--off' : ''}`}
+                  onClick={togglePlayoutMute}
+                  title={playoutVolume < 0.02 ? 'Включить звук других участников' : 'Отключить звук других участников'}
+                >
+                  {playoutVolume < 0.02 ? <HeadphonesMutedIcon /> : <HeadphonesIcon />}
+                  <span>{playoutVolume < 0.02 ? 'Включить' : 'Наушники'}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`ctrl-chevron ${playoutVolume < 0.02 ? 'ctrl-btn--off' : ''} ${open === 'headphones' ? 'ctrl-chevron--open' : ''}`}
+                  onClick={() => toggleOpen('headphones')}
+                  title="Громкость и устройство вывода"
+                >
+                  <ChevronIcon />
+                </button>
+                {open === 'headphones' && (
+                  <PlayoutPopover
+                    onClose={() => setOpen(null)}
+                    playoutVolume={playoutVolume}
+                    onPlayoutVolumeChange={onPlayoutVolumeChange}
+                    audioOutputs={audioOutputs}
+                    playoutSinkId={playoutSinkId}
+                    onPlayoutSinkChange={onPlayoutSinkChange}
+                  />
+                )}
+              </div>
+
+              <div className="ctrl-group ctrl-group--sheet">
+                <button
+                  type="button"
+                  className="ctrl-btn"
+                  onClick={() => onLayoutChange(nextLayoutMode(layout))}
+                  title={`Сейчас: ${layoutModeLabel(layout)}. Следующий вид: ${layoutModeLabel(nextLayoutMode(layout))}`}
+                >
+                  {layout === 'grid' ? <GridIcon /> : layout === 'speaker' ? <SpeakerIcon /> : <PipIcon />}
+                  <span>{layoutModeLabel(layout)}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`ctrl-chevron ${open === 'layout' ? 'ctrl-chevron--open' : ''}`}
+                  onClick={() => toggleOpen('layout')}
+                  title="Выбрать раскладку"
+                >
+                  <ChevronIcon />
+                </button>
+                {open === 'layout' && (
+                  <LayoutPopover
+                    layout={layout}
+                    onClose={() => setOpen(null)}
+                    onPick={(l) => {
+                      onLayoutChange(l)
+                      setOpen(null)
+                    }}
+                  />
+                )}
+              </div>
+
+              <div className="ctrl-group ctrl-group--sheet">
+                <button
+                  type="button"
+                  className={`ctrl-btn ${isScreenSharing ? 'ctrl-btn--active ctrl-btn--screen' : ''}`}
+                  onClick={() => {
+                    if (isScreenSharing) onToggleScreenShare()
+                    else setScreenPickerOpen(true)
+                  }}
+                  title={isScreenSharing ? 'Остановить демонстрацию' : 'Демонстрация экрана'}
+                >
+                  <ScreenShareIcon />
+                  <span>{isScreenSharing ? 'Стоп экран' : 'Экран'}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`ctrl-chevron ${isScreenSharing ? 'ctrl-btn--active ctrl-btn--screen' : ''} ${open === 'screen' ? 'ctrl-chevron--open' : ''}`}
+                  onClick={() => toggleOpen('screen')}
+                  title={isScreenSharing ? 'Меню демонстрации' : 'Тип источника демонстрации'}
+                >
+                  <ChevronIcon />
+                </button>
+                {open === 'screen' && (
+                  <ShareSourcePopover
+                    isSharing={isScreenSharing}
+                    onClose={() => setOpen(null)}
+                    onPick={(surface) => {
+                      void onStartScreenShare(surface)
+                      setOpen(null)
+                    }}
+                    onStop={() => {
+                      onToggleScreenShare()
+                      setOpen(null)
+                    }}
+                  />
+                )}
+              </div>
+
+              <div className="ctrl-group ctrl-group--solo ctrl-group--sheet">
+                <button
+                  type="button"
+                  className={`ctrl-btn ${open === 'settings' ? 'ctrl-btn--active' : ''}`}
+                  onClick={() => toggleOpen('settings')}
+                  title="Настройки"
+                >
+                  <GearIcon />
+                  <span>Настройки</span>
+                </button>
+                {open === 'settings' && (
+                  <SettingsPopover
+                    activePreset={activePreset}
+                    onChangePreset={onChangePreset}
+                    objectFit={objectFit}
+                    onObjectFitToggle={onObjectFitToggle}
+                    layout={layout}
+                    showMeter={showMeter}
+                    onToggleMeter={onToggleMeter}
+                    showInfo={showInfo}
+                    onToggleInfo={onToggleInfo}
+                    showButtonLabels={showButtonLabels}
+                    onToggleButtonLabels={onToggleButtonLabels}
+                    onResetView={() => { onResetView(); setOpen(null) }}
+                    onClose={() => setOpen(null)}
+                  />
+                )}
+              </div>
+
+              <div className="ctrl-group ctrl-group--solo ctrl-group--sheet">
+                <button
+                  type="button"
+                  className={`ctrl-btn ${open === 'reaction' ? 'ctrl-btn--active' : ''}`}
+                  onClick={() => toggleOpen('reaction')}
+                  title="Отправить реакцию"
+                >
+                  <ReactionEmojiIcon />
+                  <span>Реакция</span>
+                </button>
+                {open === 'reaction' && (
+                  <ReactionEmojiPopover
+                    onClose={() => setOpen(null)}
+                    onPick={(emoji) => {
+                      onSendReaction(emoji)
+                      setOpen(null)
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
+  )
+}
+
+function MoreVerticalIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <circle cx="12" cy="6" r="1.75" />
+      <circle cx="12" cy="12" r="1.75" />
+      <circle cx="12" cy="18" r="1.75" />
+    </svg>
+  )
+}
+
+function ChatBubbleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 7.5 7.5 0 0114-3 7.5 7.5 0 013 6z" />
+    </svg>
+  )
+}
+
+function ReactionEmojiIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01" />
+    </svg>
   )
 }
 
@@ -486,6 +804,38 @@ function PlayoutPopover({
           </select>
         </div>
       )}
+    </div>
+  )
+}
+
+function ChatOptionsPopover({
+  chatEmbed,
+  onToggleChatEmbed,
+  onClose,
+}: {
+  chatEmbed: boolean
+  onToggleChatEmbed: () => void
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  return (
+    <div className="settings-popover" ref={ref}>
+      <div className="settings-popover__title">Чат</div>
+      <button type="button" className="settings-row settings-row--btn" onClick={onToggleChatEmbed}>
+        <span className="settings-label">Чат в интерфейсе</span>
+        <span className={`settings-toggle ${chatEmbed ? 'settings-toggle--on' : ''}`}>
+          {chatEmbed ? 'Вкл' : 'Выкл'}
+        </span>
+      </button>
     </div>
   )
 }

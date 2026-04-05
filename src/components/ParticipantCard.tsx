@@ -1,5 +1,7 @@
 import { CSSProperties, useEffect, useRef } from 'react'
 import type { RemoteParticipant } from '../types'
+import type { RoomReactionBurst } from '../types/roomComms'
+import { ReactionBurstOverlay } from './ReactionBurstOverlay'
 import { AudioMeter } from './AudioMeter'
 import { useBindPlayout } from '../hooks/useMediaPlayout'
 import { SrtCopySurface } from './SrtCopyMenu'
@@ -21,6 +23,7 @@ interface Props {
   showPin?: boolean
   pinActive?: boolean
   onRequestPin?: () => void
+  reactionBurst?: RoomReactionBurst | null
 }
 
 export function ParticipantCard({
@@ -29,6 +32,7 @@ export function ParticipantCard({
   playoutVolume = 1,
   playoutSinkId = '',
   showPin, pinActive, onRequestPin,
+  reactionBurst,
 }: Props) {
   const mainVideoRef = useRef<HTMLVideoElement>(null)
   const pipVideoRef = useRef<HTMLVideoElement>(null)
@@ -94,6 +98,7 @@ export function ParticipantCard({
               srtConnectUrl={srtConnectUrl}
             />
           )}
+          {reactionBurst && <ReactionBurstOverlay key={reactionBurst.id} burst={reactionBurst} />}
         </SrtCopySurface>
       </div>
       <div className="card-bar">
