@@ -925,3 +925,126 @@ button.vio-row--peer:focus-visible {
   font-size: 14px;
   pointer-events: none;
 }
+
+/* ─── Confirm dialog (кастомное подтверждение выхода) ─────────────────────── */
+.confirm-dialog-root {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.confirm-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  background: rgba(0, 0, 0, .72);
+  backdrop-filter: blur(4px);
+}
+
+.confirm-dialog {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 400px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px 28px 22px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .55);
+  animation: confirm-dialog-in .22s ease;
+}
+
+@keyframes confirm-dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(.96) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.confirm-dialog__title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 12px;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.confirm-dialog__msg {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  margin: 0 0 24px;
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.confirm-dialog__btn {
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 11px 18px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  border: none;
+  transition: background .15s, border-color .15s, opacity .15s;
+}
+
+.confirm-dialog__btn--secondary {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.confirm-dialog__btn--secondary:hover {
+  background: #2a2a2a;
+  border-color: #3a3a3a;
+}
+
+.confirm-dialog__btn--primary {
+  background: var(--red);
+  color: #fff;
+}
+
+.confirm-dialog__btn--primary:hover {
+  background: #ef5350;
+}
+
+.join-logo-btn,
+.room-logo-btn {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  cursor: pointer;
+  border-radius: 10px;
+  transition: opacity .15s, background .15s;
+}
+
+.join-logo-btn:hover,
+.room-logo-btn:hover {
+  background: rgba(255, 255, 255, .06);
+}
+
+.join-logo-btn:focus-visible,
+.room-logo-btn:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}

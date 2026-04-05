@@ -38,12 +38,18 @@ export function JoinPage({ onJoin, error }: Props) {
     if (name.trim()) onJoin(name.trim(), room.trim() || DEFAULT_ROOM, DEFAULT_VIDEO_PRESET)
   }
 
+  const goMain = () => {
+    window.history.replaceState({}, '', window.location.pathname)
+    setName('')
+    setRoom(DEFAULT_ROOM)
+  }
+
   return (
     <div className="join-screen">
       <div className="join-card">
-        <div className="join-logo">
-          <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="redflow.online" />
-        </div>
+        <button type="button" className="join-logo-btn" onClick={goMain} title="Главная" aria-label="Главная">
+          <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
+        </button>
 
         <form onSubmit={handleSubmit} className="join-form">
           <label className="join-label">Ваше имя</label>

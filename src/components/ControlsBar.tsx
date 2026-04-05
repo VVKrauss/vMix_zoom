@@ -13,7 +13,7 @@ interface Props {
   selectedMicId: string
   onToggleMute: () => void
   onToggleCam: () => void
-  onLeave: () => void
+  onLeaveRequest: () => void
   onSwitchCamera: (deviceId: string) => void
   onSwitchMic: (deviceId: string) => void
   activePreset: VideoPreset
@@ -33,7 +33,7 @@ type OpenPopover = 'mic' | 'cam' | 'settings' | null
 export function ControlsBar({
   isMuted, isCamOff,
   cameras, microphones, selectedCameraId, selectedMicId,
-  onToggleMute, onToggleCam, onLeave,
+  onToggleMute, onToggleCam, onLeaveRequest,
   onSwitchCamera, onSwitchMic,
   activePreset, onChangePreset,
   objectFit, onObjectFitToggle, layout,
@@ -45,10 +45,6 @@ export function ControlsBar({
 
   const toggleOpen = (which: OpenPopover) =>
     setOpen(prev => prev === which ? null : which)
-
-  const handleLeave = () => {
-    if (window.confirm('Вы уверены, что хотите выйти?')) onLeave()
-  }
 
   return (
     <div className="controls-bar">
@@ -140,7 +136,7 @@ export function ControlsBar({
       </div>
 
       {/* ── Leave ──────────────────────────────────────────────────────── */}
-      <button className="ctrl-btn ctrl-btn--leave" onClick={handleLeave}>
+      <button className="ctrl-btn ctrl-btn--leave" onClick={onLeaveRequest}>
         <LeaveIcon />
         <span>Выйти</span>
       </button>

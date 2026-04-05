@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import React from 'react'
+import { ConfirmDialog } from './ConfirmDialog'
 import { ControlsBar } from './ControlsBar'
 import { ParticipantCard } from './ParticipantCard'
 import { DraggablePip } from './DraggablePip'
@@ -9,6 +10,7 @@ import { VideoInfoOverlay } from './VideoInfoOverlay'
 import { SrtCopySurface } from './SrtCopyMenu'
 import type { PipPos, PipSize } from './DraggablePip'
 import type { RemoteParticipant, SrtSessionInfo, VideoPreset } from '../types'
+import { ruParticipantsWord } from '../utils/ruPlural'
 
 export type LayoutMode = 'grid' | 'pip'
 export type ObjectFit = 'cover' | 'contain'
@@ -49,6 +51,8 @@ export function RoomPage({
   const [pipSize, setPipSize] = useState<PipSize>(
     isMobile ? { w: 140, h: 94 } : { w: 220, h: 148 }
   )
+
+  const [leaveDialog, setLeaveDialog] = useState<null | { mode: 'home' | 'leave'; others: number }>(null)
 
   const remoteList = useMemo(() => [...participants.values()], [participants])
   const total      = remoteList.length + 1
@@ -116,13 +120,44 @@ export function RoomPage({
       ? `${total} участника`
       : `${total} участников`
 
+  const leaveMessage =
+    leaveDialog && leaveDialog.others > 0
+      ? `В комнате ещё ${leaveDialog.others} ${ruParticipantsWord(leaveDialog.others)}. Для них звонок продолжится.`
+      : 'Вы отключитесь от комнаты.'
+
+  const openLeaveDialog = (mode: 'home' | 'leave', others: number) => {
+    setLeaveDialog({ mode, others })
+  }
+
+  const closeLeaveDialog = () => setLeaveDialog(null)
+
+  const confirmLeave = () => {
+    closeLeaveDialog()
+    onLeave()
+  }
+
+  const onLogoHomeClick = () => {
+    if (remoteList.length === 0) onLeave()
+    else openLeaveDialog('home', remoteList.length)
+  }
+
   return (
     <div className="room-page">
+      <ConfirmDialog
+        open={leaveDialog !== null}
+        title={leaveDialog?.mode === 'home' ? 'Выйти на главную?' : 'Покинуть комнату?'}
+        message={leaveMessage}
+        cancelLabel="Отмена"
+        confirmLabel={leaveDialog?.mode === 'home' ? 'На главную' : 'Выйти'}
+        onCancel={closeLeaveDialog}
+        onConfirm={confirmLeave}
+      />
+
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <header className="room-header">
-        <div className="room-logo">
-          <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="redflow.online" />
-        </div>
+        <button type="button" className="room-logo-btn" onClick={onLogoHomeClick} title="На главную" aria-label="На главную">
+          <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
+        </button>
 
         <div className="room-center">
           <span className="room-name">{roomId}</span>
@@ -199,7 +234,7 @@ export function RoomPage({
         selectedMicId={selectedMicId}
         onToggleMute={onToggleMute}
         onToggleCam={onToggleCam}
-        onLeave={onLeave}
+        onLeaveRequest={() => openLeaveDialog('leave', remoteList.length)}
         onSwitchCamera={id => { setSelectedCameraId(id); onSwitchCamera(id) }}
         onSwitchMic={id => { setSelectedMicId(id); onSwitchMic(id) }}
         activePreset={activePreset}
