@@ -25,11 +25,23 @@ export type ProducerDescriptor = {
   kind: 'audio' | 'video'
   name: string
   /** Явный источник видео (из producer.appData на бэке). */
-  videoSource?: 'camera' | 'screen'
+  videoSource?: 'camera' | 'screen' | 'vmix'
   /** Если peerId у видео экрана — отдельный, здесь peerId «хозяина» (камера/имя в комнате). */
   ownerPeerId?: string
   /** Сырой appData с бэка; часто `{ source: 'screen', ownerPeerId }`. */
   appData?: Record<string, unknown>
+}
+
+/** Ack `startVmixIngress` при `res.ok`. */
+export type VmixIngressInfo = {
+  publicHost: string
+  listenPort: number
+  latencyMs: number
+  /** Фактический лимит libx264 (кбит/с) после клампа; `null` — лимита нет. */
+  videoBitrateKbps?: number | null
+  passphrase?: string
+  streamId?: string
+  pbkeylen?: number
 }
 
 export type RemoteParticipant = {

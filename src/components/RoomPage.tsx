@@ -14,7 +14,7 @@ import { useLocalStorageNumber, useLocalStorageString, useLocalStorageBool } fro
 import { VideoInfoOverlay } from './VideoInfoOverlay'
 import { SrtCopySurface } from './SrtCopyMenu'
 import type { PipPos, PipSize } from './DraggablePip'
-import type { RemoteParticipant, SrtSessionInfo, VideoPreset } from '../types'
+import type { RemoteParticipant, SrtSessionInfo, VideoPreset, VmixIngressInfo } from '../types'
 import { ruParticipantsWord } from '../utils/ruPlural'
 import {
   isScreenTileId,
@@ -27,6 +27,8 @@ import type { RoomChatMessage, RoomReactionBurst } from '../types/roomComms'
 import { pickLatestBurstForPeer } from '../types/roomComms'
 import { RoomChatPanel } from './RoomChatPanel'
 import { ReactionBurstOverlay } from './ReactionBurstOverlay'
+import { VmixIngressModal } from './VmixIngressModal'
+import { ServerSettingsModal } from './ServerSettingsModal'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useActiveSpeaker } from '../hooks/useActiveSpeaker'
 import { buildRoomInviteAbsoluteUrl } from '../utils/soloViewerParams'
@@ -37,6 +39,9 @@ function remoteScreenTileId(p: RemoteParticipant): string | null {
 }
 
 export type LayoutMode = 'grid' | 'pip' | 'speaker' | 'meet'
+
+/** vMix: ingress запущен, но видео ещё нет — оранжевая кнопка; есть видео — красная. */
+export type VmixIngressPhase = 'idle' | 'waiting' | 'live'
 
 /** Раскладки с «плитками» (мобильное заполнение сетки). */
 export function layoutUsesTiledView(mode: LayoutMode): boolean {
@@ -78,6 +83,10 @@ interface Props {
   chatIncomingPreview: { author: string; text: string } | null
   /** У гостей: идёт приём newProducer экрана, ещё нет screenStream в state */
   remoteScreenSharePending?: boolean
+  vmixIngressInfo: VmixIngressInfo | null
+  vmixIngressLoading: boolean
+  onStartVmixIngress: () => Promise<{ ok: true; info: VmixIngressInfo } | { ok: false; error: string }>
+  onStopVmixIngress: () => Promise<{ ok: boolean; error?: string }>
 }
 
 export function RoomPage({
@@ -91,6 +100,10 @@ export function RoomPage({
   chatMessages, onSendChatMessage, onSendReaction, reactionBursts,
   chatOpen, setChatOpen, chatUnreadCount, chatIncomingPreview,
   remoteScreenSharePending = false,
+  vmixIngressInfo,
+  vmixIngressLoading,
+  onStartVmixIngress,
+  onStopVmixIngress,
 }: Props) {
   const isMobile = useMediaQuery('(max-width: 768px)')
   const [layout, setLayout]       = useState<LayoutMode>(() =>
@@ -108,6 +121,11 @@ export function RoomPage({
 
   const [leaveDialog, setLeaveDialog] = useState<null | { mode: 'home' | 'leave'; others: number }>(null)
   const [screenStopDialogOpen, setScreenStopDialogOpen] = useState(false)
+  const [vmixModalOpen, setVmixModalOpen] = useState(false)
+  const [vmixModalMode, setVmixModalMode] = useState<'setup' | 'reference'>('setup')
+  const [vmixStopDialogOpen, setVmixStopDialogOpen] = useState(false)
+  const [serverSettingsOpen, setServerSettingsOpen] = useState(false)
+  const [vmixError, setVmixError] = useState<string | null>(null)
   const [inviteToast, setInviteToast] = useState(false)
   const inviteToastTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
 
@@ -137,8 +155,20 @@ export function RoomPage({
   const [playoutSinkId, setPlayoutSinkId] = useLocalStorageString('vmix_playout_sink', '')
   const [showControlButtonLabels, setShowControlButtonLabels] = useLocalStorageBool('vmix_control_button_labels', false)
   const [chatEmbed, setChatEmbed] = useLocalStorageBool('vmix_chat_embed', true)
+  const [streamerMode, setStreamerMode] = useLocalStorageBool('vmix_streamer_mode', false)
 
   const remoteList = useMemo(() => [...participants.values()], [participants])
+
+  const vmixPeer = useMemo(
+    () => remoteList.find((p) => p.name === 'vMix'),
+    [remoteList],
+  )
+
+  const vmixPhase: VmixIngressPhase = useMemo(() => {
+    if (!vmixIngressInfo) return 'idle'
+    if (vmixPeer?.videoStream) return 'live'
+    return 'waiting'
+  }, [vmixIngressInfo, vmixPeer])
 
   const activeSpeakerPeerId = useActiveSpeaker(
     layout === 'speaker',
@@ -376,6 +406,49 @@ export function RoomPage({
     onToggleScreenShare()
   }
 
+  const handleStartVmixIngress = useCallback(async () => {
+    setVmixError(null)
+    try {
+      const res = await onStartVmixIngress()
+      if (res.ok) {
+        setVmixModalMode('setup')
+        setVmixModalOpen(true)
+      } else {
+        setVmixError(res.error)
+      }
+    } catch (e) {
+      setVmixError(e instanceof Error ? e.message : String(e))
+    }
+  }, [onStartVmixIngress])
+
+  const handleStopVmixIngress = useCallback(async () => {
+    setVmixError(null)
+    try {
+      const res = await onStopVmixIngress()
+      if (!res.ok && res.error) {
+        setVmixError(res.error)
+      }
+    } catch (e) {
+      setVmixError(e instanceof Error ? e.message : String(e))
+    }
+  }, [onStopVmixIngress])
+
+  const requestStopVmixIngress = useCallback(() => {
+    if (vmixIngressInfo) setVmixStopDialogOpen(true)
+  }, [vmixIngressInfo])
+
+  const closeVmixStopDialog = useCallback(() => setVmixStopDialogOpen(false), [])
+
+  const confirmStopVmixIngress = useCallback(async () => {
+    closeVmixStopDialog()
+    await handleStopVmixIngress()
+  }, [closeVmixStopDialog, handleStopVmixIngress])
+
+  const openVmixSettingsReference = useCallback(() => {
+    setVmixModalMode('reference')
+    setVmixModalOpen(true)
+  }, [])
+
   const cardPlayout = useMemo(() => ({
     playoutVolume,
     playoutSinkId,
@@ -467,6 +540,7 @@ export function RoomPage({
     }
     const p = participants.get(id)
     if (!p) return null
+    const isVmixTile = p.name === 'vMix'
     return (
       <ParticipantCard
         participant={p}
@@ -476,6 +550,7 @@ export function RoomPage({
         roomId={roomId}
         srtConnectUrl={srtByPeer[id]?.connectUrlPublic}
         srtListenPort={srtByPeer[id]?.listenPort}
+        badge={isVmixTile ? 'Программа' : null}
         {...cardPlayout}
         reactionBurst={pickLatestBurstForPeer(reactionBursts, p.peerId)}
       />
@@ -483,7 +558,7 @@ export function RoomPage({
   }
 
   return (
-    <div className="room-page">
+    <div className={`room-page${streamerMode ? ' room-page--streamer-mode' : ''}`}>
       <ConfirmDialog
         open={leaveDialog !== null}
         title={leaveDialog?.mode === 'home' ? 'Выйти на главную?' : 'Покинуть комнату?'}
@@ -492,6 +567,25 @@ export function RoomPage({
         confirmLabel={leaveDialog?.mode === 'home' ? 'На главную' : 'Выйти'}
         onCancel={closeLeaveDialog}
         onConfirm={confirmLeave}
+      />
+
+      <VmixIngressModal
+        open={vmixModalOpen}
+        info={vmixIngressInfo}
+        mode={vmixModalMode}
+        onClose={() => setVmixModalOpen(false)}
+      />
+
+      <ServerSettingsModal open={serverSettingsOpen} onClose={() => setServerSettingsOpen(false)} />
+
+      <ConfirmDialog
+        open={vmixStopDialogOpen}
+        title="Остановить vMix?"
+        message="Программный вход отключится, слушатель SRT закроется. Участники перестанут видеть поток программы."
+        cancelLabel="Отмена"
+        confirmLabel="Остановить"
+        onCancel={closeVmixStopDialog}
+        onConfirm={() => { void confirmStopVmixIngress() }}
       />
 
       <ConfirmDialog
@@ -527,8 +621,35 @@ export function RoomPage({
           </div>
         </div>
 
-        <div className="header-right" />
+        <div className="header-right">
+          <div className="room-streamer-toggle" title="Оформление панели для эфира">
+            <span className={`room-streamer-toggle__text${!streamerMode ? ' room-streamer-toggle__text--active' : ''}`}>
+              Обычный
+            </span>
+            <button
+              type="button"
+              className={`room-streamer-toggle__switch${streamerMode ? ' room-streamer-toggle__switch--on' : ''}`}
+              role="switch"
+              aria-checked={streamerMode}
+              aria-label={streamerMode ? 'Режим стримера включён' : 'Режим стримера выключен'}
+              onClick={() => setStreamerMode((v) => !v)}
+            >
+              <span className="room-streamer-toggle__thumb" />
+            </button>
+            <span className={`room-streamer-toggle__text${streamerMode ? ' room-streamer-toggle__text--active' : ''}`}>
+              Стример
+            </span>
+          </div>
+        </div>
       </header>
+
+      {vmixError && (
+        <div className="room-invite-toast room-invite-toast--visible room-invite-toast--error" role="alert">
+          <span className="room-invite-toast__title">vMix ошибка</span>
+          <span className="room-invite-toast__text">{vmixError}</span>
+          <button type="button" className="room-invite-toast__close" onClick={() => setVmixError(null)}>✕</button>
+        </div>
+      )}
 
       <div
         className={`room-invite-toast${inviteToast ? ' room-invite-toast--visible' : ''}`}
@@ -698,6 +819,13 @@ export function RoomPage({
         chatEmbed={chatEmbed}
         onToggleChatEmbed={() => setChatEmbed((v) => !v)}
         onSendReaction={onSendReaction}
+        streamerMode={streamerMode}
+        vmixPhase={vmixPhase}
+        vmixIngressLoading={vmixIngressLoading}
+        onStartVmixIngress={handleStartVmixIngress}
+        onRequestStopVmixIngress={requestStopVmixIngress}
+        onOpenVmixSettings={openVmixSettingsReference}
+        onOpenServerSettings={() => setServerSettingsOpen(true)}
       />
 
       {chatOpen && !chatEmbed && (

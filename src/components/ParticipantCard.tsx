@@ -21,6 +21,7 @@ interface Props {
   /** deviceId выхода (Chrome и др.) */
   playoutSinkId?: string
   reactionBurst?: RoomReactionBurst | null
+  badge?: string | null
 }
 
 export function ParticipantCard({
@@ -29,6 +30,7 @@ export function ParticipantCard({
   playoutVolume = 1,
   playoutSinkId = '',
   reactionBurst,
+  badge,
 }: Props) {
   const mainVideoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -87,6 +89,7 @@ export function ParticipantCard({
       </div>
       <div className="card-bar">
         <span className="card-name">{participant.name}</span>
+        {badge && <span className="card-badge">{badge}</span>}
       </div>
     </div>
   )

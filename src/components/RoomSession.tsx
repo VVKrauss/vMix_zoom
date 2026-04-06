@@ -64,6 +64,7 @@ export function RoomSession({ roomId }: Props) {
     localScreenStream, localScreenPeerId, isScreenSharing, toggleScreenShare, startScreenShare,
     chatMessages, sendChatMessage, sendReaction, reactionBursts,
     remoteScreenConsumePending,
+    startVmixIngress, stopVmixIngress, vmixIngressInfo, vmixIngressLoading,
   } = useRoom(roomActivityNotifyRef)
 
   const statusRef = useRef<RoomStatus>('idle')
@@ -132,6 +133,10 @@ export function RoomSession({ roomId }: Props) {
         chatUnreadCount={chatUnreadCount}
         chatIncomingPreview={chatIncomingPreview}
         remoteScreenSharePending={remoteScreenConsumePending}
+        vmixIngressInfo={vmixIngressInfo}
+        vmixIngressLoading={vmixIngressLoading}
+        onStartVmixIngress={startVmixIngress}
+        onStopVmixIngress={stopVmixIngress}
       />
     )
   }

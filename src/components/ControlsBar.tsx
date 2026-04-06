@@ -3,7 +3,7 @@ import { DevicePopover } from './DevicePopover'
 import { ScreenSharePickerModal } from './ScreenSharePickerModal'
 import type { VideoPreset } from '../types'
 import { VIDEO_PRESETS } from '../types'
-import type { LayoutMode } from './RoomPage'
+import type { LayoutMode, VmixIngressPhase } from './RoomPage'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { MicIcon, MicOffIcon, CamIcon, CamOffIcon } from './icons'
@@ -80,6 +80,17 @@ interface Props {
   chatEmbed: boolean
   onToggleChatEmbed: () => void
   onSendReaction: (emoji: string) => void
+  /** Неоновое оформление панели (режим «стример»). */
+  streamerMode?: boolean
+  vmixPhase: VmixIngressPhase
+  vmixIngressLoading: boolean
+  onStartVmixIngress: () => void
+  /** Открыть подтверждение остановки (основная кнопка при активном ingress). */
+  onRequestStopVmixIngress: () => void
+  /** Показать параметры подключения без перезапуска (шеврон). */
+  onOpenVmixSettings: () => void
+  /** Окно «Настройки сервера» из шестерёнки. */
+  onOpenServerSettings: () => void
 }
 
 type OpenPopover = 'mic' | 'cam' | 'headphones' | 'chat' | 'reaction' | 'layout' | 'screen' | 'settings' | null
@@ -102,6 +113,13 @@ export function ControlsBar({
   chatUnreadCount,
   chatEmbed, onToggleChatEmbed,
   onSendReaction,
+  streamerMode = false,
+  vmixPhase,
+  vmixIngressLoading,
+  onStartVmixIngress,
+  onRequestStopVmixIngress,
+  onOpenVmixSettings,
+  onOpenServerSettings,
 }: Props) {
   const isNarrow = useMediaQuery('(max-width: 768px)')
   const [open, setOpen] = useState<OpenPopover>(null)
@@ -311,11 +329,67 @@ export function ControlsBar({
           showButtonLabels={showButtonLabels}
           onToggleButtonLabels={onToggleButtonLabels}
           onResetView={() => { onResetView(); setOpen(null) }}
+          onOpenServerSettings={() => { onOpenServerSettings(); setOpen(null) }}
           onClose={() => setOpen(null)}
         />
       )}
     </div>
   )
+
+  const vmixSourcesBlock = (sheet?: boolean) => {
+    const shClass = sh('ctrl-group ctrl-group--vmix-source', sheet)
+    if (vmixPhase === 'idle') {
+      return (
+        <button
+          type="button"
+          className={`ctrl-btn ctrl-btn--source-ingest ctrl-btn--source-ingest--vmix${vmixIngressLoading ? ' ctrl-btn--loading' : ''}`}
+          title={vmixIngressLoading ? 'Подключение…' : 'Добавить источник vMix / SRT'}
+          disabled={vmixIngressLoading}
+          onClick={onStartVmixIngress}
+        >
+          <span className="ctrl-btn__source-plus" aria-hidden>
+            {vmixIngressLoading ? '⏳' : '+'}
+          </span>
+          <span className="ctrl-source-wordmark ctrl-source-wordmark--vmix">vMix</span>
+        </button>
+      )
+    }
+    const phaseClass =
+      vmixPhase === 'live'
+        ? 'ctrl-btn--source-ingest--vmix-live'
+        : 'ctrl-btn--source-ingest--vmix-waiting'
+    const chevronPhase =
+      vmixPhase === 'live' ? 'ctrl-chevron--vmix-live' : 'ctrl-chevron--vmix-waiting'
+    const mainTitle =
+      vmixPhase === 'live'
+        ? 'Поток vMix активен. Нажмите, чтобы остановить'
+        : 'Ожидание подключения vMix. Нажмите, чтобы остановить'
+    return (
+      <div className={shClass}>
+        <button
+          type="button"
+          className={`ctrl-btn ctrl-btn--source-ingest ctrl-btn--source-ingest--vmix ${phaseClass}${vmixIngressLoading ? ' ctrl-btn--loading' : ''}`}
+          title={vmixIngressLoading ? 'Подключение…' : mainTitle}
+          disabled={vmixIngressLoading}
+          onClick={onRequestStopVmixIngress}
+        >
+          <span className="ctrl-btn__source-plus ctrl-btn__source-plus--vmix-state" aria-hidden>
+            {vmixIngressLoading ? '⏳' : '●'}
+          </span>
+          <span className="ctrl-source-wordmark ctrl-source-wordmark--vmix">vMix</span>
+        </button>
+        <button
+          type="button"
+          className={`ctrl-chevron ${chevronPhase}`}
+          disabled={vmixIngressLoading}
+          onClick={() => onOpenVmixSettings()}
+          title="Параметры подключения vMix"
+        >
+          <ChevronIcon />
+        </button>
+      </div>
+    )
+  }
 
   const reactionGroup = (sheet?: boolean) => (
     <div className={sh('ctrl-group ctrl-group--solo', sheet)}>
@@ -338,7 +412,9 @@ export function ControlsBar({
   )
 
   return (
-    <div className={`controls-bar${showButtonLabels ? '' : ' controls-bar--icons-only'}${isNarrow ? ' controls-bar--narrow' : ''}`}>
+    <div
+      className={`controls-bar${showButtonLabels ? '' : ' controls-bar--icons-only'}${isNarrow ? ' controls-bar--narrow' : ''}${streamerMode ? ' controls-bar--streamer-mode' : ''}`}
+    >
       <div className="controls-bar__main">
       <div className="controls-bar__sources" aria-label="Внешние источники (скоро)">
         <button
@@ -352,17 +428,7 @@ export function ControlsBar({
           </span>
           <span className="ctrl-source-wordmark ctrl-source-wordmark--ndi">NDI</span>
         </button>
-        <button
-          type="button"
-          className="ctrl-btn ctrl-btn--source-ingest ctrl-btn--source-ingest--vmix"
-          title="Добавить источник vMix / SRT (скоро)"
-          onClick={() => {}}
-        >
-          <span className="ctrl-btn__source-plus" aria-hidden>
-            +
-          </span>
-          <span className="ctrl-source-wordmark ctrl-source-wordmark--vmix">vMix</span>
-        </button>
+        {vmixSourcesBlock()}
       </div>
 
       <div className="controls-bar__core">
@@ -720,7 +786,7 @@ function SettingsPopover({
   showMeter, onToggleMeter,
   showInfo, onToggleInfo,
   showButtonLabels, onToggleButtonLabels,
-  onResetView, onClose,
+  onResetView, onOpenServerSettings, onClose,
 }: {
   activePreset: VideoPreset
   onChangePreset: (p: VideoPreset) => void
@@ -731,6 +797,7 @@ function SettingsPopover({
   showButtonLabels: boolean
   onToggleButtonLabels: () => void
   onResetView: () => void
+  onOpenServerSettings: () => void
   onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -739,6 +806,11 @@ function SettingsPopover({
   return (
     <div className="settings-popover" ref={ref}>
       <div className="settings-popover__title">Настройки</div>
+
+      <button type="button" className="settings-row settings-row--btn settings-row--server" onClick={onOpenServerSettings}>
+        <span className="settings-label">Настройки сервера</span>
+        <span className="settings-row__arrow" aria-hidden>→</span>
+      </button>
 
       {/* Quality */}
       <div className="settings-row">

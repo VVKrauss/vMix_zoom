@@ -552,6 +552,245 @@ html, body, #root {
   align-items: center;
   justify-content: flex-end;
   gap: 16px;
+  min-width: 0;
+}
+
+/* Тумблер «Обычный / Стример» в шапке комнаты */
+.room-streamer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.room-streamer-toggle__text {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.room-streamer-toggle__text--active {
+  color: var(--text);
+  text-shadow: 0 0 12px rgba(168, 85, 247, 0.45);
+}
+
+.room-page--streamer-mode .room-streamer-toggle__text--active {
+  color: #e0f7ff;
+  text-shadow:
+    0 0 8px rgba(0, 255, 255, 0.55),
+    0 0 16px rgba(255, 0, 255, 0.35);
+}
+
+.room-streamer-toggle__switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface2);
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.room-streamer-toggle__switch:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.room-streamer-toggle__switch--on {
+  background: linear-gradient(135deg, #1a0a2e 0%, #2d1b4e 50%, #0d2137 100%);
+  border-color: rgba(0, 255, 255, 0.45);
+  box-shadow:
+    0 0 12px rgba(0, 255, 255, 0.35),
+    0 0 20px rgba(255, 0, 220, 0.2),
+    inset 0 0 10px rgba(168, 85, 247, 0.15);
+}
+
+.room-streamer-toggle__thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #f5f5f5 0%, #c4c4c4 100%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  transition: transform 0.2s ease, background 0.2s, box-shadow 0.2s;
+}
+
+.room-streamer-toggle__switch--on .room-streamer-toggle__thumb {
+  transform: translateX(20px);
+  background: linear-gradient(180deg, #fff 0%, #a78bfa 100%);
+  box-shadow:
+    0 0 10px rgba(0, 255, 255, 0.6),
+    0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.room-streamer-toggle__switch:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+/* Неон: под шапкой и над панелью в режиме стримера */
+.room-page--streamer-mode .room-header {
+  border-bottom-color: rgba(0, 255, 255, 0.22);
+  box-shadow:
+    0 1px 0 rgba(0, 255, 255, 0.35),
+    0 4px 24px rgba(0, 255, 200, 0.22),
+    0 12px 40px rgba(255, 0, 200, 0.12);
+}
+
+.room-page--streamer-mode .controls-bar {
+  border-top-color: rgba(255, 0, 255, 0.22);
+  box-shadow:
+    0 -1px 0 rgba(255, 0, 255, 0.35),
+    0 -4px 28px rgba(200, 0, 255, 0.28),
+    0 -12px 48px rgba(0, 200, 255, 0.14);
+}
+
+/* Панель: разноцветное свечение групп (режим стримера) */
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__sources .ctrl-btn--source-ingest--ndi {
+  border-color: #00ffc8;
+  color: #bffff0;
+  box-shadow:
+    0 0 10px rgba(0, 255, 200, 0.55),
+    0 0 22px rgba(0, 255, 200, 0.25),
+    inset 0 0 12px rgba(0, 255, 200, 0.08);
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__sources .ctrl-btn--source-ingest--vmix:not(.ctrl-btn--source-ingest--vmix-waiting):not(.ctrl-btn--source-ingest--vmix-live) {
+  border-color: #ff2ebe;
+  color: #ffc8f0;
+  box-shadow:
+    0 0 10px rgba(255, 46, 190, 0.55),
+    0 0 22px rgba(255, 0, 180, 0.22),
+    inset 0 0 12px rgba(255, 46, 190, 0.08);
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__sources .ctrl-btn--source-ingest--vmix-waiting {
+  border-color: #ff9800;
+  color: #ffe0b2;
+  box-shadow:
+    0 0 10px rgba(255, 152, 0, 0.5),
+    0 0 22px rgba(255, 140, 0, 0.2),
+    inset 0 0 12px rgba(255, 152, 0, 0.1);
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__sources .ctrl-btn--source-ingest--vmix-live {
+  border-color: #e53935;
+  color: #ffcdd2;
+  box-shadow:
+    0 0 10px rgba(229, 57, 53, 0.55),
+    0 0 22px rgba(198, 40, 40, 0.22),
+    inset 0 0 12px rgba(229, 57, 53, 0.1);
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__sources .ctrl-group--vmix-source .ctrl-chevron--vmix-waiting {
+  border-color: rgba(255, 152, 0, 0.75);
+  color: #ffe0b2;
+  box-shadow: 0 0 8px rgba(255, 152, 0, 0.35);
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__sources .ctrl-group--vmix-source .ctrl-chevron--vmix-live {
+  border-color: rgba(229, 57, 53, 0.75);
+  color: #ffcdd2;
+  box-shadow: 0 0 8px rgba(229, 57, 53, 0.35);
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(1) {
+  filter: drop-shadow(0 0 5px rgba(0, 229, 255, 0.75)) drop-shadow(0 0 14px rgba(0, 229, 255, 0.35));
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(1) .ctrl-btn,
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(1) .ctrl-chevron {
+  border-color: rgba(0, 229, 255, 0.75);
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(2) {
+  filter: drop-shadow(0 0 5px rgba(168, 85, 247, 0.75)) drop-shadow(0 0 14px rgba(168, 85, 247, 0.35));
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(2) .ctrl-btn,
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(2) .ctrl-chevron {
+  border-color: rgba(168, 85, 247, 0.8);
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(3) {
+  filter: drop-shadow(0 0 5px rgba(34, 197, 94, 0.75)) drop-shadow(0 0 14px rgba(34, 197, 94, 0.32));
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(3) .ctrl-btn,
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(3) .ctrl-chevron {
+  border-color: rgba(34, 197, 94, 0.85);
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(4) {
+  filter: drop-shadow(0 0 5px rgba(234, 179, 8, 0.8)) drop-shadow(0 0 14px rgba(234, 179, 8, 0.32));
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(4) .ctrl-btn,
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(4) .ctrl-chevron {
+  border-color: rgba(234, 179, 8, 0.9);
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(5) {
+  filter: drop-shadow(0 0 5px rgba(249, 115, 22, 0.8)) drop-shadow(0 0 14px rgba(249, 115, 22, 0.32));
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(5) .ctrl-btn,
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(5) .ctrl-chevron {
+  border-color: rgba(249, 115, 22, 0.9);
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(6) {
+  filter: drop-shadow(0 0 5px rgba(239, 68, 68, 0.75)) drop-shadow(0 0 14px rgba(239, 68, 68, 0.3));
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(6) .ctrl-btn,
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(6) .ctrl-chevron {
+  border-color: rgba(239, 68, 68, 0.85);
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(7) {
+  filter: drop-shadow(0 0 5px rgba(236, 72, 153, 0.75)) drop-shadow(0 0 14px rgba(236, 72, 153, 0.32));
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(7) .ctrl-btn,
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(7) .ctrl-chevron {
+  border-color: rgba(236, 72, 153, 0.88);
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-btn--leave {
+  border-color: #ff1744;
+  box-shadow:
+    0 0 12px rgba(255, 23, 68, 0.65),
+    0 0 26px rgba(255, 0, 100, 0.35),
+    inset 0 0 10px rgba(255, 80, 120, 0.12);
+  filter: drop-shadow(0 0 4px rgba(255, 23, 68, 0.5));
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__reaction-floater .ctrl-group--solo {
+  filter: drop-shadow(0 0 5px rgba(0, 255, 255, 0.65)) drop-shadow(0 0 14px rgba(255, 215, 0, 0.35));
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__reaction-floater .ctrl-btn {
+  border-color: rgba(0, 255, 255, 0.75);
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .ctrl-btn--off {
+  box-shadow:
+    0 0 8px rgba(255, 80, 80, 0.45),
+    0 0 16px rgba(180, 0, 60, 0.2);
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .ctrl-btn--active {
+  box-shadow:
+    0 0 12px rgba(255, 255, 100, 0.35),
+    0 0 20px rgba(0, 255, 255, 0.2);
 }
 
 /* ─── PiP container ──────────────────────────────────────────────────────── */
@@ -1187,10 +1426,15 @@ button.vio-row--peer:focus-visible {
   border-color: rgba(255, 255, 255, 0.1);
 }
 
-.ctrl-btn.ctrl-btn--source-ingest:hover {
+.ctrl-btn.ctrl-btn--source-ingest:hover:not(:disabled) {
   color: var(--text);
   border-color: rgba(255, 255, 255, 0.18);
   background: #2a2a2a;
+}
+
+.ctrl-btn.ctrl-btn--source-ingest.ctrl-btn--loading {
+  opacity: 0.55;
+  cursor: wait;
 }
 
 .ctrl-btn__source-plus {
@@ -1212,6 +1456,58 @@ button.vio-row--peer:focus-visible {
   font-weight: 700;
   font-size: 10.5px;
   letter-spacing: 0.02em;
+}
+
+/* vMix: ожидание Caller — оранжевый; поток есть — красный */
+.ctrl-btn.ctrl-btn--source-ingest--vmix-waiting {
+  color: #ffcc80;
+  border-color: rgba(255, 152, 0, 0.7);
+  background: rgba(255, 140, 0, 0.14);
+}
+
+.ctrl-btn.ctrl-btn--source-ingest--vmix-waiting:hover:not(:disabled) {
+  color: #ffe0b2;
+  border-color: rgba(255, 183, 77, 0.85);
+  background: rgba(255, 152, 0, 0.22);
+}
+
+.ctrl-btn.ctrl-btn--source-ingest--vmix-live {
+  color: #ffcdd2;
+  border-color: rgba(229, 57, 53, 0.75);
+  background: rgba(229, 57, 53, 0.16);
+}
+
+.ctrl-btn.ctrl-btn--source-ingest--vmix-live:hover:not(:disabled) {
+  color: #fff;
+  border-color: rgba(239, 83, 80, 0.9);
+  background: rgba(229, 57, 53, 0.26);
+}
+
+.ctrl-btn__source-plus--vmix-state {
+  font-size: 11px;
+  opacity: 1;
+}
+
+.controls-bar__sources .ctrl-group--vmix-source .ctrl-chevron.ctrl-chevron--vmix-waiting {
+  border-color: rgba(255, 152, 0, 0.55);
+  color: #ffcc80;
+  background: rgba(255, 140, 0, 0.12);
+}
+
+.controls-bar__sources .ctrl-group--vmix-source .ctrl-chevron.ctrl-chevron--vmix-waiting:hover:not(:disabled) {
+  background: rgba(255, 152, 0, 0.2);
+  color: #ffe0b2;
+}
+
+.controls-bar__sources .ctrl-group--vmix-source .ctrl-chevron.ctrl-chevron--vmix-live {
+  border-color: rgba(229, 57, 53, 0.65);
+  color: #ffcdd2;
+  background: rgba(229, 57, 53, 0.12);
+}
+
+.controls-bar__sources .ctrl-group--vmix-source .ctrl-chevron.ctrl-chevron--vmix-live:hover:not(:disabled) {
+  background: rgba(229, 57, 53, 0.22);
+  color: #fff;
 }
 
 .controls-bar.controls-bar--icons-only .ctrl-btn--source-ingest--ndi .ctrl-btn__source-plus,
@@ -1511,6 +1807,28 @@ button.vio-row--peer:focus-visible {
     font-size: 11px;
     padding: 6px 10px;
   }
+
+  .room-streamer-toggle {
+    gap: 5px;
+  }
+  .room-streamer-toggle__text {
+    font-size: 9px;
+    letter-spacing: 0.02em;
+  }
+  .room-streamer-toggle__switch {
+    width: 40px;
+    height: 22px;
+  }
+  .room-streamer-toggle__thumb {
+    width: 14px;
+    height: 14px;
+    top: 3px;
+    left: 3px;
+  }
+  .room-streamer-toggle__switch--on .room-streamer-toggle__thumb {
+    transform: translateX(18px);
+  }
+
   .room-invite-toast {
     bottom: 72px;
     padding: 14px 16px;
@@ -2422,5 +2740,339 @@ button.vio-row--peer:focus-visible {
 .room-chat-panel__send-btn:disabled {
   color: var(--text-dim);
   opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── vMix Ingress Modal ──────────────────────────────────────────────────── */
+
+.vmix-modal {
+  max-width: 480px;
+}
+
+.vmix-modal__table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0 16px;
+}
+
+.vmix-modal__row + .vmix-modal__row .vmix-modal__cell {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.vmix-modal__cell {
+  padding: 7px 8px;
+  vertical-align: middle;
+  font-size: 0.92rem;
+}
+
+.vmix-modal__cell--label {
+  color: var(--text-dim);
+  white-space: nowrap;
+  width: 1%;
+  padding-right: 16px;
+}
+
+.vmix-modal__cell--value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vmix-modal__cell--value code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.88rem;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 7px;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+.vmix-modal__copy {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 2px 6px;
+  line-height: 1;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.vmix-modal__copy:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+/* ── Card badge (vMix / Программа) ───────────────────────────────────────── */
+
+.card-badge {
+  margin-left: auto;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: rgba(0, 200, 120, 0.22);
+  color: #6febb5;
+  white-space: nowrap;
+}
+
+/* ── vMix error toast ────────────────────────────────────────────────────── */
+
+.room-invite-toast--error {
+  background: rgba(220, 50, 50, 0.92);
+}
+
+.room-invite-toast--error .room-invite-toast__title {
+  color: #fff;
+}
+
+.room-invite-toast--error .room-invite-toast__text {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.room-invite-toast__close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 2px 4px;
+}
+
+.room-invite-toast__close:hover {
+  color: #fff;
+}
+
+/* ── Settings popover: сервер ─────────────────────────────────────────────── */
+
+.settings-row--server .settings-label {
+  font-weight: 600;
+}
+
+.settings-row__arrow {
+  margin-left: auto;
+  opacity: 0.65;
+  font-size: 14px;
+}
+
+/* ── Модалка «Настройки сервера» ─────────────────────────────────────────── */
+
+/* поверх интерфейса комнаты, как confirm-dialog */
+.server-settings-overlay {
+  z-index: 4000;
+}
+
+.server-settings-panel {
+  position: relative;
+  z-index: 1;
+  width: min(540px, calc(100vw - 32px));
+  max-height: min(88vh, 720px);
+  display: flex;
+  flex-direction: column;
+  margin: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+}
+
+.server-settings-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.server-settings-panel__title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.server-settings-panel__close {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.server-settings-panel__close:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.server-settings-panel__body {
+  padding: 12px 16px 16px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+
+.server-settings-panel__foot {
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.server-settings-flash {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  background: rgba(66, 165, 245, 0.15);
+  border: 1px solid rgba(66, 165, 245, 0.35);
+  color: #b3e5fc;
+}
+
+.server-settings-section {
+  margin-bottom: 20px;
+}
+
+.server-settings-section:last-child {
+  margin-bottom: 0;
+}
+
+.server-settings-section__title {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.server-settings-section__hint {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+.server-settings-section__note {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.server-settings-kv {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin-bottom: 8px;
+}
+
+.server-settings-kv__label {
+  flex: 1 0 100%;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+
+.server-settings-kv__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.85rem;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  word-break: break-all;
+}
+
+.server-settings-kv__copy {
+  flex: 0 0 auto;
+  font-size: 0.82rem;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.server-settings-kv__copy:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.server-settings-field {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.server-settings-field--row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.server-settings-field--row input[type="checkbox"] {
+  flex-shrink: 0;
+}
+
+.server-settings-field__label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.86rem;
+  color: var(--text-dim);
+}
+
+.server-settings-field--row .server-settings-field__label {
+  margin-bottom: 0;
+}
+
+.server-settings-field__input {
+  width: 100%;
+  max-width: 220px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.server-settings-field__hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  line-height: 1.35;
+}
+
+.server-settings-restart-btn {
+  margin-top: 4px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(229, 57, 53, 0.45);
+  background: rgba(229, 57, 53, 0.12);
+  color: #ffcdd2;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.server-settings-restart-btn:hover:not(:disabled) {
+  background: rgba(229, 57, 53, 0.2);
+}
+
+.server-settings-restart-btn:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }

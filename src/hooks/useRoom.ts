@@ -4,7 +4,7 @@ import type { Transport, Producer, Consumer, RtpCapabilities, TransportOptions, 
 import { io, Socket } from 'socket.io-client'
 import type {
   FrontendRoomDetail, ProducerDescriptor, RemoteParticipant,
-  SrtSessionInfo, VideoPreset,
+  SrtSessionInfo, VideoPreset, VmixIngressInfo,
 } from '../types'
 import type { RoomChatMessage, RoomReactionBurst, RoomReactionEvent } from '../types/roomComms'
 import {
@@ -18,6 +18,7 @@ import {
   resolveConsumeVideoRole,
   videoAnchorPeerId,
 } from '../utils/producerVideoRole'
+import { readVmixIngressEmitExtras } from '../config/serverSettingsStorage'
 import { signalingHttpBase, signalingSocketUrl } from '../utils/signalingBase'
 import { DEFAULT_VIDEO_PRESET } from '../types'
 
@@ -42,23 +43,19 @@ function extractField(payload: unknown, camel: string, snake: string): string | 
 const producerIdFromClosedPayload = (p: unknown) => extractField(p, 'producerId', 'producer_id')
 const peerIdFromLeftPayload = (p: unknown) => extractField(p, 'peerId', 'peer_id')
 
+type ProducerMeta = {
+  consumerId: string
+  anchorPeerId: string
+  producerPeerId: string
+  kind: 'audio' | 'video'
+  videoSource?: 'camera' | 'screen' | 'vmix'
+}
+
 function registerProducerMeta(
-  map: Map<string, {
-    consumerId: string
-    anchorPeerId: string
-    producerPeerId: string
-    kind: 'audio' | 'video'
-    videoSource?: 'camera' | 'screen'
-  }>,
+  map: Map<string, ProducerMeta>,
   signalingProducerId: string,
   consumerProducerId: string,
-  meta: {
-    consumerId: string
-    anchorPeerId: string
-    producerPeerId: string
-    kind: 'audio' | 'video'
-    videoSource?: 'camera' | 'screen'
-  },
+  meta: ProducerMeta,
 ) {
   const sig = String(signalingProducerId).trim()
   const cPid = String(consumerProducerId).trim()
@@ -204,13 +201,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const [localScreenPeerId, setLocalScreenPeerId] = useState<string | null>(null)
   const consumersRef = useRef<Map<string, Consumer>>(new Map())
   /** producerId → метаданные для producerClosed и очистки */
-  const producerMetaRef = useRef<Map<string, {
-    consumerId: string
-    anchorPeerId: string
-    producerPeerId: string
-    kind: 'audio' | 'video'
-    videoSource?: 'camera' | 'screen'
-  }>>(new Map())
+  const producerMetaRef = useRef<Map<string, ProducerMeta>>(new Map())
   const roomIdRef = useRef<string>(DEFAULT_ROOM)
   const localStreamRef = useRef<MediaStream | null>(null)
   const [sessionMeta, setSessionMeta] = useState<{ roomId: string; localPeerId: string } | null>(null)
@@ -222,6 +213,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const [reactionBursts, setReactionBursts] = useState<RoomReactionBurst[]>([])
   /** Пока consume удалённого экрана не завершился — раскладка meet у гостей */
   const [remoteScreenConsumePending, setRemoteScreenConsumePending] = useState(false)
+  const [vmixIngressInfo, setVmixIngressInfo] = useState<VmixIngressInfo | null>(null)
   const lastLocalReactionAtRef = useRef(0)
   const displayNameRef = useRef('')
   /** Инкремент при leave или новом join — отмена незавершённого join без ложных ошибок в консоли. */
@@ -1141,6 +1133,104 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     })
   }, [])
 
+  const [vmixIngressLoading, setVmixIngressLoading] = useState(false)
+
+  const startVmixIngress = useCallback(async (opts?: {
+    latencyMs?: number
+    /** Целевой битрейт libx264 (кбит/с); приоритетнее maxBitrateKbps на бэке. */
+    videoBitrateKbps?: number
+    /** Запасной вариант битрейта на бэке, если не передан videoBitrateKbps. */
+    maxBitrateKbps?: number
+    /** Запрос фиксированного порта SRT Listener; бэк может игнорировать. */
+    listenPort?: number
+    passphrase?: string
+    streamId?: string
+    pbkeylen?: 16 | 32
+  }): Promise<{ ok: true; info: VmixIngressInfo } | { ok: false; error: string }> => {
+    const socket = socketRef.current
+    if (!socket?.connected) return { ok: false, error: 'Нет соединения с сервером' }
+    setVmixIngressLoading(true)
+    try {
+      return await new Promise<{ ok: true; info: VmixIngressInfo } | { ok: false; error: string }>((resolve) => {
+        const payload = { roomId: roomIdRef.current, ...readVmixIngressEmitExtras(), ...opts }
+        socket.timeout(15_000).emit(
+          'startVmixIngress',
+          payload,
+          (err: Error | null, res?: Record<string, unknown>) => {
+            if (err) {
+              resolve({
+                ok: false,
+                error:
+                  'Нет ответа от сервера (таймаут или обрыв). Проверьте, что signaling обрабатывает startVmixIngress и вызывает ack.',
+              })
+              return
+            }
+            const data = res ?? {}
+            if (data.error) {
+              resolve({ ok: false, error: String(data.error) })
+              return
+            }
+            const vbRaw = data.videoBitrateKbps
+            let videoBitrateKbps: number | null | undefined
+            if ('videoBitrateKbps' in data) {
+              if (vbRaw === null) videoBitrateKbps = null
+              else {
+                const n = Number(vbRaw)
+                videoBitrateKbps = Number.isFinite(n) ? n : undefined
+              }
+            }
+            const info: VmixIngressInfo = {
+              publicHost: String(data.publicHost ?? ''),
+              listenPort: Number(data.listenPort ?? 0),
+              latencyMs: Number(data.latencyMs ?? 0),
+              ...(videoBitrateKbps !== undefined ? { videoBitrateKbps } : {}),
+              ...(data.passphrase ? { passphrase: String(data.passphrase) } : {}),
+              ...(data.streamId ? { streamId: String(data.streamId) } : {}),
+              ...(data.pbkeylen ? { pbkeylen: Number(data.pbkeylen) } : {}),
+            }
+            setVmixIngressInfo(info)
+            resolve({ ok: true, info })
+          },
+        )
+      })
+    } finally {
+      setVmixIngressLoading(false)
+    }
+  }, [])
+
+  const stopVmixIngress = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
+    const socket = socketRef.current
+    if (!socket?.connected) return { ok: false, error: 'Нет соединения с сервером' }
+    setVmixIngressLoading(true)
+    try {
+      return await new Promise<{ ok: boolean; error?: string }>((resolve) => {
+        socket.timeout(15_000).emit(
+          'stopVmixIngress',
+          { roomId: roomIdRef.current },
+          (err: Error | null, res?: Record<string, unknown>) => {
+            if (err) {
+              resolve({
+                ok: false,
+                error:
+                  'Нет ответа от сервера (таймаут или обрыв). Проверьте обработчик stopVmixIngress на signaling.',
+              })
+              return
+            }
+            const data = res ?? {}
+            if (data.error) {
+              resolve({ ok: false, error: String(data.error) })
+              return
+            }
+            setVmixIngressInfo(null)
+            resolve({ ok: true })
+          },
+        )
+      })
+    } finally {
+      setVmixIngressLoading(false)
+    }
+  }, [])
+
   const leave = useCallback(() => {
     joinGenerationRef.current += 1
     stopScreenShare()
@@ -1165,6 +1255,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     setSrtByPeer({})
     setChatMessages([])
     setReactionBursts([])
+    setVmixIngressInfo(null)
   }, [stopScreenShare])
 
   return {
@@ -1195,5 +1286,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     sendReaction,
     reactionBursts,
     remoteScreenConsumePending,
+    startVmixIngress,
+    stopVmixIngress,
+    vmixIngressInfo,
+    vmixIngressLoading,
   }
 }
