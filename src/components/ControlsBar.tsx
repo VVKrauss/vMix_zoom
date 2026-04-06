@@ -608,16 +608,47 @@ export function ControlsBar({
       ) : null}
 
       {forceMobileFabMenu ? (
-        <button
-          type="button"
-          className={`ctrl-mobile-menu-fab${sheetMenuOpen ? ' ctrl-mobile-menu-fab--sheet-open' : ''}`}
-          onClick={toggleMobileSheet}
-          title="Меню управления"
-          aria-label="Меню управления"
-          aria-expanded={mobileMoreOpen}
+        <div
+          className={`ctrl-mobile-fab-dock${sheetMenuOpen ? ' ctrl-mobile-fab-dock--sheet-open' : ''}`}
         >
-          <MenuHamburgerIcon />
-        </button>
+          <button
+            type="button"
+            className="ctrl-mobile-fab ctrl-mobile-fab--menu"
+            onClick={toggleMobileSheet}
+            title="Меню управления"
+            aria-label="Меню управления"
+            aria-expanded={mobileMoreOpen}
+          >
+            <MenuHamburgerIcon />
+          </button>
+          <button
+            type="button"
+            className="ctrl-mobile-fab ctrl-mobile-fab--leave"
+            onClick={onLeaveRequest}
+            title="Выйти из комнаты"
+            aria-label="Выйти из комнаты"
+          >
+            <LeaveIcon />
+          </button>
+          <button
+            type="button"
+            className={`ctrl-mobile-fab${isMuted ? ' ctrl-mobile-fab--off' : ''}`}
+            onClick={onToggleMute}
+            title={isMuted ? 'Включить микрофон' : 'Выключить микрофон'}
+            aria-label={isMuted ? 'Включить микрофон' : 'Выключить микрофон'}
+          >
+            {isMuted ? <MicOffIcon /> : <MicIcon />}
+          </button>
+          <button
+            type="button"
+            className={`ctrl-mobile-fab${isCamOff ? ' ctrl-mobile-fab--off' : ''}`}
+            onClick={onToggleCam}
+            title={isCamOff ? 'Включить камеру' : 'Выключить камеру'}
+            aria-label={isCamOff ? 'Включить камеру' : 'Выключить камеру'}
+          >
+            {isCamOff ? <CamOffIcon /> : <CamIcon />}
+          </button>
+        </div>
       ) : null}
 
       {screenPickerOpen && (
@@ -758,7 +789,7 @@ function ProgramSpeakerMutedIcon() {
 
 function MenuHamburgerIcon() {
   return (
-    <svg className="ctrl-mobile-menu-fab__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+    <svg className="ctrl-mobile-fab__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
       <path d="M4 7h16M4 12h16M4 17h16" />
     </svg>
   )
@@ -1071,7 +1102,7 @@ function SettingsPopover({
 
 function LeaveIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
       <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
     </svg>
   )

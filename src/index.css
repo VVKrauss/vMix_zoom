@@ -291,51 +291,89 @@ html, body, #root {
   pointer-events: none;
 }
 
-.ctrl-mobile-menu-fab {
-  pointer-events: auto;
+/* Плавающие круги: меню + камера, микрофон, выход (мобильный viewport) */
+.ctrl-mobile-fab-dock {
   position: fixed;
-  right: max(14px, env(safe-area-inset-right));
-  bottom: max(14px, env(safe-area-inset-bottom));
+  right: max(14px, env(safe-area-inset-right, 0px));
+  bottom: max(14px, env(safe-area-inset-bottom, 0px));
   z-index: 8202;
+  display: flex;
+  flex-direction: row-reverse;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+  transition: bottom 0.28s ease;
+}
+
+.ctrl-mobile-fab-dock.ctrl-mobile-fab-dock--sheet-open {
+  bottom: calc(max(14px, env(safe-area-inset-bottom, 0px)) + min(78vh, 520px) + 16px);
+  z-index: 8300;
+}
+
+.ctrl-mobile-fab-dock .ctrl-mobile-fab {
+  pointer-events: auto;
+  flex-shrink: 0;
   width: 52px;
   height: 52px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
+  margin: 0;
+  padding: 0;
   border: 1px solid var(--border);
   background: var(--surface2);
   color: var(--text);
   cursor: pointer;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  font: inherit;
   transition:
     background 0.15s ease,
     transform 0.12s ease,
-    bottom 0.28s ease,
+    border-color 0.15s ease,
     box-shadow 0.2s ease;
 }
 
-/* Над открытым нижним листом (высота как у max-height листа) */
-.ctrl-mobile-menu-fab.ctrl-mobile-menu-fab--sheet-open {
-  bottom: calc(max(14px, env(safe-area-inset-bottom)) + min(78vh, 520px) + 16px);
-  z-index: 8300;
+.ctrl-mobile-fab-dock--sheet-open .ctrl-mobile-fab {
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
 }
 
-.ctrl-mobile-menu-fab:hover {
+.ctrl-mobile-fab-dock .ctrl-mobile-fab:hover {
   background: #2a2a2a;
 }
 
-.ctrl-mobile-menu-fab:active {
+.ctrl-mobile-fab-dock .ctrl-mobile-fab:active {
   transform: scale(0.96);
 }
 
-.ctrl-mobile-menu-fab:focus-visible {
+.ctrl-mobile-fab-dock .ctrl-mobile-fab:focus-visible {
   outline: 2px solid var(--red);
   outline-offset: 2px;
 }
 
-.ctrl-mobile-menu-fab__icon {
+.ctrl-mobile-fab-dock .ctrl-mobile-fab svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+.ctrl-mobile-fab-dock .ctrl-mobile-fab--off {
+  border-color: rgba(229, 57, 53, 0.45);
+  color: var(--text-dim);
+}
+
+.ctrl-mobile-fab-dock .ctrl-mobile-fab--leave {
+  border-color: rgba(229, 57, 53, 0.35);
+}
+
+.ctrl-mobile-fab-dock .ctrl-mobile-fab--leave:hover {
+  border-color: var(--red);
+  background: rgba(229, 57, 53, 0.12);
+  color: #fff;
+}
+
+.ctrl-mobile-fab__icon {
   width: 24px;
   height: 24px;
 }
@@ -391,9 +429,11 @@ html, body, #root {
   gap: 12px;
   width: 100%;
   box-sizing: border-box;
-  padding: 10px 14px;
-  padding-left: max(14px, env(safe-area-inset-left));
-  padding-right: max(14px, env(safe-area-inset-right));
+  /* Не уезжать под статус-бар / адресную строку (iOS Safari и др.) */
+  padding-top: max(10px, env(safe-area-inset-top, 0px));
+  padding-bottom: 10px;
+  padding-left: max(14px, env(safe-area-inset-left, 0px));
+  padding-right: max(14px, env(safe-area-inset-right, 0px));
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
