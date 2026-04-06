@@ -701,6 +701,50 @@ html, body, #root {
   box-shadow: 0 0 8px rgba(229, 57, 53, 0.35);
 }
 
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__sources .ctrl-vmix-audio--waiting {
+  border-color: #ff9800;
+  color: #ffe0b2;
+  background: rgba(255, 140, 0, 0.14);
+  border-top-color: #ff9800;
+  border-bottom-color: #ff9800;
+  border-left-color: rgba(255, 152, 0, 0.75);
+  box-shadow:
+    0 0 10px rgba(255, 152, 0, 0.5),
+    0 0 22px rgba(255, 140, 0, 0.2),
+    inset 0 0 12px rgba(255, 152, 0, 0.1);
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__sources .ctrl-vmix-audio--live {
+  border-color: #e53935;
+  color: #ffcdd2;
+  background: rgba(229, 57, 53, 0.16);
+  border-top-color: #e53935;
+  border-bottom-color: #e53935;
+  border-left-color: rgba(229, 57, 53, 0.75);
+  box-shadow:
+    0 0 10px rgba(229, 57, 53, 0.55),
+    0 0 22px rgba(198, 40, 40, 0.22),
+    inset 0 0 12px rgba(229, 57, 53, 0.1);
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__sources .ctrl-vmix-audio--waiting .ctrl-vmix-audio__mute:hover:not(:disabled) {
+  background: rgba(255, 152, 0, 0.28);
+  color: #fff;
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__sources .ctrl-vmix-audio--live .ctrl-vmix-audio__mute:hover:not(:disabled) {
+  background: rgba(229, 57, 53, 0.32);
+  color: #fff;
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__sources .ctrl-vmix-audio--waiting .ctrl-vmix-audio__slider {
+  accent-color: #ffb74d;
+}
+
+.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__sources .ctrl-vmix-audio--live .ctrl-vmix-audio__slider {
+  accent-color: #ef5350;
+}
+
 .room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__core > .ctrl-group:nth-child(1) {
   filter: drop-shadow(0 0 5px rgba(0, 229, 255, 0.75)) drop-shadow(0 0 14px rgba(0, 229, 255, 0.35));
 }
@@ -1508,6 +1552,100 @@ button.vio-row--peer:focus-visible {
 .controls-bar__sources .ctrl-group--vmix-source .ctrl-chevron.ctrl-chevron--vmix-live:hover:not(:disabled) {
   background: rgba(229, 57, 53, 0.22);
   color: #fff;
+}
+
+.controls-bar__sources .ctrl-group--vmix-source {
+  flex-wrap: nowrap;
+  align-items: stretch;
+}
+
+/* Полоса звука vMix — те же цвета, что у кнопки ingest (оранжевый waiting / красный live) */
+.controls-bar__sources .ctrl-vmix-audio {
+  flex: 0 1 auto;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  min-width: 0;
+  border-right: none;
+  border-radius: 0;
+}
+
+.controls-bar__sources .ctrl-vmix-audio--waiting {
+  color: #ffcc80;
+  background: rgba(255, 140, 0, 0.14);
+  border-top: 1px solid rgba(255, 152, 0, 0.7);
+  border-bottom: 1px solid rgba(255, 152, 0, 0.7);
+  border-left: 1px solid rgba(255, 152, 0, 0.55);
+}
+
+.controls-bar__sources .ctrl-vmix-audio--live {
+  color: #ffcdd2;
+  background: rgba(229, 57, 53, 0.16);
+  border-top: 1px solid rgba(229, 57, 53, 0.75);
+  border-bottom: 1px solid rgba(229, 57, 53, 0.75);
+  border-left: 1px solid rgba(229, 57, 53, 0.55);
+}
+
+.controls-bar__sources .ctrl-vmix-audio__mute {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.controls-bar__sources .ctrl-vmix-audio--waiting .ctrl-vmix-audio__mute:hover:not(:disabled) {
+  color: #ffe0b2;
+  background: rgba(255, 152, 0, 0.22);
+}
+
+.controls-bar__sources .ctrl-vmix-audio--live .ctrl-vmix-audio__mute:hover:not(:disabled) {
+  color: #fff;
+  background: rgba(229, 57, 53, 0.26);
+}
+
+.controls-bar__sources .ctrl-vmix-audio__mute:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.controls-bar__sources .ctrl-vmix-audio--waiting .ctrl-vmix-audio__mute--off {
+  color: #ffe0b2;
+  background: rgba(255, 152, 0, 0.22);
+}
+
+.controls-bar__sources .ctrl-vmix-audio--live .ctrl-vmix-audio__mute--off {
+  color: #ffcdd2;
+  background: rgba(229, 57, 53, 0.22);
+}
+
+.controls-bar__sources .ctrl-vmix-audio__slider {
+  flex: 0 1 auto;
+  width: 72px;
+  min-width: 48px;
+  max-width: 120px;
+  height: 6px;
+}
+
+.controls-bar__sources .ctrl-vmix-audio--waiting .ctrl-vmix-audio__slider {
+  accent-color: #ff9800;
+}
+
+.controls-bar__sources .ctrl-vmix-audio--live .ctrl-vmix-audio__slider {
+  accent-color: #e53935;
+}
+
+.controls-bar.controls-bar--icons-only .controls-bar__sources .ctrl-vmix-audio__slider {
+  width: 56px;
+  max-width: 72px;
 }
 
 .controls-bar.controls-bar--icons-only .ctrl-btn--source-ingest--ndi .ctrl-btn__source-plus,

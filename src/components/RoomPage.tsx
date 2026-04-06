@@ -152,6 +152,9 @@ export function RoomPage({
 
   const { audioOutputs, refreshAudioOutputs } = useAudioOutputs()
   const [playoutVolume, setPlayoutVolume] = useLocalStorageNumber('vmix_playout_volume', 1, 0, 1)
+  /** Громкость только потока программы vMix (у каждого гостя своя, localStorage). */
+  const [vmixProgramVolume, setVmixProgramVolume] = useLocalStorageNumber('vmix_program_volume', 1, 0, 1)
+  const [vmixProgramMuted, setVmixProgramMuted] = useLocalStorageBool('vmix_program_muted', false)
   const [playoutSinkId, setPlayoutSinkId] = useLocalStorageString('vmix_playout_sink', '')
   const [showControlButtonLabels, setShowControlButtonLabels] = useLocalStorageBool('vmix_control_button_labels', false)
   const [chatEmbed, setChatEmbed] = useLocalStorageBool('vmix_chat_embed', true)
@@ -164,8 +167,9 @@ export function RoomPage({
     [remoteList],
   )
 
+  /** У гостя нет vmixIngressInfo, но участник vMix в комнате есть — фаза по peer, не только по ack старта. */
   const vmixPhase: VmixIngressPhase = useMemo(() => {
-    if (!vmixIngressInfo) return 'idle'
+    if (!vmixIngressInfo && !vmixPeer) return 'idle'
     if (vmixPeer?.videoStream) return 'live'
     return 'waiting'
   }, [vmixIngressInfo, vmixPeer])
@@ -449,6 +453,8 @@ export function RoomPage({
     setVmixModalOpen(true)
   }, [])
 
+  const vmixPlayoutGain = vmixProgramMuted ? 0 : vmixProgramVolume
+
   const cardPlayout = useMemo(() => ({
     playoutVolume,
     playoutSinkId,
@@ -551,7 +557,8 @@ export function RoomPage({
         srtConnectUrl={srtByPeer[id]?.connectUrlPublic}
         srtListenPort={srtByPeer[id]?.listenPort}
         badge={isVmixTile ? 'Программа' : null}
-        {...cardPlayout}
+        playoutVolume={isVmixTile ? playoutVolume * vmixPlayoutGain : cardPlayout.playoutVolume}
+        playoutSinkId={cardPlayout.playoutSinkId}
         reactionBurst={pickLatestBurstForPeer(reactionBursts, p.peerId)}
       />
     )
@@ -826,6 +833,10 @@ export function RoomPage({
         onRequestStopVmixIngress={requestStopVmixIngress}
         onOpenVmixSettings={openVmixSettingsReference}
         onOpenServerSettings={() => setServerSettingsOpen(true)}
+        vmixProgramVolume={vmixProgramVolume}
+        onVmixProgramVolumeChange={setVmixProgramVolume}
+        vmixProgramMuted={vmixProgramMuted}
+        onToggleVmixProgramMuted={() => setVmixProgramMuted((v) => !v)}
       />
 
       {chatOpen && !chatEmbed && (
