@@ -610,7 +610,7 @@ export function ControlsBar({
       {forceMobileFabMenu ? (
         <button
           type="button"
-          className="ctrl-mobile-menu-fab"
+          className={`ctrl-mobile-menu-fab${sheetMenuOpen ? ' ctrl-mobile-menu-fab--sheet-open' : ''}`}
           onClick={toggleMobileSheet}
           title="Меню управления"
           aria-label="Меню управления"
@@ -638,7 +638,18 @@ export function ControlsBar({
 
       {sheetMenuOpen && (
         <>
-          <div className="mobile-controls-sheet-backdrop" role="presentation" onClick={closeMobileMore} />
+          <div
+            className="mobile-controls-sheet-backdrop"
+            role="presentation"
+            onPointerDown={(e) => {
+              if (e.button !== 0) return
+              closeMobileMore()
+            }}
+            onClick={(e) => {
+              e.preventDefault()
+              closeMobileMore()
+            }}
+          />
           <div
             className="mobile-controls-sheet"
             role="dialog"

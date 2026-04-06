@@ -260,6 +260,7 @@ html, body, #root {
 .room-page--chrome-hidden .controls-bar {
   min-height: 0;
   max-height: 0;
+  height: 0;
   margin: 0;
   padding-top: 0;
   padding-bottom: 0;
@@ -268,6 +269,13 @@ html, body, #root {
   opacity: 0;
   pointer-events: none;
   visibility: hidden;
+}
+
+/* Мобильная шапка — тот же слот сетки, что и .room-header */
+.room-page--chrome-hidden .room-header-mobile-shell {
+  min-height: 0 !important;
+  max-height: 0 !important;
+  height: 0 !important;
 }
 
 .controls-bar--fab-dock {
@@ -300,7 +308,18 @@ html, body, #root {
   color: var(--text);
   cursor: pointer;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
-  transition: background 0.15s ease, transform 0.12s ease;
+  transition:
+    background 0.15s ease,
+    transform 0.12s ease,
+    bottom 0.28s ease,
+    box-shadow 0.2s ease;
+}
+
+/* Над открытым нижним листом (высота как у max-height листа) */
+.ctrl-mobile-menu-fab.ctrl-mobile-menu-fab--sheet-open {
+  bottom: calc(max(14px, env(safe-area-inset-bottom)) + min(78vh, 520px) + 16px);
+  z-index: 8300;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
 }
 
 .ctrl-mobile-menu-fab:hover {
@@ -323,10 +342,15 @@ html, body, #root {
 
 .controls-bar--fab-dock .mobile-controls-sheet-backdrop {
   z-index: 8200;
+  pointer-events: auto;
+  touch-action: manipulation;
+  cursor: pointer;
 }
 
 .controls-bar--fab-dock .mobile-controls-sheet {
   z-index: 8201;
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 
 .controls-bar__sources--in-sheet {
@@ -2279,6 +2303,10 @@ button.vio-row--peer:focus-visible {
     grid-template-rows: auto 1fr 0;
   }
   .room-page.room-page--chrome-hidden {
+    grid-template-rows: 0 1fr 0;
+  }
+  /* Явно: «авто» у viewport не должен оставлять строку шапки при immersive */
+  .room-page.room-page--viewport-mobile.room-page--chrome-hidden {
     grid-template-rows: 0 1fr 0;
   }
 
