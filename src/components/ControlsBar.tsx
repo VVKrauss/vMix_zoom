@@ -28,7 +28,7 @@ function layoutModeLabel(mode: LayoutMode): string {
     case 'pip':
       return 'Картинка в картинке'
     case 'facetile':
-      return 'FaceTime'
+      return 'Мобильное'
     default:
       return 'Картинка в картинке'
   }

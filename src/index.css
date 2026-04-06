@@ -350,69 +350,75 @@ html, body, #root {
   border-radius: var(--radius);
 }
 
-/* Один слот сетки: шапка + фикс. затемнение при раскрытии */
+/* Мобильная шапка комнаты: только логотип (не кликабельно) и «+» справа */
 .room-header-mobile-shell {
   position: relative;
   min-width: 0;
 }
 
-/* Шапка комнаты: только квадратный логотип; по тапу — id комнаты и число гостей */
-.room-header-mobile-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  background: rgba(0, 0, 0, 0.35);
-}
-
-.room-header--mobile-compact {
+/* Специфичность выше, чем у .room-header { display: grid } ниже по файлу */
+.room-header.room-header--mobile-compact {
   position: relative;
   z-index: 70;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
   padding: 10px 14px;
-  grid-template-columns: none;
+  padding-left: max(14px, env(safe-area-inset-left));
+  padding-right: max(14px, env(safe-area-inset-right));
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
 
-.room-header--mobile-compact .room-header-mobile-logo {
+.room-header-mobile-brand {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  pointer-events: none;
+  user-select: none;
 }
 
-.room-header--mobile-compact .brand-logo--header {
+.room-header.room-header--mobile-compact .brand-logo--header {
   width: 32px;
   height: 32px;
   display: block;
 }
 
-.room-header-mobile-info {
-  display: none;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  width: 100%;
-  padding-top: 12px;
-  margin-top: 10px;
-  border-top: 1px solid var(--border);
-  box-sizing: border-box;
-}
-
-.room-header--mobile-compact-open .room-header-mobile-info {
+.room-invite-btn-compact {
+  flex-shrink: 0;
   display: flex;
-}
-
-.room-header-mobile-info .room-name {
-  font-size: 15px;
-  font-weight: 600;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface2);
   color: var(--text);
-  word-break: break-all;
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
 
-.room-header-mobile-info .room-count {
-  font-size: 13px;
-  color: var(--text-dim);
+.room-invite-btn-compact:hover {
+  border-color: var(--red);
+  background: rgba(229, 57, 53, 0.12);
+  color: #fff;
+}
+
+.room-invite-btn-compact:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
 }
 
 .pip-container--facetile .pip-float {
@@ -480,24 +486,47 @@ html, body, #root {
 
 .room-speaker-strip {
   display: flex;
-  gap: 8px;
-  padding: 8px 10px;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 10px;
+  padding: 10px 14px 12px;
   overflow-x: auto;
+  overflow-y: hidden;
   flex-shrink: 0;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  align-items: stretch;
+  align-items: center;
+  justify-content: flex-start;
+  background: #202124;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  -webkit-overflow-scrolling: touch;
 }
 
 .room-speaker-strip-tile {
-  flex: 0 0 180px;
-  height: 102px;
-  min-width: 140px;
+  flex: 0 0 auto;
+  width: 176px;
+  height: 99px;
+  min-width: 152px;
+  max-width: 220px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  box-sizing: border-box;
+}
+
+.room-speaker-strip-tile--on-stage {
+  box-shadow:
+    0 0 0 2px var(--red),
+    0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .room-speaker-strip-tile .participant-card {
   height: 100%;
-  max-height: 102px;
+  max-height: none;
+  border-radius: 8px;
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.room-speaker-strip-tile .participant-card--local::after {
+  border-radius: 7px;
 }
 
 /* ─── Meet (Google Meet): крупная сцена + нижняя полоса превью ─────────── */
@@ -2524,6 +2553,27 @@ button.vio-row--peer:focus-visible {
   }
 
   .room-meet-strip-tile .participant-card--local::after {
+    border-radius: 5px;
+  }
+
+  .room-speaker-strip {
+    padding: 8px 10px 10px;
+    gap: 8px;
+  }
+
+  .room-speaker-strip-tile {
+    width: 132px;
+    height: 74px;
+    min-width: 118px;
+    max-width: 200px;
+    border-radius: 6px;
+  }
+
+  .room-speaker-strip-tile .participant-card {
+    border-radius: 6px;
+  }
+
+  .room-speaker-strip-tile .participant-card--local::after {
     border-radius: 5px;
   }
 }

@@ -129,10 +129,6 @@ export function RoomPage({
   getRemoteInboundVideoQuality,
 }: Props) {
   const isViewportMobile = useMediaQuery(mediaQueryMaxWidthMobile)
-  const [mobileRoomInfoOpen, setMobileRoomInfoOpen] = useState(false)
-  useEffect(() => {
-    if (!isViewportMobile) setMobileRoomInfoOpen(false)
-  }, [isViewportMobile])
   const [immersiveAutoHide, setImmersiveAutoHide] = useLocalStorageBool(
     'vmix_immersive_auto_hide',
     false,
@@ -444,11 +440,6 @@ export function RoomPage({
   }, [remoteList, localPeerId, allTileIdsSet, activeSpeakerPeerId])
 
   const featuredPeerId = layout === 'meet' ? meetFeaturedId : layout === 'speaker' ? speakerFeaturedPeerId : null
-
-  const stripPeerIds = useMemo(() => {
-    if (layout !== 'speaker' || !speakerFeaturedPeerId) return []
-    return orderedTileIds.filter((id) => id !== speakerFeaturedPeerId)
-  }, [layout, speakerFeaturedPeerId, orderedTileIds])
 
   useEffect(() => {
     if (!isScreenSharing) setScreenStopDialogOpen(false)
@@ -780,31 +771,19 @@ export function RoomPage({
       {/* ── Header ─────────────────────────────────────────────────────── */}
       {isViewportMobile ? (
         <div className="room-header-mobile-shell">
-          {mobileRoomInfoOpen ? (
-            <div
-              className="room-header-mobile-backdrop"
-              role="presentation"
-              aria-hidden
-              onClick={() => setMobileRoomInfoOpen(false)}
-            />
-          ) : null}
-          <header
-            className={`room-header room-header--mobile-compact${mobileRoomInfoOpen ? ' room-header--mobile-compact-open' : ''}`}
-          >
+          <header className="room-header room-header--mobile-compact">
+            <div className="room-header-mobile-brand" aria-hidden>
+              <img className="brand-logo brand-logo--header" src="/logo.png" alt="" draggable={false} />
+            </div>
             <button
               type="button"
-              className="room-logo-btn room-header-mobile-logo"
-              onClick={() => setMobileRoomInfoOpen((o) => !o)}
-              title="Информация о комнате"
-              aria-expanded={mobileRoomInfoOpen}
-              aria-controls="room-header-mobile-info"
+              className="room-invite-btn-compact"
+              onClick={handleInviteParticipants}
+              title="Скопировать ссылку на комнату"
+              aria-label="Скопировать ссылку на комнату"
             >
-              <img className="brand-logo brand-logo--header" src="/logo.png" alt="" draggable={false} />
+              +
             </button>
-            <div className="room-header-mobile-info" id="room-header-mobile-info">
-              <span className="room-name">{roomId}</span>
-              <span className="room-count">{participantCount}</span>
-            </div>
           </header>
         </div>
       ) : (
@@ -915,8 +894,11 @@ export function RoomPage({
             </div>
           ) : (
             <div className="room-speaker-strip">
-              {stripPeerIds.map((id) => (
-                <div key={id} className="room-speaker-strip-tile">
+              {orderedTileIds.map((id) => (
+                <div
+                  key={id}
+                  className={`room-speaker-strip-tile${id === speakerFeaturedPeerId ? ' room-speaker-strip-tile--on-stage' : ''}`}
+                >
                   {renderConferenceTile(id)}
                 </div>
               ))}
