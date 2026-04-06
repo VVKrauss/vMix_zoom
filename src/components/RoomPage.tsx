@@ -616,7 +616,7 @@ export function RoomPage({
             {pipGridTileIds.length === 0 ? (
               <div className="pip-waiting" role="status" aria-live="polite">
                 <BrandLogoLoader size={56} />
-                <span className="pip-waiting__text">Ожидание участников…</span>
+                <span className="pip-waiting__text">Ожидание других участников…</span>
               </div>
             ) : (
               <>

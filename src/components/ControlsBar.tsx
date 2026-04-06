@@ -340,6 +340,32 @@ export function ControlsBar({
   return (
     <div className={`controls-bar${showButtonLabels ? '' : ' controls-bar--icons-only'}${isNarrow ? ' controls-bar--narrow' : ''}`}>
       <div className="controls-bar__main">
+      <div className="controls-bar__sources" aria-label="Внешние источники (скоро)">
+        <button
+          type="button"
+          className="ctrl-btn ctrl-btn--source-ingest ctrl-btn--source-ingest--ndi"
+          title="Добавить источник NDI (скоро)"
+          onClick={() => {}}
+        >
+          <span className="ctrl-btn__source-plus" aria-hidden>
+            +
+          </span>
+          <span className="ctrl-source-wordmark ctrl-source-wordmark--ndi">NDI</span>
+        </button>
+        <button
+          type="button"
+          className="ctrl-btn ctrl-btn--source-ingest ctrl-btn--source-ingest--vmix"
+          title="Добавить источник vMix / SRT (скоро)"
+          onClick={() => {}}
+        >
+          <span className="ctrl-btn__source-plus" aria-hidden>
+            +
+          </span>
+          <span className="ctrl-source-wordmark ctrl-source-wordmark--vmix">vMix</span>
+        </button>
+      </div>
+
+      <div className="controls-bar__core">
       {/* ── Camera ─────────────────────────────────────────────────────── */}
       <div className="ctrl-group">
         <button
@@ -434,6 +460,7 @@ export function ControlsBar({
           <span>Выйти</span>
         </button>
       )}
+      </div>
       </div>
 
       {screenPickerOpen && (

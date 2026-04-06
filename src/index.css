@@ -1143,13 +1143,84 @@ button.vio-row--peer:focus-visible {
   display: flex;
   flex-wrap: wrap;
   align-items: stretch;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 8px;
 }
 
-.controls-bar__main .ctrl-group,
-.controls-bar__main > .ctrl-btn--leave {
+.controls-bar__sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
   flex: 0 0 auto;
+}
+
+.controls-bar__core {
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.controls-bar__main .ctrl-group,
+.controls-bar__core > .ctrl-btn--leave,
+.controls-bar__core > .ctrl-btn--mobile-more {
+  flex: 0 0 auto;
+}
+
+/* Заглушки NDI / vMix (режим «Стример», скоро) */
+.ctrl-btn.ctrl-btn--source-ingest {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.72);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.ctrl-btn.ctrl-btn--source-ingest:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.18);
+  background: #2a2a2a;
+}
+
+.ctrl-btn__source-plus {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  opacity: 0.88;
+}
+
+.ctrl-source-wordmark {
+  font-family: var(--font);
+  font-weight: 800;
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.08em;
+}
+
+.ctrl-source-wordmark--vmix {
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+}
+
+.controls-bar.controls-bar--icons-only .ctrl-btn--source-ingest--ndi .ctrl-btn__source-plus,
+.controls-bar.controls-bar--icons-only .ctrl-btn--source-ingest--ndi .ctrl-source-wordmark,
+.controls-bar.controls-bar--icons-only .ctrl-btn--source-ingest--vmix .ctrl-btn__source-plus,
+.controls-bar.controls-bar--icons-only .ctrl-btn--source-ingest--vmix .ctrl-source-wordmark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .controls-bar__reaction-floater {
@@ -1266,7 +1337,7 @@ button.vio-row--peer:focus-visible {
   color: #fff;
 }
 
-.controls-bar__main > .ctrl-btn--leave {
+.controls-bar__core > .ctrl-btn--leave {
   min-width: 72px;
 }
 
@@ -1310,7 +1381,7 @@ button.vio-row--peer:focus-visible {
 /* Фиксированные слоты в режиме «только иконки» — без растягивания по ширине */
 .controls-bar.controls-bar--icons-only .ctrl-group .ctrl-btn,
 .controls-bar.controls-bar--icons-only .ctrl-group--solo .ctrl-btn,
-.controls-bar.controls-bar--icons-only .controls-bar__main > .ctrl-btn--leave {
+.controls-bar.controls-bar--icons-only .controls-bar__core > .ctrl-btn--leave {
   width: 48px;
   min-width: 48px;
   max-width: 48px;
@@ -1473,12 +1544,12 @@ button.vio-row--peer:focus-visible {
 
   .ctrl-group .ctrl-btn,
   .ctrl-group--solo .ctrl-btn,
-  .controls-bar__main > .ctrl-btn--leave {
+  .controls-bar__core > .ctrl-btn--leave {
     min-width: 56px;
   }
   .controls-bar.controls-bar--icons-only .ctrl-group .ctrl-btn,
   .controls-bar.controls-bar--icons-only .ctrl-group--solo .ctrl-btn,
-  .controls-bar.controls-bar--icons-only .controls-bar__main > .ctrl-btn--leave {
+  .controls-bar.controls-bar--icons-only .controls-bar__core > .ctrl-btn--leave {
     width: 44px;
     min-width: 44px;
     max-width: 44px;
