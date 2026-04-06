@@ -47,6 +47,7 @@ import { PillToggle } from './PillToggle'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useActiveSpeaker } from '../hooks/useActiveSpeaker'
 import { buildRoomInviteAbsoluteUrl } from '../utils/soloViewerParams'
+import { useTouchDoubleTap } from '../hooks/useTouchDoubleTap'
 
 function remoteScreenTileId(p: RemoteParticipant): string | null {
   if (!p.screenStream) return null
@@ -453,12 +454,6 @@ export function RoomPage({
     if (s.width && s.height) setSourceAspect(s.width / s.height)
   }, [localStream])
 
-  const resetView = () => {
-    setLayout(isViewportMobile ? 'grid' : 'pip')
-    setPipPos ({ x: 16,  y: 10  })
-    setPipSize(isViewportMobile ? { w: 140, h: 94 } : { w: 220, h: 148 })
-  }
-
   const cameraTileVideoStyle: React.CSSProperties = useMemo(
     () => ({
       width: '100%',
@@ -599,29 +594,49 @@ export function RoomPage({
     playoutSinkId,
   }), [playoutVolume, playoutSinkId])
 
-  const basePipGridTileIds = useMemo(() => orderedTileIds.slice(1), [orderedTileIds])
-  const pipGridIdsKey = useMemo(() => basePipGridTileIds.join('\0'), [basePipGridTileIds])
-  const [pipGuestCycle, setPipGuestCycle] = useState(0)
+  const [pipFloatTileId, setPipFloatTileId] = useState(localPeerId)
 
   useEffect(() => {
-    setPipGuestCycle(0)
-  }, [pipGridIdsKey])
+    if (layout !== 'pip') setPipFloatTileId(localPeerId)
+  }, [layout, localPeerId])
 
-  const pipGridTileIds = useMemo(() => {
-    const base = basePipGridTileIds
-    if (base.length < 2) return base
-    const k = pipGuestCycle % base.length
-    if (k === 0) return base
-    return [...base.slice(k), ...base.slice(0, k)]
-  }, [basePipGridTileIds, pipGuestCycle])
+  const orderedIdsKey = useMemo(() => orderedTileIds.join('\0'), [orderedTileIds])
+  useEffect(() => {
+    const ids = orderedTileIdsRef.current
+    setPipFloatTileId((cur) => (ids.includes(cur) ? cur : localPeerId))
+  }, [orderedIdsKey, localPeerId])
 
-  const cyclePipGuestOrderMobile = useCallback(() => {
-    setPipGuestCycle((c) => {
-      const base = orderedTileIdsRef.current.slice(1)
-      if (base.length < 2) return 0
-      return (c + 1) % base.length
-    })
-  }, [])
+  const pipGridTileIds = useMemo(
+    () => orderedTileIds.filter((id) => id !== pipFloatTileId),
+    [orderedTileIds, pipFloatTileId],
+  )
+
+  const remoteGuestCount = remoteList.length
+
+  const swapPipGridTileToFloat = useCallback(
+    (tileId: string) => {
+      if (remoteGuestCount <= 1) return
+      if (tileId === pipFloatTileId) return
+      setPipFloatTileId(tileId)
+    },
+    [remoteGuestCount, pipFloatTileId],
+  )
+
+  const onPipFloatDoubleTap = useCallback(() => {
+    if (pipFloatTileId === localPeerId) {
+      const firstAfterLocal = orderedTileIds.slice(1)[0]
+      if (firstAfterLocal) setPipFloatTileId(firstAfterLocal)
+    } else {
+      setPipFloatTileId(localPeerId)
+    }
+  }, [pipFloatTileId, localPeerId, orderedTileIds])
+
+  const resetView = useCallback(() => {
+    setLayout(isViewportMobile ? 'grid' : 'pip')
+    setPipFloatTileId(localPeerId)
+    setPipPos ({ x: 16,  y: 10  })
+    setPipSize(isViewportMobile ? { w: 140, h: 94 } : { w: 220, h: 148 })
+  }, [isViewportMobile, localPeerId])
 
   const galleryGridCols = mobileSoloTiles ? 1 : 2
   const galleryPlaceholderCount = gridTrailingPlaceholders(orderedTileIds.length, galleryGridCols)
@@ -723,11 +738,82 @@ export function RoomPage({
     )
   }
 
+  const pipFloatSrtCopy = useMemo(() => {
+    const id = pipFloatTileId
+    const base = { roomId }
+    if (id === localPeerId) {
+      return {
+        ...base,
+        connectUrl: localSrt?.connectUrlPublic,
+        listenPort: localSrt?.listenPort,
+        peerId: localPeerId,
+      }
+    }
+    if (localScreenTileId && id === localScreenTileId) {
+      return {
+        ...base,
+        connectUrl: localSrt?.connectUrlPublic,
+        listenPort: localSrt?.listenPort,
+        peerId: localScreenPeerId ?? localPeerId,
+      }
+    }
+    const remotePresenter = remoteList.find((p) => remoteScreenTileId(p) === id)
+    if (remotePresenter) {
+      const s = srtByPeer[remotePresenter.peerId]
+      return {
+        ...base,
+        connectUrl: s?.connectUrlPublic,
+        listenPort: s?.listenPort,
+        peerId: remotePresenter.peerId,
+      }
+    }
+    if (isScreenTileId(id)) {
+      const owner = parseScreenTilePeerId(id)
+      if (owner === localPeerId) {
+        return {
+          ...base,
+          connectUrl: localSrt?.connectUrlPublic,
+          listenPort: localSrt?.listenPort,
+          peerId: localPeerId,
+        }
+      }
+      if (owner) {
+        const s = srtByPeer[owner]
+        return {
+          ...base,
+          connectUrl: s?.connectUrlPublic,
+          listenPort: s?.listenPort,
+          peerId: owner,
+        }
+      }
+    }
+    const s = srtByPeer[id]
+    return {
+      ...base,
+      connectUrl: s?.connectUrlPublic,
+      listenPort: s?.listenPort,
+      peerId: id,
+    }
+  }, [
+    pipFloatTileId,
+    localPeerId,
+    roomId,
+    localSrt,
+    localScreenTileId,
+    localScreenPeerId,
+    remoteList,
+    srtByPeer,
+  ])
+
+  const pipGridDoubleTapEnabled = isViewportMobile && remoteGuestCount > 1
+
   return (
     <div
       className={`room-page${streamerMode ? ' room-page--streamer-mode' : ''}${
         immersiveAutoHide && chromeHidden ? ' room-page--chrome-hidden' : ''
-      }${isViewportMobile ? ' room-page--viewport-mobile' : ''}`}
+      }${isViewportMobile ? ' room-page--viewport-mobile' : ''}${
+        isViewportMobile && layout === 'pip' ? ' room-page--mobile-pip' : ''
+      }`}
     >
       <ConfirmDialog
         open={leaveDialog !== null}
@@ -769,7 +855,9 @@ export function RoomPage({
       />
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      {isViewportMobile ? (
+      {isViewportMobile && layout === 'pip' ? (
+        <div className="room-page__mobile-pip-top-spacer" aria-hidden />
+      ) : isViewportMobile ? (
         <div className="room-header-mobile-shell">
           <header className="room-header room-header--mobile-compact">
             <div className="room-header-mobile-brand" aria-hidden>
@@ -922,9 +1010,9 @@ export function RoomPage({
         </div>
       )}
 
-      {/* ── PiP / FaceTime-style ───────────────────────────────────────── */}
-      {(layout === 'pip' || layout === 'facetile') && (
-        <div className={`pip-container${layout === 'facetile' ? ' pip-container--facetile' : ''}`}>
+      {/* ── PiP ─────────────────────────────────────────────────────────── */}
+      {layout === 'pip' && (
+        <div className="pip-container">
           <div
             className="tile-grid pip-grid"
             style={gridStyle(pipGridCols)}
@@ -936,9 +1024,21 @@ export function RoomPage({
               </div>
             ) : (
               <>
-                {pipGridTileIds.map((id) => (
-                  <React.Fragment key={id}>{renderConferenceTile(id)}</React.Fragment>
-                ))}
+                {pipGridTileIds.map((id) =>
+                  pipGridDoubleTapEnabled ? (
+                    <PipGridTileShell
+                      key={id}
+                      tileId={id}
+                      enableDoubleTap
+                      remoteGuestCount={remoteGuestCount}
+                      onSwapTileToFloat={swapPipGridTileToFloat}
+                    >
+                      {renderConferenceTile(id)}
+                    </PipGridTileShell>
+                  ) : (
+                    <React.Fragment key={id}>{renderConferenceTile(id)}</React.Fragment>
+                  ),
+                )}
                 {Array.from({ length: pipPlaceholderCount }, (_, i) => (
                   <GridTilePlaceholder key={`pip-ph-${i}`} />
                 ))}
@@ -948,17 +1048,12 @@ export function RoomPage({
           <DraggablePip
             pos={pipPos}   onPosChange={setPipPos}
             size={pipSize} onSizeChange={setPipSize}
-            lockAspect={sourceAspect}
-            srtCopy={{
-              connectUrl: localSrt?.connectUrlPublic,
-              listenPort: localSrt?.listenPort,
-              roomId,
-              peerId: localPeerId,
-            }}
-            enableTouchDoubleTap={isViewportMobile && (layout === 'pip' || layout === 'facetile')}
-            onTouchDoubleTap={cyclePipGuestOrderMobile}
+            lockAspect={pipFloatTileId === localPeerId ? sourceAspect : null}
+            srtCopy={pipFloatSrtCopy}
+            enableTouchDoubleTap={isViewportMobile && layout === 'pip'}
+            onTouchDoubleTap={onPipFloatDoubleTap}
           >
-            {localTile(true)}
+            {pipFloatTileId === localPeerId ? localTile(true) : renderConferenceTile(pipFloatTileId)}
           </DraggablePip>
         </div>
       )}
@@ -1037,6 +1132,7 @@ export function RoomPage({
         immersiveAutoHide={immersiveAutoHide}
         onToggleImmersiveAutoHide={() => setImmersiveAutoHide((v) => !v)}
         chromeHidden={immersiveAutoHide && chromeHidden}
+        onInviteParticipants={handleInviteParticipants}
       />
 
       {chatOpen && !chatEmbed && (
@@ -1049,6 +1145,31 @@ export function RoomPage({
           onSend={onSendChatMessage}
         />
       )}
+    </div>
+  )
+}
+
+/** Обёртка ячейки PiP-сетки: двойной тап переносит источник в плавающее превью (если гостей > 1). */
+function PipGridTileShell({
+  tileId,
+  enableDoubleTap,
+  remoteGuestCount,
+  onSwapTileToFloat,
+  children,
+}: {
+  tileId: string
+  enableDoubleTap: boolean
+  remoteGuestCount: number
+  onSwapTileToFloat: (id: string) => void
+  children: React.ReactNode
+}) {
+  const onDouble = useCallback(() => {
+    if (remoteGuestCount > 1) onSwapTileToFloat(tileId)
+  }, [remoteGuestCount, onSwapTileToFloat, tileId])
+  const touch = useTouchDoubleTap(onDouble, enableDoubleTap)
+  return (
+    <div className="pip-grid-tile-shell" {...touch}>
+      {children}
     </div>
   )
 }

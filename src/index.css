@@ -272,7 +272,8 @@ html, body, #root {
 }
 
 /* Мобильная шапка — тот же слот сетки, что и .room-header */
-.room-page--chrome-hidden .room-header-mobile-shell {
+.room-page--chrome-hidden .room-header-mobile-shell,
+.room-page--chrome-hidden .room-page__mobile-pip-top-spacer {
   min-height: 0 !important;
   max-height: 0 !important;
   height: 0 !important;
@@ -376,6 +377,145 @@ html, body, #root {
 .ctrl-mobile-fab__icon {
   width: 24px;
   height: 24px;
+}
+
+/* Мобильный PiP: только логотип; по тапу — быстрые кнопки и затемнение */
+.ctrl-mobile-pip-chrome {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right, 0px));
+  bottom: max(14px, env(safe-area-inset-bottom, 0px));
+  z-index: 8202;
+  pointer-events: none;
+}
+
+.ctrl-mobile-pip-quick-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 8188;
+  background: rgba(0, 0, 0, 0.48);
+  pointer-events: auto;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+
+.ctrl-mobile-pip-column {
+  position: relative;
+  z-index: 8204;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.ctrl-mobile-pip-column > * {
+  pointer-events: auto;
+}
+
+.ctrl-mobile-pip-quick-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.ctrl-mobile-pip-quick-stack .ctrl-mobile-fab--pip-quick {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  font: inherit;
+  transition:
+    background 0.15s ease,
+    transform 0.12s ease,
+    border-color 0.15s ease,
+    box-shadow 0.2s ease;
+}
+
+.ctrl-mobile-pip-quick-stack .ctrl-mobile-fab--pip-quick:hover {
+  background: #2a2a2a;
+}
+
+.ctrl-mobile-pip-quick-stack .ctrl-mobile-fab--pip-quick:active {
+  transform: scale(0.96);
+}
+
+.ctrl-mobile-pip-quick-stack .ctrl-mobile-fab--pip-quick:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.ctrl-mobile-pip-quick-stack .ctrl-mobile-fab--pip-quick svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+.ctrl-mobile-pip-quick-stack .ctrl-mobile-fab--pip-quick.ctrl-mobile-fab--off {
+  border-color: rgba(229, 57, 53, 0.45);
+  color: var(--text-dim);
+}
+
+.ctrl-mobile-pip-quick-stack .ctrl-mobile-fab--pip-quick.ctrl-mobile-fab--leave {
+  border-color: rgba(229, 57, 53, 0.35);
+}
+
+.ctrl-mobile-pip-quick-stack .ctrl-mobile-fab--pip-quick.ctrl-mobile-fab--leave:hover {
+  border-color: var(--red);
+  background: rgba(229, 57, 53, 0.12);
+  color: #fff;
+}
+
+.ctrl-mobile-pip-logo-btn {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  transition: background 0.15s ease, transform 0.12s ease, border-color 0.15s ease;
+}
+
+.ctrl-mobile-pip-logo-btn:hover {
+  background: #2a2a2a;
+}
+
+.ctrl-mobile-pip-logo-btn:active {
+  transform: scale(0.96);
+}
+
+.ctrl-mobile-pip-logo-btn:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.ctrl-mobile-pip-logo-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+}
+
+.room-page__mobile-pip-top-spacer {
+  min-height: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .controls-bar--fab-dock .mobile-controls-sheet-backdrop {
@@ -483,17 +623,6 @@ html, body, #root {
 .room-invite-btn-compact:focus-visible {
   outline: 2px solid var(--red);
   outline-offset: 2px;
-}
-
-.pip-container--facetile .pip-float {
-  border-radius: 22px;
-  box-shadow:
-    0 10px 40px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(255, 255, 255, 0.1);
-}
-
-.pip-container--facetile .participant-card--local::after {
-  border-radius: 20px;
 }
 
 /* Середина: превью + опционально встроенный чат справа */
@@ -1171,6 +1300,14 @@ html, body, #root {
 .pip-container .tile-grid {
   height: 100%;
   padding: 6px;
+}
+
+.pip-grid-tile-shell {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  position: relative;
+  touch-action: manipulation;
 }
 
 .pip-waiting {
@@ -2348,6 +2485,10 @@ button.vio-row--peer:focus-visible {
   /* Явно: «авто» у viewport не должен оставлять строку шапки при immersive */
   .room-page.room-page--viewport-mobile.room-page--chrome-hidden {
     grid-template-rows: 0 1fr 0;
+  }
+
+  .room-page.room-page--viewport-mobile.room-page--mobile-pip {
+    grid-template-rows: 0 minmax(0, 1fr) 0;
   }
 
   /* Header */

@@ -9,7 +9,7 @@ import { ReactionEmojiPopover } from './ReactionEmojiPopover'
 import { MicIcon, MicOffIcon, CamIcon, CamOffIcon } from './icons'
 import { useOnOutsideClick } from '../hooks/useOnOutsideClick'
 
-const LAYOUT_CYCLE: LayoutMode[] = ['grid', 'meet', 'speaker', 'pip', 'facetile']
+const LAYOUT_CYCLE: LayoutMode[] = ['grid', 'meet', 'speaker', 'pip']
 
 function nextLayoutMode(current: LayoutMode): LayoutMode {
   const i = LAYOUT_CYCLE.indexOf(current)
@@ -27,8 +27,6 @@ function layoutModeLabel(mode: LayoutMode): string {
       return 'Спикер'
     case 'pip':
       return 'Картинка в картинке'
-    case 'facetile':
-      return 'Мобильное'
     default:
       return 'Картинка в картинке'
   }
@@ -113,6 +111,8 @@ interface Props {
   onToggleImmersiveAutoHide: () => void
   /** Автоскрытие шапки/панели — закрыть мобильное меню (бургер / «Ещё»). */
   chromeHidden: boolean
+  /** Мобильный PiP: скопировать ссылку на комнату (кнопка «Добавить»). */
+  onInviteParticipants?: () => void
 }
 
 type OpenPopover = 'mic' | 'cam' | 'headphones' | 'chat' | 'reaction' | 'layout' | 'screen' | 'settings' | null
@@ -155,10 +155,12 @@ export function ControlsBar({
   immersiveAutoHide,
   onToggleImmersiveAutoHide,
   chromeHidden,
+  onInviteParticipants,
 }: Props) {
   const [open, setOpen] = useState<OpenPopover>(null)
   const [screenPickerOpen, setScreenPickerOpen] = useState(false)
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
+  const [mobilePipQuickOpen, setMobilePipQuickOpen] = useState(false)
   const playoutSavedRef = useRef(1)
 
   useEffect(() => {
@@ -179,26 +181,35 @@ export function ControlsBar({
   }, [playoutVolume, onPlayoutVolumeChange])
 
   useEffect(() => {
-    if (!forceMobileFabMenu) setMobileMoreOpen(false)
+    if (!forceMobileFabMenu) {
+      setMobileMoreOpen(false)
+      setMobilePipQuickOpen(false)
+    }
   }, [forceMobileFabMenu])
 
   useEffect(() => {
     if (!chromeHidden) return
     setOpen(null)
     setMobileMoreOpen(false)
+    setMobilePipQuickOpen(false)
   }, [chromeHidden])
 
   useEffect(() => {
-    if (!mobileMoreOpen) return
+    if (layout !== 'pip') setMobilePipQuickOpen(false)
+  }, [layout])
+
+  useEffect(() => {
+    if (!mobileMoreOpen && !mobilePipQuickOpen) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setOpen(null)
         setMobileMoreOpen(false)
+        setMobilePipQuickOpen(false)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [mobileMoreOpen])
+  }, [mobileMoreOpen, mobilePipQuickOpen])
 
   const closeMobileMore = () => {
     setOpen(null)
@@ -207,11 +218,24 @@ export function ControlsBar({
 
   const toggleMobileSheet = () => {
     setOpen(null)
+    setMobilePipQuickOpen(false)
     setMobileMoreOpen((v) => !v)
+  }
+
+  const openMainSheetFromPip = () => {
+    setOpen(null)
+    setMobilePipQuickOpen(false)
+    setMobileMoreOpen(true)
+  }
+
+  const closeMobilePipQuick = () => {
+    setMobilePipQuickOpen(false)
   }
 
   const showMainBar = !forceMobileFabMenu
   const sheetMenuOpen = mobileMoreOpen && forceMobileFabMenu
+  const mobilePipChrome = forceMobileFabMenu && layout === 'pip'
+  const showClassicMobileDock = forceMobileFabMenu && !mobilePipChrome
 
   const sh = (base: string, sheet?: boolean) => sheet ? `${base} ctrl-group--sheet` : base
 
@@ -607,7 +631,90 @@ export function ControlsBar({
       </div>
       ) : null}
 
-      {forceMobileFabMenu ? (
+      {mobilePipChrome ? (
+        <div className="ctrl-mobile-pip-chrome">
+          {mobilePipQuickOpen && !sheetMenuOpen ? (
+            <div
+              className="ctrl-mobile-pip-quick-backdrop"
+              role="presentation"
+              onPointerDown={(e) => {
+                if (e.button !== 0) return
+                closeMobilePipQuick()
+              }}
+              onClick={(e) => {
+                e.preventDefault()
+                closeMobilePipQuick()
+              }}
+            />
+          ) : null}
+          {!sheetMenuOpen ? (
+            <div className="ctrl-mobile-pip-column">
+              {mobilePipQuickOpen ? (
+                <div className="ctrl-mobile-pip-quick-stack">
+                  <button
+                    type="button"
+                    className="ctrl-mobile-fab ctrl-mobile-fab--pip-quick"
+                    title="Полное меню"
+                    aria-label="Открыть полное меню"
+                    onClick={openMainSheetFromPip}
+                  >
+                    <ChevronUpIcon />
+                  </button>
+                  <button
+                    type="button"
+                    className={`ctrl-mobile-fab ctrl-mobile-fab--pip-quick${isCamOff ? ' ctrl-mobile-fab--off' : ''}`}
+                    onClick={onToggleCam}
+                    title={isCamOff ? 'Включить камеру' : 'Выключить камеру'}
+                    aria-label={isCamOff ? 'Включить камеру' : 'Выключить камеру'}
+                  >
+                    {isCamOff ? <CamOffIcon /> : <CamIcon />}
+                  </button>
+                  <button
+                    type="button"
+                    className={`ctrl-mobile-fab ctrl-mobile-fab--pip-quick${isMuted ? ' ctrl-mobile-fab--off' : ''}`}
+                    onClick={onToggleMute}
+                    title={isMuted ? 'Включить микрофон' : 'Выключить микрофон'}
+                    aria-label={isMuted ? 'Включить микрофон' : 'Выключить микрофон'}
+                  >
+                    {isMuted ? <MicOffIcon /> : <MicIcon />}
+                  </button>
+                  <button
+                    type="button"
+                    className="ctrl-mobile-fab ctrl-mobile-fab--pip-quick"
+                    title="Скопировать ссылку на комнату"
+                    aria-label="Пригласить: скопировать ссылку"
+                    onClick={() => {
+                      onInviteParticipants?.()
+                      closeMobilePipQuick()
+                    }}
+                  >
+                    <PlusIcon />
+                  </button>
+                  <button
+                    type="button"
+                    className="ctrl-mobile-fab ctrl-mobile-fab--pip-quick ctrl-mobile-fab--leave"
+                    onClick={onLeaveRequest}
+                    title="Выйти из комнаты"
+                    aria-label="Выйти из комнаты"
+                  >
+                    <LeaveIcon />
+                  </button>
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className="ctrl-mobile-pip-logo-btn"
+                onClick={() => setMobilePipQuickOpen((v) => !v)}
+                title={mobilePipQuickOpen ? 'Закрыть' : 'Меню'}
+                aria-label={mobilePipQuickOpen ? 'Закрыть быстрые действия' : 'Открыть быстрые действия'}
+                aria-expanded={mobilePipQuickOpen}
+              >
+                <img src="/logo.png" alt="" draggable={false} />
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : showClassicMobileDock ? (
         <div
           className={`ctrl-mobile-fab-dock${sheetMenuOpen ? ' ctrl-mobile-fab-dock--sheet-open' : ''}`}
         >
@@ -795,6 +902,22 @@ function MenuHamburgerIcon() {
   )
 }
 
+function ChevronUpIcon() {
+  return (
+    <svg className="ctrl-mobile-fab__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M18 15l-6-6-6 6" />
+    </svg>
+  )
+}
+
+function PlusIcon() {
+  return (
+    <svg className="ctrl-mobile-fab__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  )
+}
+
 function ChatBubbleIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -829,7 +952,6 @@ function LayoutPopover({
     { mode: 'meet', label: 'Лента' },
     { mode: 'speaker', label: 'Спикер' },
     { mode: 'pip', label: 'Картинка в картинке' },
-    { mode: 'facetile', label: 'Мобильное' },
   ]
 
   return (
