@@ -20,6 +20,9 @@ interface Props {
   lockAspect?:   number | null
   /** ПКМ на области превью (поверх видео) — копирование SRT; long-press не используем (конфликт с drag). */
   srtCopy?:      PipSrtCopy
+  /** Двойной тап по области превью (touch): мобильный PiP — смена порядка гостей в сетке. */
+  enableTouchDoubleTap?: boolean
+  onTouchDoubleTap?: () => void
 }
 
 const MIN_W = 140
@@ -32,11 +35,21 @@ function clientXY(e: MouseEvent | TouchEvent): { cx: number; cy: number } {
   return { cx: (e as MouseEvent).clientX, cy: (e as MouseEvent).clientY }
 }
 
-export function DraggablePip({ children, pos, size, onPosChange, onSizeChange, lockAspect, srtCopy }: Props) {
+const TAP_SLOP_PX = 18
+const DOUBLE_TAP_MS = 420
+const DOUBLE_TAP_DIST_PX = 56
+
+export function DraggablePip({
+  children, pos, size, onPosChange, onSizeChange, lockAspect, srtCopy,
+  enableTouchDoubleTap = false,
+  onTouchDoubleTap,
+}: Props) {
   const posRef    = useRef(pos)
   const sizeRef   = useRef(size)
   const aspectRef = useRef(lockAspect)
   const cbRef     = useRef({ onPosChange, onSizeChange })
+  const onTouchDoubleTapRef = useRef(onTouchDoubleTap)
+  onTouchDoubleTapRef.current = onTouchDoubleTap
 
   posRef.current    = pos
   sizeRef.current   = size
@@ -45,6 +58,10 @@ export function DraggablePip({ children, pos, size, onPosChange, onSizeChange, l
 
   const dragState   = useRef({ active: false, ox: 0, oy: 0 })
   const resizeState = useRef({ active: false, ox: 0, oy: 0, ow: 0, oh: 0 })
+  /** Для двойного тапа: старт касания и флаг «жест не тап» (сдвинули палец). */
+  const touchTapRef = useRef<{ x0: number; y0: number; t0: number } | null>(null)
+  const touchSlopRef = useRef(false)
+  const prevTapRef = useRef<{ t: number; x: number; y: number } | null>(null)
 
   const srtMenu = useSrtCopyMenu(srtCopy?.connectUrl, srtCopy?.listenPort, {
     enableLongPress: false,
@@ -71,7 +88,41 @@ export function DraggablePip({ children, pos, size, onPosChange, onSizeChange, l
     const t = e.touches[0]
     const p = posRef.current
     dragState.current = { active: true, ox: t.clientX - p.x, oy: t.clientY - p.y }
-  }, [])
+    if (enableTouchDoubleTap && onTouchDoubleTap) {
+      touchTapRef.current = { x0: t.clientX, y0: t.clientY, t0: Date.now() }
+      touchSlopRef.current = false
+    }
+  }, [enableTouchDoubleTap, onTouchDoubleTap])
+
+  const onDragTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      if (!enableTouchDoubleTap || !onTouchDoubleTap) return
+      const start = touchTapRef.current
+      touchTapRef.current = null
+      if (!start || touchSlopRef.current) return
+      if (Date.now() - start.t0 > 320) return
+      const t = e.changedTouches[0]
+      if (!t) return
+      const dx = t.clientX - start.x0
+      const dy = t.clientY - start.y0
+      if (dx * dx + dy * dy > TAP_SLOP_PX * TAP_SLOP_PX) return
+
+      const now = Date.now()
+      const prev = prevTapRef.current
+      if (
+        prev &&
+        now - prev.t < DOUBLE_TAP_MS &&
+        (t.clientX - prev.x) ** 2 + (t.clientY - prev.y) ** 2 < DOUBLE_TAP_DIST_PX * DOUBLE_TAP_DIST_PX
+      ) {
+        prevTapRef.current = null
+        onTouchDoubleTapRef.current?.()
+        if (e.cancelable) e.preventDefault()
+        return
+      }
+      prevTapRef.current = { t: now, x: t.clientX, y: t.clientY }
+    },
+    [enableTouchDoubleTap, onTouchDoubleTap],
+  )
 
   // ── Resize start (mouse + touch) ────────────────────────────────────────
   const onResizeStart = useCallback((e: React.MouseEvent) => {
@@ -93,6 +144,12 @@ export function DraggablePip({ children, pos, size, onPosChange, onSizeChange, l
     const onMove = (e: MouseEvent | TouchEvent) => {
       const { cx, cy } = clientXY(e)
       if (dragState.current.active) {
+        const ts = touchTapRef.current
+        if (ts && !touchSlopRef.current) {
+          const ddx = cx - ts.x0
+          const ddy = cy - ts.y0
+          if (ddx * ddx + ddy * ddy > TAP_SLOP_PX * TAP_SLOP_PX) touchSlopRef.current = true
+        }
         const s = sizeRef.current
         const x = clamp(cx - dragState.current.ox, 0, window.innerWidth  - s.w)
         const y = clamp(cy - dragState.current.oy, 0, window.innerHeight - s.h - 72)
@@ -136,6 +193,7 @@ export function DraggablePip({ children, pos, size, onPosChange, onSizeChange, l
         className="pip-drag-handle"
         onMouseDown={onDragStart}
         onTouchStart={onTouchDragStart}
+        onTouchEndCapture={enableTouchDoubleTap && onTouchDoubleTap ? onDragTouchEnd : undefined}
         {...srtMenu.surfaceProps}
       />
       {children}

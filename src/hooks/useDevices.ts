@@ -1,4 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
+import {
+  readPreferredCameraId,
+  readPreferredMicId,
+  writePreferredCameraId,
+  writePreferredMicId,
+} from '../config/roomUiStorage'
 
 export interface DeviceList {
   cameras: MediaDeviceInfo[]
@@ -8,8 +14,8 @@ export interface DeviceList {
 export function useDevices() {
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([])
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([])
-  const [selectedCameraId, setSelectedCameraId] = useState<string>('')
-  const [selectedMicId, setSelectedMicId] = useState<string>('')
+  const [selectedCameraId, setSelectedCameraId] = useState<string>(() => readPreferredCameraId())
+  const [selectedMicId, setSelectedMicId] = useState<string>(() => readPreferredMicId())
 
   const enumerate = useCallback(async () => {
     // Permissions must already be granted for labels to appear
@@ -19,9 +25,14 @@ export function useDevices() {
     setCameras(cams)
     setMicrophones(mics)
 
-    // Set defaults if not yet chosen
-    setSelectedCameraId(prev => prev || cams[0]?.deviceId || '')
-    setSelectedMicId(prev => prev || mics[0]?.deviceId || '')
+    setSelectedCameraId((prev) => {
+      const pick = (id: string) => (id && cams.some((d) => d.deviceId === id) ? id : '')
+      return pick(prev) || cams[0]?.deviceId || ''
+    })
+    setSelectedMicId((prev) => {
+      const pick = (id: string) => (id && mics.some((d) => d.deviceId === id) ? id : '')
+      return pick(prev) || mics[0]?.deviceId || ''
+    })
   }, [])
 
   // Re-enumerate when devices change (plug/unplug)
@@ -29,6 +40,14 @@ export function useDevices() {
     navigator.mediaDevices.addEventListener('devicechange', enumerate)
     return () => navigator.mediaDevices.removeEventListener('devicechange', enumerate)
   }, [enumerate])
+
+  useEffect(() => {
+    writePreferredCameraId(selectedCameraId)
+  }, [selectedCameraId])
+
+  useEffect(() => {
+    writePreferredMicId(selectedMicId)
+  }, [selectedMicId])
 
   return {
     cameras,

@@ -19,8 +19,21 @@ import {
   videoAnchorPeerId,
 } from '../utils/producerVideoRole'
 import { readVmixIngressEmitExtras } from '../config/serverSettingsStorage'
+import {
+  applyEma,
+  buildQuality,
+  deltaFromSamples,
+  pickInboundVideoRtp,
+  type InboundVideoQuality,
+  type InboundVideoStatsSample,
+} from '../utils/inboundVideoStats'
 import { signalingHttpBase, signalingSocketUrl } from '../utils/signalingBase'
-import { DEFAULT_VIDEO_PRESET } from '../types'
+import {
+  getStoredVideoPreset,
+  persistVideoPreset,
+  readPreferredCameraId,
+  readPreferredMicId,
+} from '../config/roomUiStorage'
 
 const SIGNALING_HTTP = signalingHttpBase()
 const DEFAULT_ROOM = import.meta.env.VITE_DEFAULT_ROOM as string ?? 'test'
@@ -167,6 +180,8 @@ function disposeSignalingSocket(s: Socket) {
 export type RoomStatus = 'idle' | 'connecting' | 'connected' | 'error'
 
 /** Вход в комнату: какие дорожки запросить до подключения (остальное — кнопками в комнате). */
+export type { InboundVideoQuality } from '../utils/inboundVideoStats'
+
 export type JoinRoomMediaOptions = {
   enableMic: boolean
   enableCam: boolean
@@ -202,12 +217,15 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const consumersRef = useRef<Map<string, Consumer>>(new Map())
   /** producerId → метаданные для producerClosed и очистки */
   const producerMetaRef = useRef<Map<string, ProducerMeta>>(new Map())
+  const inboundVideoPrevRef = useRef<Map<string, InboundVideoStatsSample>>(new Map())
+  const inboundVideoEmaRef = useRef<Map<string, { bitrateBps: number; fractionLost: number }>>(new Map())
   const roomIdRef = useRef<string>(DEFAULT_ROOM)
   const localStreamRef = useRef<MediaStream | null>(null)
   const [sessionMeta, setSessionMeta] = useState<{ roomId: string; localPeerId: string } | null>(null)
   const [srtByPeer, setSrtByPeer] = useState<Record<string, SrtSessionInfo>>({})
-  const presetRef = useRef<VideoPreset>(DEFAULT_VIDEO_PRESET)
-  const [activePreset, setActivePreset] = useState<VideoPreset>(DEFAULT_VIDEO_PRESET)
+  const initialPreset = getStoredVideoPreset()
+  const presetRef = useRef<VideoPreset>(initialPreset)
+  const [activePreset, setActivePreset] = useState<VideoPreset>(initialPreset)
 
   const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([])
   const [reactionBursts, setReactionBursts] = useState<RoomReactionBurst[]>([])
@@ -280,6 +298,11 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         if (m.consumerId === meta.consumerId) {
           producerMetaRef.current.delete(k)
         }
+      }
+
+      if (meta.kind === 'video' && meta.videoSource !== 'screen') {
+        inboundVideoPrevRef.current.delete(meta.anchorPeerId)
+        inboundVideoEmaRef.current.delete(meta.anchorPeerId)
       }
 
       setParticipants((prev) => {
@@ -439,7 +462,11 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     preset?: VideoPreset,
     media?: JoinRoomMediaOptions,
   ) => {
-    if (preset) { presetRef.current = preset; setActivePreset(preset) }
+    if (preset) {
+      presetRef.current = preset
+      setActivePreset(preset)
+      persistVideoPreset(preset)
+    }
     const p = presetRef.current
     const wantMic = media?.enableMic !== false
     const wantCam = media?.enableCam !== false
@@ -470,16 +497,38 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       } else {
         setIsMuted(!wantMic)
         setIsCamOff(!wantCam)
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: wantMic,
-          video: wantCam
-            ? {
-                width:     { ideal: p.width },
-                height:    { ideal: p.height },
-                frameRate: { ideal: p.frameRate },
-              }
-            : false,
-        })
+        const camPref = readPreferredCameraId()
+        const micPref = readPreferredMicId()
+        const videoPart = wantCam
+          ? {
+              ...(camPref ? { deviceId: { exact: camPref } as const } : {}),
+              width: { ideal: p.width },
+              height: { ideal: p.height },
+              frameRate: { ideal: p.frameRate },
+            }
+          : false
+        const audioPart = wantMic
+          ? micPref
+            ? { deviceId: { exact: micPref } as const }
+            : true
+          : false
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: audioPart,
+            video: videoPart,
+          })
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: wantMic,
+            video: wantCam
+              ? {
+                  width: { ideal: p.width },
+                  height: { ideal: p.height },
+                  frameRate: { ideal: p.frameRate },
+                }
+              : false,
+          })
+        }
       }
       if (aborted()) {
         stopStreamTracks(stream)
@@ -980,6 +1029,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const changePreset = useCallback(async (preset: VideoPreset) => {
     presetRef.current = preset
     setActivePreset(preset)
+    persistVideoPreset(preset)
 
     const stream = localStreamRef.current
     const producer = videoProducerRef.current
@@ -1231,6 +1281,45 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     }
   }, [])
 
+  const getRemoteInboundVideoQuality = useCallback(async (anchorPeerId: string): Promise<InboundVideoQuality | null> => {
+    let consumerId: string | null = null
+    for (const m of producerMetaRef.current.values()) {
+      if (m.anchorPeerId !== anchorPeerId) continue
+      if (m.kind !== 'video') continue
+      if (m.videoSource === 'screen') continue
+      consumerId = m.consumerId
+      break
+    }
+    if (!consumerId) return null
+    const consumer = consumersRef.current.get(consumerId)
+    if (!consumer || consumer.closed || consumer.kind !== 'video') return null
+    let report: RTCStatsReport
+    try {
+      report = await consumer.getStats()
+    } catch {
+      return null
+    }
+    const rtp = pickInboundVideoRtp(report)
+    if (!rtp) return null
+
+    const now = performance.now()
+    const bytes = Number(rtp.bytesReceived ?? 0)
+    const pr = Number(rtp.packetsReceived ?? 0)
+    const pl = Number(rtp.packetsLost ?? 0)
+    const prev = inboundVideoPrevRef.current.get(anchorPeerId)
+    const delta = deltaFromSamples(rtp, prev, now)
+    inboundVideoPrevRef.current.set(anchorPeerId, {
+      t: now,
+      bytesReceived: bytes,
+      packetsReceived: pr,
+      packetsLost: pl,
+    })
+    if (!delta) return null
+
+    const ema = applyEma(anchorPeerId, inboundVideoEmaRef.current, delta.bitrateBps, delta.fractionLost)
+    return buildQuality(ema.bitrateBps, ema.fractionLost, delta.jitterMs)
+  }, [])
+
   const leave = useCallback(() => {
     joinGenerationRef.current += 1
     stopScreenShare()
@@ -1239,6 +1328,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     consumersRef.current.forEach((c) => c.close())
     consumersRef.current.clear()
     producerMetaRef.current.clear()
+    inboundVideoPrevRef.current.clear()
+    inboundVideoEmaRef.current.clear()
     sendTransportRef.current?.close()
     recvTransportRef.current?.close()
     const s = socketRef.current
@@ -1290,5 +1381,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     stopVmixIngress,
     vmixIngressInfo,
     vmixIngressLoading,
+    getRemoteInboundVideoQuality,
   }
 }

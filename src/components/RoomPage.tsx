@@ -10,11 +10,25 @@ import { AudioMeter } from './AudioMeter'
 import { MicOffIcon } from './icons'
 import { useAudioOutputs } from '../hooks/useAudioOutputs'
 import { useDevices } from '../hooks/useDevices'
-import { useLocalStorageNumber, useLocalStorageString, useLocalStorageBool } from '../hooks/useLocalStorage'
+import {
+  getDefaultLayoutMode,
+  readStoredLayoutMode,
+  writeStoredLayoutMode,
+  readStoredPipLayout,
+  writeStoredPipLayout,
+} from '../config/roomUiStorage'
+import { mediaQueryMaxWidthMobile } from '../config/uiBreakpoints'
+import type { StoredLayoutMode } from '../config/roomUiStorage'
+import {
+  useLocalStorageNumber,
+  useLocalStorageString,
+  useLocalStorageBool,
+} from '../hooks/useLocalStorage'
 import { VideoInfoOverlay } from './VideoInfoOverlay'
 import { SrtCopySurface } from './SrtCopyMenu'
 import type { PipPos, PipSize } from './DraggablePip'
 import type { RemoteParticipant, SrtSessionInfo, VideoPreset, VmixIngressInfo } from '../types'
+import type { InboundVideoQuality } from '../utils/inboundVideoStats'
 import { ruParticipantsWord } from '../utils/ruPlural'
 import {
   isScreenTileId,
@@ -29,6 +43,7 @@ import { RoomChatPanel } from './RoomChatPanel'
 import { ReactionBurstOverlay } from './ReactionBurstOverlay'
 import { VmixIngressModal } from './VmixIngressModal'
 import { ServerSettingsModal } from './ServerSettingsModal'
+import { PillToggle } from './PillToggle'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useActiveSpeaker } from '../hooks/useActiveSpeaker'
 import { buildRoomInviteAbsoluteUrl } from '../utils/soloViewerParams'
@@ -38,7 +53,7 @@ function remoteScreenTileId(p: RemoteParticipant): string | null {
   return p.screenPeerId ?? screenTileKey(p.peerId)
 }
 
-export type LayoutMode = 'grid' | 'pip' | 'speaker' | 'meet'
+export type LayoutMode = StoredLayoutMode
 
 /** vMix: ingress запущен, но видео ещё нет — оранжевая кнопка; есть видео — красная. */
 export type VmixIngressPhase = 'idle' | 'waiting' | 'live'
@@ -81,12 +96,17 @@ interface Props {
   setChatOpen: (open: boolean) => void
   chatUnreadCount: number
   chatIncomingPreview: { author: string; text: string } | null
+  onDismissChatIncomingPreview: () => void
+  chatToastNotifications: boolean
+  onToggleChatToastNotifications: () => void
   /** У гостей: идёт приём newProducer экрана, ещё нет screenStream в state */
   remoteScreenSharePending?: boolean
   vmixIngressInfo: VmixIngressInfo | null
   vmixIngressLoading: boolean
   onStartVmixIngress: () => Promise<{ ok: true; info: VmixIngressInfo } | { ok: false; error: string }>
   onStopVmixIngress: () => Promise<{ ok: boolean; error?: string }>
+  /** Входящее camera/vmix видео по участнику (не локальная плитка, не экран). */
+  getRemoteInboundVideoQuality?: (peerId: string) => Promise<InboundVideoQuality | null>
 }
 
 export function RoomPage({
@@ -99,25 +119,77 @@ export function RoomPage({
   localScreenStream, localScreenPeerId, isScreenSharing, onToggleScreenShare, onStartScreenShare,
   chatMessages, onSendChatMessage, onSendReaction, reactionBursts,
   chatOpen, setChatOpen, chatUnreadCount, chatIncomingPreview,
+  onDismissChatIncomingPreview,
+  chatToastNotifications, onToggleChatToastNotifications,
   remoteScreenSharePending = false,
   vmixIngressInfo,
   vmixIngressLoading,
   onStartVmixIngress,
   onStopVmixIngress,
+  getRemoteInboundVideoQuality,
 }: Props) {
-  const isMobile = useMediaQuery('(max-width: 768px)')
-  const [layout, setLayout]       = useState<LayoutMode>(() =>
-    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches ? 'grid' : 'pip',
+  const isViewportMobile = useMediaQuery(mediaQueryMaxWidthMobile)
+  const [mobileRoomInfoOpen, setMobileRoomInfoOpen] = useState(false)
+  useEffect(() => {
+    if (!isViewportMobile) setMobileRoomInfoOpen(false)
+  }, [isViewportMobile])
+  const [immersiveAutoHide, setImmersiveAutoHide] = useLocalStorageBool(
+    'vmix_immersive_auto_hide',
+    false,
   )
-  const [showInfo, setShowInfo]   = useState(false)
-  const [showMeter, setShowMeter] = useState(false)
+  const [chromeHidden, setChromeHidden] = useState(false)
+  const chromeHiddenRef = useRef(false)
+  const immersiveAutoHideRef = useRef(immersiveAutoHide)
+  const hideTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
+
+  useLayoutEffect(() => {
+    chromeHiddenRef.current = chromeHidden
+  }, [chromeHidden])
+
+  useLayoutEffect(() => {
+    immersiveAutoHideRef.current = immersiveAutoHide
+  }, [immersiveAutoHide])
+
+  const armImmersiveHideTimer = useCallback(() => {
+    if (!immersiveAutoHideRef.current) return
+    if (hideTimerRef.current != null) window.clearTimeout(hideTimerRef.current)
+    hideTimerRef.current = window.setTimeout(() => {
+      setChromeHidden(true)
+      hideTimerRef.current = null
+    }, 5000)
+  }, [])
+
+  const showChromeAndArmImmersiveTimer = useCallback(() => {
+    setChromeHidden(false)
+    armImmersiveHideTimer()
+  }, [armImmersiveHideTimer])
+
+  const [layout, setLayout] = useState<LayoutMode>(() => {
+    const mobile =
+      typeof window !== 'undefined' && window.matchMedia(mediaQueryMaxWidthMobile).matches
+    return readStoredLayoutMode(mobile) ?? getDefaultLayoutMode()
+  })
+  const [showInfo, setShowInfo] = useLocalStorageBool('vmix_show_video_info', false)
+  const [showMeter, setShowMeter] = useLocalStorageBool('vmix_show_audio_meter', false)
   const [sourceAspect, setSourceAspect] = useState<number | null>(null)
-  const [pipPos,  setPipPos]  = useState<PipPos> ({ x: 16,  y: 10  })
-  const [pipSize, setPipSize] = useState<PipSize>(() =>
-    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
-      ? { w: 140, h: 94 }
-      : { w: 220, h: 148 },
-  )
+  const [pipPos, setPipPos] = useState<PipPos>(() => {
+    const mobile =
+      typeof window !== 'undefined' && window.matchMedia(mediaQueryMaxWidthMobile).matches
+    return readStoredPipLayout(mobile).pos
+  })
+  const [pipSize, setPipSize] = useState<PipSize>(() => {
+    const mobile =
+      typeof window !== 'undefined' && window.matchMedia(mediaQueryMaxWidthMobile).matches
+    return readStoredPipLayout(mobile).size
+  })
+
+  useEffect(() => {
+    writeStoredLayoutMode(layout, isViewportMobile)
+  }, [layout, isViewportMobile])
+
+  useEffect(() => {
+    writeStoredPipLayout(pipPos, pipSize, isViewportMobile)
+  }, [pipPos, pipSize, isViewportMobile])
 
   const [leaveDialog, setLeaveDialog] = useState<null | { mode: 'home' | 'leave'; others: number }>(null)
   const [screenStopDialogOpen, setScreenStopDialogOpen] = useState(false)
@@ -159,6 +231,62 @@ export function RoomPage({
   const [showControlButtonLabels, setShowControlButtonLabels] = useLocalStorageBool('vmix_control_button_labels', false)
   const [chatEmbed, setChatEmbed] = useLocalStorageBool('vmix_chat_embed', true)
   const [streamerMode, setStreamerMode] = useLocalStorageBool('vmix_streamer_mode', false)
+  /** Только локальное превью; отправляемый поток без отражения. */
+  const [mirrorLocalCamera, setMirrorLocalCamera] = useLocalStorageBool('vmix_local_camera_mirror', true)
+
+  const blockImmersiveChromeHide = useMemo(
+    () =>
+      leaveDialog !== null ||
+      vmixModalOpen ||
+      serverSettingsOpen ||
+      screenStopDialogOpen ||
+      vmixStopDialogOpen ||
+      (chatOpen && !chatEmbed),
+    [
+      leaveDialog,
+      vmixModalOpen,
+      serverSettingsOpen,
+      screenStopDialogOpen,
+      vmixStopDialogOpen,
+      chatOpen,
+      chatEmbed,
+    ],
+  )
+
+  useEffect(() => {
+    if (!immersiveAutoHide) {
+      if (hideTimerRef.current != null) {
+        window.clearTimeout(hideTimerRef.current)
+        hideTimerRef.current = null
+      }
+      setChromeHidden(false)
+      return
+    }
+    setChromeHidden(false)
+    armImmersiveHideTimer()
+    const onDocPointer = () => {
+      if (!immersiveAutoHideRef.current) return
+      if (chromeHiddenRef.current) return
+      armImmersiveHideTimer()
+    }
+    document.addEventListener('pointerdown', onDocPointer, true)
+    return () => {
+      document.removeEventListener('pointerdown', onDocPointer, true)
+      if (hideTimerRef.current != null) {
+        window.clearTimeout(hideTimerRef.current)
+        hideTimerRef.current = null
+      }
+    }
+  }, [immersiveAutoHide, armImmersiveHideTimer])
+
+  useEffect(() => {
+    if (!immersiveAutoHide || !blockImmersiveChromeHide) return
+    if (hideTimerRef.current != null) {
+      window.clearTimeout(hideTimerRef.current)
+      hideTimerRef.current = null
+    }
+    setChromeHidden(false)
+  }, [blockImmersiveChromeHide, immersiveAutoHide])
 
   const remoteList = useMemo(() => [...participants.values()], [participants])
 
@@ -198,6 +326,22 @@ export function RoomPage({
     hadScreenShareRef.current = hasAnyScreenShare
   }, [hasAnyScreenShare])
 
+  const viewportMobilePrevRef = useRef<boolean | null>(null)
+  useEffect(() => {
+    if (viewportMobilePrevRef.current === null) {
+      viewportMobilePrevRef.current = isViewportMobile
+      return
+    }
+    if (viewportMobilePrevRef.current === isViewportMobile) return
+    viewportMobilePrevRef.current = isViewportMobile
+    if (hasAnyScreenShare) return
+    const stored = readStoredLayoutMode(isViewportMobile) ?? getDefaultLayoutMode()
+    setLayout(stored)
+    const pip = readStoredPipLayout(isViewportMobile)
+    setPipPos(pip.pos)
+    setPipSize(pip.size)
+  }, [isViewportMobile, hasAnyScreenShare])
+
   const localScreenTileId = useMemo(() => {
     if (!isScreenSharing || !localScreenStream) return null
     return localScreenPeerId ?? localScreenTileKey(localPeerId)
@@ -215,13 +359,13 @@ export function RoomPage({
     remoteScreenTileCount
 
   const mobileSoloTiles =
-    isMobile &&
+    isViewportMobile &&
     layoutUsesTiledView(layout) &&
     remoteList.length === 0 &&
     !(isScreenSharing && localScreenStream) &&
     remoteScreenTileCount === 0
 
-  const mobileMultiTiles = isMobile && layoutUsesTiledView(layout) && !mobileSoloTiles
+  const mobileMultiTiles = isViewportMobile && layoutUsesTiledView(layout) && !mobileSoloTiles
 
   const {
     cameras, microphones,
@@ -256,6 +400,9 @@ export function RoomPage({
     }
     return ids
   }, [localPeerId, localScreenTileId, remoteList])
+
+  const orderedTileIdsRef = useRef(orderedTileIds)
+  orderedTileIdsRef.current = orderedTileIds
 
   const allTileIdsSet = useMemo(() => new Set(orderedTileIds), [orderedTileIds])
 
@@ -316,9 +463,9 @@ export function RoomPage({
   }, [localStream])
 
   const resetView = () => {
-    setLayout(isMobile ? 'grid' : 'pip')
+    setLayout(isViewportMobile ? 'grid' : 'pip')
     setPipPos ({ x: 16,  y: 10  })
-    setPipSize(isMobile ? { w: 140, h: 94 } : { w: 220, h: 148 })
+    setPipSize(isViewportMobile ? { w: 140, h: 94 } : { w: 220, h: 148 })
   }
 
   const cameraTileVideoStyle: React.CSSProperties = useMemo(
@@ -373,6 +520,7 @@ export function RoomPage({
       srtConnectUrl={localSrt?.connectUrlPublic}
       srtListenPort={localSrt?.listenPort}
       reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
+      mirrorLocalPreview={mirrorLocalCamera}
     />
   )
 
@@ -460,10 +608,29 @@ export function RoomPage({
     playoutSinkId,
   }), [playoutVolume, playoutSinkId])
 
-  const pipGridTileIds = useMemo(
-    () => orderedTileIds.slice(1),
-    [orderedTileIds],
-  )
+  const basePipGridTileIds = useMemo(() => orderedTileIds.slice(1), [orderedTileIds])
+  const pipGridIdsKey = useMemo(() => basePipGridTileIds.join('\0'), [basePipGridTileIds])
+  const [pipGuestCycle, setPipGuestCycle] = useState(0)
+
+  useEffect(() => {
+    setPipGuestCycle(0)
+  }, [pipGridIdsKey])
+
+  const pipGridTileIds = useMemo(() => {
+    const base = basePipGridTileIds
+    if (base.length < 2) return base
+    const k = pipGuestCycle % base.length
+    if (k === 0) return base
+    return [...base.slice(k), ...base.slice(0, k)]
+  }, [basePipGridTileIds, pipGuestCycle])
+
+  const cyclePipGuestOrderMobile = useCallback(() => {
+    setPipGuestCycle((c) => {
+      const base = orderedTileIdsRef.current.slice(1)
+      if (base.length < 2) return 0
+      return (c + 1) % base.length
+    })
+  }, [])
 
   const galleryGridCols = mobileSoloTiles ? 1 : 2
   const galleryPlaceholderCount = gridTrailingPlaceholders(orderedTileIds.length, galleryGridCols)
@@ -560,12 +727,17 @@ export function RoomPage({
         playoutVolume={isVmixTile ? playoutVolume * vmixPlayoutGain : cardPlayout.playoutVolume}
         playoutSinkId={cardPlayout.playoutSinkId}
         reactionBurst={pickLatestBurstForPeer(reactionBursts, p.peerId)}
+        getRemoteInboundVideoQuality={getRemoteInboundVideoQuality}
       />
     )
   }
 
   return (
-    <div className={`room-page${streamerMode ? ' room-page--streamer-mode' : ''}`}>
+    <div
+      className={`room-page${streamerMode ? ' room-page--streamer-mode' : ''}${
+        immersiveAutoHide && chromeHidden ? ' room-page--chrome-hidden' : ''
+      }${isViewportMobile ? ' room-page--viewport-mobile' : ''}`}
+    >
       <ConfirmDialog
         open={leaveDialog !== null}
         title={leaveDialog?.mode === 'home' ? 'Выйти на главную?' : 'Покинуть комнату?'}
@@ -606,49 +778,71 @@ export function RoomPage({
       />
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <header className="room-header">
-        <button type="button" className="room-logo-btn" onClick={onLogoHomeClick} title="На главную" aria-label="На главную">
-          <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
-        </button>
-
-        <div className="room-center">
-          <div className="room-center__row">
-            <div className="room-center__titles">
+      {isViewportMobile ? (
+        <div className="room-header-mobile-shell">
+          {mobileRoomInfoOpen ? (
+            <div
+              className="room-header-mobile-backdrop"
+              role="presentation"
+              aria-hidden
+              onClick={() => setMobileRoomInfoOpen(false)}
+            />
+          ) : null}
+          <header
+            className={`room-header room-header--mobile-compact${mobileRoomInfoOpen ? ' room-header--mobile-compact-open' : ''}`}
+          >
+            <button
+              type="button"
+              className="room-logo-btn room-header-mobile-logo"
+              onClick={() => setMobileRoomInfoOpen((o) => !o)}
+              title="Информация о комнате"
+              aria-expanded={mobileRoomInfoOpen}
+              aria-controls="room-header-mobile-info"
+            >
+              <img className="brand-logo brand-logo--header" src="/logo.png" alt="" draggable={false} />
+            </button>
+            <div className="room-header-mobile-info" id="room-header-mobile-info">
               <span className="room-name">{roomId}</span>
-              <span className="room-count">({participantCount})</span>
+              <span className="room-count">{participantCount}</span>
             </div>
-            <button
-              type="button"
-              className="room-invite-btn"
-              onClick={handleInviteParticipants}
-              title="Скопировать ссылку на комнату"
-            >
-              Пригласить участников
-            </button>
-          </div>
+          </header>
         </div>
+      ) : (
+        <header className="room-header">
+          <button type="button" className="room-logo-btn" onClick={onLogoHomeClick} title="На главную" aria-label="На главную">
+            <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
+          </button>
 
-        <div className="header-right">
-          <div className="room-streamer-toggle" title="Оформление панели для эфира">
-            <span className={`room-streamer-toggle__text${!streamerMode ? ' room-streamer-toggle__text--active' : ''}`}>
-              Обычный
-            </span>
-            <button
-              type="button"
-              className={`room-streamer-toggle__switch${streamerMode ? ' room-streamer-toggle__switch--on' : ''}`}
-              role="switch"
-              aria-checked={streamerMode}
-              aria-label={streamerMode ? 'Режим стримера включён' : 'Режим стримера выключен'}
-              onClick={() => setStreamerMode((v) => !v)}
-            >
-              <span className="room-streamer-toggle__thumb" />
-            </button>
-            <span className={`room-streamer-toggle__text${streamerMode ? ' room-streamer-toggle__text--active' : ''}`}>
-              Стример
-            </span>
+          <div className="room-center">
+            <div className="room-center__row">
+              <div className="room-center__titles">
+                <span className="room-name">{roomId}</span>
+                <span className="room-count">({participantCount})</span>
+              </div>
+              <button
+                type="button"
+                className="room-invite-btn"
+                onClick={handleInviteParticipants}
+                title="Скопировать ссылку на комнату"
+              >
+                Пригласить участников
+              </button>
+            </div>
           </div>
-        </div>
-      </header>
+
+          <div className="header-right">
+            <div title="Оформление панели для эфира">
+              <PillToggle
+                checked={streamerMode}
+                onCheckedChange={(v) => setStreamerMode(v)}
+                offLabel="Обычный"
+                onLabel="Стример"
+                ariaLabel={streamerMode ? 'Режим стримера включён' : 'Режим стримера выключен'}
+              />
+            </div>
+          </div>
+        </header>
+      )}
 
       {vmixError && (
         <div className="room-invite-toast room-invite-toast--visible room-invite-toast--error" role="alert">
@@ -676,6 +870,14 @@ export function RoomPage({
       >
         {chatIncomingPreview ? (
           <>
+            <button
+              type="button"
+              className="room-chat-preview-toast__close"
+              onClick={onDismissChatIncomingPreview}
+              aria-label="Закрыть уведомление"
+            >
+              ✕
+            </button>
             <span className="room-chat-preview-toast__author">{chatIncomingPreview.author}</span>
             <span className="room-chat-preview-toast__text">{chatIncomingPreview.text}</span>
           </>
@@ -687,6 +889,10 @@ export function RoomPage({
       >
         <div
           className={`room-main${mobileSoloTiles ? ' room-main--mobile-solo-grid' : ''}${mobileMultiTiles ? ' room-main--mobile-multi-grid' : ''}`}
+          onPointerDownCapture={() => {
+            if (!immersiveAutoHide || !chromeHidden) return
+            showChromeAndArmImmersiveTimer()
+          }}
         >
       {/* ── Speaker / Meet (сцена + полоса превью) ─────────────────────── */}
       {stageLayout && featuredPeerId && (
@@ -734,9 +940,9 @@ export function RoomPage({
         </div>
       )}
 
-      {/* ── PiP layout ─────────────────────────────────────────────────── */}
-      {layout === 'pip' && (
-        <div className="pip-container">
+      {/* ── PiP / FaceTime-style ───────────────────────────────────────── */}
+      {(layout === 'pip' || layout === 'facetile') && (
+        <div className={`pip-container${layout === 'facetile' ? ' pip-container--facetile' : ''}`}>
           <div
             className="tile-grid pip-grid"
             style={gridStyle(pipGridCols)}
@@ -767,6 +973,8 @@ export function RoomPage({
               roomId,
               peerId: localPeerId,
             }}
+            enableTouchDoubleTap={isViewportMobile && (layout === 'pip' || layout === 'facetile')}
+            onTouchDoubleTap={cyclePipGuestOrderMobile}
           >
             {localTile(true)}
           </DraggablePip>
@@ -825,18 +1033,28 @@ export function RoomPage({
         chatUnreadCount={chatUnreadCount}
         chatEmbed={chatEmbed}
         onToggleChatEmbed={() => setChatEmbed((v) => !v)}
+        chatToastNotifications={chatToastNotifications}
+        onToggleChatToastNotifications={onToggleChatToastNotifications}
         onSendReaction={onSendReaction}
         streamerMode={streamerMode}
+        onStreamerModeChange={setStreamerMode}
         vmixPhase={vmixPhase}
         vmixIngressLoading={vmixIngressLoading}
         onStartVmixIngress={handleStartVmixIngress}
         onRequestStopVmixIngress={requestStopVmixIngress}
         onOpenVmixSettings={openVmixSettingsReference}
         onOpenServerSettings={() => setServerSettingsOpen(true)}
+        mirrorLocalCamera={mirrorLocalCamera}
+        onToggleMirrorLocalCamera={() => setMirrorLocalCamera((v) => !v)}
         vmixProgramVolume={vmixProgramVolume}
         onVmixProgramVolumeChange={setVmixProgramVolume}
         vmixProgramMuted={vmixProgramMuted}
         onToggleVmixProgramMuted={() => setVmixProgramMuted((v) => !v)}
+        forceMobileFabMenu={isViewportMobile}
+        viewportMobile={isViewportMobile}
+        immersiveAutoHide={immersiveAutoHide}
+        onToggleImmersiveAutoHide={() => setImmersiveAutoHide((v) => !v)}
+        chromeHidden={immersiveAutoHide && chromeHidden}
       />
 
       {chatOpen && !chatEmbed && (
@@ -859,6 +1077,7 @@ function LocalTile({
   stream, name, isMuted, isCamOff, videoStyle, showInfo, showMeter,
   roomId, peerId, inPip, srtConnectUrl, srtListenPort,
   reactionBurst,
+  mirrorLocalPreview,
 }: {
   stream: MediaStream | null
   name: string
@@ -873,6 +1092,7 @@ function LocalTile({
   srtConnectUrl?: string
   srtListenPort?: number
   reactionBurst?: RoomReactionBurst | null
+  mirrorLocalPreview?: boolean
 }) {
   const mainVideoRef = useRef<HTMLVideoElement>(null)
 
@@ -922,7 +1142,11 @@ function LocalTile({
   )
 
   return (
-    <div className="participant-card participant-card--local">
+    <div
+      className={`participant-card participant-card--local${
+        mirrorLocalPreview ? ' participant-card--local--mirror' : ''
+      }`}
+    >
       <div className="card-video-wrap">
         {inPip ? (
           <>

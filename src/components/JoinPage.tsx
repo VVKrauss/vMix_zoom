@@ -1,7 +1,7 @@
 import { useState, FormEvent } from 'react'
 import type { JoinRoomMediaOptions } from '../hooks/useRoom'
 import type { VideoPreset } from '../types'
-import { DEFAULT_VIDEO_PRESET } from '../types'
+import { getStoredVideoPreset } from '../config/roomUiStorage'
 import { MicIcon, MicOffIcon, CamIcon, CamOffIcon } from './icons'
 
 interface Props {
@@ -20,7 +20,7 @@ export function JoinPage({ roomId, onJoin, onBackToHome, error }: Props) {
     e.preventDefault()
     const rid = roomId.trim()
     if (!name.trim() || !rid) return
-    onJoin(name.trim(), rid, DEFAULT_VIDEO_PRESET, { enableMic: micOn, enableCam: camOn })
+    onJoin(name.trim(), rid, getStoredVideoPreset(), { enableMic: micOn, enableCam: camOn })
   }
 
   const goMain = () => {

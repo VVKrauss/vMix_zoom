@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { DevicePopover } from './DevicePopover'
+import { PillToggle } from './PillToggle'
 import { ScreenSharePickerModal } from './ScreenSharePickerModal'
 import type { VideoPreset } from '../types'
-import { VIDEO_PRESETS } from '../types'
+import { presetToSimpleTier, simpleTierToPreset } from '../utils/simpleVideoQuality'
 import type { LayoutMode, VmixIngressPhase } from './RoomPage'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
-import { useMediaQuery } from '../hooks/useMediaQuery'
 import { MicIcon, MicOffIcon, CamIcon, CamOffIcon } from './icons'
 import { useOnOutsideClick } from '../hooks/useOnOutsideClick'
 
-const LAYOUT_CYCLE: LayoutMode[] = ['grid', 'meet', 'speaker', 'pip']
+const LAYOUT_CYCLE: LayoutMode[] = ['grid', 'meet', 'speaker', 'pip', 'facetile']
 
 function nextLayoutMode(current: LayoutMode): LayoutMode {
   const i = LAYOUT_CYCLE.indexOf(current)
@@ -25,6 +25,10 @@ function layoutModeLabel(mode: LayoutMode): string {
       return 'Лента'
     case 'speaker':
       return 'Спикер'
+    case 'pip':
+      return 'Картинка в картинке'
+    case 'facetile':
+      return 'FaceTime'
     default:
       return 'Картинка в картинке'
   }
@@ -79,9 +83,12 @@ interface Props {
   chatUnreadCount: number
   chatEmbed: boolean
   onToggleChatEmbed: () => void
+  chatToastNotifications: boolean
+  onToggleChatToastNotifications: () => void
   onSendReaction: (emoji: string) => void
   /** Неоновое оформление панели (режим «стример»). */
   streamerMode?: boolean
+  onStreamerModeChange?: (value: boolean) => void
   vmixPhase: VmixIngressPhase
   vmixIngressLoading: boolean
   onStartVmixIngress: () => void
@@ -91,11 +98,21 @@ interface Props {
   onOpenVmixSettings: () => void
   /** Окно «Настройки сервера» из шестерёнки. */
   onOpenServerSettings: () => void
+  /** Горизонтальное зеркало только локального превью камеры (не влияет на исходящий поток). */
+  mirrorLocalCamera: boolean
+  onToggleMirrorLocalCamera: () => void
   /** Громкость потока программы vMix (0…1), localStorage у каждого участника. */
   vmixProgramVolume: number
   onVmixProgramVolumeChange: (v: number) => void
   vmixProgramMuted: boolean
   onToggleVmixProgramMuted: () => void
+  /** Мобильный viewport: панель скрыта, меню только из FAB справа снизу. */
+  forceMobileFabMenu: boolean
+  viewportMobile: boolean
+  immersiveAutoHide: boolean
+  onToggleImmersiveAutoHide: () => void
+  /** Автоскрытие шапки/панели — закрыть мобильное меню (бургер / «Ещё»). */
+  chromeHidden: boolean
 }
 
 type OpenPopover = 'mic' | 'cam' | 'headphones' | 'chat' | 'reaction' | 'layout' | 'screen' | 'settings' | null
@@ -117,20 +134,28 @@ export function ControlsBar({
   chatOpen, onToggleChat,
   chatUnreadCount,
   chatEmbed, onToggleChatEmbed,
+  chatToastNotifications, onToggleChatToastNotifications,
   onSendReaction,
   streamerMode = false,
+  onStreamerModeChange,
   vmixPhase,
   vmixIngressLoading,
   onStartVmixIngress,
   onRequestStopVmixIngress,
   onOpenVmixSettings,
   onOpenServerSettings,
+  mirrorLocalCamera,
+  onToggleMirrorLocalCamera,
   vmixProgramVolume,
   onVmixProgramVolumeChange,
   vmixProgramMuted,
   onToggleVmixProgramMuted,
+  forceMobileFabMenu,
+  viewportMobile,
+  immersiveAutoHide,
+  onToggleImmersiveAutoHide,
+  chromeHidden,
 }: Props) {
-  const isNarrow = useMediaQuery('(max-width: 768px)')
   const [open, setOpen] = useState<OpenPopover>(null)
   const [screenPickerOpen, setScreenPickerOpen] = useState(false)
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
@@ -154,8 +179,14 @@ export function ControlsBar({
   }, [playoutVolume, onPlayoutVolumeChange])
 
   useEffect(() => {
-    if (!isNarrow) setMobileMoreOpen(false)
-  }, [isNarrow])
+    if (!forceMobileFabMenu) setMobileMoreOpen(false)
+  }, [forceMobileFabMenu])
+
+  useEffect(() => {
+    if (!chromeHidden) return
+    setOpen(null)
+    setMobileMoreOpen(false)
+  }, [chromeHidden])
 
   useEffect(() => {
     if (!mobileMoreOpen) return
@@ -173,6 +204,14 @@ export function ControlsBar({
     setOpen(null)
     setMobileMoreOpen(false)
   }
+
+  const toggleMobileSheet = () => {
+    setOpen(null)
+    setMobileMoreOpen((v) => !v)
+  }
+
+  const showMainBar = !forceMobileFabMenu
+  const sheetMenuOpen = mobileMoreOpen && forceMobileFabMenu
 
   const sh = (base: string, sheet?: boolean) => sheet ? `${base} ctrl-group--sheet` : base
 
@@ -241,6 +280,8 @@ export function ControlsBar({
         <ChatOptionsPopover
           chatEmbed={chatEmbed}
           onToggleChatEmbed={onToggleChatEmbed}
+          chatToastNotifications={chatToastNotifications}
+          onToggleChatToastNotifications={onToggleChatToastNotifications}
           onClose={() => setOpen(null)}
         />
       )}
@@ -329,10 +370,6 @@ export function ControlsBar({
       </button>
       {open === 'settings' && (
         <SettingsPopover
-          activePreset={activePreset}
-          onChangePreset={onChangePreset}
-          showMeter={showMeter}
-          onToggleMeter={onToggleMeter}
           showInfo={showInfo}
           onToggleInfo={onToggleInfo}
           showButtonLabels={showButtonLabels}
@@ -340,6 +377,11 @@ export function ControlsBar({
           onResetView={() => { onResetView(); setOpen(null) }}
           onOpenServerSettings={() => { onOpenServerSettings(); setOpen(null) }}
           onClose={() => setOpen(null)}
+          viewportMobile={viewportMobile}
+          immersiveAutoHide={immersiveAutoHide}
+          onToggleImmersiveAutoHide={onToggleImmersiveAutoHide}
+          streamerMode={streamerMode}
+          onStreamerModeChange={onStreamerModeChange}
         />
       )}
     </div>
@@ -354,12 +396,17 @@ export function ControlsBar({
           className={`ctrl-btn ctrl-btn--source-ingest ctrl-btn--source-ingest--vmix${vmixIngressLoading ? ' ctrl-btn--loading' : ''}`}
           title={vmixIngressLoading ? 'Подключение…' : 'Добавить источник vMix / SRT'}
           disabled={vmixIngressLoading}
+          aria-busy={vmixIngressLoading}
           onClick={onStartVmixIngress}
         >
-          <span className="ctrl-btn__source-plus" aria-hidden>
-            {vmixIngressLoading ? '⏳' : '+'}
-          </span>
-          <span className="ctrl-source-wordmark ctrl-source-wordmark--vmix">vMix</span>
+          <img
+            className="ctrl-btn__source-logo-img"
+            src="/srt-logo.png"
+            alt=""
+            width={48}
+            height={18}
+            draggable={false}
+          />
         </button>
       )
     }
@@ -380,12 +427,17 @@ export function ControlsBar({
           className={`ctrl-btn ctrl-btn--source-ingest ctrl-btn--source-ingest--vmix ${phaseClass}${vmixIngressLoading ? ' ctrl-btn--loading' : ''}`}
           title={vmixIngressLoading ? 'Подключение…' : mainTitle}
           disabled={vmixIngressLoading}
+          aria-busy={vmixIngressLoading}
           onClick={onRequestStopVmixIngress}
         >
-          <span className="ctrl-btn__source-plus ctrl-btn__source-plus--vmix-state" aria-hidden>
-            {vmixIngressLoading ? '⏳' : '●'}
-          </span>
-          <span className="ctrl-source-wordmark ctrl-source-wordmark--vmix">vMix</span>
+          <img
+            className="ctrl-btn__source-logo-img"
+            src="/srt-logo.png"
+            alt=""
+            width={48}
+            height={18}
+            draggable={false}
+          />
         </button>
         <div
           className={`ctrl-vmix-audio ctrl-vmix-audio--${vmixPhase === 'live' ? 'live' : 'waiting'}`}
@@ -447,25 +499,35 @@ export function ControlsBar({
     </div>
   )
 
-  return (
-    <div
-      className={`controls-bar${showButtonLabels ? '' : ' controls-bar--icons-only'}${isNarrow ? ' controls-bar--narrow' : ''}${streamerMode ? ' controls-bar--streamer-mode' : ''}`}
-    >
-      <div className="controls-bar__main">
-      <div className="controls-bar__sources" aria-label="Внешние источники (скоро)">
+  const sourcesStrip = (sheet: boolean) =>
+    streamerMode ? (
+      <div className={`controls-bar__sources${sheet ? ' controls-bar__sources--in-sheet' : ''}`} aria-label="Внешние источники">
         <button
           type="button"
           className="ctrl-btn ctrl-btn--source-ingest ctrl-btn--source-ingest--ndi"
           title="Добавить источник NDI (скоро)"
           onClick={() => {}}
         >
-          <span className="ctrl-btn__source-plus" aria-hidden>
-            +
-          </span>
-          <span className="ctrl-source-wordmark ctrl-source-wordmark--ndi">NDI</span>
+          <img
+            className="ctrl-btn__source-logo-img"
+            src="/ndi-logo.png"
+            alt=""
+            width={56}
+            height={18}
+            draggable={false}
+          />
         </button>
-        {vmixSourcesBlock()}
+        {vmixSourcesBlock(sheet)}
       </div>
+    ) : null
+
+  return (
+    <div
+      className={`controls-bar${showButtonLabels ? '' : ' controls-bar--icons-only'}${streamerMode ? ' controls-bar--streamer-mode' : ''}${forceMobileFabMenu ? ' controls-bar--fab-dock' : ''}`}
+    >
+      {showMainBar ? (
+      <div className="controls-bar__main">
+      {sourcesStrip(false)}
 
       <div className="controls-bar__core">
       {/* ── Camera ─────────────────────────────────────────────────────── */}
@@ -492,6 +554,10 @@ export function ControlsBar({
             selectedId={selectedCameraId}
             onSelect={id => { onSwitchCamera(id) }}
             onClose={() => setOpen(null)}
+            videoQualityTier={presetToSimpleTier(activePreset)}
+            onVideoQualityTierChange={(tier) => { void onChangePreset(simpleTierToPreset(tier)) }}
+            mirrorLocalPreview={mirrorLocalCamera}
+            onToggleMirrorLocalPreview={onToggleMirrorLocalCamera}
           />
         )}
       </div>
@@ -520,50 +586,39 @@ export function ControlsBar({
             selectedId={selectedMicId}
             onSelect={id => { onSwitchMic(id) }}
             onClose={() => setOpen(null)}
+            audioMeter={showMeter}
+            onToggleAudioMeter={onToggleMeter}
           />
         )}
       </div>
 
       {headphonesGroup()}
 
-      {!isNarrow && (
-        <>
-          {chatGroup()}
-          {layoutGroup()}
-          {screenShareGroup()}
-          {settingsGroup()}
-        </>
-      )}
+      {chatGroup()}
+      {layoutGroup()}
+      {screenShareGroup()}
+      {settingsGroup()}
 
-      {!isNarrow && (
-        <button type="button" className="ctrl-btn ctrl-btn--leave" onClick={onLeaveRequest}>
-          <LeaveIcon />
-          <span>Выйти</span>
-        </button>
-      )}
+      <button type="button" className="ctrl-btn ctrl-btn--leave" onClick={onLeaveRequest}>
+        <LeaveIcon />
+        <span>Выйти</span>
+      </button>
+      </div>
+      </div>
+      ) : null}
 
-      {isNarrow && (
+      {forceMobileFabMenu ? (
         <button
           type="button"
-          className="ctrl-btn ctrl-btn--mobile-more"
-          onClick={() => { setOpen(null); setMobileMoreOpen(true) }}
-          title="Ещё действия"
-          aria-label="Ещё действия"
+          className="ctrl-mobile-menu-fab"
+          onClick={toggleMobileSheet}
+          title="Меню управления"
+          aria-label="Меню управления"
           aria-expanded={mobileMoreOpen}
         >
-          <MoreVerticalIcon />
-          <span>Ещё</span>
+          <MenuHamburgerIcon />
         </button>
-      )}
-
-      {isNarrow && (
-        <button type="button" className="ctrl-btn ctrl-btn--leave" onClick={onLeaveRequest}>
-          <LeaveIcon />
-          <span>Выйти</span>
-        </button>
-      )}
-      </div>
-      </div>
+      ) : null}
 
       {screenPickerOpen && (
         <ScreenSharePickerModal
@@ -575,29 +630,97 @@ export function ControlsBar({
         />
       )}
 
-      {!isNarrow && (
+      {!forceMobileFabMenu && (
         <div className="controls-bar__reaction-floater">
           {reactionGroup()}
         </div>
       )}
 
-      {isNarrow && mobileMoreOpen && (
+      {sheetMenuOpen && (
         <>
           <div className="mobile-controls-sheet-backdrop" role="presentation" onClick={closeMobileMore} />
           <div
             className="mobile-controls-sheet"
             role="dialog"
             aria-modal="true"
-            aria-label="Дополнительные действия"
+            aria-label="Меню управления"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mobile-controls-sheet__title">Ещё</div>
+            <div className="mobile-controls-sheet__title">Меню</div>
             <div className="mobile-controls-sheet__groups">
+              {sourcesStrip(true)}
+              <div className="ctrl-group ctrl-group--sheet">
+                <button
+                  className={`ctrl-btn ${isCamOff ? 'ctrl-btn--off' : ''}`}
+                  onClick={onToggleCam}
+                  title={isCamOff ? 'Включить камеру' : 'Выключить камеру'}
+                >
+                  {isCamOff ? <CamOffIcon /> : <CamIcon />}
+                  <span>{isCamOff ? 'Включить' : 'Камера'}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`ctrl-chevron ${isCamOff ? 'ctrl-btn--off' : ''} ${open === 'cam' ? 'ctrl-chevron--open' : ''}`}
+                  onClick={() => toggleOpen('cam')}
+                  title="Выбрать камеру"
+                >
+                  <ChevronIcon />
+                </button>
+                {open === 'cam' && (
+                  <DevicePopover
+                    label="Камера"
+                    devices={cameras}
+                    selectedId={selectedCameraId}
+                    onSelect={id => { onSwitchCamera(id) }}
+                    onClose={() => setOpen(null)}
+                    videoQualityTier={presetToSimpleTier(activePreset)}
+                    onVideoQualityTierChange={(tier) => { void onChangePreset(simpleTierToPreset(tier)) }}
+                    mirrorLocalPreview={mirrorLocalCamera}
+                    onToggleMirrorLocalPreview={onToggleMirrorLocalCamera}
+                  />
+                )}
+              </div>
+              <div className="ctrl-group ctrl-group--sheet">
+                <button
+                  className={`ctrl-btn ${isMuted ? 'ctrl-btn--off' : ''}`}
+                  onClick={onToggleMute}
+                  title={isMuted ? 'Включить микрофон' : 'Выключить микрофон'}
+                >
+                  {isMuted ? <MicOffIcon /> : <MicIcon />}
+                  <span>{isMuted ? 'Включить' : 'Микрофон'}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`ctrl-chevron ${isMuted ? 'ctrl-btn--off' : ''} ${open === 'mic' ? 'ctrl-chevron--open' : ''}`}
+                  onClick={() => toggleOpen('mic')}
+                  title="Выбрать микрофон"
+                >
+                  <ChevronIcon />
+                </button>
+                {open === 'mic' && (
+                  <DevicePopover
+                    label="Микрофон"
+                    devices={microphones}
+                    selectedId={selectedMicId}
+                    onSelect={id => { onSwitchMic(id) }}
+                    onClose={() => setOpen(null)}
+                    audioMeter={showMeter}
+                    onToggleAudioMeter={onToggleMeter}
+                  />
+                )}
+              </div>
+              {headphonesGroup(true)}
               {chatGroup(true)}
               {layoutGroup(true)}
               {screenShareGroup(true)}
               {settingsGroup(true)}
               {reactionGroup(true)}
+              <div className="mobile-controls-sheet__leave-wrap">
+                <button type="button" className="ctrl-btn ctrl-btn--leave ctrl-btn--leave-sheet" onClick={() => { closeMobileMore(); onLeaveRequest() }}>
+                  <LeaveIcon />
+                  <span>Выйти</span>
+                </button>
+              </div>
             </div>
           </div>
         </>
@@ -622,12 +745,10 @@ function ProgramSpeakerMutedIcon() {
   )
 }
 
-function MoreVerticalIcon() {
+function MenuHamburgerIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-      <circle cx="12" cy="6" r="1.75" />
-      <circle cx="12" cy="12" r="1.75" />
-      <circle cx="12" cy="18" r="1.75" />
+    <svg className="ctrl-mobile-menu-fab__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+      <path d="M4 7h16M4 12h16M4 17h16" />
     </svg>
   )
 }
@@ -666,6 +787,7 @@ function LayoutPopover({
     { mode: 'meet', label: 'Лента' },
     { mode: 'speaker', label: 'Спикер' },
     { mode: 'pip', label: 'Картинка в картинке' },
+    { mode: 'facetile', label: 'Мобильное' },
   ]
 
   return (
@@ -811,10 +933,14 @@ function PlayoutPopover({
 function ChatOptionsPopover({
   chatEmbed,
   onToggleChatEmbed,
+  chatToastNotifications,
+  onToggleChatToastNotifications,
   onClose,
 }: {
   chatEmbed: boolean
   onToggleChatEmbed: () => void
+  chatToastNotifications: boolean
+  onToggleChatToastNotifications: () => void
   onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -823,27 +949,38 @@ function ChatOptionsPopover({
   return (
     <div className="settings-popover" ref={ref}>
       <div className="settings-popover__title">Чат</div>
-      <button type="button" className="settings-row settings-row--btn" onClick={onToggleChatEmbed}>
-        <span className="settings-label">Чат в интерфейсе</span>
-        <span className={`settings-toggle ${chatEmbed ? 'settings-toggle--on' : ''}`}>
-          {chatEmbed ? 'Вкл' : 'Выкл'}
-        </span>
-      </button>
+      <div className="settings-row settings-row--pill">
+        <span className="settings-label">Закрепить чат</span>
+        <PillToggle
+          compact
+          checked={chatEmbed}
+          onCheckedChange={() => onToggleChatEmbed()}
+          ariaLabel="Закрепить чат в интерфейсе комнаты"
+        />
+      </div>
+      <div className="settings-row settings-row--pill">
+        <span className="settings-label">Показывать уведомления</span>
+        <PillToggle
+          compact
+          checked={chatToastNotifications}
+          onCheckedChange={() => onToggleChatToastNotifications()}
+          ariaLabel="Всплывающие уведомления о новых сообщениях в чате"
+        />
+      </div>
     </div>
   )
 }
 
 function SettingsPopover({
-  activePreset, onChangePreset,
-  showMeter, onToggleMeter,
   showInfo, onToggleInfo,
   showButtonLabels, onToggleButtonLabels,
   onResetView, onOpenServerSettings, onClose,
+  viewportMobile,
+  immersiveAutoHide,
+  onToggleImmersiveAutoHide,
+  streamerMode,
+  onStreamerModeChange,
 }: {
-  activePreset: VideoPreset
-  onChangePreset: (p: VideoPreset) => void
-  showMeter: boolean
-  onToggleMeter: () => void
   showInfo: boolean
   onToggleInfo: () => void
   showButtonLabels: boolean
@@ -851,6 +988,11 @@ function SettingsPopover({
   onResetView: () => void
   onOpenServerSettings: () => void
   onClose: () => void
+  viewportMobile: boolean
+  immersiveAutoHide: boolean
+  onToggleImmersiveAutoHide: () => void
+  streamerMode: boolean
+  onStreamerModeChange?: (value: boolean) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   useOnOutsideClick(ref, onClose)
@@ -864,42 +1006,47 @@ function SettingsPopover({
         <span className="settings-row__arrow" aria-hidden>→</span>
       </button>
 
-      {/* Quality */}
-      <div className="settings-row">
-        <span className="settings-label">Качество видео</span>
-        <select
-          className="settings-select"
-          value={VIDEO_PRESETS.indexOf(activePreset)}
-          onChange={(e) => onChangePreset(VIDEO_PRESETS[Number(e.target.value)])}
-        >
-          {VIDEO_PRESETS.map((p, i) => (
-            <option key={i} value={i}>{p.label}</option>
-          ))}
-        </select>
+      {viewportMobile && onStreamerModeChange ? (
+        <div className="settings-row settings-row--pill">
+          <span className="settings-label">Стример</span>
+          <PillToggle
+            compact
+            checked={streamerMode}
+            onCheckedChange={(v) => onStreamerModeChange(v)}
+            ariaLabel={streamerMode ? 'Режим стримера включён' : 'Режим стримера выключен'}
+          />
+        </div>
+      ) : null}
+
+      <div className="settings-row settings-row--pill">
+        <span className="settings-label">Скрывать панели</span>
+        <PillToggle
+          compact
+          checked={immersiveAutoHide}
+          onCheckedChange={() => onToggleImmersiveAutoHide()}
+          ariaLabel="Автоскрытие шапки и панели управления; тап по видео — показать"
+        />
       </div>
 
-      {/* Audio meter toggle */}
-      <button className="settings-row settings-row--btn" onClick={onToggleMeter}>
-        <span className="settings-label">Аудиометр</span>
-        <span className={`settings-toggle ${showMeter ? 'settings-toggle--on' : ''}`}>
-          {showMeter ? 'Вкл' : 'Выкл'}
-        </span>
-      </button>
-
-      {/* Info toggle */}
-      <button className="settings-row settings-row--btn" onClick={onToggleInfo}>
+      <div className="settings-row settings-row--pill">
         <span className="settings-label">Инфо</span>
-        <span className={`settings-toggle ${showInfo ? 'settings-toggle--on' : ''}`}>
-          {showInfo ? 'Вкл' : 'Выкл'}
-        </span>
-      </button>
+        <PillToggle
+          compact
+          checked={showInfo}
+          onCheckedChange={() => onToggleInfo()}
+          ariaLabel="Информация на видео"
+        />
+      </div>
 
-      <button type="button" className="settings-row settings-row--btn" onClick={onToggleButtonLabels}>
+      <div className="settings-row settings-row--pill">
         <span className="settings-label">Подписи кнопок</span>
-        <span className={`settings-toggle ${showButtonLabels ? 'settings-toggle--on' : ''}`}>
-          {showButtonLabels ? 'Вкл' : 'Выкл'}
-        </span>
-      </button>
+        <PillToggle
+          compact
+          checked={showButtonLabels}
+          onCheckedChange={() => onToggleButtonLabels()}
+          ariaLabel="Подписи кнопок панели управления"
+        />
+      </div>
 
       {/* Reset */}
       <button className="settings-row settings-row--btn settings-row--reset" onClick={onResetView}>

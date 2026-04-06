@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef } from 'react'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import { useSoloViewer } from '../hooks/useSoloViewer'
 
@@ -9,25 +9,6 @@ interface Props {
 }
 
 /** Собираем один MediaStream: видео + аудио в одном элементе — так надёжнее для звука и автозапуска. */
-function SoloViewerStateTopLogo({ onExit }: { onExit: () => void }) {
-  return (
-    <div className="solo-viewer-state-topbar">
-      <button type="button" className="room-logo-btn" onClick={onExit} title="Главная" aria-label="Главная">
-        <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
-      </button>
-    </div>
-  )
-}
-
-function SoloViewerStateLayout({ onExit, children }: { onExit: () => void; children: ReactNode }) {
-  return (
-    <>
-      <SoloViewerStateTopLogo onExit={onExit} />
-      {children}
-    </>
-  )
-}
-
 function mergeAV(video: MediaStream | null, audio: MediaStream | null): MediaStream | null {
   const tracks: MediaStreamTrack[] = []
   if (video) {
@@ -121,19 +102,17 @@ export function SoloViewerPage({ roomId, watchPeerId, onExit }: Props) {
   if (status === 'error') {
     return (
       <div className="solo-viewer-page solo-viewer-page--state">
-        <SoloViewerStateLayout onExit={onExit}>
-          <div className="solo-viewer-state-inner solo-viewer-state-inner--msg">
-            <p>{error ?? 'Ошибка подключения'}</p>
-            <div className="solo-viewer-actions">
-              <button type="button" className="solo-viewer-btn" onClick={retry}>
-                Повторить
-              </button>
-              <button type="button" className="solo-viewer-btn solo-viewer-btn--ghost" onClick={onExit}>
-                Назад
-              </button>
-            </div>
+        <div className="solo-viewer-state-inner solo-viewer-state-inner--msg">
+          <p>{error ?? 'Ошибка подключения'}</p>
+          <div className="solo-viewer-actions">
+            <button type="button" className="solo-viewer-btn solo-viewer-btn--retry" onClick={retry}>
+              Повторить
+            </button>
+            <button type="button" className="solo-viewer-btn solo-viewer-btn--back" onClick={onExit}>
+              Назад
+            </button>
           </div>
-        </SoloViewerStateLayout>
+        </div>
       </div>
     )
   }
@@ -141,19 +120,19 @@ export function SoloViewerPage({ roomId, watchPeerId, onExit }: Props) {
   if (status === 'peer_left') {
     return (
       <div className="solo-viewer-page solo-viewer-page--state">
-        <SoloViewerStateLayout onExit={onExit}>
-          <div className="solo-viewer-state-inner solo-viewer-state-inner--msg">
-            <p>Нет сигнала</p>
-            <div className="solo-viewer-actions">
-              <button type="button" className="solo-viewer-btn" onClick={retry}>
-                Повторить
-              </button>
-              <button type="button" className="solo-viewer-btn solo-viewer-btn--ghost" onClick={onExit}>
-                Назад
-              </button>
-            </div>
+        <div className="solo-viewer-state-inner solo-viewer-state-inner--msg">
+          <div className="solo-viewer-state-brand-mark" role="status" aria-label="Нет сигнала">
+            <BrandLogoLoader size={96} />
           </div>
-        </SoloViewerStateLayout>
+          <div className="solo-viewer-actions">
+            <button type="button" className="solo-viewer-btn solo-viewer-btn--retry" onClick={retry}>
+              Повторить
+            </button>
+            <button type="button" className="solo-viewer-btn solo-viewer-btn--back" onClick={onExit}>
+              Назад
+            </button>
+          </div>
+        </div>
       </div>
     )
   }
@@ -180,7 +159,9 @@ export function SoloViewerPage({ roomId, watchPeerId, onExit }: Props) {
         controls={false}
       />
       {!videoStream && !audioStream && (
-        <div className="solo-viewer-waiting">Ожидание потока…</div>
+        <div className="solo-viewer-waiting" role="status" aria-label="Ожидание потока">
+          <BrandLogoLoader size={96} />
+        </div>
       )}
     </div>
   )

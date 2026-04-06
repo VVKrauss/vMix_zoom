@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { InboundVideoQuality } from '../utils/inboundVideoStats'
 import { buildSoloViewerAbsoluteUrl } from '../utils/soloViewerParams'
 
 interface VideoInfo {
@@ -25,12 +26,23 @@ function truncateUrl(s: string, max = 36): string {
   return `${s.slice(0, max)}…`
 }
 
+function formatMbps(bps: number): string {
+  if (!Number.isFinite(bps) || bps < 0) return '—'
+  return (bps / 1_000_000).toFixed(2)
+}
+
+function formatPct01(x: number): string {
+  if (!Number.isFinite(x)) return '—'
+  return `${Math.round(x * 1000) / 10}%`
+}
+
 export function VideoInfoOverlay({
   stream,
   videoRef,
   roomId,
   peerId,
   srtConnectUrl,
+  linkQuality,
 }: {
   stream: MediaStream | null
   videoRef: React.RefObject<HTMLVideoElement>
@@ -38,6 +50,8 @@ export function VideoInfoOverlay({
   peerId?: string
   /** connectUrlPublic для vMix SRT Caller */
   srtConnectUrl?: string
+  /** Приём входящего видео (getStats), только в режиме инфо для удалённых плиток. */
+  linkQuality?: InboundVideoQuality | null
 }) {
   const [info, setInfo] = useState<VideoInfo | null>(null)
   const [copiedPeer, setCopiedPeer] = useState(false)
@@ -186,6 +200,30 @@ export function VideoInfoOverlay({
           <span className="vio-row">
             <span className="vio-key">Источник</span>
             <span className="vio-val vio-val--label">{info.label}</span>
+          </span>
+        </>
+      ) : null}
+      {linkQuality ? (
+        <>
+          <span className="vio-row">
+            <span className="vio-key">Приём видео</span>
+            <span className="vio-val">{formatMbps(linkQuality.bitrateBps)} Мбит/с</span>
+          </span>
+          <span className="vio-row">
+            <span className="vio-key">Потери RTP</span>
+            <span className="vio-val">{formatPct01(linkQuality.fractionLost)}</span>
+          </span>
+          <span className="vio-row">
+            <span className="vio-key">Jitter</span>
+            <span className="vio-val">
+              {linkQuality.jitterMs != null && Number.isFinite(linkQuality.jitterMs)
+                ? `${Math.round(linkQuality.jitterMs)} мс`
+                : '—'}
+            </span>
+          </span>
+          <span className="vio-row">
+            <span className="vio-key">Уровень</span>
+            <span className="vio-val">{linkQuality.level} / 5</span>
           </span>
         </>
       ) : null}

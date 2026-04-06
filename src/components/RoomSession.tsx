@@ -1,11 +1,14 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useLocalStorageBool } from '../hooks/useLocalStorage'
 import { useRoom, type JoinRoomMediaOptions, type RoomStatus } from '../hooks/useRoom'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import { JoinPage } from './JoinPage'
 import { RoomPage } from './RoomPage'
 import type { VideoPreset } from '../types'
 import { replaceRoomInBrowserUrl } from '../utils/soloViewerParams'
+
+const CHAT_PREVIEW_TOAST_MS = 7000
 
 interface Props {
   roomId: string
@@ -22,11 +25,26 @@ export function RoomSession({ roomId }: Props) {
   } | null>(null)
   const chatOpenRef = useRef(false)
   const chatPreviewTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
+  const [chatToastNotifications, setChatToastNotifications] = useLocalStorageBool(
+    'vmix_chat_toast_notifications',
+    true,
+  )
+  const chatToastNotificationsRef = useRef(chatToastNotifications)
+  chatToastNotificationsRef.current = chatToastNotifications
+
+  const dismissChatIncomingPreview = useCallback(() => {
+    if (chatPreviewTimerRef.current != null) {
+      window.clearTimeout(chatPreviewTimerRef.current)
+      chatPreviewTimerRef.current = null
+    }
+    setChatIncomingPreview(null)
+  }, [])
 
   const roomActivityNotifyRef = useRef({
     isChatClosed: () => !chatOpenRef.current,
     bumpUnread: () => setChatUnreadCount((c) => c + 1),
     flashChatPreview: (author: string, text: string) => {
+      if (!chatToastNotificationsRef.current) return
       const trimmed = text.trim()
       if (!trimmed) return
       const safeAuthor = author.trim() || 'Участник'
@@ -36,7 +54,7 @@ export function RoomSession({ roomId }: Props) {
       chatPreviewTimerRef.current = window.setTimeout(() => {
         setChatIncomingPreview(null)
         chatPreviewTimerRef.current = null
-      }, 4200)
+      }, CHAT_PREVIEW_TOAST_MS)
     },
   })
 
@@ -65,6 +83,7 @@ export function RoomSession({ roomId }: Props) {
     chatMessages, sendChatMessage, sendReaction, reactionBursts,
     remoteScreenConsumePending,
     startVmixIngress, stopVmixIngress, vmixIngressInfo, vmixIngressLoading,
+    getRemoteInboundVideoQuality,
   } = useRoom(roomActivityNotifyRef)
 
   const statusRef = useRef<RoomStatus>('idle')
@@ -132,11 +151,15 @@ export function RoomSession({ roomId }: Props) {
         setChatOpen={setChatOpen}
         chatUnreadCount={chatUnreadCount}
         chatIncomingPreview={chatIncomingPreview}
+        onDismissChatIncomingPreview={dismissChatIncomingPreview}
+        chatToastNotifications={chatToastNotifications}
+        onToggleChatToastNotifications={() => setChatToastNotifications((v) => !v)}
         remoteScreenSharePending={remoteScreenConsumePending}
         vmixIngressInfo={vmixIngressInfo}
         vmixIngressLoading={vmixIngressLoading}
         onStartVmixIngress={startVmixIngress}
         onStopVmixIngress={stopVmixIngress}
+        getRemoteInboundVideoQuality={getRemoteInboundVideoQuality}
       />
     )
   }
