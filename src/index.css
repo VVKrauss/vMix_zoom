@@ -633,6 +633,27 @@ html.app-root--room #root {
   max-width: 640px;
 }
 
+.dashboard-content--cabinet {
+  max-width: 880px;
+}
+
+.dashboard-profile-account-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: stretch;
+}
+
+.dashboard-profile-account-row .dashboard-section {
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .dashboard-profile-account-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Админка: боковой список + контент */
 .dashboard-body--admin {
   align-items: flex-start;
@@ -1130,6 +1151,17 @@ button.admin-stat-card--interactive:disabled {
   font-weight: 600;
 }
 
+/* Кабинет: вид комнаты — полная подпись на кнопке (не monospace / lowercase). */
+.admin-role-picker--dashboard-layout .admin-role-picker__trigger {
+  font-family: var(--font);
+  text-transform: none;
+  font-weight: 600;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  padding: 8px 14px;
+}
+
 /* Секции */
 .dashboard-section {
   background: var(--surface);
@@ -1155,26 +1187,6 @@ button.admin-stat-card--interactive:disabled {
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-dim);
-}
-
-.dashboard-layout-options {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 6px;
-}
-
-.dashboard-layout-option {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 14px;
-  color: var(--text);
-  cursor: pointer;
-}
-
-.dashboard-layout-option input {
-  accent-color: var(--red);
 }
 
 .dashboard-field--checkbox {
@@ -1292,6 +1304,64 @@ button.admin-stat-card--interactive:disabled {
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: .05em;
+}
+
+/* Одна строка: подпись + контрол (внутренний ряд, не борется с column у .dashboard-field). */
+.dashboard-field__inline {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: 10px;
+  width: 100%;
+}
+
+.dashboard-field__inline--toggle {
+  gap: 12px;
+}
+
+/* Полоска слева у строки, как вкладки админки (видно без открытия выпадающего списка). */
+.dashboard-field__inline--stripe {
+  position: relative;
+  padding-left: 14px;
+  box-sizing: border-box;
+}
+
+.dashboard-field__inline--stripe::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 1.15em;
+  border-radius: 1px;
+  background: #fff;
+}
+
+.dashboard-field__inline .dashboard-field__label {
+  margin: 0;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.dashboard-field__inline .admin-role-picker {
+  flex: 0 0 auto;
+}
+
+.dashboard-field__inline .pill-toggle {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 480px) {
+  .dashboard-field__inline {
+    flex-wrap: wrap;
+  }
+
+  .dashboard-field__inline .dashboard-field__label {
+    white-space: normal;
+  }
 }
 
 .dashboard-form__save {

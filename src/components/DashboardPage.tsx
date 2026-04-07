@@ -9,6 +9,8 @@ import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
 import { newRoomId } from '../utils/roomId'
 import { setPendingHostClaim } from '../lib/spaceRoom'
 import { DashboardProfileModal } from './DashboardProfileModal'
+import { DashboardLayoutPicker } from './DashboardLayoutPicker'
+import { PillToggle } from './PillToggle'
 
 const STATUS_LABEL: Record<string, string> = {
   active:  'Активен',
@@ -41,13 +43,6 @@ function globalRoleBadgeClass(code: string): string {
   }
   return 'dashboard-badge dashboard-badge--role'
 }
-
-const LAYOUT_OPTIONS: { value: StoredLayoutMode; label: string }[] = [
-  { value: 'pip', label: 'Картинка в картинке' },
-  { value: 'grid', label: 'Плитки' },
-  { value: 'meet', label: 'Лента (Meet)' },
-  { value: 'speaker', label: 'Спикер' },
-]
 
 export function DashboardPage() {
   const navigate = useNavigate()
@@ -214,7 +209,7 @@ export function DashboardPage() {
       </header>
 
       <div className="dashboard-body">
-        <div className="dashboard-content">
+        <div className="dashboard-content dashboard-content--cabinet">
 
           <DashboardProfileModal
             open={profileEditOpen}
@@ -235,32 +230,82 @@ export function DashboardPage() {
             onUploadAvatar={(file) => { void handleModalAvatarUpload(file) }}
           />
 
-          {/* ── Профиль (компактно) ── */}
-          <section className="dashboard-section">
-            <h2 className="dashboard-section__title">Профиль</h2>
-            <div className="dashboard-profile-summary">
-              <div className="dashboard-profile-summary__avatar">
-                {profile.avatar_url ? (
-                  <img src={profile.avatar_url} alt={profile.display_name} />
-                ) : (
-                  <span className="dashboard-profile-summary__initials">{initials}</span>
-                )}
+          <div className="dashboard-profile-account-row">
+            {/* ── Профиль (компактно) ── */}
+            <section className="dashboard-section">
+              <h2 className="dashboard-section__title">Профиль</h2>
+              <div className="dashboard-profile-summary">
+                <div className="dashboard-profile-summary__avatar">
+                  {profile.avatar_url ? (
+                    <img src={profile.avatar_url} alt={profile.display_name} />
+                  ) : (
+                    <span className="dashboard-profile-summary__initials">{initials}</span>
+                  )}
+                </div>
+                <div className="dashboard-profile-summary__text">
+                  <span className="dashboard-profile-summary__name">{profile.display_name}</span>
+                  <span className="dashboard-profile-summary__email" title={profile.email ?? undefined}>
+                    {profile.email ?? '—'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="dashboard-profile-summary__edit"
+                  onClick={() => setProfileEditOpen(true)}
+                >
+                  Изменить
+                </button>
               </div>
-              <div className="dashboard-profile-summary__text">
-                <span className="dashboard-profile-summary__name">{profile.display_name}</span>
-                <span className="dashboard-profile-summary__email" title={profile.email ?? undefined}>
-                  {profile.email ?? '—'}
-                </span>
+            </section>
+
+            {/* ── Аккаунт ── */}
+            <section className="dashboard-section">
+              <h2 className="dashboard-section__title">Аккаунт</h2>
+
+              <div className="dashboard-meta-grid">
+                <div className="dashboard-meta-item">
+                  <span className="dashboard-meta-item__label">Статус</span>
+                  <span className={`dashboard-badge ${STATUS_CLASS[profile.status] ?? ''}`}>
+                    {STATUS_LABEL[profile.status] ?? profile.status}
+                  </span>
+                </div>
+
+                <div className="dashboard-meta-item dashboard-meta-item--roles">
+                  <span className="dashboard-meta-item__label">Роли на платформе</span>
+                  {profile.global_roles.length > 0 ? (
+                    <div className="dashboard-role-badges">
+                      {profile.global_roles.map((r) => (
+                        <span
+                          key={r.code}
+                          className={globalRoleBadgeClass(r.code)}
+                          title={r.title ? `${r.title} (${r.code})` : r.code}
+                        >
+                          {GLOBAL_ROLE_LABEL[r.code] ?? r.title ?? r.code}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="dashboard-meta-item__empty">Стандартный доступ</span>
+                  )}
+                </div>
+
+                <div className="dashboard-meta-item">
+                  <span className="dashboard-meta-item__label">Тарифный план</span>
+                  <div className="dashboard-plan">
+                    <span className="dashboard-plan__name">{plan?.plan_name ?? 'Free'}</span>
+                    {plan?.sub_status && (
+                      <span className="dashboard-badge dashboard-badge--active">{plan.sub_status}</span>
+                    )}
+                    {plan?.trial_ends_at && (
+                      <span className="dashboard-plan__trial">
+                        Пробный до {new Date(plan.trial_ends_at).toLocaleDateString('ru-RU')}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
-              <button
-                type="button"
-                className="dashboard-profile-summary__edit"
-                onClick={() => setProfileEditOpen(true)}
-              >
-                Изменить
-              </button>
-            </div>
-          </section>
+            </section>
+          </div>
 
           {/* ── Комнаты (десктоп) ── */}
           <section className="dashboard-section">
@@ -270,84 +315,29 @@ export function DashboardPage() {
             </p>
             <form onSubmit={handleSaveRoomPrefs} className="dashboard-form">
               <div className="dashboard-field">
-                <span className="dashboard-field__label">Вид по умолчанию</span>
-                <div className="dashboard-layout-options">
-                  {LAYOUT_OPTIONS.map((o) => (
-                    <label key={o.value} className="dashboard-layout-option">
-                      <input
-                        type="radio"
-                        name="room_layout"
-                        value={o.value}
-                        checked={roomLayout === o.value}
-                        onChange={() => setRoomLayout(o.value)}
-                      />
-                      <span>{o.label}</span>
-                    </label>
-                  ))}
+                <div className="dashboard-field__inline dashboard-field__inline--stripe">
+                  <span className="dashboard-field__label">Вид по умолчанию</span>
+                  <DashboardLayoutPicker value={roomLayout} onChange={setRoomLayout} />
                 </div>
               </div>
-              <label className="dashboard-field dashboard-field--checkbox">
-                <input
-                  type="checkbox"
-                  checked={roomShowLayoutToggle}
-                  onChange={(e) => setRoomShowLayoutToggle(e.target.checked)}
-                />
-                <span>Показывать круглую кнопку смены вида в комнате</span>
-              </label>
+              <div className="dashboard-field">
+                <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-field__inline--stripe">
+                  <span className="dashboard-field__label">Кнопка смены вида в комнате</span>
+                  <PillToggle
+                    checked={roomShowLayoutToggle}
+                    onCheckedChange={setRoomShowLayoutToggle}
+                    offLabel="Скрыта"
+                    onLabel="Показана"
+                    ariaLabel="Показывать круглую кнопку смены вида в комнате"
+                  />
+                </div>
+              </div>
               {roomSaveErr && <p className="join-error">{roomSaveErr}</p>}
               {roomSaveMsg && <p className="dashboard-save-ok">{roomSaveMsg}</p>}
               <button type="submit" className="join-btn dashboard-form__save" disabled={roomSaving}>
                 {roomSaving ? 'Сохранение…' : 'Сохранить настройки комнаты'}
               </button>
             </form>
-          </section>
-
-          {/* ── Аккаунт ── */}
-          <section className="dashboard-section">
-            <h2 className="dashboard-section__title">Аккаунт</h2>
-
-            <div className="dashboard-meta-grid">
-              <div className="dashboard-meta-item">
-                <span className="dashboard-meta-item__label">Статус</span>
-                <span className={`dashboard-badge ${STATUS_CLASS[profile.status] ?? ''}`}>
-                  {STATUS_LABEL[profile.status] ?? profile.status}
-                </span>
-              </div>
-
-              <div className="dashboard-meta-item dashboard-meta-item--roles">
-                <span className="dashboard-meta-item__label">Роли на платформе</span>
-                {profile.global_roles.length > 0 ? (
-                  <div className="dashboard-role-badges">
-                    {profile.global_roles.map((r) => (
-                      <span
-                        key={r.code}
-                        className={globalRoleBadgeClass(r.code)}
-                        title={r.title ? `${r.title} (${r.code})` : r.code}
-                      >
-                        {GLOBAL_ROLE_LABEL[r.code] ?? r.title ?? r.code}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <span className="dashboard-meta-item__empty">Стандартный доступ</span>
-                )}
-              </div>
-
-              <div className="dashboard-meta-item">
-                <span className="dashboard-meta-item__label">Тарифный план</span>
-                <div className="dashboard-plan">
-                  <span className="dashboard-plan__name">{plan?.plan_name ?? 'Free'}</span>
-                  {plan?.sub_status && (
-                    <span className="dashboard-badge dashboard-badge--active">{plan.sub_status}</span>
-                  )}
-                  {plan?.trial_ends_at && (
-                    <span className="dashboard-plan__trial">
-                      Пробный до {new Date(plan.trial_ends_at).toLocaleDateString('ru-RU')}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
           </section>
 
         </div>
