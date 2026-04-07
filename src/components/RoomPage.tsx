@@ -1290,10 +1290,10 @@ export function RoomPage({
         />
       )}
 
-      {!isViewportMobile && showLayoutToggle && (
+      {showLayoutToggle && (
         <button
           type="button"
-          className="room-layout-cycle-fab"
+          className={`room-layout-cycle-fab${isViewportMobile ? ' room-layout-cycle-fab--mobile' : ''}`}
           onClick={() => setLayout((l) => nextLayoutMode(l))}
           title="Сменить вид отображения"
           aria-label="Сменить вид отображения"

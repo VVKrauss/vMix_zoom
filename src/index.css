@@ -929,6 +929,20 @@ html, body, #root {
   display: block;
 }
 
+/* Мобильный: у правого края, по вертикали по центру экрана — удобно переключать PiP/сетку одной рукой */
+.room-layout-cycle-fab--mobile {
+  top: 50%;
+  right: max(4px, env(safe-area-inset-right, 0px));
+  left: auto;
+  width: 48px;
+  height: 48px;
+  transform: translateY(-50%);
+}
+
+.room-layout-cycle-fab--mobile:active {
+  transform: translateY(-50%) scale(0.96);
+}
+
 .room-page {
   display: grid;
   grid-template-rows: 52px 1fr 72px;
