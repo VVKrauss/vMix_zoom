@@ -16,8 +16,8 @@ export function LoginPage() {
   const [displayName, setDisplayName] = useState('')
   const [error, setError]             = useState<string | null>(null)
   const [loading, setLoading]         = useState(false)
+  const [confirmSentTo, setConfirmSentTo] = useState<string | null>(null)
 
-  // После входа возвращаемся туда, откуда пришли, или на главную
   const from = (location.state as { from?: string })?.from ?? '/'
 
   const handleSubmit = async (e: FormEvent) => {
@@ -29,6 +29,9 @@ export function LoginPage() {
 
     if (mode === 'login') {
       result = await signIn(email.trim(), password)
+      setLoading(false)
+      if (result.error) { setError(result.error); return }
+      navigate(from, { replace: true })
     } else {
       if (!displayName.trim()) {
         setError('Введите отображаемое имя')
@@ -36,21 +39,42 @@ export function LoginPage() {
         return
       }
       result = await signUp(email.trim(), password, displayName.trim())
+      setLoading(false)
+      if (result.error) { setError(result.error); return }
+      setConfirmSentTo(email.trim())
     }
-
-    setLoading(false)
-
-    if (result.error) {
-      setError(result.error)
-      return
-    }
-
-    navigate(from, { replace: true })
   }
 
   const toggleMode = () => {
     setMode((m) => (m === 'login' ? 'register' : 'login'))
     setError(null)
+    setConfirmSentTo(null)
+  }
+
+  if (confirmSentTo) {
+    return (
+      <div className="join-screen">
+        <div className="join-card">
+          <Link to="/" className="join-logo-btn" aria-label="Главная">
+            <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
+          </Link>
+          <div className="confirm-sent">
+            <div className="confirm-sent__icon" aria-hidden>✉️</div>
+            <h2 className="confirm-sent__title">Подтвердите почту</h2>
+            <p className="confirm-sent__text">
+              Мы отправили письмо на <strong>{confirmSentTo}</strong>.<br />
+              Перейдите по ссылке в письме, чтобы завершить регистрацию.
+            </p>
+            <p className="confirm-sent__hint">
+              Не пришло? Проверьте папку «Спам».
+            </p>
+            <Link to="/" className="join-btn join-btn--block confirm-sent__back">
+              На главную
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
