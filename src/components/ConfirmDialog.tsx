@@ -6,6 +6,8 @@ export interface ConfirmDialogProps {
   message: string
   confirmLabel?: string
   cancelLabel?: string
+  /** Блокирует кнопку подтверждения (например, во время запроса). */
+  confirmLoading?: boolean
   onConfirm: () => void
   onCancel: () => void
 }
@@ -16,6 +18,7 @@ export function ConfirmDialog({
   message,
   confirmLabel = 'Выйти',
   cancelLabel = 'Отмена',
+  confirmLoading = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -24,12 +27,12 @@ export function ConfirmDialog({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        onCancel()
+        if (!confirmLoading) onCancel()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, onCancel])
+  }, [open, onCancel, confirmLoading])
 
   if (!open) return null
 
@@ -39,7 +42,9 @@ export function ConfirmDialog({
         type="button"
         className="confirm-dialog-backdrop"
         aria-label="Закрыть"
-        onClick={onCancel}
+        onClick={() => {
+          if (!confirmLoading) onCancel()
+        }}
       />
       <div
         className="confirm-dialog"
@@ -52,11 +57,21 @@ export function ConfirmDialog({
         </h2>
         <p className="confirm-dialog__msg">{message}</p>
         <div className="confirm-dialog__actions">
-          <button type="button" className="confirm-dialog__btn confirm-dialog__btn--secondary" onClick={onCancel}>
+          <button
+            type="button"
+            className="confirm-dialog__btn confirm-dialog__btn--secondary"
+            disabled={confirmLoading}
+            onClick={onCancel}
+          >
             {cancelLabel}
           </button>
-          <button type="button" className="confirm-dialog__btn confirm-dialog__btn--primary" onClick={onConfirm}>
-            {confirmLabel}
+          <button
+            type="button"
+            className="confirm-dialog__btn confirm-dialog__btn--primary"
+            disabled={confirmLoading}
+            onClick={onConfirm}
+          >
+            {confirmLoading ? '…' : confirmLabel}
           </button>
         </div>
       </div>

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
+import { useProfile } from '../hooks/useProfile'
+import { ConfirmDialog } from './ConfirmDialog'
 
 export type AdminUserRow = {
   id: string
@@ -16,7 +19,18 @@ export type AccessPreset = 'registered' | 'support_admin' | 'platform_admin' | '
 
 type SetRoleResult = { ok?: boolean; error?: string }
 
+type DeleteUserResult = { ok?: boolean; error?: string; detail?: string }
+
 const STAFF_CODES = ['superadmin', 'platform_admin', 'support_admin'] as const
+
+/** Максимальный уровень staff у пользователя (0 = только обычный user). */
+function maxStaffRank(codes: string[] | null): number {
+  const s = new Set(codes ?? [])
+  if (s.has('superadmin')) return 3
+  if (s.has('platform_admin')) return 2
+  if (s.has('support_admin')) return 1
+  return 0
+}
 
 function presetFromRoles(codes: string[]): AccessPreset {
   const c = new Set(codes ?? [])
@@ -70,12 +84,57 @@ async function rpcSetRole(
   return null
 }
 
+async function rpcDeleteUser(userId: string): Promise<string | null> {
+  const { data, error: rpcErr } = await supabase.rpc('admin_delete_registered_user', {
+    p_target_user: userId,
+  })
+  if (rpcErr) return rpcErr.message
+  const res = data as DeleteUserResult | null
+  if (!res?.ok) {
+    switch (res?.error) {
+      case 'forbidden':
+        return 'Нет прав.'
+      case 'cannot_delete_self':
+        return 'Нельзя удалить свою учётную запись.'
+      case 'user_not_found':
+        return 'Пользователь не найден.'
+      case 'cannot_delete_staff':
+      case 'cannot_delete_peer':
+        return 'Недостаточно прав для удаления этого пользователя.'
+      case 'delete_failed':
+        return res.detail ? `Ошибка: ${res.detail}` : 'Не удалось удалить пользователя.'
+      default:
+        return 'Не удалось удалить пользователя.'
+    }
+  }
+  return null
+}
+
 export function AdminRegisteredUsersTable({ isSuperadmin }: { isSuperadmin: boolean }) {
+  const { user } = useAuth()
+  const { profile, loading: profileLoading } = useProfile()
   const [users, setUsers] = useState<AdminUserRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [pendingUserId, setPendingUserId] = useState<string | null>(null)
   const [openUserId, setOpenUserId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<AdminUserRow | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+
+  const callerId = user?.id ?? profile?.id ?? ''
+  const callerRank = profile ? maxStaffRank(profile.global_roles.map((r) => r.code)) : null
+
+  const rowCanDelete = useCallback(
+    (row: AdminUserRow) => {
+      if (!callerId || row.id === callerId) return false
+      if (profileLoading || callerRank === null) return true
+      const tr = maxStaffRank(row.global_roles)
+      if (callerRank === 1 && tr > 0) return false
+      if (callerRank === 2 && tr > 1) return false
+      return callerRank >= 1
+    },
+    [callerId, callerRank, profileLoading],
+  )
 
   const refresh = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true)
@@ -135,6 +194,19 @@ export function AdminRegisteredUsersTable({ isSuperadmin }: { isSuperadmin: bool
     await refresh(false)
   }
 
+  const runDelete = useCallback(() => {
+    if (!deleteTarget || deleteBusy) return
+    setDeleteBusy(true)
+    setError(null)
+    void (async () => {
+      const err = await rpcDeleteUser(deleteTarget.id)
+      setDeleteBusy(false)
+      setDeleteTarget(null)
+      if (err) setError(err)
+      else await refresh(false)
+    })()
+  }, [deleteBusy, deleteTarget, refresh])
+
   if (loading) {
     return <p className="admin-users-loading">Загрузка списка…</p>
   }
@@ -145,9 +217,25 @@ export function AdminRegisteredUsersTable({ isSuperadmin }: { isSuperadmin: bool
 
   return (
     <div className="admin-users-wrap">
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Удалить пользователя?"
+        message={
+          deleteTarget
+            ? `Будут безвозвратно удалены учётная запись и связанные данные (аккаунты-владельца, комнаты, сессии и т.д.): ${deleteTarget.email ?? deleteTarget.display_name ?? deleteTarget.id}.`
+            : ''
+        }
+        confirmLabel="Удалить"
+        cancelLabel="Отмена"
+        confirmLoading={deleteBusy}
+        onConfirm={runDelete}
+        onCancel={() => {
+          if (!deleteBusy) setDeleteTarget(null)
+        }}
+      />
       {error ? <p className="join-error admin-users-flash">{error}</p> : null}
       <p className="dashboard-section__hint admin-users-hint">
-        Уровень доступа: нажмите на <strong>user</strong> / <strong>admin</strong> / <strong>superadmin</strong>, чтобы открыть список и сменить роль.
+        Уровень доступа: нажмите на <strong>user</strong> / <strong>admin</strong> / <strong>superadmin</strong>, чтобы открыть список и сменить роль. Удаление: поддержка — только обычные пользователи; админ платформы — и поддержку; суперадмин — всех кроме себя.
       </p>
       <div className="admin-users-table-shell">
         <table className="admin-users-table">
@@ -157,12 +245,13 @@ export function AdminRegisteredUsersTable({ isSuperadmin }: { isSuperadmin: bool
               <th>Имя</th>
               <th>Статус</th>
               <th>Доступ</th>
+              <th className="admin-users-table__th-actions"> </th>
             </tr>
           </thead>
           <tbody>
             {users.length === 0 ? (
               <tr>
-                <td colSpan={4} className="admin-users-table__empty">
+                <td colSpan={5} className="admin-users-table__empty">
                   Нет пользователей или нет доступа к списку.
                 </td>
               </tr>
@@ -185,6 +274,18 @@ export function AdminRegisteredUsersTable({ isSuperadmin }: { isSuperadmin: bool
                       isSuperadmin={isSuperadmin}
                       onPick={(p) => void applyPreset(u.id, p)}
                     />
+                  </td>
+                  <td className="admin-users-table__cell admin-users-table__cell--actions">
+                    {rowCanDelete(u) ? (
+                      <button
+                        type="button"
+                        className="admin-users-delete-btn"
+                        disabled={pendingUserId !== null || deleteBusy}
+                        onClick={() => setDeleteTarget(u)}
+                      >
+                        Удалить
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               ))
