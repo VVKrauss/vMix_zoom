@@ -7,6 +7,17 @@ import { JoinPage } from './JoinPage'
 import { RoomPage } from './RoomPage'
 import type { VideoPreset } from '../types'
 import { replaceRoomInBrowserUrl } from '../utils/soloViewerParams'
+import { useAuth } from '../context/AuthContext'
+import {
+  clearHostSessionIfMatches,
+  clearPendingHostClaim,
+  matchesPendingHostClaim,
+  hostLeaveSpaceRoom,
+  isSessionHostFor,
+  isSpaceRoomJoinable,
+  markSessionAsHostFor,
+  registerSpaceRoomAsHost,
+} from '../lib/spaceRoom'
 
 const CHAT_PREVIEW_TOAST_MS = 7000
 
@@ -16,6 +27,7 @@ interface Props {
 
 export function RoomSession({ roomId }: Props) {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [name, setName] = useState('')
   const [chatOpen, setChatOpen] = useState(false)
   const [chatUnreadCount, setChatUnreadCount] = useState(0)
@@ -92,6 +104,19 @@ export function RoomSession({ roomId }: Props) {
   const leaveRef = useRef(leave)
   leaveRef.current = leave
 
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const ok = await isSpaceRoomJoinable(roomId)
+      if (!cancelled && !ok) {
+        navigate('/room-closed', { replace: true, state: { roomId } })
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [roomId, navigate])
+
   // Только настоящий unmount: `leave` меняется при каждом обновлении localStream — если
   // поставить [leave], cleanup предыдущего эффекта вызовет leave() и сорвёт join.
   useEffect(() => () => {
@@ -99,13 +124,28 @@ export function RoomSession({ roomId }: Props) {
     leaveRef.current()
   }, [])
 
-  const handleJoin = (n: string, rid: string, preset: VideoPreset, media: JoinRoomMediaOptions) => {
+  const handleJoin = async (n: string, rid: string, preset: VideoPreset, media: JoinRoomMediaOptions) => {
+    const trimmedRid = rid.trim()
+    if (user?.id && matchesPendingHostClaim(trimmedRid)) {
+      clearPendingHostClaim()
+      const ok = await registerSpaceRoomAsHost(trimmedRid, user.id)
+      if (ok) markSessionAsHostFor(trimmedRid)
+    }
     setName(n)
     replaceRoomInBrowserUrl(rid, { removePeer: true })
-    join(n, rid, preset, media)
+    join(n, rid, preset, {
+      ...media,
+      avatarUrl: (user?.user_metadata?.avatar_url as string | undefined) ?? null,
+      authUserId: user?.id ?? null,
+    })
   }
 
   const handleLeaveRoom = () => {
+    const rid = (connectedRoomId ?? roomId).trim()
+    if (user?.id && isSessionHostFor(rid)) {
+      void hostLeaveSpaceRoom(rid)
+      clearHostSessionIfMatches(rid)
+    }
     setChatOpen(false)
     leave()
     navigate('/', { replace: true })

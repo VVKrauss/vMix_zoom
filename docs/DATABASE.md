@@ -17,6 +17,7 @@
 | 7 | `chat_moderation_audit` | chat_messages, moderation_actions, audit_logs |
 | 8 | `subscription_layer` | subscription_plans, plan_entitlements, account_subscriptions, account_entitlement_overrides, account_usage_counters |
 | 9 | `seed_roles_and_permissions` | 18 ролей, 50 пермишенов, 170 связей |
+| 10 | `room_ui_prefs_and_space_rooms` | `users.room_ui_preferences`, таблица `space_rooms`, RLS, `host_leave_space_room()` |
 
 ---
 
@@ -39,6 +40,26 @@
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
 | `last_login_at` | timestamptz | |
+| `room_ui_preferences` | jsonb | Глобальные настройки отображения комнаты на **десктопе**: `layout_mode` (`grid` / `pip` / `speaker` / `meet`), `pip` (`{ pos, size }`), `show_layout_toggle` (bool). На мобильных не используются. |
+
+---
+
+### 1b. space_rooms
+
+Эфемерные комнаты по **slug из URL** (короткий id из приложения). Пока не связаны с тяжёлой таблицей `rooms` (workspace).
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `slug` | text PK | Id комнаты в ссылке |
+| `host_user_id` | uuid FK → users | Создатель (хост) |
+| `status` | text | `open` / `closed` |
+| `retain_instance` | boolean | Заготовка под платный тариф: не удалять строку при выходе хоста (пока везде `false`) |
+| `created_at` | timestamptz | |
+| `updated_at` | timestamptz | |
+
+RLS: чтение всех строк (проверка «комната закрыта» при входе); insert/update/delete — только аутентифицированный хост по `host_user_id`.
+
+Функция `host_leave_space_room(p_slug)` (SECURITY DEFINER): при выходе хоста — если `retain_instance` то `status = closed`, иначе `DELETE` строки (не копить пустые инстансы на free).
 
 ---
 

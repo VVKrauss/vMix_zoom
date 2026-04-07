@@ -8,14 +8,7 @@ import type { LayoutMode, VmixIngressPhase } from './RoomPage'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
 import { MicIcon, MicOffIcon, CamIcon, CamOffIcon } from './icons'
 import { useOnOutsideClick } from '../hooks/useOnOutsideClick'
-
-const LAYOUT_CYCLE: LayoutMode[] = ['grid', 'meet', 'speaker', 'pip']
-
-function nextLayoutMode(current: LayoutMode): LayoutMode {
-  const i = LAYOUT_CYCLE.indexOf(current)
-  const idx = i < 0 ? 0 : (i + 1) % LAYOUT_CYCLE.length
-  return LAYOUT_CYCLE[idx]!
-}
+import { nextLayoutMode } from '../config/layoutModeCycle'
 
 function layoutModeLabel(mode: LayoutMode): string {
   switch (mode) {

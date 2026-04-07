@@ -2,11 +2,11 @@ import type { PipPos, PipSize } from '../components/DraggablePip'
 import { mediaQueryMaxWidthMobile } from './uiBreakpoints'
 import { DEFAULT_VIDEO_PRESET, VIDEO_PRESETS, type VideoPreset } from '../types'
 
-const LS_ROOM_LAYOUT = 'vmix_room_layout'
+export const LS_ROOM_LAYOUT = 'vmix_room_layout'
 /** Предпочтение раскладки только для узкого viewport; без ключа — мобильный дефолт (сетка). */
-const LS_ROOM_LAYOUT_MOBILE = 'vmix_room_layout_mobile'
-const LS_PIP_LAYOUT = 'vmix_pip_layout'
-const LS_PIP_LAYOUT_MOBILE = 'vmix_pip_layout_mobile'
+export const LS_ROOM_LAYOUT_MOBILE = 'vmix_room_layout_mobile'
+export const LS_PIP_LAYOUT = 'vmix_pip_layout'
+export const LS_PIP_LAYOUT_MOBILE = 'vmix_pip_layout_mobile'
 const LS_VIDEO_PRESET_INDEX = 'vmix_video_preset_index'
 const LS_PREFERRED_CAMERA = 'vmix_preferred_camera_id'
 const LS_PREFERRED_MIC = 'vmix_preferred_mic_id'
@@ -45,6 +45,16 @@ function defaultPipLayoutForViewport(isMobileViewport: boolean): { pos: PipPos; 
   return {
     pos: { x: 16, y: 10 },
     size: isMobileViewport ? { w: 140, h: 94 } : { w: 220, h: 148 },
+  }
+}
+
+/** Сброс десктопных ключей раскладки/PiP (после входа в аккаунт — дальше из профиля в БД). */
+export function clearDesktopRoomViewStorage(): void {
+  try {
+    localStorage.removeItem(LS_ROOM_LAYOUT)
+    localStorage.removeItem(LS_PIP_LAYOUT)
+  } catch {
+    /* noop */
   }
 }
 

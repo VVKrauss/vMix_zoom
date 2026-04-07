@@ -191,6 +191,48 @@ html, body, #root {
 
 .join-card--home { gap: 20px; }
 
+.join-card--room-closed {
+  text-align: center;
+  align-items: center;
+}
+
+.room-closed-loader-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 4px;
+}
+
+.room-closed-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.room-closed-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.room-closed-id {
+  display: block;
+  margin-top: 8px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+  word-break: break-all;
+}
+
+.room-closed-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  margin-top: 8px;
+}
+
 .join-logo-static {
   display: flex;
   justify-content: center;
@@ -528,6 +570,47 @@ html, body, #root {
   margin-bottom: 2px;
 }
 
+.dashboard-section__hint {
+  margin: -8px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.dashboard-layout-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.dashboard-layout-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.dashboard-layout-option input {
+  accent-color: var(--red);
+}
+
+.dashboard-field--checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.dashboard-field--checkbox input {
+  margin-top: 3px;
+  accent-color: var(--red);
+}
+
 /* Аватар */
 .dashboard-avatar-row {
   display: flex;
@@ -807,6 +890,45 @@ html, body, #root {
 }
 
 /* ─── Room ───────────────────────────────────────────────────────────────── */
+.room-layout-cycle-fab {
+  position: fixed;
+  top: 60px;
+  right: 16px;
+  z-index: 10030;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.35);
+  transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.12s;
+}
+
+.room-layout-cycle-fab:hover {
+  border-color: var(--red);
+  background: rgba(229, 57, 53, 0.12);
+  color: #fff;
+}
+
+.room-layout-cycle-fab:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.room-layout-cycle-fab:active {
+  transform: scale(0.96);
+}
+
+.room-layout-cycle-fab__icon {
+  display: block;
+}
+
 .room-page {
   display: grid;
   grid-template-rows: 52px 1fr 72px;
@@ -2410,23 +2532,50 @@ button.vio-row--peer:focus-visible {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 10px 12px;
+  padding: 12px;
   background: var(--surface2);
   color: #fff;
 }
 
-.cam-off-avatar__label {
-  font-size: clamp(13px, 2.8vmin, 18px);
-  font-weight: 600;
-  line-height: 1.25;
-  text-align: center;
-  max-width: 100%;
+/* Заглушка без видео: круг с аватаром или инициалами (Meet / FaceTime) */
+.participant-tile-idle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+}
+
+.participant-tile-idle__ring {
+  width: min(42vmin, 132px);
+  height: min(42vmin, 132px);
+  min-width: 56px;
+  min-height: 56px;
+  border-radius: 50%;
   overflow: hidden;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(145deg, #3a1515 0%, #1a1a1a 100%);
+  border: 2px solid rgba(255, 255, 255, 0.08);
+}
+
+.participant-tile-idle__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.participant-tile-idle__initials {
+  font-size: clamp(1.25rem, 9vmin, 2.75rem);
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+  user-select: none;
 }
 
 .card-bar {

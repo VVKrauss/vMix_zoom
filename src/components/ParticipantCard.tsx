@@ -3,6 +3,7 @@ import type { RemoteParticipant } from '../types'
 import type { RoomReactionBurst } from '../types/roomComms'
 import type { InboundVideoQuality } from '../utils/inboundVideoStats'
 import { ReactionBurstOverlay } from './ReactionBurstOverlay'
+import { ParticipantTileIdle } from './ParticipantTileIdle'
 import { AudioMeter } from './AudioMeter'
 import { useBindPlayout } from '../hooks/useMediaPlayout'
 import { SrtCopySurface } from './SrtCopyMenu'
@@ -87,7 +88,7 @@ export function ParticipantCard({
           />
           {!hasVideo && (
             <div className="cam-off-avatar">
-              <span className="cam-off-avatar__label">{participant.name}</span>
+              <ParticipantTileIdle name={participant.name} avatarUrl={participant.avatarUrl} />
             </div>
           )}
           <audio ref={audioRef} autoPlay playsInline />

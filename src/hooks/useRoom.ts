@@ -56,6 +56,44 @@ function extractField(payload: unknown, camel: string, snake: string): string | 
 const producerIdFromClosedPayload = (p: unknown) => extractField(p, 'producerId', 'producer_id')
 const peerIdFromLeftPayload = (p: unknown) => extractField(p, 'peerId', 'peer_id')
 
+type PeerRosterRow = { peerId: string; name: string; avatarUrl?: string | null }
+
+function parsePeerRosterRow(raw: unknown): PeerRosterRow | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  const peerId =
+    typeof o.peerId === 'string'
+      ? o.peerId.trim()
+      : typeof o.peer_id === 'string'
+        ? o.peer_id.trim()
+        : ''
+  const name = typeof o.name === 'string' ? o.name.trim() : ''
+  if (!peerId || !name) return null
+  const av = o.avatarUrl ?? o.avatar_url
+  let avatarUrl: string | null | undefined
+  if (av === null) avatarUrl = null
+  else if (typeof av === 'string' && av.trim()) avatarUrl = av.trim()
+  return { peerId, name, avatarUrl }
+}
+
+function applyRosterRow(
+  next: Map<string, RemoteParticipant>,
+  row: PeerRosterRow,
+  selfSocketId: string,
+): void {
+  if (row.peerId === selfSocketId) return
+  const ex = next.get(row.peerId)
+  next.set(row.peerId, {
+    peerId: row.peerId,
+    name: row.name,
+    avatarUrl: row.avatarUrl ?? ex?.avatarUrl ?? null,
+    audioStream: ex?.audioStream,
+    videoStream: ex?.videoStream,
+    screenStream: ex?.screenStream,
+    screenPeerId: ex?.screenPeerId,
+  })
+}
+
 type ProducerMeta = {
   consumerId: string
   anchorPeerId: string
@@ -185,6 +223,8 @@ export type { InboundVideoQuality } from '../utils/inboundVideoStats'
 export type JoinRoomMediaOptions = {
   enableMic: boolean
   enableCam: boolean
+  avatarUrl?: string | null
+  authUserId?: string | null
 }
 
 export type RoomActivityNotifyRef = MutableRefObject<{
@@ -314,11 +354,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           : meta.videoSource === 'screen' ? { screenStream: undefined, screenPeerId: undefined }
           : { videoStream: undefined }
         const updated = { ...p, ...cleared }
-        if (updated.audioStream || updated.videoStream || updated.screenStream) {
-          next.set(meta.anchorPeerId, updated)
-        } else {
-          next.delete(meta.anchorPeerId)
-        }
+        next.set(meta.anchorPeerId, updated)
         return next
       })
 
@@ -400,6 +436,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
             const existing: RemoteParticipant = next.get(anchorId) ?? {
               peerId: anchorId,
               name: producer.name,
+              avatarUrl: producer.avatarUrl ?? undefined,
             }
             const audioMeta = {
               consumerId: consumer.id,
@@ -408,7 +445,12 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
               kind: 'audio' as const,
             }
             registerProducerMeta(producerMetaRef.current, producer.producerId, consumer.producerId, audioMeta)
-            next.set(anchorId, { ...existing, audioStream: stream })
+            next.set(anchorId, {
+              ...existing,
+              name: producer.name || existing.name,
+              avatarUrl: producer.avatarUrl ?? existing.avatarUrl ?? null,
+              audioStream: stream,
+            })
             return next
           }
 
@@ -416,6 +458,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           const existing: RemoteParticipant = next.get(anchorId) ?? {
             peerId: anchorId,
             name: producer.name,
+            avatarUrl: producer.avatarUrl ?? undefined,
           }
 
           const resolved = resolveConsumeVideoRole(producer, !!existing.videoStream)
@@ -433,11 +476,18 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
             const distinct = producer.peerId !== anchorId ? producer.peerId : undefined
             next.set(anchorId, {
               ...existing,
+              name: producer.name || existing.name,
+              avatarUrl: producer.avatarUrl ?? existing.avatarUrl ?? null,
               screenStream: stream,
               ...(distinct ? { screenPeerId: distinct } : { screenPeerId: undefined }),
             })
           } else {
-            next.set(anchorId, { ...existing, videoStream: stream })
+            next.set(anchorId, {
+              ...existing,
+              name: producer.name || existing.name,
+              avatarUrl: producer.avatarUrl ?? existing.avatarUrl ?? null,
+              videoStream: stream,
+            })
           }
           return next
         })
@@ -579,13 +629,30 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
       setSessionMeta({ roomId: roomIdRef.current, localPeerId: socket.id ?? '' })
 
+      socket.on('peerJoined', (raw: unknown) => {
+        const row = parsePeerRosterRow(raw)
+        const sid = socket.id
+        if (!row || !sid) return
+        setParticipants((prev) => {
+          const next = new Map(prev)
+          applyRosterRow(next, row, sid)
+          return next
+        })
+      })
+
       // 3. Join room
       const joinData = await new Promise<{
         rtpCapabilities: object
         existingProducers?: ProducerDescriptor[]
         chatHistory?: RoomChatMessage[]
+        peers?: unknown[]
       }>((res) => {
-        socket.emit('joinRoom', { roomId, name }, res)
+        socket.emit('joinRoom', {
+          roomId,
+          name: displayNameRef.current,
+          avatarUrl: media?.avatarUrl ?? null,
+          authUserId: media?.authUserId ?? null,
+        }, res)
       })
 
       if (aborted()) {
@@ -596,6 +663,18 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         setLocalStream(null)
         setStatus('idle')
         return
+      }
+
+      const joinSelfId = socket.id
+      if (joinSelfId && Array.isArray(joinData.peers)) {
+        setParticipants((prev) => {
+          const next = new Map(prev)
+          for (const raw of joinData.peers!) {
+            const row = parsePeerRosterRow(raw)
+            if (row) applyRosterRow(next, row, joinSelfId)
+          }
+          return next
+        })
       }
 
       if (import.meta.env.DEV) console.log('[join] existingProducers:', joinData.existingProducers)
@@ -975,12 +1054,26 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         setIsCamOff(false)
       }
     } else {
+      const sock = socketRef.current
       const producer = videoProducerRef.current
       const stream = localStreamRef.current
-      const track = stream?.getVideoTracks()[0]
-      if (producer && track) {
-        producer.pause()
-        track.enabled = false
+      if (producer && sock?.connected) {
+        const pid = producer.id
+        sock.emit('closeProducer', { roomId: roomIdRef.current, producerId: pid })
+        producer.close()
+        videoProducerRef.current = null
+      } else {
+        producer?.close()
+        videoProducerRef.current = null
+      }
+      if (stream) {
+        for (const t of [...stream.getVideoTracks()]) {
+          t.stop()
+          stream.removeTrack(t)
+        }
+        const next = new MediaStream([...stream.getTracks()])
+        localStreamRef.current = next
+        setLocalStream(next)
       }
       setIsCamOff(true)
     }

@@ -6,6 +6,7 @@ import { SoloViewerPage } from './components/SoloViewerPage'
 import { LoginPage } from './components/LoginPage'
 import { DashboardPage } from './components/DashboardPage'
 import { ProtectedRoute } from './components/ProtectedRoute'
+import { RoomClosedPage } from './components/RoomClosedPage'
 
 function HomeRoute() {
   const [sp] = useSearchParams()
@@ -55,6 +56,7 @@ export function App() {
       <Route path="/" element={<HomeRoute />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+      <Route path="/room-closed" element={<RoomClosedPage />} />
       <Route path="/r/:roomId" element={<RoomRoute />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

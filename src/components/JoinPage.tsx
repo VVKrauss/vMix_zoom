@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext'
 
 interface Props {
   roomId: string
-  onJoin: (name: string, roomId: string, preset: VideoPreset, media: JoinRoomMediaOptions) => void
+  onJoin: (name: string, roomId: string, preset: VideoPreset, media: JoinRoomMediaOptions) => void | Promise<void>
   onBackToHome: () => void
   error: string | null
 }
@@ -30,7 +30,7 @@ export function JoinPage({ roomId, onJoin, onBackToHome, error }: Props) {
     e.preventDefault()
     const rid = roomId.trim()
     if (!name.trim() || !rid) return
-    onJoin(name.trim(), rid, getStoredVideoPreset(), { enableMic: micOn, enableCam: camOn })
+    void onJoin(name.trim(), rid, getStoredVideoPreset(), { enableMic: micOn, enableCam: camOn })
   }
 
   const goMain = () => {

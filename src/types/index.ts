@@ -24,6 +24,8 @@ export type ProducerDescriptor = {
   peerId: string
   kind: 'audio' | 'video'
   name: string
+  /** С сервера / ростера; для плитки без видео */
+  avatarUrl?: string | null
   /** Явный источник видео (из producer.appData на бэке). */
   videoSource?: 'camera' | 'screen' | 'vmix'
   /** Если peerId у видео экрана — отдельный, здесь peerId «хозяина» (камера/имя в комнате). */
@@ -47,6 +49,7 @@ export type VmixIngressInfo = {
 export type RemoteParticipant = {
   peerId: string
   name: string
+  avatarUrl?: string | null
   audioStream?: MediaStream
   videoStream?: MediaStream
   /** Второй video producer (демонстрация экрана). */

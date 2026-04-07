@@ -8,6 +8,8 @@ export interface UserProfile {
   email: string | null
   avatar_url: string | null
   status: string
+  /** jsonb с сервера; парсить через mergeRoomUiPrefs */
+  room_ui_preferences: unknown | null
 }
 
 export interface PlanInfo {
@@ -47,7 +49,7 @@ export function useProfile(): UseProfileReturn {
 
       const { data: userData, error: userError } = await supabase
         .from('users')
-        .select('id, display_name, email, avatar_url, status')
+        .select('id, display_name, email, avatar_url, status, room_ui_preferences')
         .eq('id', user.id)
         .single()
 
@@ -63,6 +65,7 @@ export function useProfile(): UseProfileReturn {
         email: userData.email ?? user.email ?? null,
         avatar_url: userData.avatar_url,
         status: userData.status,
+        room_ui_preferences: userData.room_ui_preferences ?? null,
       })
 
       // Подписка: берём через аккаунт владельца

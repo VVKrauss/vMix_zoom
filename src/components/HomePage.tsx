@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { newRoomId } from '../utils/roomId'
+import { setPendingHostClaim } from '../lib/spaceRoom'
 import { useAuth } from '../context/AuthContext'
 import { DashboardIcon } from './icons'
 
@@ -10,7 +11,9 @@ export function HomePage() {
   const [joinId, setJoinId] = useState('')
 
   const handleCreate = () => {
-    navigate(`/r/${encodeURIComponent(newRoomId())}`)
+    const id = newRoomId()
+    setPendingHostClaim(id)
+    navigate(`/r/${encodeURIComponent(id)}`)
   }
 
   const handleJoinSubmit = (e: FormEvent) => {

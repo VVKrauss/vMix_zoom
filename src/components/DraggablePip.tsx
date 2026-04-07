@@ -25,7 +25,7 @@ interface Props {
   onTouchDoubleTap?: () => void
 }
 
-const MIN_W = 140
+const MIN_W = 70
 
 function clientXY(e: MouseEvent | TouchEvent): { cx: number; cy: number } {
   if ('touches' in e) {
@@ -160,9 +160,10 @@ export function DraggablePip({
         const r  = resizeState.current
         const la = aspectRef.current
         const w  = Math.max(MIN_W, r.ow + (cx - r.ox))
+        const minH = Math.max(40, Math.round(MIN_W * 0.45))
         const h  = la
           ? Math.round(w / la)
-          : Math.max(Math.round(MIN_W * 0.5), r.oh + (cy - r.oy))
+          : Math.max(minH, r.oh + (cy - r.oy))
         cbRef.current.onSizeChange({ w, h })
         if ('cancelable' in e && e.cancelable) e.preventDefault()
       }

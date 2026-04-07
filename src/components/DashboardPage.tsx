@@ -1,7 +1,10 @@
-import { FormEvent, useRef, useState } from 'react'
+import { FormEvent, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../hooks/useProfile'
+import { supabase } from '../lib/supabase'
+import type { StoredLayoutMode } from '../config/roomUiStorage'
+import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
 
 const STATUS_LABEL: Record<string, string> = {
   active:  'Активен',
@@ -17,15 +20,34 @@ const STATUS_CLASS: Record<string, string> = {
   deleted: 'dashboard-badge--deleted',
 }
 
+const LAYOUT_OPTIONS: { value: StoredLayoutMode; label: string }[] = [
+  { value: 'pip', label: 'Картинка в картинке' },
+  { value: 'grid', label: 'Плитки' },
+  { value: 'meet', label: 'Лента (Meet)' },
+  { value: 'speaker', label: 'Спикер' },
+]
+
 export function DashboardPage() {
-  const { signOut } = useAuth()
+  const { signOut, user } = useAuth()
   const { profile, plan, loading, saving, uploadingAvatar, error, saveProfile, uploadAvatar, removeAvatar } = useProfile()
 
   const [displayName, setDisplayName] = useState('')
   const [nameEdited, setNameEdited]   = useState(false)
   const [saveMsg, setSaveMsg]         = useState<string | null>(null)
   const [saveErr, setSaveErr]         = useState<string | null>(null)
+  const [roomLayout, setRoomLayout]   = useState<StoredLayoutMode>('pip')
+  const [roomShowLayoutToggle, setRoomShowLayoutToggle] = useState(true)
+  const [roomSaveMsg, setRoomSaveMsg] = useState<string | null>(null)
+  const [roomSaveErr, setRoomSaveErr] = useState<string | null>(null)
+  const [roomSaving, setRoomSaving]   = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!profile) return
+    const m = mergeRoomUiPrefs(profile.room_ui_preferences)
+    setRoomLayout(m.layout_mode)
+    setRoomShowLayoutToggle(m.show_layout_toggle)
+  }, [profile])
 
   const currentName = nameEdited ? displayName : (profile?.display_name ?? '')
 
@@ -59,6 +81,37 @@ export function DashboardPage() {
     setSaveErr(null)
     const { error: err } = await removeAvatar()
     if (err) setSaveErr(err)
+  }
+
+  const handleSaveRoomPrefs = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!user) return
+    setRoomSaving(true)
+    setRoomSaveMsg(null)
+    setRoomSaveErr(null)
+    const { data, error: fetchErr } = await supabase
+      .from('users')
+      .select('room_ui_preferences')
+      .eq('id', user.id)
+      .single()
+    if (fetchErr) {
+      setRoomSaving(false)
+      setRoomSaveErr(fetchErr.message)
+      return
+    }
+    const m = mergeRoomUiPrefs(data?.room_ui_preferences)
+    const next = {
+      layout_mode: roomLayout,
+      show_layout_toggle: roomShowLayoutToggle,
+      ...(m.pip ? { pip: { pos: m.pip.pos, size: m.pip.size } } : {}),
+    }
+    const { error: upErr } = await supabase
+      .from('users')
+      .update({ room_ui_preferences: next, updated_at: new Date().toISOString() })
+      .eq('id', user.id)
+    setRoomSaving(false)
+    if (upErr) setRoomSaveErr(upErr.message)
+    else setRoomSaveMsg('Сохранено')
   }
 
   if (loading) {
@@ -190,6 +243,46 @@ export function DashboardPage() {
                 disabled={saving || !currentName.trim()}
               >
                 {saving ? 'Сохранение…' : 'Сохранить'}
+              </button>
+            </form>
+          </section>
+
+          {/* ── Комнаты (десктоп) ── */}
+          <section className="dashboard-section">
+            <h2 className="dashboard-section__title">Настройки комнаты</h2>
+            <p className="dashboard-section__hint">
+              Для входа с компьютера: вид по умолчанию и кнопка смены раскладки. На телефоне по-прежнему своя сетка и жесты.
+            </p>
+            <form onSubmit={handleSaveRoomPrefs} className="dashboard-form">
+              <div className="dashboard-field">
+                <span className="dashboard-field__label">Вид по умолчанию</span>
+                <div className="dashboard-layout-options">
+                  {LAYOUT_OPTIONS.map((o) => (
+                    <label key={o.value} className="dashboard-layout-option">
+                      <input
+                        type="radio"
+                        name="room_layout"
+                        value={o.value}
+                        checked={roomLayout === o.value}
+                        onChange={() => setRoomLayout(o.value)}
+                      />
+                      <span>{o.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <label className="dashboard-field dashboard-field--checkbox">
+                <input
+                  type="checkbox"
+                  checked={roomShowLayoutToggle}
+                  onChange={(e) => setRoomShowLayoutToggle(e.target.checked)}
+                />
+                <span>Показывать круглую кнопку смены вида в комнате</span>
+              </label>
+              {roomSaveErr && <p className="join-error">{roomSaveErr}</p>}
+              {roomSaveMsg && <p className="dashboard-save-ok">{roomSaveMsg}</p>}
+              <button type="submit" className="join-btn dashboard-form__save" disabled={roomSaving}>
+                {roomSaving ? 'Сохранение…' : 'Сохранить настройки комнаты'}
               </button>
             </form>
           </section>

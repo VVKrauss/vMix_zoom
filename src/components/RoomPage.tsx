@@ -41,6 +41,7 @@ import {
 import { LocalScreenShareTile } from './LocalScreenShareTile'
 import type { RoomChatMessage, RoomReactionBurst } from '../types/roomComms'
 import { pickLatestBurstForPeer } from '../types/roomComms'
+import { ParticipantTileIdle } from './ParticipantTileIdle'
 import { RoomChatPanel } from './RoomChatPanel'
 import { ReactionBurstOverlay } from './ReactionBurstOverlay'
 import { VmixIngressModal } from './VmixIngressModal'
@@ -50,6 +51,8 @@ import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useActiveSpeaker } from '../hooks/useActiveSpeaker'
 import { buildRoomInviteAbsoluteUrl } from '../utils/soloViewerParams'
 import { useTouchDoubleTap } from '../hooks/useTouchDoubleTap'
+import { nextLayoutMode } from '../config/layoutModeCycle'
+import { useRoomUiSync } from '../hooks/useRoomUiSync'
 
 function remoteScreenTileId(p: RemoteParticipant): string | null {
   if (!p.screenStream) return null
@@ -181,6 +184,7 @@ export function RoomPage({
       typeof window !== 'undefined' && window.matchMedia(mediaQueryMaxWidthMobile).matches
     return readStoredPipLayout(mobile).size
   })
+  const [showLayoutToggle, setShowLayoutToggle] = useState(true)
 
   useEffect(() => {
     writeStoredLayoutMode(layout, isViewportMobile)
@@ -275,6 +279,20 @@ export function RoomPage({
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [userMenuOpen])
+
+  useRoomUiSync({
+    user: user ?? null,
+    isViewportMobile,
+    layout,
+    pipPos,
+    pipSize,
+    showLayoutToggle,
+    setLayout,
+    setPipPos,
+    setPipSize,
+    setShowLayoutToggle,
+  })
+
   const [streamerMode, setStreamerMode] = useLocalStorageBool('vmix_streamer_mode', false)
   /** Только локальное превью; отправляемый поток без отражения. */
   const [mirrorLocalCamera, setMirrorLocalCamera] = useLocalStorageBool('vmix_local_camera_mirror', true)
@@ -545,6 +563,7 @@ export function RoomPage({
       name={name}
       isMuted={isMuted}
       isCamOff={isCamOff}
+      avatarUrl={user?.user_metadata?.avatar_url as string | undefined}
       videoStyle={localCameraTileVideoStyle}
       showInfo={showInfo}
       showMeter={showMeter}
@@ -1270,6 +1289,23 @@ export function RoomPage({
           onSend={onSendChatMessage}
         />
       )}
+
+      {!isViewportMobile && showLayoutToggle && (
+        <button
+          type="button"
+          className="room-layout-cycle-fab"
+          onClick={() => setLayout((l) => nextLayoutMode(l))}
+          title="Сменить вид отображения"
+          aria-label="Сменить вид отображения"
+        >
+          <svg className="room-layout-cycle-fab__icon" width="22" height="22" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+            <rect x="0.5" y="0.5" width="6" height="6" rx="0.75" fill="none" stroke="currentColor" strokeWidth="1" />
+            <rect x="9" y="0" width="7" height="7" rx="0.75" />
+            <rect x="0" y="9" width="7" height="7" rx="0.75" />
+            <rect x="9" y="9" width="7" height="7" rx="0.75" />
+          </svg>
+        </button>
+      )}
     </div>
   )
 }
@@ -1306,11 +1342,13 @@ function LocalTile({
   roomId, peerId, inPip, srtConnectUrl, srtListenPort,
   reactionBurst,
   mirrorLocalPreview,
+  avatarUrl,
 }: {
   stream: MediaStream | null
   name: string
   isMuted: boolean
   isCamOff: boolean
+  avatarUrl?: string | null
   videoStyle: React.CSSProperties
   showInfo?: boolean
   showMeter?: boolean
@@ -1325,7 +1363,9 @@ function LocalTile({
   const mainVideoRef = useRef<HTMLVideoElement>(null)
 
   const mainStream = stream
-  const showMainVideo = !isCamOff && !!stream
+  const hasLiveCamera =
+    Boolean(stream?.getVideoTracks().some((t) => t.kind === 'video' && t.readyState === 'live'))
+  const showMainVideo = !isCamOff && hasLiveCamera
   const showAvatar = !showMainVideo
 
   useEffect(() => {
@@ -1344,7 +1384,7 @@ function LocalTile({
       />
       {showAvatar && (
         <div className="cam-off-avatar">
-          <span className="cam-off-avatar__label">{name}</span>
+          <ParticipantTileIdle name={name} avatarUrl={avatarUrl} />
         </div>
       )}
       {showMeter && !isMuted && <AudioMeter stream={stream} stereo />}

@@ -2,6 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import type { ReactNode } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { clearDesktopRoomViewStorage } from '../config/roomUiStorage'
+import { HOST_SESSION_KEY, PENDING_HOST_CLAIM_KEY } from '../lib/spaceRoom'
 
 interface AuthContextValue {
   user: User | null
@@ -52,10 +54,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) return { error: error.message }
+    clearDesktopRoomViewStorage()
     return { error: null }
   }, [])
 
   const signOut = useCallback(async () => {
+    try {
+      sessionStorage.removeItem(HOST_SESSION_KEY)
+      sessionStorage.removeItem(PENDING_HOST_CLAIM_KEY)
+    } catch {
+      /* noop */
+    }
     await supabase.auth.signOut()
   }, [])
 
