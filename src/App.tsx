@@ -9,6 +9,7 @@ import { AdminPage } from './components/AdminPage'
 import { AdminProtectedRoute } from './components/AdminProtectedRoute'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { RoomClosedPage } from './components/RoomClosedPage'
+import { EmailConfirmedPage } from './components/EmailConfirmedPage'
 
 function HomeRoute() {
   const [sp] = useSearchParams()
@@ -57,6 +58,7 @@ export function App() {
     <Routes>
       <Route path="/" element={<HomeRoute />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/auth/email-confirmed" element={<EmailConfirmedPage />} />
       <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
       <Route path="/admin" element={<AdminProtectedRoute><AdminPage /></AdminProtectedRoute>} />
       <Route path="/room-closed" element={<RoomClosedPage />} />

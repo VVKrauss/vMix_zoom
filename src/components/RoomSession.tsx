@@ -98,6 +98,12 @@ export function RoomSession({ roomId }: Props) {
     getRemoteInboundVideoQuality,
   } = useRoom(roomActivityNotifyRef)
 
+  useEffect(() => {
+    if (status !== 'connected') return
+    document.documentElement.classList.add('app-root--room')
+    return () => document.documentElement.classList.remove('app-root--room')
+  }, [status])
+
   const statusRef = useRef<RoomStatus>('idle')
   statusRef.current = status
 

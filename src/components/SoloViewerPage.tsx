@@ -39,6 +39,11 @@ export function SoloViewerPage({ roomId, watchPeerId, onExit }: Props) {
   }, [onExit])
 
   useEffect(() => {
+    document.documentElement.classList.add('app-root--room')
+    return () => document.documentElement.classList.remove('app-root--room')
+  }, [])
+
+  useEffect(() => {
     const el = videoRef.current
     if (!el) return
 

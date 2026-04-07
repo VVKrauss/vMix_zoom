@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import type { ReactNode } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { getEmailConfirmationRedirectUrl } from '../config/authUrls'
 import { clearDesktopRoomViewStorage } from '../config/roomUiStorage'
 import { HOST_SESSION_KEY, PENDING_HOST_CLAIM_KEY } from '../lib/spaceRoom'
 
@@ -45,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
       options: {
         data: { display_name: displayName },
+        emailRedirectTo: getEmailConfirmationRedirectUrl(),
       },
     })
     if (error) return { error: error.message }

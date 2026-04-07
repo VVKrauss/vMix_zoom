@@ -2,6 +2,8 @@ import { adminAuthHeaders, hasAdminBearerToken } from '../utils/adminApiAuth'
 import { signalingHttpBase } from '../utils/signalingBase'
 
 const STATS_PATH = '/api/admin/stats'
+const ROOMS_PATH = '/api/admin/rooms'
+const PEERS_PATH = '/api/admin/peers'
 const SETTINGS_PATH = '/api/admin/settings'
 
 async function adminSettingsReachable(): Promise<boolean> {
@@ -141,5 +143,157 @@ export async function fetchAdminOverview(): Promise<AdminOverviewState> {
     kind: 'error',
     serverReachable: false,
     message: 'Не удалось достучаться до signaling (проверьте VITE_SIGNALING_URL и прокси).',
+  }
+}
+
+/** Строка списка комнат: GET /api/admin/rooms (Bearer). */
+export type AdminRoomRow = {
+  roomId: string
+  hostName: string | null
+  hostPeerId: string | null
+  peerCount: number | null
+}
+
+function pickStr(v: unknown): string | null {
+  if (v === null || v === undefined) return null
+  if (typeof v === 'string') return v.trim() || null
+  return null
+}
+
+function parseRoomEntry(raw: unknown): AdminRoomRow | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  const roomId = pickStr(o.roomId ?? o.room_id ?? o.id ?? o.slug)
+  if (!roomId) return null
+  const hostObj = o.host
+  let hostName = pickStr(o.hostName ?? o.host_name ?? o.hostDisplayName ?? o.host_display_name)
+  let hostPeerId = pickStr(o.hostPeerId ?? o.host_peer_id ?? o.hostId ?? o.host_id)
+  if (!hostName && hostObj && typeof hostObj === 'object') {
+    const h = hostObj as Record<string, unknown>
+    hostName = pickStr(h.name ?? h.displayName ?? h.display_name)
+    hostPeerId = hostPeerId ?? pickStr(h.peerId ?? h.peer_id ?? h.id)
+  }
+  const peerCount = pickFiniteInt(o.peerCount ?? o.peer_count ?? o.participants ?? o.clientsInRoom)
+  return { roomId, hostName, hostPeerId, peerCount }
+}
+
+function parseRoomsBody(body: Record<string, unknown>): AdminRoomRow[] {
+  const raw =
+    body.rooms ??
+    body.activeRooms ??
+    body.active_rooms ??
+    body.data ??
+    body.list
+  if (!Array.isArray(raw)) return []
+  const out: AdminRoomRow[] = []
+  for (const item of raw) {
+    const row = parseRoomEntry(item)
+    if (row) out.push(row)
+  }
+  return out
+}
+
+/**
+ * Список активных комнат и хост: GET /api/admin/rooms (тот же Bearer, что и stats).
+ * Ответ: `{ rooms: [ { roomId, hostName?, hostPeerId?, peerCount? } ] }` (допускается snake_case).
+ */
+export async function fetchAdminRoomsList(): Promise<
+  | { ok: true; rooms: AdminRoomRow[] }
+  | { ok: false; status: number; message: string }
+> {
+  if (!hasAdminBearerToken()) {
+    return { ok: false, status: 0, message: 'Нет VITE_ADMIN_API_SECRET в сборке.' }
+  }
+  const base = signalingHttpBase()
+  try {
+    const res = await fetch(`${base}${ROOMS_PATH}`, {
+      method: 'GET',
+      headers: adminAuthHeaders(false),
+    })
+    if (!res.ok) {
+      let message = res.statusText
+      try {
+        const j = (await res.json()) as { message?: string; error?: string }
+        message = j.error || j.message || message
+      } catch {
+        /* noop */
+      }
+      return { ok: false, status: res.status, message: message || `HTTP ${res.status}` }
+    }
+    const body = (await res.json()) as Record<string, unknown>
+    return { ok: true, rooms: parseRoomsBody(body) }
+  } catch {
+    return { ok: false, status: 0, message: 'Сеть или CORS' }
+  }
+}
+
+/** Строка списка онлайн-участников: GET /api/admin/peers (Bearer). */
+export type AdminPeerRow = {
+  peerId: string
+  name: string | null
+  roomId: string | null
+}
+
+function parsePeerEntry(raw: unknown): AdminPeerRow | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  const peerId = pickStr(
+    o.peerId ?? o.peer_id ?? o.socketId ?? o.socket_id ?? o.id ?? o.clientId ?? o.client_id,
+  )
+  if (!peerId) return null
+  const name = pickStr(o.name ?? o.displayName ?? o.display_name ?? o.userName ?? o.user_name)
+  const roomId = pickStr(o.roomId ?? o.room_id ?? o.room ?? o.roomSlug ?? o.room_slug)
+  return { peerId, name, roomId }
+}
+
+function parsePeersBody(body: Record<string, unknown>): AdminPeerRow[] {
+  const raw =
+    body.peers ??
+    body.online ??
+    body.clients ??
+    body.sockets ??
+    body.participants ??
+    body.data ??
+    body.list
+  if (!Array.isArray(raw)) return []
+  const out: AdminPeerRow[] = []
+  for (const item of raw) {
+    const row = parsePeerEntry(item)
+    if (row) out.push(row)
+  }
+  return out
+}
+
+/**
+ * Кто сейчас подключён: GET /api/admin/peers (тот же Bearer).
+ * Ответ: `{ peers: [ { peerId, name?, roomId? } ] }` (допускается snake_case и поля socketId / room).
+ */
+export async function fetchAdminPeersList(): Promise<
+  | { ok: true; peers: AdminPeerRow[] }
+  | { ok: false; status: number; message: string }
+> {
+  if (!hasAdminBearerToken()) {
+    return { ok: false, status: 0, message: 'Нет VITE_ADMIN_API_SECRET в сборке.' }
+  }
+  const base = signalingHttpBase()
+  try {
+    const res = await fetch(`${base}${PEERS_PATH}`, {
+      method: 'GET',
+      headers: adminAuthHeaders(false),
+    })
+    if (!res.ok) {
+      let message = res.statusText
+      try {
+        const j = (await res.json()) as { message?: string; error?: string }
+        message = j.error || j.message || message
+      } catch {
+        /* noop */
+      }
+      return { ok: false, status: res.status, message: message || `HTTP ${res.status}` }
+    }
+    const body = (await res.json()) as Record<string, unknown>
+    return { ok: true, peers: parsePeersBody(body) }
+  } catch {
+    return { ok: false, status: 0, message: 'Сеть или CORS' }
   }
 }

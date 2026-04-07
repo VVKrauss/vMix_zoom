@@ -24,14 +24,47 @@
 }
 
 /* Ширина мобильного блока — то же число, что MOBILE_MAX_WIDTH_PX в src/config/uiBreakpoints.ts */
-html, body, #root {
-  height: 100%;
-  min-height: 100vh;
-  min-height: 100dvh;
+html,
+body,
+#root {
   width: 100%;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
+}
+
+/* Обычные страницы: прокрутка окна; комната / solo — без прокрутки документа (класс вешается из RoomSession / SoloViewerPage). */
+html:not(.app-root--room),
+html:not(.app-root--room) body {
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html:not(.app-root--room)::-webkit-scrollbar,
+html:not(.app-root--room) body::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+html:not(.app-root--room) #root {
+  min-height: 100%;
+  overflow: visible;
+}
+
+html:not(.app-root--room) .join-screen {
+  min-height: 100dvh;
+}
+
+html.app-root--room,
+html.app-root--room body,
+html.app-root--room #root {
+  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
   overflow: hidden;
 }
 
@@ -518,20 +551,28 @@ html, body, #root {
 
 /* ─── Dashboard page ──────────────────────────────────────────────────────── */
 .dashboard-page {
+  --dashboard-topbar-height: 56px;
   display: flex;
   flex-direction: column;
-  min-height: 100%;
+  min-height: 100dvh;
+  padding-top: var(--dashboard-topbar-height);
+  box-sizing: border-box;
   background: var(--bg);
-  overflow-y: auto;
 }
 
-/* Топбар */
+/* Топбар: закреплён у верха окна, контент страницы прокручивается под ним */
 .dashboard-topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 32px;
-  height: 56px;
+  height: var(--dashboard-topbar-height);
+  box-sizing: border-box;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -729,6 +770,120 @@ html, body, #root {
 
 .admin-stat-card__value--warn {
   color: #ffb74d;
+}
+
+button.admin-stat-card--interactive {
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  width: 100%;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+button.admin-stat-card--interactive:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.admin-stat-card--interactive:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.admin-stat-card--interactive:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.admin-stat-card--interactive.admin-stat-card--panel-open {
+  border-color: rgba(210, 0, 0, 0.55);
+  box-shadow: 0 0 0 1px rgba(210, 0, 0, 0.2);
+}
+
+.admin-stat-card__chevron {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.admin-rooms-panel {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface2);
+  overflow: hidden;
+}
+
+.admin-rooms-panel + .admin-rooms-panel {
+  margin-top: 12px;
+}
+
+.admin-rooms-panel__head {
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-rooms-panel__body {
+  padding: 12px 14px 14px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.admin-rooms-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.admin-rooms-table th,
+.admin-rooms-table td {
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+  word-break: break-word;
+}
+
+.admin-rooms-table th {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.admin-rooms-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-rooms-table__room {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--text);
+}
+
+.admin-rooms-table__host {
+  color: var(--text);
+}
+
+.admin-rooms-table__meta {
+  display: block;
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 2px;
 }
 
 .admin-dashboard-code {
@@ -1153,6 +1308,110 @@ html, body, #root {
   border: 1px solid rgba(105,240,174,.3);
   border-radius: 8px;
   padding: 10px 12px;
+}
+
+/* Компактный блок профиля в кабинете */
+.dashboard-profile-summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.dashboard-profile-summary__avatar {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--btn-red-grad);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dashboard-profile-summary__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dashboard-profile-summary__initials {
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.dashboard-profile-summary__text {
+  flex: 1 1 160px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dashboard-profile-summary__name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.25;
+}
+
+.dashboard-profile-summary__email {
+  font-size: 13px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-profile-summary__edit {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.dashboard-profile-summary__edit:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--text-dim);
+}
+
+/* Модалка профиля: размеры — .confirm-dialog.dashboard-profile-modal__dialog ниже по файлу */
+.dashboard-profile-modal__dialog .dashboard-profile-modal__scroll {
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-right: 4px;
+  margin-right: -4px;
+}
+
+.dashboard-profile-modal__dialog .dashboard-avatar-row {
+  margin-bottom: 4px;
+}
+
+.dashboard-profile-modal__dialog .dashboard-form {
+  margin-top: 8px;
+}
+
+.dashboard-profile-modal__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 /* Мета-сетка (статус, план) */
@@ -4397,6 +4656,15 @@ button.vio-row--peer:focus-visible {
   padding: 28px 28px 22px;
   box-shadow: 0 24px 80px rgba(0, 0, 0, .55);
   animation: confirm-dialog-in .22s ease;
+}
+
+.confirm-dialog.dashboard-profile-modal__dialog {
+  max-width: 460px;
+  max-height: min(90vh, 640px);
+  padding: 22px 22px 18px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 @keyframes confirm-dialog-in {

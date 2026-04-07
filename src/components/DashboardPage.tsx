@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
@@ -8,6 +8,7 @@ import type { StoredLayoutMode } from '../config/roomUiStorage'
 import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
 import { newRoomId } from '../utils/roomId'
 import { setPendingHostClaim } from '../lib/spaceRoom'
+import { DashboardProfileModal } from './DashboardProfileModal'
 
 const STATUS_LABEL: Record<string, string> = {
   active:  'Активен',
@@ -63,7 +64,7 @@ export function DashboardPage() {
   const [roomSaveMsg, setRoomSaveMsg] = useState<string | null>(null)
   const [roomSaveErr, setRoomSaveErr] = useState<string | null>(null)
   const [roomSaving, setRoomSaving]   = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
+  const [profileEditOpen, setProfileEditOpen] = useState(false)
 
   useEffect(() => {
     if (!profile) return
@@ -71,6 +72,14 @@ export function DashboardPage() {
     setRoomLayout(m.layout_mode)
     setRoomShowLayoutToggle(m.show_layout_toggle)
   }, [profile])
+
+  useEffect(() => {
+    if (!profileEditOpen || !profile) return
+    setDisplayName(profile.display_name)
+    setNameEdited(false)
+    setSaveMsg(null)
+    setSaveErr(null)
+  }, [profileEditOpen, profile])
 
   const currentName = nameEdited ? displayName : (profile?.display_name ?? '')
 
@@ -89,12 +98,7 @@ export function DashboardPage() {
     if (err) { setSaveErr(err) } else { setSaveMsg('Сохранено') }
   }
 
-  const handleAvatarClick = () => fileRef.current?.click()
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    e.target.value = ''
+  const handleModalAvatarUpload = async (file: File) => {
     setSaveErr(null)
     const { error: err } = await uploadAvatar(file)
     if (err) setSaveErr(err)
@@ -110,6 +114,12 @@ export function DashboardPage() {
     setSaveErr(null)
     const { error: err } = await removeAvatar()
     if (err) setSaveErr(err)
+  }
+
+  const closeProfileModal = () => {
+    setProfileEditOpen(false)
+    setSaveMsg(null)
+    setSaveErr(null)
   }
 
   const handleSaveRoomPrefs = async (e: FormEvent) => {
@@ -206,86 +216,50 @@ export function DashboardPage() {
       <div className="dashboard-body">
         <div className="dashboard-content">
 
-          {/* ── Профиль ── */}
+          <DashboardProfileModal
+            open={profileEditOpen}
+            onClose={closeProfileModal}
+            displayName={currentName}
+            onDisplayNameChange={handleNameChange}
+            currentName={currentName}
+            email={profile.email ?? ''}
+            avatarUrl={profile.avatar_url}
+            avatarAlt={profile.display_name}
+            initials={initials}
+            saving={saving}
+            uploadingAvatar={uploadingAvatar}
+            saveErr={saveErr}
+            saveMsg={saveMsg}
+            onSave={handleSave}
+            onRemoveAvatar={() => { void handleRemoveAvatar() }}
+            onUploadAvatar={(file) => { void handleModalAvatarUpload(file) }}
+          />
+
+          {/* ── Профиль (компактно) ── */}
           <section className="dashboard-section">
             <h2 className="dashboard-section__title">Профиль</h2>
-
-            {/* Аватар */}
-            <div className="dashboard-avatar-row">
+            <div className="dashboard-profile-summary">
+              <div className="dashboard-profile-summary__avatar">
+                {profile.avatar_url ? (
+                  <img src={profile.avatar_url} alt={profile.display_name} />
+                ) : (
+                  <span className="dashboard-profile-summary__initials">{initials}</span>
+                )}
+              </div>
+              <div className="dashboard-profile-summary__text">
+                <span className="dashboard-profile-summary__name">{profile.display_name}</span>
+                <span className="dashboard-profile-summary__email" title={profile.email ?? undefined}>
+                  {profile.email ?? '—'}
+                </span>
+              </div>
               <button
                 type="button"
-                className="dashboard-avatar"
-                onClick={handleAvatarClick}
-                title="Загрузить фото"
-                disabled={uploadingAvatar}
+                className="dashboard-profile-summary__edit"
+                onClick={() => setProfileEditOpen(true)}
               >
-                {profile.avatar_url ? (
-                  <img src={profile.avatar_url} alt={profile.display_name} className="dashboard-avatar__img" />
-                ) : (
-                  <span className="dashboard-avatar__initials">{initials}</span>
-                )}
-                <span className="dashboard-avatar__overlay">
-                  {uploadingAvatar ? '…' : '📷'}
-                </span>
+                Изменить
               </button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif"
-                className="dashboard-avatar__file"
-                onChange={handleFileChange}
-              />
-              <div className="dashboard-avatar-info">
-                <p className="dashboard-avatar-info__hint">JPG, PNG, WebP · до 2 МБ</p>
-                {profile.avatar_url && (
-                  <button
-                    type="button"
-                    className="dashboard-avatar-info__remove"
-                    onClick={handleRemoveAvatar}
-                    disabled={uploadingAvatar}
-                  >
-                    Удалить фото
-                  </button>
-                )}
-              </div>
             </div>
-
-            {/* Форма */}
-            <form onSubmit={handleSave} className="dashboard-form">
-              <div className="dashboard-field">
-                <label className="dashboard-field__label">Отображаемое имя</label>
-                <input
-                  className="join-input"
-                  type="text"
-                  value={currentName}
-                  onChange={(e) => handleNameChange(e.target.value)}
-                  maxLength={40}
-                  required
-                />
-              </div>
-
-              <div className="dashboard-field">
-                <label className="dashboard-field__label">Email</label>
-                <input
-                  className="join-input join-input--readonly"
-                  type="email"
-                  value={profile.email ?? ''}
-                  readOnly
-                  aria-readonly="true"
-                />
-              </div>
-
-              {saveErr && <p className="join-error">{saveErr}</p>}
-              {saveMsg && <p className="dashboard-save-ok">{saveMsg}</p>}
-
-              <button
-                type="submit"
-                className="join-btn dashboard-form__save"
-                disabled={saving || !currentName.trim()}
-              >
-                {saving ? 'Сохранение…' : 'Сохранить'}
-              </button>
-            </form>
           </section>
 
           {/* ── Комнаты (десктоп) ── */}
