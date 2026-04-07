@@ -7,7 +7,9 @@ import { ControlsBar } from './ControlsBar'
 import { ParticipantCard } from './ParticipantCard'
 import { DraggablePip } from './DraggablePip'
 import { AudioMeter } from './AudioMeter'
-import { MicOffIcon } from './icons'
+import { MicOffIcon, DashboardIcon, InviteIcon } from './icons'
+import { useAuth } from '../context/AuthContext'
+import { shouldClosePopoverOnOutsidePointer } from '../utils/popoverOutsideClick'
 import { useAudioOutputs } from '../hooks/useAudioOutputs'
 import { useDevices } from '../hooks/useDevices'
 import {
@@ -195,19 +197,50 @@ export function RoomPage({
   const [vmixStopDialogOpen, setVmixStopDialogOpen] = useState(false)
   const [serverSettingsOpen, setServerSettingsOpen] = useState(false)
   const [vmixError, setVmixError] = useState<string | null>(null)
-  const [inviteToast, setInviteToast] = useState(false)
+  const [inviteToast, setInviteToast] = useState<'url' | 'id' | null>(null)
   const inviteToastTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const inviteRef = useRef<HTMLDivElement>(null)
 
-  const handleInviteParticipants = useCallback(() => {
+  useEffect(() => {
+    if (!inviteOpen) return
+    const handler = (e: MouseEvent) => {
+      if (shouldClosePopoverOnOutsidePointer(inviteRef.current, e.target)) {
+        setInviteOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [inviteOpen])
+
+  const handleCopyInviteUrl = useCallback(() => {
     const id = roomId.trim()
     if (!id) return
     const url = buildRoomInviteAbsoluteUrl(id)
     void navigator.clipboard.writeText(url).then(
       () => {
+        setInviteOpen(false)
         if (inviteToastTimerRef.current != null) window.clearTimeout(inviteToastTimerRef.current)
-        setInviteToast(true)
+        setInviteToast('url')
         inviteToastTimerRef.current = window.setTimeout(() => {
-          setInviteToast(false)
+          setInviteToast(null)
+          inviteToastTimerRef.current = null
+        }, 3800)
+      },
+      () => {},
+    )
+  }, [roomId])
+
+  const handleCopyInviteId = useCallback(() => {
+    const id = roomId.trim()
+    if (!id) return
+    void navigator.clipboard.writeText(id).then(
+      () => {
+        setInviteOpen(false)
+        if (inviteToastTimerRef.current != null) window.clearTimeout(inviteToastTimerRef.current)
+        setInviteToast('id')
+        inviteToastTimerRef.current = window.setTimeout(() => {
+          setInviteToast(null)
           inviteToastTimerRef.current = null
         }, 3800)
       },
@@ -227,6 +260,21 @@ export function RoomPage({
   const [playoutSinkId, setPlayoutSinkId] = useLocalStorageString('vmix_playout_sink', '')
   const [showControlButtonLabels, setShowControlButtonLabels] = useLocalStorageBool('vmix_control_button_labels', false)
   const [chatEmbed, setChatEmbed] = useLocalStorageBool('vmix_chat_embed', true)
+  const { user, signOut } = useAuth()
+  const avatarUrl = user?.user_metadata?.avatar_url as string | undefined
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const userMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!userMenuOpen) return
+    const handler = (e: MouseEvent) => {
+      if (shouldClosePopoverOnOutsidePointer(userMenuRef.current, e.target)) {
+        setUserMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [userMenuOpen])
   const [streamerMode, setStreamerMode] = useLocalStorageBool('vmix_streamer_mode', false)
   /** Только локальное превью; отправляемый поток без отражения. */
   const [mirrorLocalCamera, setMirrorLocalCamera] = useLocalStorageBool('vmix_local_camera_mirror', true)
@@ -863,15 +911,27 @@ export function RoomPage({
             <div className="room-header-mobile-brand" aria-hidden>
               <img className="brand-logo brand-logo--header" src="/logo.png" alt="" draggable={false} />
             </div>
-            <button
-              type="button"
-              className="room-invite-btn-compact"
-              onClick={handleInviteParticipants}
-              title="Скопировать ссылку на комнату"
-              aria-label="Скопировать ссылку на комнату"
-            >
-              +
-            </button>
+            <div className="room-invite-menu room-invite-menu--compact" ref={inviteRef}>
+              <button
+                type="button"
+                className={`room-invite-btn-compact${inviteOpen ? ' room-invite-btn-compact--open' : ''}`}
+                onClick={() => setInviteOpen((v) => !v)}
+                title="Пригласить участников"
+                aria-label="Пригласить участников"
+              >
+                <InviteIcon />
+              </button>
+              {inviteOpen && (
+                <div className="room-invite-dropdown">
+                  <button type="button" className="room-invite-dropdown__item" onClick={handleCopyInviteUrl}>
+                    Скопировать ссылку
+                  </button>
+                  <button type="button" className="room-invite-dropdown__item" onClick={handleCopyInviteId}>
+                    Скопировать ID комнаты
+                  </button>
+                </div>
+              )}
+            </div>
           </header>
         </div>
       ) : (
@@ -886,14 +946,26 @@ export function RoomPage({
                 <span className="room-name">{roomId}</span>
                 <span className="room-count">({participantCount})</span>
               </div>
-              <button
-                type="button"
-                className="room-invite-btn"
-                onClick={handleInviteParticipants}
-                title="Скопировать ссылку на комнату"
-              >
-                Пригласить участников
-              </button>
+              <div className="room-invite-menu" ref={inviteRef}>
+                <button
+                  type="button"
+                  className={`room-invite-btn${inviteOpen ? ' room-invite-btn--open' : ''}`}
+                  onClick={() => setInviteOpen((v) => !v)}
+                  title="Пригласить участников"
+                >
+                  <InviteIcon />
+                </button>
+                {inviteOpen && (
+                  <div className="room-invite-dropdown">
+                    <button type="button" className="room-invite-dropdown__item" onClick={handleCopyInviteUrl}>
+                      Скопировать ссылку
+                    </button>
+                    <button type="button" className="room-invite-dropdown__item" onClick={handleCopyInviteId}>
+                      Скопировать ID комнаты
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -907,6 +979,53 @@ export function RoomPage({
                 ariaLabel={streamerMode ? 'Режим стримера включён' : 'Режим стримера выключен'}
               />
             </div>
+            {user && (
+              <div className="header-user-menu" ref={userMenuRef}>
+                <button
+                  type="button"
+                  className={`header-dashboard-btn${userMenuOpen ? ' header-dashboard-btn--open' : ''}`}
+                  title="Меню пользователя"
+                  onClick={() => setUserMenuOpen((v) => !v)}
+                >
+                  {avatarUrl
+                    ? <img src={avatarUrl} alt="" className="header-dashboard-avatar" />
+                    : <DashboardIcon />
+                  }
+                </button>
+
+                {userMenuOpen && (
+                  <div className="header-user-dropdown">
+                    <a
+                      href="/dashboard"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="header-user-dropdown__item"
+                      onClick={() => setUserMenuOpen(false)}
+                    >
+                      Личный кабинет
+                    </a>
+                    <button
+                      type="button"
+                      className="header-user-dropdown__item"
+                      onClick={() => {
+                        setUserMenuOpen(false)
+                        openLeaveDialog('leave', remoteList.length)
+                      }}
+                    >
+                      Выйти из комнаты
+                    </button>
+                    <div className="header-user-dropdown__separator" />
+                    <button
+                      type="button"
+                      className="header-user-dropdown__item header-user-dropdown__item--danger"
+                      onClick={() => { setUserMenuOpen(false); signOut() }}
+                    >
+                      Выйти из аккаунта
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </header>
       )}
@@ -925,8 +1044,14 @@ export function RoomPage({
         aria-live="polite"
         aria-hidden={!inviteToast}
       >
-        <span className="room-invite-toast__title">Ссылка скопирована</span>
-        <span className="room-invite-toast__text">Отправьте её участникам — по ней можно войти в эту комнату.</span>
+        <span className="room-invite-toast__title">
+          {inviteToast === 'id' ? 'ID скопирован' : 'Ссылка скопирована'}
+        </span>
+        <span className="room-invite-toast__text">
+          {inviteToast === 'id'
+            ? `ID комнаты: ${roomId}`
+            : 'Отправьте её участникам — по ней можно войти в эту комнату.'}
+        </span>
       </div>
 
       <div
@@ -1132,7 +1257,7 @@ export function RoomPage({
         immersiveAutoHide={immersiveAutoHide}
         onToggleImmersiveAutoHide={() => setImmersiveAutoHide((v) => !v)}
         chromeHidden={immersiveAutoHide && chromeHidden}
-        onInviteParticipants={handleInviteParticipants}
+        onInviteParticipants={handleCopyInviteUrl}
       />
 
       {chatOpen && !chatEmbed && (

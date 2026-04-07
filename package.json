@@ -7,6 +7,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.102.0",
     "mediasoup-client": "^3.6.105",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

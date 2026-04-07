@@ -3,6 +3,7 @@ import type { JoinRoomMediaOptions } from '../hooks/useRoom'
 import type { VideoPreset } from '../types'
 import { getStoredVideoPreset } from '../config/roomUiStorage'
 import { MicIcon, MicOffIcon, CamIcon, CamOffIcon } from './icons'
+import { useAuth } from '../context/AuthContext'
 
 interface Props {
   roomId: string
@@ -12,9 +13,18 @@ interface Props {
 }
 
 export function JoinPage({ roomId, onJoin, onBackToHome, error }: Props) {
-  const [name, setName] = useState('')
+  const { user } = useAuth()
+
+  const profileName = user?.user_metadata?.display_name as string | undefined
+    ?? user?.email?.split('@')[0]
+    ?? ''
+
+  const [guestName, setGuestName] = useState('')
   const [micOn, setMicOn] = useState(true)
   const [camOn, setCamOn] = useState(true)
+
+  const isAuthed = !!user
+  const name = isAuthed ? profileName : guestName
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
@@ -24,7 +34,7 @@ export function JoinPage({ roomId, onJoin, onBackToHome, error }: Props) {
   }
 
   const goMain = () => {
-    setName('')
+    setGuestName('')
     onBackToHome()
   }
 
@@ -37,25 +47,21 @@ export function JoinPage({ roomId, onJoin, onBackToHome, error }: Props) {
 
         <form onSubmit={handleSubmit} className="join-form">
           <label className="join-label">Ваше имя</label>
-          <input
-            className="join-input"
-            type="text"
-            placeholder="Введите имя"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoFocus
-            maxLength={40}
-          />
-
-          <label className="join-label">Комната</label>
-          <input
-            className="join-input join-input--readonly"
-            type="text"
-            readOnly
-            value={roomId}
-            title={roomId}
-            aria-readonly="true"
-          />
+          {isAuthed ? (
+            <div className="join-name-authed">
+              <span className="join-name-authed__name">{profileName}</span>
+            </div>
+          ) : (
+            <input
+              className="join-input"
+              type="text"
+              placeholder="Введите имя"
+              value={guestName}
+              onChange={(e) => setGuestName(e.target.value)}
+              autoFocus
+              maxLength={40}
+            />
+          )}
 
           <label className="join-label" id="join-media-label">
             Микрофон и камера
@@ -87,7 +93,11 @@ export function JoinPage({ roomId, onJoin, onBackToHome, error }: Props) {
             </button>
           </div>
 
-          <button className="join-btn join-btn--block" type="submit" disabled={!name.trim() || !roomId.trim()}>
+          <button
+            className="join-btn join-btn--block"
+            type="submit"
+            disabled={!name.trim() || !roomId.trim()}
+          >
             Войти
           </button>
         </form>

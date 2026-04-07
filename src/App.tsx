@@ -3,6 +3,9 @@ import { Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from
 import { HomePage } from './components/HomePage'
 import { RoomSession } from './components/RoomSession'
 import { SoloViewerPage } from './components/SoloViewerPage'
+import { LoginPage } from './components/LoginPage'
+import { DashboardPage } from './components/DashboardPage'
+import { ProtectedRoute } from './components/ProtectedRoute'
 
 function HomeRoute() {
   const [sp] = useSearchParams()
@@ -50,6 +53,8 @@ export function App() {
   return (
     <Routes>
       <Route path="/" element={<HomeRoute />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
       <Route path="/r/:roomId" element={<RoomRoute />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

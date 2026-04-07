@@ -36,3 +36,23 @@ export function CamOffIcon() {
     </svg>
   )
 }
+
+export function DashboardIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+    </svg>
+  )
+}
+
+export function InviteIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="9" cy="7" r="4" />
+      <path d="M3 21v-2a7 7 0 0 1 10.46-6.08" />
+      <line x1="19" y1="13" x2="19" y2="21" />
+      <line x1="15" y1="17" x2="23" y2="17" />
+    </svg>
+  )
+}

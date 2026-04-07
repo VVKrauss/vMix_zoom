@@ -1,9 +1,12 @@
 import { FormEvent, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { newRoomId } from '../utils/roomId'
+import { useAuth } from '../context/AuthContext'
+import { DashboardIcon } from './icons'
 
 export function HomePage() {
   const navigate = useNavigate()
+  const { user, loading, signOut } = useAuth()
   const [joinId, setJoinId] = useState('')
 
   const handleCreate = () => {
@@ -17,34 +20,103 @@ export function HomePage() {
     navigate(`/r/${encodeURIComponent(id)}`)
   }
 
+  const displayName = user?.user_metadata?.display_name as string | undefined
+    ?? user?.email?.split('@')[0]
+    ?? 'Пользователь'
+
+  const avatarUrl = user?.user_metadata?.avatar_url as string | undefined
+
   return (
     <div className="join-screen">
       <div className="join-card join-card--home">
+
+        {/* Логотип */}
         <div className="join-logo-static" aria-hidden>
           <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
         </div>
 
-        <div className="home-actions">
-          <button type="button" className="join-btn join-btn--block" onClick={handleCreate}>
+        {/* Блок авторизации / приветствия */}
+        {!loading && (
+          <div className="home-auth-block">
+            {user ? (
+              <div className="home-greeting">
+                <Link to="/dashboard" className="home-greeting__dashboard" title="Дашборд">
+                  {avatarUrl
+                    ? <img src={avatarUrl} alt={displayName} className="home-greeting__avatar" />
+                    : <DashboardIcon />
+                  }
+                </Link>
+                <span className="home-greeting__text">
+                  Привет, <strong>{displayName}</strong>
+                </span>
+                <button
+                  type="button"
+                  className="home-greeting__signout"
+                  onClick={() => signOut()}
+                >
+                  Выйти
+                </button>
+              </div>
+            ) : (
+              <div className="home-auth-links">
+                <Link to="/login" className="join-btn join-btn--block home-auth-links__btn">
+                  Войти
+                </Link>
+                <Link
+                  to="/login?mode=register"
+                  className="join-btn join-btn--secondary join-btn--block home-auth-links__btn"
+                >
+                  Зарегистрироваться
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Создать комнату */}
+        <div className="home-create-block">
+          <button
+            type="button"
+            className="join-btn join-btn--block"
+            onClick={handleCreate}
+            disabled={!user}
+            title={!user ? 'Войдите, чтобы создать комнату' : undefined}
+          >
             Создать комнату
           </button>
-
-          <form onSubmit={handleJoinSubmit} className="join-form home-join-form">
-            <label className="join-label">Войти по ID</label>
-            <input
-              className="join-input"
-              type="text"
-              placeholder="ID комнаты"
-              value={joinId}
-              onChange={(e) => setJoinId(e.target.value)}
-              autoComplete="off"
-              maxLength={200}
-            />
-            <button className="join-btn join-btn--secondary join-btn--block" type="submit" disabled={!joinId.trim()}>
-              Перейти в комнату
-            </button>
-          </form>
+          {!user && !loading && (
+            <p className="home-create-hint">
+              🔒 Требуется аккаунт
+            </p>
+          )}
         </div>
+
+        {/* Разделитель */}
+        <div className="home-divider">
+          <span>или войдите в существующую</span>
+        </div>
+
+        {/* Войти по ID */}
+        <form onSubmit={handleJoinSubmit} className="join-form">
+          <label className="join-label">ID комнаты</label>
+          <input
+            className="join-input"
+            type="text"
+            placeholder="Введите ID комнаты"
+            value={joinId}
+            onChange={(e) => setJoinId(e.target.value)}
+            autoComplete="off"
+            maxLength={200}
+          />
+          <button
+            className="join-btn join-btn--secondary join-btn--block"
+            type="submit"
+            disabled={!joinId.trim()}
+          >
+            Перейти в комнату
+          </button>
+        </form>
+
       </div>
     </div>
   )
