@@ -15,7 +15,9 @@ import { getSignalingDisplayLines } from '../utils/signalingDisplay'
 
 interface Props {
   open: boolean
-  onClose: () => void
+  /** Во вкладке админки — без оверлея и кнопки «Закрыть». */
+  variant?: 'modal' | 'inline'
+  onClose?: () => void
 }
 
 function isAllowedSignalingUrl(s: string): boolean {
@@ -30,7 +32,8 @@ function isAllowedSignalingUrl(s: string): boolean {
   }
 }
 
-export function ServerSettingsModal({ open, onClose }: Props) {
+export function ServerSettingsModal({ open, onClose, variant = 'modal' }: Props) {
+  const isModal = variant === 'modal'
   const [signalingUrl, setSignalingUrl] = useState('')
   const [latencyMs, setLatencyMs] = useState(200)
   const [videoBitrateKbps, setVideoBitrateKbps] = useState<number | null>(4500)
@@ -204,31 +207,36 @@ export function ServerSettingsModal({ open, onClose }: Props) {
   }, [])
 
   useEffect(() => {
-    if (!open) return
+    if (!open || !isModal || !onClose) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); onClose() }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  }, [open, isModal, onClose])
 
   if (!open) return null
 
-  return (
-    <div className="confirm-dialog-root server-settings-overlay">
-      <button type="button" className="confirm-dialog-backdrop" aria-label="Закрыть" onClick={onClose} />
+  const panel = (
       <div
-        className="server-settings-panel"
-        role="dialog"
-        aria-modal="true"
+        className={`server-settings-panel${isModal ? '' : ' server-settings-panel--inline'}`}
+        role={isModal ? 'dialog' : 'region'}
+        aria-modal={isModal ? true : undefined}
         aria-labelledby="server-settings-title"
-        onClick={(e) => e.stopPropagation()}
+        onClick={isModal ? (e) => e.stopPropagation() : undefined}
       >
         <div className="server-settings-panel__head">
-          <h2 id="server-settings-title" className="server-settings-panel__title">Настройки сервера</h2>
-          <button type="button" className="server-settings-panel__close" onClick={onClose} aria-label="Закрыть">
-            ✕
-          </button>
+          <h2 id="server-settings-title" className="server-settings-panel__title">
+            Настройки сервера
+          </h2>
+          {isModal && onClose ? (
+            <button type="button" className="server-settings-panel__close" onClick={onClose} aria-label="Закрыть">
+              ✕
+            </button>
+          ) : null}
         </div>
 
         <div className="server-settings-panel__body">
@@ -368,10 +376,14 @@ export function ServerSettingsModal({ open, onClose }: Props) {
           </section>
         </div>
 
-        <div className="server-settings-panel__foot server-settings-panel__foot--split">
-          <button type="button" className="confirm-dialog__btn confirm-dialog__btn--secondary" onClick={onClose}>
-            Закрыть
-          </button>
+        <div
+          className={`server-settings-panel__foot${isModal ? ' server-settings-panel__foot--split' : ' server-settings-panel__foot--inline'}`}
+        >
+          {isModal && onClose ? (
+            <button type="button" className="confirm-dialog__btn confirm-dialog__btn--secondary" onClick={onClose}>
+              Закрыть
+            </button>
+          ) : null}
           <div className="server-settings-panel__foot-actions">
             <button
               type="button"
@@ -393,6 +405,16 @@ export function ServerSettingsModal({ open, onClose }: Props) {
           </div>
         </div>
       </div>
+  )
+
+  if (!isModal) {
+    return panel
+  }
+
+  return (
+    <div className="confirm-dialog-root server-settings-overlay">
+      <button type="button" className="confirm-dialog-backdrop" aria-label="Закрыть" onClick={() => onClose?.()} />
+      {panel}
     </div>
   )
 }

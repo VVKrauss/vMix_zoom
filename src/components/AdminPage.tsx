@@ -11,7 +11,6 @@ type AdminTab = 'dashboard' | 'users' | 'server'
 export function AdminPage() {
   const { signOut } = useAuth()
   const { isSuperadmin } = useCanAccessAdminPanel()
-  const [serverSettingsOpen, setServerSettingsOpen] = useState(false)
   const [tab, setTab] = useState<AdminTab>('dashboard')
 
   return (
@@ -32,8 +31,6 @@ export function AdminPage() {
           </button>
         </nav>
       </header>
-
-      <ServerSettingsModal open={serverSettingsOpen} onClose={() => setServerSettingsOpen(false)} />
 
       <div className="dashboard-body dashboard-body--admin">
         <aside className="admin-sidebar" aria-label="Разделы админки">
@@ -73,17 +70,7 @@ export function AdminPage() {
             </section>
           ) : null}
 
-          {tab === 'server' ? (
-            <section className="dashboard-section">
-              <h2 className="dashboard-section__subtitle">Сервер</h2>
-              <p className="dashboard-section__hint">
-                Signaling, vMix / SRT и параметры потока — раньше были в настройках комнаты, теперь только здесь.
-              </p>
-              <button type="button" className="join-btn dashboard-admin-server-btn" onClick={() => setServerSettingsOpen(true)}>
-                Настройки сервера
-              </button>
-            </section>
-          ) : null}
+          {tab === 'server' ? <ServerSettingsModal variant="inline" open /> : null}
         </div>
       </div>
     </div>
