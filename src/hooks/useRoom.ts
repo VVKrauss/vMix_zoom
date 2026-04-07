@@ -34,6 +34,7 @@ import {
   readPreferredCameraId,
   readPreferredMicId,
 } from '../config/roomUiStorage'
+import { formatMediaJoinError } from '../utils/formatMediaJoinError'
 
 const SIGNALING_HTTP = signalingHttpBase()
 const DEFAULT_ROOM = import.meta.env.VITE_DEFAULT_ROOM as string ?? 'test'
@@ -910,7 +911,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         return
       }
       console.error('[join] error:', err)
-      setError(String(err))
+      setError(formatMediaJoinError(err))
       setStatus('error')
       setSessionMeta(null)
       setSrtByPeer({})

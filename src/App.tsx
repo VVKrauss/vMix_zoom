@@ -5,6 +5,8 @@ import { RoomSession } from './components/RoomSession'
 import { SoloViewerPage } from './components/SoloViewerPage'
 import { LoginPage } from './components/LoginPage'
 import { DashboardPage } from './components/DashboardPage'
+import { AdminPage } from './components/AdminPage'
+import { AdminProtectedRoute } from './components/AdminProtectedRoute'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { RoomClosedPage } from './components/RoomClosedPage'
 
@@ -56,6 +58,7 @@ export function App() {
       <Route path="/" element={<HomeRoute />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+      <Route path="/admin" element={<AdminProtectedRoute><AdminPage /></AdminProtectedRoute>} />
       <Route path="/room-closed" element={<RoomClosedPage />} />
       <Route path="/r/:roomId" element={<RoomRoute />} />
       <Route path="*" element={<Navigate to="/" replace />} />

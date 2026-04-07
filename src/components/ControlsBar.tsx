@@ -9,6 +9,7 @@ import { ReactionEmojiPopover } from './ReactionEmojiPopover'
 import { MicIcon, MicOffIcon, CamIcon, CamOffIcon } from './icons'
 import { useOnOutsideClick } from '../hooks/useOnOutsideClick'
 import { nextLayoutMode } from '../config/layoutModeCycle'
+import { useAuth } from '../context/AuthContext'
 
 function layoutModeLabel(mode: LayoutMode): string {
   switch (mode) {
@@ -87,8 +88,6 @@ interface Props {
   onRequestStopVmixIngress: () => void
   /** Показать параметры подключения без перезапуска (шеврон). */
   onOpenVmixSettings: () => void
-  /** Окно «Настройки сервера» из шестерёнки. */
-  onOpenServerSettings: () => void
   /** Горизонтальное зеркало только локального превью камеры (не влияет на исходящий поток). */
   mirrorLocalCamera: boolean
   onToggleMirrorLocalCamera: () => void
@@ -106,6 +105,8 @@ interface Props {
   chromeHidden: boolean
   /** Мобильный PiP: скопировать ссылку на комнату (кнопка «Добавить»). */
   onInviteParticipants?: () => void
+  /** Ссылка «Админка» в мобильном листе (superadmin / platform_admin / support_admin). */
+  showAdminPanelLink?: boolean
 }
 
 type OpenPopover = 'mic' | 'cam' | 'headphones' | 'chat' | 'reaction' | 'layout' | 'screen' | 'settings' | null
@@ -136,7 +137,6 @@ export function ControlsBar({
   onStartVmixIngress,
   onRequestStopVmixIngress,
   onOpenVmixSettings,
-  onOpenServerSettings,
   mirrorLocalCamera,
   onToggleMirrorLocalCamera,
   vmixProgramVolume,
@@ -149,7 +149,9 @@ export function ControlsBar({
   onToggleImmersiveAutoHide,
   chromeHidden,
   onInviteParticipants,
+  showAdminPanelLink = false,
 }: Props) {
+  const { user, signOut } = useAuth()
   const [open, setOpen] = useState<OpenPopover>(null)
   const [screenPickerOpen, setScreenPickerOpen] = useState(false)
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
@@ -392,7 +394,6 @@ export function ControlsBar({
           showButtonLabels={showButtonLabels}
           onToggleButtonLabels={onToggleButtonLabels}
           onResetView={() => { onResetView(); setOpen(null) }}
-          onOpenServerSettings={() => { onOpenServerSettings(); setOpen(null) }}
           onClose={() => setOpen(null)}
           viewportMobile={viewportMobile}
           immersiveAutoHide={immersiveAutoHide}
@@ -857,6 +858,41 @@ export function ControlsBar({
               {screenShareGroup(true)}
               {settingsGroup(true)}
               {reactionGroup(true)}
+              {user ? (
+                <div className="mobile-controls-sheet__account">
+                  <a
+                    href="/dashboard"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="header-user-dropdown__item"
+                    onClick={closeMobileMore}
+                  >
+                    Личный кабинет
+                  </a>
+                  {showAdminPanelLink ? (
+                    <a
+                      href="/admin"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="header-user-dropdown__item"
+                      onClick={closeMobileMore}
+                    >
+                      Админка
+                    </a>
+                  ) : null}
+                  <div className="header-user-dropdown__separator" />
+                  <button
+                    type="button"
+                    className="header-user-dropdown__item header-user-dropdown__item--danger"
+                    onClick={() => {
+                      closeMobileMore()
+                      signOut()
+                    }}
+                  >
+                    Выйти из аккаунта
+                  </button>
+                </div>
+              ) : null}
               <div className="mobile-controls-sheet__leave-wrap">
                 <button type="button" className="ctrl-btn ctrl-btn--leave ctrl-btn--leave-sheet" onClick={() => { closeMobileMore(); onLeaveRequest() }}>
                   <LeaveIcon />
@@ -1131,7 +1167,7 @@ function ChatOptionsPopover({
 function SettingsPopover({
   showInfo, onToggleInfo,
   showButtonLabels, onToggleButtonLabels,
-  onResetView, onOpenServerSettings, onClose,
+  onResetView, onClose,
   viewportMobile,
   immersiveAutoHide,
   onToggleImmersiveAutoHide,
@@ -1143,7 +1179,6 @@ function SettingsPopover({
   showButtonLabels: boolean
   onToggleButtonLabels: () => void
   onResetView: () => void
-  onOpenServerSettings: () => void
   onClose: () => void
   viewportMobile: boolean
   immersiveAutoHide: boolean
@@ -1157,11 +1192,6 @@ function SettingsPopover({
   return (
     <div className="settings-popover" ref={ref}>
       <div className="settings-popover__title">Настройки</div>
-
-      <button type="button" className="settings-row settings-row--btn settings-row--server" onClick={onOpenServerSettings}>
-        <span className="settings-label">Настройки сервера</span>
-        <span className="settings-row__arrow" aria-hidden>→</span>
-      </button>
 
       {viewportMobile && onStreamerModeChange ? (
         <div className="settings-row settings-row--pill">

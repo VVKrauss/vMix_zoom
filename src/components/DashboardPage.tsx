@@ -1,10 +1,13 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useProfile } from '../hooks/useProfile'
 import { supabase } from '../lib/supabase'
 import type { StoredLayoutMode } from '../config/roomUiStorage'
 import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
+import { newRoomId } from '../utils/roomId'
+import { setPendingHostClaim } from '../lib/spaceRoom'
 
 const STATUS_LABEL: Record<string, string> = {
   active:  'Активен',
@@ -20,6 +23,24 @@ const STATUS_CLASS: Record<string, string> = {
   deleted: 'dashboard-badge--deleted',
 }
 
+/** Подписи глобальных ролей в кабинете (справочник в БД на английском). */
+const GLOBAL_ROLE_LABEL: Record<string, string> = {
+  superadmin: 'Суперадмин',
+  platform_admin: 'Администратор платформы',
+  support_admin: 'Поддержка',
+  registered_user: 'Зарегистрированный пользователь',
+}
+
+function globalRoleBadgeClass(code: string): string {
+  if (code === 'superadmin') {
+    return 'dashboard-badge dashboard-badge--role dashboard-badge--role-super'
+  }
+  if (code === 'platform_admin' || code === 'support_admin') {
+    return 'dashboard-badge dashboard-badge--role dashboard-badge--role-ops'
+  }
+  return 'dashboard-badge dashboard-badge--role'
+}
+
 const LAYOUT_OPTIONS: { value: StoredLayoutMode; label: string }[] = [
   { value: 'pip', label: 'Картинка в картинке' },
   { value: 'grid', label: 'Плитки' },
@@ -28,7 +49,9 @@ const LAYOUT_OPTIONS: { value: StoredLayoutMode; label: string }[] = [
 ]
 
 export function DashboardPage() {
+  const navigate = useNavigate()
   const { signOut, user } = useAuth()
+  const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const { profile, plan, loading, saving, uploadingAvatar, error, saveProfile, uploadAvatar, removeAvatar } = useProfile()
 
   const [displayName, setDisplayName] = useState('')
@@ -75,6 +98,12 @@ export function DashboardPage() {
     setSaveErr(null)
     const { error: err } = await uploadAvatar(file)
     if (err) setSaveErr(err)
+  }
+
+  const goCreateRoom = () => {
+    const id = newRoomId()
+    setPendingHostClaim(id)
+    navigate(`/r/${encodeURIComponent(id)}`)
   }
 
   const handleRemoveAvatar = async () => {
@@ -156,6 +185,18 @@ export function DashboardPage() {
         </Link>
         <nav className="dashboard-topbar__nav">
           <Link to="/" className="dashboard-topbar__nav-link">На главную</Link>
+          <button
+            type="button"
+            className="dashboard-topbar__nav-link dashboard-topbar__nav-link--btn"
+            onClick={goCreateRoom}
+          >
+            Создать комнату
+          </button>
+          {canAccessAdmin ? (
+            <Link to="/admin" className="dashboard-topbar__nav-link">
+              Админка
+            </Link>
+          ) : null}
           <button type="button" className="dashboard-topbar__nav-link dashboard-topbar__nav-link--btn" onClick={() => signOut()}>
             Выйти
           </button>
@@ -297,6 +338,25 @@ export function DashboardPage() {
                 <span className={`dashboard-badge ${STATUS_CLASS[profile.status] ?? ''}`}>
                   {STATUS_LABEL[profile.status] ?? profile.status}
                 </span>
+              </div>
+
+              <div className="dashboard-meta-item dashboard-meta-item--roles">
+                <span className="dashboard-meta-item__label">Роли на платформе</span>
+                {profile.global_roles.length > 0 ? (
+                  <div className="dashboard-role-badges">
+                    {profile.global_roles.map((r) => (
+                      <span
+                        key={r.code}
+                        className={globalRoleBadgeClass(r.code)}
+                        title={r.title ? `${r.title} (${r.code})` : r.code}
+                      >
+                        {GLOBAL_ROLE_LABEL[r.code] ?? r.title ?? r.code}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="dashboard-meta-item__empty">Стандартный доступ</span>
+                )}
               </div>
 
               <div className="dashboard-meta-item">

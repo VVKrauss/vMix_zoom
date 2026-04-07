@@ -3,11 +3,13 @@ import { useNavigate, Link } from 'react-router-dom'
 import { newRoomId } from '../utils/roomId'
 import { setPendingHostClaim } from '../lib/spaceRoom'
 import { useAuth } from '../context/AuthContext'
+import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { DashboardIcon } from './icons'
 
 export function HomePage() {
   const navigate = useNavigate()
   const { user, loading, signOut } = useAuth()
+  const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const [joinId, setJoinId] = useState('')
 
   const handleCreate = () => {
@@ -42,23 +44,34 @@ export function HomePage() {
         {!loading && (
           <div className="home-auth-block">
             {user ? (
-              <div className="home-greeting">
-                <Link to="/dashboard" className="home-greeting__dashboard" title="Дашборд">
-                  {avatarUrl
-                    ? <img src={avatarUrl} alt={displayName} className="home-greeting__avatar" />
-                    : <DashboardIcon />
-                  }
-                </Link>
-                <span className="home-greeting__text">
-                  Привет, <strong>{displayName}</strong>
-                </span>
-                <button
-                  type="button"
-                  className="home-greeting__signout"
-                  onClick={() => signOut()}
-                >
-                  Выйти
-                </button>
+              <div className="home-user-block">
+                <div className="home-greeting">
+                  <Link to="/dashboard" className="home-greeting__dashboard" title="Дашборд">
+                    {avatarUrl
+                      ? <img src={avatarUrl} alt={displayName} className="home-greeting__avatar" />
+                      : <DashboardIcon />
+                    }
+                  </Link>
+                  <span className="home-greeting__text">
+                    Привет, <strong>{displayName}</strong>
+                  </span>
+                  <div className="home-greeting__actions">
+                    <button
+                      type="button"
+                      className="home-greeting__signout"
+                      onClick={() => signOut()}
+                    >
+                      Выйти
+                    </button>
+                  </div>
+                </div>
+                {canAccessAdmin && (
+                  <div className="home-admin-below">
+                    <Link to="/admin" className="home-admin-below__link">
+                      Админка →
+                    </Link>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="home-auth-links">

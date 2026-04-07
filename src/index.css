@@ -258,6 +258,12 @@ html, body, #root {
   display: block;
 }
 
+.home-user-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .home-greeting {
   display: flex;
   align-items: center;
@@ -276,6 +282,30 @@ html, body, #root {
 .home-greeting__text strong {
   color: var(--text);
   font-weight: 600;
+}
+
+.home-greeting__actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.home-admin-below {
+  text-align: center;
+}
+
+.home-admin-below__link {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--red);
+  text-decoration: none;
+  font-family: var(--font);
+}
+
+.home-admin-below__link:hover {
+  text-decoration: underline;
 }
 
 .home-greeting__signout {
@@ -406,7 +436,8 @@ html, body, #root {
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: 50%;
+  overflow: hidden;
   color: var(--text-dim);
   text-decoration: none;
   flex-shrink: 0;
@@ -414,13 +445,13 @@ html, body, #root {
 }
 
 .header-dashboard-btn svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
 }
 
 .header-dashboard-avatar {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   object-fit: cover;
   display: block;
@@ -534,6 +565,13 @@ html, body, #root {
 .dashboard-topbar__nav-link:hover { background: rgba(255,255,255,.07); color: var(--text); }
 .dashboard-topbar__nav-link--btn { color: var(--text-dim); }
 
+.dashboard-admin-server-btn {
+  align-self: flex-start;
+  width: auto;
+  padding: 10px 22px;
+  margin-top: 4px;
+}
+
 /* Тело */
 .dashboard-body {
   flex: 1;
@@ -548,6 +586,371 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   gap: 32px;
+}
+
+.dashboard-content--admin {
+  max-width: 640px;
+}
+
+/* Админка: боковой список + контент */
+.dashboard-body--admin {
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  gap: 32px;
+  box-sizing: border-box;
+}
+
+.admin-sidebar {
+  flex-shrink: 0;
+  width: 200px;
+  padding: 0 8px 0 0;
+}
+
+.admin-sidebar__title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 20px;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+
+.admin-sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-sidebar__link {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.admin-sidebar__link:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.admin-sidebar__link--active {
+  background: var(--surface2);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.admin-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.admin-dashboard-section .dashboard-section__subtitle {
+  margin-top: 0;
+}
+
+.admin-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin: 20px 0 0;
+}
+
+.admin-stat-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-stat-card__label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.admin-stat-card__value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.admin-stat-card__value--num {
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-stat-card__value--ok {
+  color: #7dd87d;
+}
+
+.admin-stat-card__value--warn {
+  color: #ffb74d;
+}
+
+.admin-dashboard-code {
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+}
+
+.admin-dashboard-flash {
+  margin: 16px 0 0;
+}
+
+.admin-dashboard-hint {
+  margin-top: 14px !important;
+}
+
+.admin-dashboard-refresh {
+  margin-top: 18px;
+  align-self: flex-start;
+  width: auto;
+  padding: 9px 18px;
+}
+
+@media (max-width: 720px) {
+  .dashboard-body--admin {
+    flex-direction: column;
+    align-items: stretch;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .admin-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-sidebar {
+    width: 100%;
+    padding-right: 0;
+  }
+
+  .admin-sidebar__nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .admin-sidebar__link {
+    width: auto;
+    flex: 1 1 auto;
+    min-width: 96px;
+    text-align: center;
+  }
+}
+
+.dashboard-section__subtitle {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+/* ─── Admin: пользователи (без горизонтального скролла) ───────────────────── */
+.admin-users-wrap {
+  max-width: 100%;
+  width: 100%;
+  margin: 0;
+}
+
+.admin-users-table-shell {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  overflow: hidden;
+}
+
+.admin-users-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  table-layout: fixed;
+}
+
+.admin-users-table th,
+.admin-users-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  vertical-align: middle;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+.admin-users-table thead th {
+  background: var(--surface);
+  font-weight: 600;
+  color: var(--text-dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.admin-users-table thead th:nth-child(1) {
+  width: 34%;
+}
+
+.admin-users-table thead th:nth-child(2) {
+  width: 26%;
+}
+
+.admin-users-table thead th:nth-child(3) {
+  width: 18%;
+}
+
+.admin-users-table thead th:nth-child(4) {
+  width: 22%;
+}
+
+.admin-users-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-users-table__cell--email,
+.admin-users-table__cell--name {
+  font-size: 11px;
+  color: var(--text);
+}
+
+.admin-users-table__cell--status {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.admin-users-table__cell--access {
+  vertical-align: middle;
+}
+
+.admin-users-table__empty {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 20px;
+  font-size: 13px;
+}
+
+.admin-users-loading {
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+.admin-users-error {
+  margin: 0;
+}
+
+.admin-users-flash {
+  margin: 0 0 12px;
+}
+
+.admin-users-hint {
+  margin: 0 0 8px !important;
+}
+
+/* Выпадающий выбор user / admin / superadmin */
+.admin-role-picker {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.admin-role-picker__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+  text-transform: lowercase;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.admin-role-picker__trigger:hover:not(:disabled) {
+  border-color: var(--red);
+  color: #fff;
+  background: rgba(229, 57, 53, 0.15);
+}
+
+.admin-role-picker__trigger--open {
+  border-color: var(--red);
+}
+
+.admin-role-picker__trigger:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.admin-role-picker__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  min-width: 220px;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: #1e1e1e;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+}
+
+/* Портал в body: не режется overflow у таблицы / dashboard */
+.admin-role-picker__menu--portal {
+  position: fixed;
+  z-index: 15000;
+  top: auto;
+  left: auto;
+}
+
+.admin-role-picker__option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-family: var(--font);
+  color: var(--text);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.admin-role-picker__option:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.admin-role-picker__option--active {
+  color: #ff8a95;
+  font-weight: 600;
 }
 
 /* Секции */
@@ -762,6 +1165,41 @@ html, body, #root {
 .dashboard-badge--pending { background: rgba(120,80,0,.3); color: #ffe082; border-color: rgba(255,200,80,.3); }
 .dashboard-badge--deleted { background: rgba(50,50,50,.5); color: var(--text-dim); border-color: var(--border); }
 
+.dashboard-meta-item--roles {
+  align-items: flex-start;
+}
+
+.dashboard-role-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  max-width: min(100%, 320px);
+}
+
+.dashboard-meta-item__empty {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.dashboard-badge--role {
+  background: rgba(60, 70, 100, .35);
+  color: #b0c4ff;
+  border-color: rgba(120, 140, 200, .35);
+}
+
+.dashboard-badge--role-ops {
+  background: rgba(100, 60, 20, .35);
+  color: #ffcc80;
+  border-color: rgba(200, 140, 80, .35);
+}
+
+.dashboard-badge--role-super {
+  background: rgba(140, 30, 40, .35);
+  color: #ff8a95;
+  border-color: rgba(220, 80, 90, .4);
+}
+
 .dashboard-plan {
   display: flex;
   align-items: center;
@@ -891,10 +1329,7 @@ html, body, #root {
 
 /* ─── Room ───────────────────────────────────────────────────────────────── */
 .room-layout-cycle-fab {
-  position: fixed;
-  top: 60px;
-  right: 16px;
-  z-index: 10030;
+  flex-shrink: 0;
   width: 44px;
   height: 44px;
   border-radius: 50%;
@@ -925,27 +1360,76 @@ html, body, #root {
   transform: scale(0.96);
 }
 
+/* Плавающая смена вида: справа, чуть ниже верхнего chrome (не отдельная панель) */
+.room-layout-cycle-fab--float {
+  position: fixed;
+  z-index: 10028;
+  right: max(12px, env(safe-area-inset-right, 0px));
+  top: calc(env(safe-area-inset-top, 0px) + 60px);
+}
+
+.room-page.room-page--viewport-mobile:not(.room-page--mobile-pip) .room-layout-cycle-fab--float {
+  top: calc(env(safe-area-inset-top, 0px) + 54px);
+}
+
+.room-page.room-page--viewport-mobile.room-page--mobile-pip .room-layout-cycle-fab--float {
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+}
+
+.room-page--chrome-hidden .room-layout-cycle-fab--float {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Диалог выхода: только модалка, без круглых кнопок поверх */
+.room-page--leave-dialog .ctrl-mobile-pip-chrome,
+.room-page--leave-dialog .ctrl-mobile-fab-dock,
+.room-page--leave-dialog .ctrl-mobile-pip-quick-backdrop,
+.room-page--leave-dialog .room-layout-cycle-fab--float {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
 .room-layout-cycle-fab__icon {
   display: block;
 }
 
-/* Мобильный: у правого края, по вертикали по центру экрана — удобно переключать PiP/сетку одной рукой */
-.room-layout-cycle-fab--mobile {
-  top: 50%;
-  right: max(4px, env(safe-area-inset-right, 0px));
-  left: auto;
-  width: 48px;
-  height: 48px;
-  transform: translateY(-50%);
+/* Верх комнаты: шапка (один блок для immersive hide) */
+.room-page__top-chrome {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
 }
 
-.room-layout-cycle-fab--mobile:active {
-  transform: translateY(-50%) scale(0.96);
+.room-page__top-chrome .room-header,
+.room-page__top-chrome .room-header.room-header--mobile-compact {
+  border-bottom: none;
+}
+
+.room-page__pip-safe-strip {
+  flex-shrink: 0;
+  min-height: 0;
+  padding-top: max(10px, env(safe-area-inset-top, 0px));
+  padding-left: max(0px, env(safe-area-inset-left, 0px));
+  padding-right: max(0px, env(safe-area-inset-right, 0px));
+}
+
+.room-header-mobile-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .room-page {
   display: grid;
-  grid-template-rows: 52px 1fr 72px;
+  grid-template-rows: auto 1fr 72px;
   height: 100%;
   overflow: hidden;
   transition: grid-template-rows 0.32s ease;
@@ -955,8 +1439,19 @@ html, body, #root {
   grid-template-rows: 0 1fr 0;
 }
 
-.room-page--chrome-hidden .room-header,
-.room-page--chrome-hidden .room-header-mobile-shell,
+.room-page--chrome-hidden .room-page__top-chrome {
+  min-height: 0 !important;
+  max-height: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+}
+
 .room-page--chrome-hidden .controls-bar {
   min-height: 0;
   max-height: 0;
@@ -969,14 +1464,6 @@ html, body, #root {
   opacity: 0;
   pointer-events: none;
   visibility: hidden;
-}
-
-/* Мобильная шапка — тот же слот сетки, что и .room-header */
-.room-page--chrome-hidden .room-header-mobile-shell,
-.room-page--chrome-hidden .room-page__mobile-pip-top-spacer {
-  min-height: 0 !important;
-  max-height: 0 !important;
-  height: 0 !important;
 }
 
 .controls-bar--fab-dock {
@@ -1237,6 +1724,20 @@ html, body, #root {
   gap: 8px;
   width: 100%;
   margin-bottom: 4px;
+}
+
+.mobile-controls-sheet__account {
+  width: 100%;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.mobile-controls-sheet__account .header-user-dropdown__item {
+  border-radius: 8px;
 }
 
 .mobile-controls-sheet__leave-wrap {
@@ -1841,8 +2342,8 @@ html, body, #root {
   transform: translateX(18px);
 }
 
-/* Неон: под шапкой и над панелью в режиме стримера */
-.room-page--streamer-mode .room-header {
+/* Неон: верхний chrome (шапка + полоса вида) в режиме стримера */
+.room-page--streamer-mode .room-page__top-chrome {
   border-bottom-color: rgba(0, 255, 255, 0.22);
   box-shadow:
     0 1px 0 rgba(0, 255, 255, 0.35),
@@ -3258,7 +3759,7 @@ button.vio-row--peer:focus-visible {
   }
 
   /* Room layout — smaller header & controls */
-  .room-page { grid-template-rows: 44px 1fr 56px; }
+  .room-page { grid-template-rows: auto 1fr 56px; }
   .room-page.room-page--viewport-mobile {
     grid-template-rows: auto 1fr 0;
   }
@@ -3270,8 +3771,9 @@ button.vio-row--peer:focus-visible {
     grid-template-rows: 0 1fr 0;
   }
 
+  /* Первая строка — полоса с кнопкой смены вида (скрывается с immersive chrome) */
   .room-page.room-page--viewport-mobile.room-page--mobile-pip {
-    grid-template-rows: 0 minmax(0, 1fr) 0;
+    grid-template-rows: auto minmax(0, 1fr) 0;
   }
 
   /* Header */
@@ -3844,7 +4346,7 @@ button.vio-row--peer:focus-visible {
 .confirm-dialog-root {
   position: fixed;
   inset: 0;
-  z-index: 4000;
+  z-index: 21000;
   display: flex;
   align-items: center;
   justify-content: center;

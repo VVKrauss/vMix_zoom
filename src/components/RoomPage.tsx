@@ -45,7 +45,6 @@ import { ParticipantTileIdle } from './ParticipantTileIdle'
 import { RoomChatPanel } from './RoomChatPanel'
 import { ReactionBurstOverlay } from './ReactionBurstOverlay'
 import { VmixIngressModal } from './VmixIngressModal'
-import { ServerSettingsModal } from './ServerSettingsModal'
 import { PillToggle } from './PillToggle'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useActiveSpeaker } from '../hooks/useActiveSpeaker'
@@ -53,6 +52,32 @@ import { buildRoomInviteAbsoluteUrl } from '../utils/soloViewerParams'
 import { useTouchDoubleTap } from '../hooks/useTouchDoubleTap'
 import { nextLayoutMode } from '../config/layoutModeCycle'
 import { useRoomUiSync } from '../hooks/useRoomUiSync'
+import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
+
+function LayoutCycleFabButton({
+  className = '',
+  onPickNextLayout,
+}: {
+  className?: string
+  onPickNextLayout: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className={`room-layout-cycle-fab${className ? ` ${className}` : ''}`}
+      onClick={onPickNextLayout}
+      title="Сменить вид отображения"
+      aria-label="Сменить вид отображения"
+    >
+      <svg className="room-layout-cycle-fab__icon" width="22" height="22" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+        <rect x="0.5" y="0.5" width="6" height="6" rx="0.75" fill="none" stroke="currentColor" strokeWidth="1" />
+        <rect x="9" y="0" width="7" height="7" rx="0.75" />
+        <rect x="0" y="9" width="7" height="7" rx="0.75" />
+        <rect x="9" y="9" width="7" height="7" rx="0.75" />
+      </svg>
+    </button>
+  )
+}
 
 function remoteScreenTileId(p: RemoteParticipant): string | null {
   if (!p.screenStream) return null
@@ -199,7 +224,6 @@ export function RoomPage({
   const [vmixModalOpen, setVmixModalOpen] = useState(false)
   const [vmixModalMode, setVmixModalMode] = useState<'setup' | 'reference'>('setup')
   const [vmixStopDialogOpen, setVmixStopDialogOpen] = useState(false)
-  const [serverSettingsOpen, setServerSettingsOpen] = useState(false)
   const [vmixError, setVmixError] = useState<string | null>(null)
   const [inviteToast, setInviteToast] = useState<'url' | 'id' | null>(null)
   const inviteToastTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
@@ -265,6 +289,7 @@ export function RoomPage({
   const [showControlButtonLabels, setShowControlButtonLabels] = useLocalStorageBool('vmix_control_button_labels', false)
   const [chatEmbed, setChatEmbed] = useLocalStorageBool('vmix_chat_embed', true)
   const { user, signOut } = useAuth()
+  const { allowed: canAccessAdminPanel } = useCanAccessAdminPanel()
   const avatarUrl = user?.user_metadata?.avatar_url as string | undefined
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
@@ -301,14 +326,12 @@ export function RoomPage({
     () =>
       leaveDialog !== null ||
       vmixModalOpen ||
-      serverSettingsOpen ||
       screenStopDialogOpen ||
       vmixStopDialogOpen ||
       (chatOpen && !chatEmbed),
     [
       leaveDialog,
       vmixModalOpen,
-      serverSettingsOpen,
       screenStopDialogOpen,
       vmixStopDialogOpen,
       chatOpen,
@@ -880,7 +903,7 @@ export function RoomPage({
         immersiveAutoHide && chromeHidden ? ' room-page--chrome-hidden' : ''
       }${isViewportMobile ? ' room-page--viewport-mobile' : ''}${
         isViewportMobile && layout === 'pip' ? ' room-page--mobile-pip' : ''
-      }`}
+      }${leaveDialog !== null ? ' room-page--leave-dialog' : ''}`}
     >
       <ConfirmDialog
         open={leaveDialog !== null}
@@ -898,8 +921,6 @@ export function RoomPage({
         mode={vmixModalMode}
         onClose={() => setVmixModalOpen(false)}
       />
-
-      <ServerSettingsModal open={serverSettingsOpen} onClose={() => setServerSettingsOpen(false)} />
 
       <ConfirmDialog
         open={vmixStopDialogOpen}
@@ -921,133 +942,155 @@ export function RoomPage({
         onConfirm={confirmStopScreenSharing}
       />
 
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      {isViewportMobile && layout === 'pip' ? (
-        <div className="room-page__mobile-pip-top-spacer" aria-hidden />
-      ) : isViewportMobile ? (
-        <div className="room-header-mobile-shell">
-          <header className="room-header room-header--mobile-compact">
-            <div className="room-header-mobile-brand" aria-hidden>
-              <img className="brand-logo brand-logo--header" src="/logo.png" alt="" draggable={false} />
+      {/* ── Верх: шапка + полоса смены вида (ниже хэдера, в одном chrome для immersive) ── */}
+      <div className="room-page__top-chrome">
+        {isViewportMobile && layout === 'pip' ? (
+          <div className="room-page__pip-safe-strip" aria-hidden />
+        ) : isViewportMobile ? (
+          <div className="room-header-mobile-shell">
+            <header className="room-header room-header--mobile-compact">
+              <div className="room-header-mobile-brand" aria-hidden>
+                <img className="brand-logo brand-logo--header" src="/logo.png" alt="" draggable={false} />
+              </div>
+              <div className="room-header-mobile-actions">
+                <div className="room-invite-menu room-invite-menu--compact" ref={inviteRef}>
+                  <button
+                    type="button"
+                    className={`room-invite-btn-compact${inviteOpen ? ' room-invite-btn-compact--open' : ''}`}
+                    onClick={() => setInviteOpen((v) => !v)}
+                    title="Пригласить участников"
+                    aria-label="Пригласить участников"
+                  >
+                    <InviteIcon />
+                  </button>
+                  {inviteOpen && (
+                    <div className="room-invite-dropdown">
+                      <button type="button" className="room-invite-dropdown__item" onClick={handleCopyInviteUrl}>
+                        Скопировать ссылку
+                      </button>
+                      <button type="button" className="room-invite-dropdown__item" onClick={handleCopyInviteId}>
+                        Скопировать ID комнаты
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </header>
+          </div>
+        ) : (
+          <header className="room-header">
+            <button type="button" className="room-logo-btn" onClick={onLogoHomeClick} title="На главную" aria-label="На главную">
+              <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
+            </button>
+
+            <div className="room-center">
+              <div className="room-center__row">
+                <div className="room-center__titles">
+                  <span className="room-name">{roomId}</span>
+                  <span className="room-count">({participantCount})</span>
+                </div>
+                <div className="room-invite-menu" ref={inviteRef}>
+                  <button
+                    type="button"
+                    className={`room-invite-btn${inviteOpen ? ' room-invite-btn--open' : ''}`}
+                    onClick={() => setInviteOpen((v) => !v)}
+                    title="Пригласить участников"
+                  >
+                    <InviteIcon />
+                  </button>
+                  {inviteOpen && (
+                    <div className="room-invite-dropdown">
+                      <button type="button" className="room-invite-dropdown__item" onClick={handleCopyInviteUrl}>
+                        Скопировать ссылку
+                      </button>
+                      <button type="button" className="room-invite-dropdown__item" onClick={handleCopyInviteId}>
+                        Скопировать ID комнаты
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="room-invite-menu room-invite-menu--compact" ref={inviteRef}>
-              <button
-                type="button"
-                className={`room-invite-btn-compact${inviteOpen ? ' room-invite-btn-compact--open' : ''}`}
-                onClick={() => setInviteOpen((v) => !v)}
-                title="Пригласить участников"
-                aria-label="Пригласить участников"
-              >
-                <InviteIcon />
-              </button>
-              {inviteOpen && (
-                <div className="room-invite-dropdown">
-                  <button type="button" className="room-invite-dropdown__item" onClick={handleCopyInviteUrl}>
-                    Скопировать ссылку
+
+            <div className="header-right">
+              <div title="Оформление панели для эфира">
+                <PillToggle
+                  checked={streamerMode}
+                  onCheckedChange={(v) => setStreamerMode(v)}
+                  offLabel="Обычный"
+                  onLabel="Стример"
+                  ariaLabel={streamerMode ? 'Режим стримера включён' : 'Режим стримера выключен'}
+                />
+              </div>
+              {user && (
+                <div className="header-user-menu" ref={userMenuRef}>
+                  <button
+                    type="button"
+                    className={`header-dashboard-btn${userMenuOpen ? ' header-dashboard-btn--open' : ''}`}
+                    title="Меню пользователя"
+                    onClick={() => setUserMenuOpen((v) => !v)}
+                  >
+                    {avatarUrl
+                      ? <img src={avatarUrl} alt="" className="header-dashboard-avatar" />
+                      : <DashboardIcon />
+                    }
                   </button>
-                  <button type="button" className="room-invite-dropdown__item" onClick={handleCopyInviteId}>
-                    Скопировать ID комнаты
-                  </button>
+
+                  {userMenuOpen && (
+                    <div className="header-user-dropdown">
+                      <a
+                        href="/dashboard"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="header-user-dropdown__item"
+                        onClick={() => setUserMenuOpen(false)}
+                      >
+                        Личный кабинет
+                      </a>
+                      {canAccessAdminPanel && (
+                        <a
+                          href="/admin"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="header-user-dropdown__item"
+                          onClick={() => setUserMenuOpen(false)}
+                        >
+                          Админка
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        className="header-user-dropdown__item"
+                        onClick={() => {
+                          setUserMenuOpen(false)
+                          openLeaveDialog('leave', remoteList.length)
+                        }}
+                      >
+                        Выйти из комнаты
+                      </button>
+                      <div className="header-user-dropdown__separator" />
+                      <button
+                        type="button"
+                        className="header-user-dropdown__item header-user-dropdown__item--danger"
+                        onClick={() => { setUserMenuOpen(false); signOut() }}
+                      >
+                        Выйти из аккаунта
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           </header>
-        </div>
-      ) : (
-        <header className="room-header">
-          <button type="button" className="room-logo-btn" onClick={onLogoHomeClick} title="На главную" aria-label="На главную">
-            <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
-          </button>
+        )}
+      </div>
 
-          <div className="room-center">
-            <div className="room-center__row">
-              <div className="room-center__titles">
-                <span className="room-name">{roomId}</span>
-                <span className="room-count">({participantCount})</span>
-              </div>
-              <div className="room-invite-menu" ref={inviteRef}>
-                <button
-                  type="button"
-                  className={`room-invite-btn${inviteOpen ? ' room-invite-btn--open' : ''}`}
-                  onClick={() => setInviteOpen((v) => !v)}
-                  title="Пригласить участников"
-                >
-                  <InviteIcon />
-                </button>
-                {inviteOpen && (
-                  <div className="room-invite-dropdown">
-                    <button type="button" className="room-invite-dropdown__item" onClick={handleCopyInviteUrl}>
-                      Скопировать ссылку
-                    </button>
-                    <button type="button" className="room-invite-dropdown__item" onClick={handleCopyInviteId}>
-                      Скопировать ID комнаты
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="header-right">
-            <div title="Оформление панели для эфира">
-              <PillToggle
-                checked={streamerMode}
-                onCheckedChange={(v) => setStreamerMode(v)}
-                offLabel="Обычный"
-                onLabel="Стример"
-                ariaLabel={streamerMode ? 'Режим стримера включён' : 'Режим стримера выключен'}
-              />
-            </div>
-            {user && (
-              <div className="header-user-menu" ref={userMenuRef}>
-                <button
-                  type="button"
-                  className={`header-dashboard-btn${userMenuOpen ? ' header-dashboard-btn--open' : ''}`}
-                  title="Меню пользователя"
-                  onClick={() => setUserMenuOpen((v) => !v)}
-                >
-                  {avatarUrl
-                    ? <img src={avatarUrl} alt="" className="header-dashboard-avatar" />
-                    : <DashboardIcon />
-                  }
-                </button>
-
-                {userMenuOpen && (
-                  <div className="header-user-dropdown">
-                    <a
-                      href="/dashboard"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="header-user-dropdown__item"
-                      onClick={() => setUserMenuOpen(false)}
-                    >
-                      Личный кабинет
-                    </a>
-                    <button
-                      type="button"
-                      className="header-user-dropdown__item"
-                      onClick={() => {
-                        setUserMenuOpen(false)
-                        openLeaveDialog('leave', remoteList.length)
-                      }}
-                    >
-                      Выйти из комнаты
-                    </button>
-                    <div className="header-user-dropdown__separator" />
-                    <button
-                      type="button"
-                      className="header-user-dropdown__item header-user-dropdown__item--danger"
-                      onClick={() => { setUserMenuOpen(false); signOut() }}
-                    >
-                      Выйти из аккаунта
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </header>
-      )}
+      {showLayoutToggle ? (
+        <LayoutCycleFabButton
+          className="room-layout-cycle-fab--float"
+          onPickNextLayout={() => setLayout((l) => nextLayoutMode(l))}
+        />
+      ) : null}
 
       {vmixError && (
         <div className="room-invite-toast room-invite-toast--visible room-invite-toast--error" role="alert">
@@ -1264,7 +1307,6 @@ export function RoomPage({
         onStartVmixIngress={handleStartVmixIngress}
         onRequestStopVmixIngress={requestStopVmixIngress}
         onOpenVmixSettings={openVmixSettingsReference}
-        onOpenServerSettings={() => setServerSettingsOpen(true)}
         mirrorLocalCamera={mirrorLocalCamera}
         onToggleMirrorLocalCamera={() => setMirrorLocalCamera((v) => !v)}
         vmixProgramVolume={vmixProgramVolume}
@@ -1277,6 +1319,7 @@ export function RoomPage({
         onToggleImmersiveAutoHide={() => setImmersiveAutoHide((v) => !v)}
         chromeHidden={immersiveAutoHide && chromeHidden}
         onInviteParticipants={handleCopyInviteUrl}
+        showAdminPanelLink={canAccessAdminPanel}
       />
 
       {chatOpen && !chatEmbed && (
@@ -1288,23 +1331,6 @@ export function RoomPage({
           localPeerId={localPeerId}
           onSend={onSendChatMessage}
         />
-      )}
-
-      {showLayoutToggle && (
-        <button
-          type="button"
-          className={`room-layout-cycle-fab${isViewportMobile ? ' room-layout-cycle-fab--mobile' : ''}`}
-          onClick={() => setLayout((l) => nextLayoutMode(l))}
-          title="Сменить вид отображения"
-          aria-label="Сменить вид отображения"
-        >
-          <svg className="room-layout-cycle-fab__icon" width="22" height="22" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-            <rect x="0.5" y="0.5" width="6" height="6" rx="0.75" fill="none" stroke="currentColor" strokeWidth="1" />
-            <rect x="9" y="0" width="7" height="7" rx="0.75" />
-            <rect x="0" y="9" width="7" height="7" rx="0.75" />
-            <rect x="9" y="9" width="7" height="7" rx="0.75" />
-          </svg>
-        </button>
       )}
     </div>
   )

@@ -2,6 +2,13 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 
+/** Глобальные роли из `user_global_roles` + справочник `roles`. */
+export interface UserGlobalRole {
+  code: string
+  title: string | null
+  scope_type: string
+}
+
 export interface UserProfile {
   id: string
   display_name: string
@@ -10,6 +17,7 @@ export interface UserProfile {
   status: string
   /** jsonb с сервера; парсить через mergeRoomUiPrefs */
   room_ui_preferences: unknown | null
+  global_roles: UserGlobalRole[]
 }
 
 export interface PlanInfo {
@@ -47,17 +55,45 @@ export function useProfile(): UseProfileReturn {
       setLoading(true)
       setError(null)
 
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id, display_name, email, avatar_url, status, room_ui_preferences')
-        .eq('id', user.id)
-        .single()
+      const [{ data: userData, error: userError }, { data: roleRows, error: rolesError }] = await Promise.all([
+        supabase
+          .from('users')
+          .select('id, display_name, email, avatar_url, status, room_ui_preferences')
+          .eq('id', user.id)
+          .single(),
+        supabase
+          .from('user_global_roles')
+          .select('roles ( code, title, scope_type )')
+          .eq('user_id', user.id),
+      ])
 
       if (userError) {
         setError(userError.message)
         setLoading(false)
         return
       }
+
+      const globalRoles: UserGlobalRole[] = []
+      if (!rolesError && Array.isArray(roleRows)) {
+        for (const row of roleRows as { roles: UserGlobalRole | UserGlobalRole[] | null }[]) {
+          const r = row.roles
+          if (!r) continue
+          const list = Array.isArray(r) ? r : [r]
+          for (const x of list) {
+            if (x?.code) globalRoles.push(x)
+          }
+        }
+      }
+
+      const ROLE_SORT = ['superadmin', 'platform_admin', 'support_admin', 'registered_user'] as const
+      globalRoles.sort((a, b) => {
+        const ia = ROLE_SORT.indexOf(a.code as (typeof ROLE_SORT)[number])
+        const ib = ROLE_SORT.indexOf(b.code as (typeof ROLE_SORT)[number])
+        const pa = ia === -1 ? 99 : ia
+        const pb = ib === -1 ? 99 : ib
+        if (pa !== pb) return pa - pb
+        return a.code.localeCompare(b.code)
+      })
 
       setProfile({
         id: userData.id,
@@ -66,6 +102,7 @@ export function useProfile(): UseProfileReturn {
         avatar_url: userData.avatar_url,
         status: userData.status,
         room_ui_preferences: userData.room_ui_preferences ?? null,
+        global_roles: globalRoles,
       })
 
       // Подписка: берём через аккаунт владельца
@@ -115,7 +152,7 @@ export function useProfile(): UseProfileReturn {
 
     await supabase.auth.updateUser({ data: { display_name: trimmed } })
 
-    setProfile((prev) => prev ? { ...prev, display_name: trimmed } : prev)
+    setProfile((prev) => (prev ? { ...prev, display_name: trimmed } : prev))
     setSaving(false)
     return { error: null }
   }, [user, profile])
