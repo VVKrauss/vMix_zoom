@@ -7,7 +7,7 @@ import { ControlsBar } from './ControlsBar'
 import { ParticipantCard } from './ParticipantCard'
 import { DraggablePip } from './DraggablePip'
 import { AudioMeter } from './AudioMeter'
-import { MicOffIcon, DashboardIcon, InviteIcon } from './icons'
+import { MicOffIcon, DashboardIcon, InviteIcon, ParticipantsBadgeIcon } from './icons'
 import { useAuth } from '../context/AuthContext'
 import { shouldClosePopoverOnOutsidePointer } from '../utils/popoverOutsideClick'
 import { useAudioOutputs } from '../hooks/useAudioOutputs'
@@ -18,6 +18,8 @@ import {
   writeStoredLayoutMode,
   readStoredPipLayout,
   writeStoredPipLayout,
+  readStoredHideVideoLetterboxing,
+  writeStoredHideVideoLetterboxing,
 } from '../config/roomUiStorage'
 import { mediaQueryMaxWidthMobile } from '../config/uiBreakpoints'
 import type { StoredLayoutMode } from '../config/roomUiStorage'
@@ -53,6 +55,9 @@ import { useTouchDoubleTap } from '../hooks/useTouchDoubleTap'
 import { nextLayoutMode } from '../config/layoutModeCycle'
 import { useRoomUiSync } from '../hooks/useRoomUiSync'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
+import { useProfile } from '../hooks/useProfile'
+import { useIsDbSpaceRoomHost } from '../hooks/useSpaceRoomHost'
+import { isSessionHostFor } from '../lib/spaceRoom'
 
 function LayoutCycleFabButton({
   className = '',
@@ -84,6 +89,17 @@ function remoteScreenTileId(p: RemoteParticipant): string | null {
   return p.screenPeerId ?? screenTileKey(p.peerId)
 }
 
+/** peerId гостя для пункта «выключить звук гостю» (не локальная плитка). */
+function guestMuteTargetPeerId(tileId: string, localPeerId: string): string | null {
+  if (!tileId || tileId === localPeerId) return null
+  if (isScreenTileId(tileId)) {
+    const owner = parseScreenTilePeerId(tileId)
+    if (!owner || owner === localPeerId) return null
+    return owner
+  }
+  return tileId
+}
+
 export type LayoutMode = StoredLayoutMode
 
 /** vMix: ingress запущен, но видео ещё нет — оранжевая кнопка; есть видео — красная. */
@@ -93,9 +109,6 @@ export type VmixIngressPhase = 'idle' | 'waiting' | 'live'
 export function layoutUsesTiledView(mode: LayoutMode): boolean {
   return mode === 'grid'
 }
-
-/** Единый масштаб видео в плитках (раньше был переключатель в настройках). */
-const TILE_VIDEO_OBJECT_FIT: React.CSSProperties['objectFit'] = 'cover'
 
 interface Props {
   name: string
@@ -138,6 +151,8 @@ interface Props {
   onStopVmixIngress: () => Promise<{ ok: boolean; error?: string }>
   /** Входящее camera/vmix видео по участнику (не локальная плитка, не экран). */
   getRemoteInboundVideoQuality?: (peerId: string) => Promise<InboundVideoQuality | null>
+  /** Удалённое выключение микрофона гостя (сигналинг). */
+  requestPeerMicMute?: (targetPeerId: string) => void
 }
 
 export function RoomPage({
@@ -158,6 +173,7 @@ export function RoomPage({
   onStartVmixIngress,
   onStopVmixIngress,
   getRemoteInboundVideoQuality,
+  requestPeerMicMute,
 }: Props) {
   const isViewportMobile = useMediaQuery(mediaQueryMaxWidthMobile)
   const [immersiveAutoHide, setImmersiveAutoHide] = useLocalStorageBool(
@@ -210,6 +226,9 @@ export function RoomPage({
     return readStoredPipLayout(mobile).size
   })
   const [showLayoutToggle, setShowLayoutToggle] = useState(true)
+  const [hideVideoLetterboxing, setHideVideoLetterboxing] = useState(() =>
+    typeof window !== 'undefined' ? readStoredHideVideoLetterboxing() : true,
+  )
 
   useEffect(() => {
     writeStoredLayoutMode(layout, isViewportMobile)
@@ -218,6 +237,10 @@ export function RoomPage({
   useEffect(() => {
     writeStoredPipLayout(pipPos, pipSize, isViewportMobile)
   }, [pipPos, pipSize, isViewportMobile])
+
+  useEffect(() => {
+    writeStoredHideVideoLetterboxing(hideVideoLetterboxing)
+  }, [hideVideoLetterboxing])
 
   const [leaveDialog, setLeaveDialog] = useState<null | { mode: 'home' | 'leave'; others: number }>(null)
   const [screenStopDialogOpen, setScreenStopDialogOpen] = useState(false)
@@ -289,7 +312,40 @@ export function RoomPage({
   const [showControlButtonLabels, setShowControlButtonLabels] = useLocalStorageBool('vmix_control_button_labels', false)
   const [chatEmbed, setChatEmbed] = useLocalStorageBool('vmix_chat_embed', true)
   const { user, signOut } = useAuth()
-  const { allowed: canAccessAdminPanel } = useCanAccessAdminPanel()
+  const { allowed: canAccessAdminPanel, isSuperadmin } = useCanAccessAdminPanel()
+  const { plan, profile } = useProfile()
+  const isDbSpaceRoomHost = useIsDbSpaceRoomHost(roomId, user?.id)
+
+  /** Staff/superadmin по RPC + роли из профиля (если RPC отличается от `user_global_roles`). */
+  const isPlatformAdminish = useMemo(
+    () =>
+      canAccessAdminPanel ||
+      isSuperadmin ||
+      (profile?.global_roles?.some(
+        (r) =>
+          r.code === 'superadmin' || r.code === 'platform_admin' || r.code === 'support_admin',
+      ) ??
+        false),
+    [canAccessAdminPanel, isSuperadmin, profile?.global_roles],
+  )
+
+  const isStreamerPlan = useMemo(
+    () => /стример|streamer/i.test(plan?.plan_name?.trim() ?? ''),
+    [plan?.plan_name],
+  )
+  const isRoomHost = useMemo(
+    () => isDbSpaceRoomHost || isSessionHostFor(roomId.trim()),
+    [isDbSpaceRoomHost, roomId],
+  )
+
+  /**
+   * Расширенные инструменты комнаты: любой админ (staff/superadmin/роли) ИЛИ подписка «стример» и хост комнаты.
+   * Соло-ссылка, PiP-меню, выключение мика гостю, переключатель режима стримера, запуск SRT в idle.
+   */
+  const canUseElevatedRoomTools = useMemo(
+    () => isPlatformAdminish || (isStreamerPlan && isRoomHost),
+    [isPlatformAdminish, isStreamerPlan, isRoomHost],
+  )
   const avatarUrl = user?.user_metadata?.avatar_url as string | undefined
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
@@ -312,10 +368,12 @@ export function RoomPage({
     pipPos,
     pipSize,
     showLayoutToggle,
+    hideVideoLetterboxing,
     setLayout,
     setPipPos,
     setPipSize,
     setShowLayoutToggle,
+    setHideVideoLetterboxing,
   })
 
   const [streamerMode, setStreamerMode] = useLocalStorageBool('vmix_streamer_mode', false)
@@ -547,10 +605,10 @@ export function RoomPage({
     () => ({
       width: '100%',
       height: '100%',
-      objectFit: TILE_VIDEO_OBJECT_FIT,
+      objectFit: (hideVideoLetterboxing ? 'cover' : 'contain') as React.CSSProperties['objectFit'],
       objectPosition: 'center',
     }),
-    [],
+    [hideVideoLetterboxing],
   )
 
   const screenShareVideoStyle: React.CSSProperties = useMemo(
@@ -567,11 +625,11 @@ export function RoomPage({
     () => ({
       width: '100%',
       height: '100%',
-      objectFit: TILE_VIDEO_OBJECT_FIT,
+      objectFit: (hideVideoLetterboxing ? 'cover' : 'contain') as React.CSSProperties['objectFit'],
       objectPosition: 'center',
       display: 'block',
     }),
-    [],
+    [hideVideoLetterboxing],
   )
 
   const gridStyle = (cols: number): React.CSSProperties => ({
@@ -597,10 +655,9 @@ export function RoomPage({
       srtListenPort={localSrt?.listenPort}
       reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
       mirrorLocalPreview={mirrorLocalCamera}
+      showSoloViewerCopy={canUseElevatedRoomTools}
     />
   )
-
-  const participantCount = `${rosterCount} ${ruParticipantsWord(rosterCount)}`
 
   const leaveMessage =
     leaveDialog && leaveDialog.others > 0
@@ -752,6 +809,12 @@ export function RoomPage({
           srtListenPort={localSrt?.listenPort}
           onStopShare={requestStopScreenSharing}
           reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
+          showSoloViewerCopy={canUseElevatedRoomTools}
+          guestMute={
+            canUseElevatedRoomTools && requestPeerMicMute
+              ? { show: true, onMute: () => requestPeerMicMute(localPeerId) }
+              : undefined
+          }
         />
       )
     }
@@ -768,6 +831,12 @@ export function RoomPage({
           srtConnectUrl={srtByPeer[remotePresenter.peerId]?.connectUrlPublic}
           srtListenPort={srtByPeer[remotePresenter.peerId]?.listenPort}
           reactionBurst={pickLatestBurstForPeer(reactionBursts, remotePresenter.peerId)}
+          showSoloViewerCopy={canUseElevatedRoomTools}
+          guestMute={
+            canUseElevatedRoomTools && requestPeerMicMute
+              ? { show: true, onMute: () => requestPeerMicMute(remotePresenter.peerId) }
+              : undefined
+          }
         />
       )
     }
@@ -788,6 +857,12 @@ export function RoomPage({
             srtListenPort={localSrt?.listenPort}
             onStopShare={requestStopScreenSharing}
             reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
+            showSoloViewerCopy={canUseElevatedRoomTools}
+            guestMute={
+              canUseElevatedRoomTools && requestPeerMicMute
+                ? { show: true, onMute: () => requestPeerMicMute(localPeerId) }
+                : undefined
+            }
           />
         )
       }
@@ -804,6 +879,12 @@ export function RoomPage({
           srtConnectUrl={srtByPeer[p.peerId]?.connectUrlPublic}
           srtListenPort={srtByPeer[p.peerId]?.listenPort}
           reactionBurst={pickLatestBurstForPeer(reactionBursts, owner)}
+          showSoloViewerCopy={canUseElevatedRoomTools}
+          guestMute={
+            canUseElevatedRoomTools && requestPeerMicMute
+              ? { show: true, onMute: () => requestPeerMicMute(owner) }
+              : undefined
+          }
         />
       )
     }
@@ -824,6 +905,12 @@ export function RoomPage({
         playoutSinkId={cardPlayout.playoutSinkId}
         reactionBurst={pickLatestBurstForPeer(reactionBursts, p.peerId)}
         getRemoteInboundVideoQuality={getRemoteInboundVideoQuality}
+        showSoloViewerCopy={canUseElevatedRoomTools}
+        guestMute={
+          !isVmixTile && canUseElevatedRoomTools && requestPeerMicMute
+            ? { show: true, onMute: () => requestPeerMicMute(p.peerId) }
+            : undefined
+        }
       />
     )
   }
@@ -831,59 +918,69 @@ export function RoomPage({
   const pipFloatSrtCopy = useMemo(() => {
     const id = pipFloatTileId
     const base = { roomId }
-    if (id === localPeerId) {
-      return {
-        ...base,
-        connectUrl: localSrt?.connectUrlPublic,
-        listenPort: localSrt?.listenPort,
-        peerId: localPeerId,
-      }
-    }
-    if (localScreenTileId && id === localScreenTileId) {
-      return {
-        ...base,
-        connectUrl: localSrt?.connectUrlPublic,
-        listenPort: localSrt?.listenPort,
-        peerId: localScreenPeerId ?? localPeerId,
-      }
-    }
-    const remotePresenter = remoteList.find((p) => remoteScreenTileId(p) === id)
-    if (remotePresenter) {
-      const s = srtByPeer[remotePresenter.peerId]
-      return {
-        ...base,
-        connectUrl: s?.connectUrlPublic,
-        listenPort: s?.listenPort,
-        peerId: remotePresenter.peerId,
-      }
-    }
-    if (isScreenTileId(id)) {
-      const owner = parseScreenTilePeerId(id)
-      if (owner === localPeerId) {
-        return {
-          ...base,
-          connectUrl: localSrt?.connectUrlPublic,
-          listenPort: localSrt?.listenPort,
-          peerId: localPeerId,
-        }
-      }
-      if (owner) {
-        const s = srtByPeer[owner]
-        return {
-          ...base,
-          connectUrl: s?.connectUrlPublic,
-          listenPort: s?.listenPort,
-          peerId: owner,
-        }
-      }
-    }
-    const s = srtByPeer[id]
-    return {
-      ...base,
-      connectUrl: s?.connectUrlPublic,
-      listenPort: s?.listenPort,
-      peerId: id,
-    }
+    const core =
+      id === localPeerId
+        ? {
+            ...base,
+            connectUrl: localSrt?.connectUrlPublic,
+            listenPort: localSrt?.listenPort,
+            peerId: localPeerId,
+          }
+        : localScreenTileId && id === localScreenTileId
+          ? {
+              ...base,
+              connectUrl: localSrt?.connectUrlPublic,
+              listenPort: localSrt?.listenPort,
+              peerId: localScreenPeerId ?? localPeerId,
+            }
+          : (() => {
+              const remotePresenter = remoteList.find((p) => remoteScreenTileId(p) === id)
+              if (remotePresenter) {
+                const s = srtByPeer[remotePresenter.peerId]
+                return {
+                  ...base,
+                  connectUrl: s?.connectUrlPublic,
+                  listenPort: s?.listenPort,
+                  peerId: remotePresenter.peerId,
+                }
+              }
+              if (isScreenTileId(id)) {
+                const owner = parseScreenTilePeerId(id)
+                if (owner === localPeerId) {
+                  return {
+                    ...base,
+                    connectUrl: localSrt?.connectUrlPublic,
+                    listenPort: localSrt?.listenPort,
+                    peerId: localPeerId,
+                  }
+                }
+                if (owner) {
+                  const s = srtByPeer[owner]
+                  return {
+                    ...base,
+                    connectUrl: s?.connectUrlPublic,
+                    listenPort: s?.listenPort,
+                    peerId: owner,
+                  }
+                }
+              }
+              const s = srtByPeer[id]
+              return {
+                ...base,
+                connectUrl: s?.connectUrlPublic,
+                listenPort: s?.listenPort,
+                peerId: id,
+              }
+            })()
+    const muteTarget = guestMuteTargetPeerId(id, localPeerId)
+    const pipGuestMute =
+      muteTarget &&
+      canUseElevatedRoomTools &&
+      requestPeerMicMute &&
+      participants.get(muteTarget)?.name !== 'vMix'
+        ? { show: true as const, onMute: () => requestPeerMicMute(muteTarget) }
+        : undefined
+    return { ...core, showSoloViewerCopy: canUseElevatedRoomTools, guestMute: pipGuestMute }
   }, [
     pipFloatTileId,
     localPeerId,
@@ -893,6 +990,9 @@ export function RoomPage({
     localScreenPeerId,
     remoteList,
     srtByPeer,
+    participants,
+    canUseElevatedRoomTools,
+    requestPeerMicMute,
   ])
 
   const pipGridDoubleTapEnabled = isViewportMobile && remoteGuestCount > 1
@@ -953,6 +1053,14 @@ export function RoomPage({
                 <img className="brand-logo brand-logo--header" src="/logo.png" alt="" draggable={false} />
               </div>
               <div className="room-header-mobile-actions">
+                <div
+                  className="room-header-participant-count"
+                  title={`${rosterCount} ${ruParticipantsWord(rosterCount)}`}
+                  aria-label={`${rosterCount} ${ruParticipantsWord(rosterCount)}`}
+                >
+                  <ParticipantsBadgeIcon />
+                  <span className="room-header-participant-count__num">{rosterCount}</span>
+                </div>
                 <div className="room-invite-menu room-invite-menu--compact" ref={inviteRef}>
                   <button
                     type="button"
@@ -985,9 +1093,13 @@ export function RoomPage({
 
             <div className="room-center">
               <div className="room-center__row">
-                <div className="room-center__titles">
-                  <span className="room-name">{roomId}</span>
-                  <span className="room-count">({participantCount})</span>
+                <div
+                  className="room-header-participant-count"
+                  title={`${rosterCount} ${ruParticipantsWord(rosterCount)}`}
+                  aria-label={`${rosterCount} ${ruParticipantsWord(rosterCount)}`}
+                >
+                  <ParticipantsBadgeIcon />
+                  <span className="room-header-participant-count__num">{rosterCount}</span>
                 </div>
                 <div className="room-invite-menu" ref={inviteRef}>
                   <button
@@ -1013,15 +1125,17 @@ export function RoomPage({
             </div>
 
             <div className="header-right">
-              <div title="Оформление панели для эфира">
-                <PillToggle
-                  checked={streamerMode}
-                  onCheckedChange={(v) => setStreamerMode(v)}
-                  offLabel="Обычный"
-                  onLabel="Стример"
-                  ariaLabel={streamerMode ? 'Режим стримера включён' : 'Режим стримера выключен'}
-                />
-              </div>
+              {canUseElevatedRoomTools ? (
+                <div title="Оформление панели для эфира">
+                  <PillToggle
+                    checked={streamerMode}
+                    onCheckedChange={(v) => setStreamerMode(v)}
+                    offLabel="Обычный"
+                    onLabel="Стример"
+                    ariaLabel={streamerMode ? 'Режим стримера включён' : 'Режим стримера выключен'}
+                  />
+                </div>
+              ) : null}
               {user && (
                 <div className="header-user-menu" ref={userMenuRef}>
                   <button
@@ -1047,7 +1161,7 @@ export function RoomPage({
                       >
                         Личный кабинет
                       </a>
-                      {canAccessAdminPanel && (
+                      {isPlatformAdminish && (
                         <a
                           href="/admin"
                           target="_blank"
@@ -1085,7 +1199,7 @@ export function RoomPage({
         )}
       </div>
 
-      {showLayoutToggle ? (
+      {showLayoutToggle && canUseElevatedRoomTools ? (
         <LayoutCycleFabButton
           className="room-layout-cycle-fab--float"
           onPickNextLayout={() => setLayout((l) => nextLayoutMode(l))}
@@ -1301,7 +1415,7 @@ export function RoomPage({
         onToggleChatToastNotifications={onToggleChatToastNotifications}
         onSendReaction={onSendReaction}
         streamerMode={streamerMode}
-        onStreamerModeChange={setStreamerMode}
+        onStreamerModeChange={canUseElevatedRoomTools ? setStreamerMode : undefined}
         vmixPhase={vmixPhase}
         vmixIngressLoading={vmixIngressLoading}
         onStartVmixIngress={handleStartVmixIngress}
@@ -1319,7 +1433,10 @@ export function RoomPage({
         onToggleImmersiveAutoHide={() => setImmersiveAutoHide((v) => !v)}
         chromeHidden={immersiveAutoHide && chromeHidden}
         onInviteParticipants={handleCopyInviteUrl}
-        showAdminPanelLink={canAccessAdminPanel}
+        showAdminPanelLink={isPlatformAdminish}
+        hideVideoLetterboxing={hideVideoLetterboxing}
+        onHideVideoLetterboxingChange={setHideVideoLetterboxing}
+        canManageVmixProgramIngress={canUseElevatedRoomTools}
       />
 
       {chatOpen && !chatEmbed && (
@@ -1369,6 +1486,7 @@ function LocalTile({
   reactionBurst,
   mirrorLocalPreview,
   avatarUrl,
+  showSoloViewerCopy = true,
 }: {
   stream: MediaStream | null
   name: string
@@ -1385,6 +1503,7 @@ function LocalTile({
   srtListenPort?: number
   reactionBurst?: RoomReactionBurst | null
   mirrorLocalPreview?: boolean
+  showSoloViewerCopy?: boolean
 }) {
   const mainVideoRef = useRef<HTMLVideoElement>(null)
 
@@ -1421,6 +1540,7 @@ function LocalTile({
           roomId={roomId}
           peerId={peerId}
           srtConnectUrl={srtConnectUrl}
+          showSoloViewerCopy={showSoloViewerCopy}
         />
       )}
     </>
@@ -1453,6 +1573,7 @@ function LocalTile({
             listenPort={srtListenPort}
             roomId={roomId}
             tilePeerId={peerId}
+            showSoloViewerCopy={showSoloViewerCopy}
           >
             {videoInner}
             {reactionBurst ? <ReactionBurstOverlay key={reactionBurst.id} burst={reactionBurst} /> : null}
@@ -1466,6 +1587,7 @@ function LocalTile({
             listenPort={srtListenPort}
             roomId={roomId}
             tilePeerId={peerId}
+            showSoloViewerCopy={showSoloViewerCopy}
             className="srt-copy-target--bar"
           >
             {barInner}

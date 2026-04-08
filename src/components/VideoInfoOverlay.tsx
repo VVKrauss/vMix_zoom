@@ -43,6 +43,7 @@ export function VideoInfoOverlay({
   peerId,
   srtConnectUrl,
   linkQuality,
+  showSoloViewerCopy = true,
 }: {
   stream: MediaStream | null
   videoRef: React.RefObject<HTMLVideoElement>
@@ -52,6 +53,8 @@ export function VideoInfoOverlay({
   srtConnectUrl?: string
   /** Приём входящего видео (getStats), только в режиме инфо для удалённых плиток. */
   linkQuality?: InboundVideoQuality | null
+  /** Показывать кнопку соло-ссылки (стример / админы). */
+  showSoloViewerCopy?: boolean
 }) {
   const [info, setInfo] = useState<VideoInfo | null>(null)
   const [copiedPeer, setCopiedPeer] = useState(false)
@@ -157,16 +160,16 @@ export function VideoInfoOverlay({
           </span>
         </button>
       ) : null}
-      {roomId && peerId ? (
+      {showSoloViewerCopy && roomId && peerId ? (
         <button
           type="button"
           className="vio-row vio-row--peer"
           onClick={e => { e.stopPropagation(); copySoloPageUrl() }}
-          title="Ссылка на страницу только этого участника (?room=&peer=)"
+          title="Ссылка на отдельное окно просмотра этого участника"
         >
           <span className="vio-key">Соло-страница</span>
           <span className="vio-val vio-val--mono vio-val--id">
-            {copiedSolo ? 'Скопировано' : 'Копировать URL'}
+            {copiedSolo ? 'Скопировано' : 'Копировать ссылку на окно'}
           </span>
         </button>
       ) : null}

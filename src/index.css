@@ -294,65 +294,84 @@ html.app-root--room #root {
 .home-user-block {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  align-items: stretch;
+  gap: 12px;
 }
 
-.home-greeting {
+.home-user-identity {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 16px;
+  gap: 8px;
+  padding: 2px 0 4px;
 }
 
-.home-greeting__text {
-  font-size: 14px;
-  color: var(--text-dim);
-}
-
-.home-greeting__text strong {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.home-greeting__actions {
-  display: flex;
-  align-items: center;
-  gap: 14px;
+.home-user-identity__avatar-wrap {
   flex-shrink: 0;
 }
 
-.home-admin-below {
-  text-align: center;
+.home-user-identity__avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
 }
 
-.home-admin-below__link {
-  display: inline-block;
-  font-size: 13px;
+.home-user-identity__avatar--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--btn-red-grad);
+  color: #fff;
+}
+
+.home-user-identity__avatar--placeholder svg {
+  width: 26px;
+  height: 26px;
+}
+
+.home-user-identity__name {
+  margin: 0;
+  font-size: 15px;
   font-weight: 600;
-  color: var(--red);
-  text-decoration: none;
+  color: var(--text);
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font);
 }
 
-.home-admin-below__link:hover {
-  text-decoration: underline;
+.home-user-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.home-greeting__signout {
+a.admin-sidebar__link {
+  text-decoration: none;
+  color: inherit;
+  box-sizing: border-box;
+}
+
+.home-user-signout {
+  align-self: center;
+  margin-top: 2px;
   background: none;
   border: none;
   font-size: 12px;
   color: var(--text-dim);
   cursor: pointer;
   font-family: var(--font);
-  padding: 2px 0;
-  transition: color .15s;
+  padding: 4px 8px;
+  transition: color 0.15s;
 }
 
-.home-greeting__signout:hover { color: var(--red); }
+.home-user-signout:hover {
+  color: var(--red);
+}
 
 /* ─── Home: create block ──────────────────────────────────────────────────── */
 .home-create-block {
@@ -431,38 +450,7 @@ html.app-root--room #root {
   padding: 10px 12px;
 }
 
-/* ─── Dashboard button (home greeting + room header) ─────────────────────── */
-.home-greeting__dashboard {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  color: var(--text-dim);
-  text-decoration: none;
-  flex-shrink: 0;
-  transition: background .15s, color .15s;
-}
-
-.home-greeting__dashboard svg {
-  width: 18px;
-  height: 18px;
-}
-
-.home-greeting__avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  object-fit: cover;
-  display: block;
-}
-
-.home-greeting__dashboard:hover {
-  background: rgba(255,255,255,.08);
-  color: var(--text);
-}
-
+/* ─── Dashboard button (room header) ─────────────────────────────────────── */
 .header-dashboard-btn {
   display: flex;
   align-items: center;
@@ -1812,6 +1800,30 @@ button.admin-stat-card--interactive:disabled {
   gap: 10px;
   flex-shrink: 0;
   margin-left: auto;
+}
+
+.room-header-participant-count {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  user-select: none;
+}
+
+.room-header-participant-count svg {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+
+.room-header-participant-count__num {
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 
 .room-page {
@@ -3408,7 +3420,7 @@ button.vio-row--peer:focus-visible {
 .card-video-wrap video {
   display: block;
   max-width: 100%;
-  /* Камера: заполняем плитку без полос, центр кадра */
+  /* Камера: по умолчанию cover; в комнате переопределяется inline-стилем (object-fit: contain). */
   object-fit: cover;
   object-position: center;
   background: #000;

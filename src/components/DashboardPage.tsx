@@ -56,6 +56,7 @@ export function DashboardPage() {
   const [saveErr, setSaveErr]         = useState<string | null>(null)
   const [roomLayout, setRoomLayout]   = useState<StoredLayoutMode>('pip')
   const [roomShowLayoutToggle, setRoomShowLayoutToggle] = useState(true)
+  const [roomHideVideoLetterboxing, setRoomHideVideoLetterboxing] = useState(true)
   const [roomSaveMsg, setRoomSaveMsg] = useState<string | null>(null)
   const [roomSaveErr, setRoomSaveErr] = useState<string | null>(null)
   const [roomSaving, setRoomSaving]   = useState(false)
@@ -66,6 +67,7 @@ export function DashboardPage() {
     const m = mergeRoomUiPrefs(profile.room_ui_preferences)
     setRoomLayout(m.layout_mode)
     setRoomShowLayoutToggle(m.show_layout_toggle)
+    setRoomHideVideoLetterboxing(m.hide_video_letterboxing)
   }, [profile])
 
   useEffect(() => {
@@ -137,6 +139,7 @@ export function DashboardPage() {
     const next = {
       layout_mode: roomLayout,
       show_layout_toggle: roomShowLayoutToggle,
+      hide_video_letterboxing: roomHideVideoLetterboxing,
       ...(m.pip ? { pip: { pos: m.pip.pos, size: m.pip.size } } : {}),
     }
     const { error: upErr } = await supabase
@@ -311,7 +314,7 @@ export function DashboardPage() {
           <section className="dashboard-section">
             <h2 className="dashboard-section__title">Настройки комнаты</h2>
             <p className="dashboard-section__hint">
-              Для входа с компьютера: вид по умолчанию и кнопка смены раскладки. На телефоне по-прежнему своя сетка и жесты.
+              Для входа с компьютера: вид по умолчанию, кнопка смены раскладки и отображение камеры в плитках. На телефоне по-прежнему своя сетка и жесты.
             </p>
             <form onSubmit={handleSaveRoomPrefs} className="dashboard-form">
               <div className="dashboard-field">
@@ -329,6 +332,18 @@ export function DashboardPage() {
                     offLabel="Скрыта"
                     onLabel="Показана"
                     ariaLabel="Показывать круглую кнопку смены вида в комнате"
+                  />
+                </div>
+              </div>
+              <div className="dashboard-field">
+                <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-field__inline--stripe">
+                  <span className="dashboard-field__label">Скрывать поля у камеры</span>
+                  <PillToggle
+                    checked={roomHideVideoLetterboxing}
+                    onCheckedChange={setRoomHideVideoLetterboxing}
+                    offLabel="Нет"
+                    onLabel="Да"
+                    ariaLabel="Обрезать видео камеры под плитку без чёрных полей; выкл — весь кадр вписан в плитку"
                   />
                 </div>
               </div>

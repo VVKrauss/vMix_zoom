@@ -871,6 +871,18 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         appendChat(m as RoomChatMessage)
       })
 
+      /** Хост/админ запросил выключить микрофон этому клиенту (сигналинг должен эмитить событие). */
+      socket.on('forceMicMute', () => {
+        const producer = audioProducerRef.current
+        const stream = localStreamRef.current
+        const track = stream?.getAudioTracks()[0]
+        if (producer && track) {
+          producer.pause()
+          track.enabled = false
+        }
+        setIsMuted(true)
+      })
+
       socket.on('reaction', (raw: unknown) => {
         const r = raw as Partial<RoomReactionEvent>
         if (!r?.peerId || typeof r.emoji !== 'string') return
@@ -1011,6 +1023,18 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   }, [status, activeRoomId])
 
   // ─── Controls ────────────────────────────────────────────────────────────
+
+  /**
+   * Попросить сигналинг выключить микрофон участника (обрабатывает сервер → `forceMicMute` у цели).
+   * Контракт: `socket.emit('hostRequestPeerMicMute', { roomId, targetPeerId })`.
+   */
+  const requestPeerMicMute = useCallback((targetPeerId: string) => {
+    const sock = socketRef.current
+    const rid = roomIdRef.current?.trim()
+    const tid = targetPeerId.trim()
+    if (!sock?.connected || !rid || !tid) return
+    sock.emit('hostRequestPeerMicMute', { roomId: rid, targetPeerId: tid })
+  }, [])
 
   const toggleMute = useCallback(async () => {
     if (isMuted) {
@@ -1447,6 +1471,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     join,
     leave,
     toggleMute,
+    requestPeerMicMute,
     toggleCam,
     switchCamera,
     switchMic,

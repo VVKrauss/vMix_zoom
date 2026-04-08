@@ -27,6 +27,8 @@ interface Props {
   badge?: string | null
   /** Статистика входящего camera/vmix видео (не экран); без пропа — без индикатора. */
   getRemoteInboundVideoQuality?: (peerId: string) => Promise<InboundVideoQuality | null>
+  showSoloViewerCopy?: boolean
+  guestMute?: { show: boolean; onMute: () => void }
 }
 
 export function ParticipantCard({
@@ -37,6 +39,8 @@ export function ParticipantCard({
   reactionBurst,
   badge,
   getRemoteInboundVideoQuality,
+  showSoloViewerCopy = true,
+  guestMute,
 }: Props) {
   const mainVideoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -78,6 +82,8 @@ export function ParticipantCard({
           listenPort={srtListenPort}
           roomId={roomId}
           tilePeerId={participant.peerId}
+          showSoloViewerCopy={showSoloViewerCopy}
+          guestMute={guestMute}
         >
           <video
             ref={mainVideoRef}
@@ -104,6 +110,7 @@ export function ParticipantCard({
               roomId={roomId}
               peerId={participant.peerId}
               srtConnectUrl={srtConnectUrl}
+              showSoloViewerCopy={showSoloViewerCopy}
               linkQuality={
                 getRemoteInboundVideoQuality && hasIncomingPicture ? linkQuality : undefined
               }

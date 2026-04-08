@@ -21,6 +21,8 @@ interface Props {
   srtListenPort?: number
   onStopShare?: () => void
   reactionBurst?: RoomReactionBurst | null
+  showSoloViewerCopy?: boolean
+  guestMute?: { show: boolean; onMute: () => void }
 }
 
 export function LocalScreenShareTile({
@@ -34,6 +36,8 @@ export function LocalScreenShareTile({
   srtListenPort,
   onStopShare,
   reactionBurst,
+  showSoloViewerCopy = true,
+  guestMute,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -54,6 +58,8 @@ export function LocalScreenShareTile({
           listenPort={srtListenPort}
           roomId={roomId}
           tilePeerId={linkPeerId}
+          showSoloViewerCopy={showSoloViewerCopy}
+          guestMute={guestMute}
         >
           <video
             key={stream.id}
@@ -71,6 +77,7 @@ export function LocalScreenShareTile({
               roomId={roomId}
               peerId={linkPeerId}
               srtConnectUrl={srtConnectUrl}
+              showSoloViewerCopy={showSoloViewerCopy}
             />
           )}
           {reactionBurst ? <ReactionBurstOverlay key={reactionBurst.id} burst={reactionBurst} /> : null}

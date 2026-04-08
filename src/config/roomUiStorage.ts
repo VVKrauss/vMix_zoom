@@ -7,6 +7,8 @@ export const LS_ROOM_LAYOUT = 'vmix_room_layout'
 export const LS_ROOM_LAYOUT_MOBILE = 'vmix_room_layout_mobile'
 export const LS_PIP_LAYOUT = 'vmix_pip_layout'
 export const LS_PIP_LAYOUT_MOBILE = 'vmix_pip_layout_mobile'
+/** true/1 = обрезать камеру без полей (cover); false/0 = вписать кадр целиком (contain). */
+export const LS_HIDE_VIDEO_LETTERBOXING = 'vmix_hide_video_letterboxing'
 const LS_VIDEO_PRESET_INDEX = 'vmix_video_preset_index'
 const LS_PREFERRED_CAMERA = 'vmix_preferred_camera_id'
 const LS_PREFERRED_MIC = 'vmix_preferred_mic_id'
@@ -84,6 +86,26 @@ export function readStoredPipLayout(isMobileViewport: boolean): { pos: PipPos; s
     /* noop */
   }
   return defaultPipLayoutForViewport(isMobileViewport)
+}
+
+/** По умолчанию true — скрывать поля (cover). */
+export function readStoredHideVideoLetterboxing(): boolean {
+  try {
+    const raw = localStorage.getItem(LS_HIDE_VIDEO_LETTERBOXING)
+    if (raw === '0' || raw === 'false') return false
+    if (raw === '1' || raw === 'true') return true
+  } catch {
+    /* noop */
+  }
+  return true
+}
+
+export function writeStoredHideVideoLetterboxing(hide: boolean): void {
+  try {
+    localStorage.setItem(LS_HIDE_VIDEO_LETTERBOXING, hide ? '1' : '0')
+  } catch {
+    /* noop */
+  }
 }
 
 export function writeStoredPipLayout(

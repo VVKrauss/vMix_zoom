@@ -9,6 +9,8 @@ export type PipSrtCopy = {
   listenPort?: number
   roomId?: string
   peerId?: string
+  showSoloViewerCopy?: boolean
+  guestMute?: { show: boolean; onMute: () => void }
 }
 
 interface Props {
@@ -67,6 +69,8 @@ export function DraggablePip({
     enableLongPress: false,
     roomId: srtCopy?.roomId,
     tilePeerId: srtCopy?.peerId,
+    showSoloViewerCopy: srtCopy?.showSoloViewerCopy,
+    guestMute: srtCopy?.guestMute,
   })
 
   useEffect(() => {

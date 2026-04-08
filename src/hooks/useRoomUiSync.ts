@@ -14,10 +14,12 @@ interface Args {
   pipPos: PipPos
   pipSize: PipSize
   showLayoutToggle: boolean
+  hideVideoLetterboxing: boolean
   setLayout: (m: StoredLayoutMode) => void
   setPipPos: (p: PipPos) => void
   setPipSize: (s: PipSize) => void
   setShowLayoutToggle: (v: boolean) => void
+  setHideVideoLetterboxing: (v: boolean) => void
 }
 
 /**
@@ -31,10 +33,12 @@ export function useRoomUiSync({
   pipPos,
   pipSize,
   showLayoutToggle,
+  hideVideoLetterboxing,
   setLayout,
   setPipPos,
   setPipSize,
   setShowLayoutToggle,
+  setHideVideoLetterboxing,
 }: Args): void {
   const loadedRef = useRef(false)
   const skipSavesRef = useRef(0)
@@ -58,6 +62,7 @@ export function useRoomUiSync({
         skipSavesRef.current += 1
         setLayout(m.layout_mode)
         setShowLayoutToggle(m.show_layout_toggle)
+        setHideVideoLetterboxing(m.hide_video_letterboxing)
         if (m.pip) {
           setPipPos(m.pip.pos)
           setPipSize(m.pip.size)
@@ -66,7 +71,7 @@ export function useRoomUiSync({
     return () => {
       cancelled = true
     }
-  }, [user, isViewportMobile, setLayout, setPipPos, setPipSize, setShowLayoutToggle])
+  }, [user, isViewportMobile, setLayout, setPipPos, setPipSize, setShowLayoutToggle, setHideVideoLetterboxing])
 
   useEffect(() => {
     if (!user || isViewportMobile) return
@@ -81,6 +86,7 @@ export function useRoomUiSync({
           room_ui_preferences: {
             layout_mode: layout,
             show_layout_toggle: showLayoutToggle,
+            hide_video_letterboxing: hideVideoLetterboxing,
             pip: { pos: pipPos, size: pipSize },
           },
           updated_at: new Date().toISOString(),
@@ -88,5 +94,5 @@ export function useRoomUiSync({
         .eq('id', user.id)
     }, SAVE_DEBOUNCE_MS)
     return () => window.clearTimeout(t)
-  }, [user, isViewportMobile, layout, pipPos, pipSize, showLayoutToggle])
+  }, [user, isViewportMobile, layout, pipPos, pipSize, showLayoutToggle, hideVideoLetterboxing])
 }

@@ -5,9 +5,13 @@ import { buildSoloViewerAbsoluteUrl } from '../utils/soloViewerParams'
 
 type MenuOptions = {
   enableLongPress: boolean
-  /** Для пункта «полная ссылка ?room=&peer=» на эту плитку */
+  /** Для пункта соло-ссылки на эту плитку */
   roomId?: string
   tilePeerId?: string
+  /** false — скрыть пункт копирования соло-URL (только стример / админы). По умолчанию true. */
+  showSoloViewerCopy?: boolean
+  /** ПКМ: выключить микрофон этому участнику (шлётся на сигналинг). */
+  guestMute?: { show: boolean; onMute: () => void }
 }
 
 const LONG_MS = 550
@@ -28,7 +32,7 @@ export function useSrtCopyMenu(
   listenPort?: number,
   options: MenuOptions = { enableLongPress: true },
 ) {
-  const { enableLongPress, roomId, tilePeerId } = options
+  const { enableLongPress, roomId, tilePeerId, showSoloViewerCopy = true, guestMute } = options
 
   const port = useMemo(() => {
     if (listenPort != null && listenPort > 0) return listenPort
@@ -40,10 +44,11 @@ export function useSrtCopyMenu(
   const canCopyPort = port != null
   const canCopyUrl = url.length > 0
   const canCopySoloPage =
-    Boolean(roomId?.trim()) && Boolean(tilePeerId?.trim())
+    showSoloViewerCopy && Boolean(roomId?.trim()) && Boolean(tilePeerId?.trim())
+  const canGuestMute = Boolean(guestMute?.show)
   /** Иначе на плитке экрана без SRT и до прихода screenPeerId меню не открывалось вовсе. */
   const canOpen =
-    canCopyPort || canCopyUrl || canCopySoloPage || Boolean(roomId?.trim())
+    canCopyPort || canCopyUrl || canCopySoloPage || Boolean(roomId?.trim()) || canGuestMute
 
   const soloPageFullUrl = useMemo(() => {
     if (!canCopySoloPage) return ''
@@ -156,6 +161,15 @@ export function useSrtCopyMenu(
         onCopyPort={copyPort}
         onCopyUrl={copyUrl}
         onCopySoloPageUrl={copySoloPageUrl}
+        canGuestMute={canGuestMute}
+        onGuestMute={
+          guestMute?.show
+            ? () => {
+                guestMute.onMute()
+                close()
+              }
+            : undefined
+        }
         onClose={close}
       />,
       document.body,
@@ -182,6 +196,8 @@ function SrtCopyMenuPanel({
   onCopyPort,
   onCopyUrl,
   onCopySoloPageUrl,
+  canGuestMute,
+  onGuestMute,
   onClose,
 }: {
   x: number
@@ -192,6 +208,8 @@ function SrtCopyMenuPanel({
   onCopyPort: () => void
   onCopyUrl: () => void
   onCopySoloPageUrl: () => void
+  canGuestMute: boolean
+  onGuestMute?: () => void
   onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -227,11 +245,16 @@ function SrtCopyMenuPanel({
           className="srt-copy-menu__btn"
           role="menuitem"
           onClick={onCopySoloPageUrl}
-          title="Полный URL с параметрами room и peer (соло-страница участника)"
+          title="Ссылка на отдельное окно просмотра этого участника"
         >
-          Копировать полный URL (?room=…&amp;peer=…)
+          Копировать ссылку на окно
         </button>
       )}
+      {canGuestMute && onGuestMute ? (
+        <button type="button" className="srt-copy-menu__btn" role="menuitem" onClick={onGuestMute}>
+          Выключить звук гостю
+        </button>
+      ) : null}
       <button type="button" className="srt-copy-menu__btn srt-copy-menu__btn--muted" onClick={onClose}>
         Отмена
       </button>
@@ -246,6 +269,8 @@ export function SrtCopySurface({
   roomId,
   tilePeerId,
   enableLongPress = true,
+  showSoloViewerCopy = true,
+  guestMute,
   className = '',
   children,
 }: {
@@ -255,6 +280,8 @@ export function SrtCopySurface({
   /** peerId участника этой плитки (для соло-ссылки) */
   tilePeerId?: string
   enableLongPress?: boolean
+  showSoloViewerCopy?: boolean
+  guestMute?: { show: boolean; onMute: () => void }
   className?: string
   children: ReactNode
 }) {
@@ -262,6 +289,8 @@ export function SrtCopySurface({
     enableLongPress,
     roomId,
     tilePeerId,
+    showSoloViewerCopy,
+    guestMute,
   })
 
   if (!canOpen) return <>{children}</>

@@ -96,6 +96,7 @@ export function RoomSession({ roomId }: Props) {
     remoteScreenConsumePending,
     startVmixIngress, stopVmixIngress, vmixIngressInfo, vmixIngressLoading,
     getRemoteInboundVideoQuality,
+    requestPeerMicMute,
   } = useRoom(roomActivityNotifyRef)
 
   useEffect(() => {
@@ -206,6 +207,7 @@ export function RoomSession({ roomId }: Props) {
         onStartVmixIngress={startVmixIngress}
         onStopVmixIngress={stopVmixIngress}
         getRemoteInboundVideoQuality={getRemoteInboundVideoQuality}
+        requestPeerMicMute={requestPeerMicMute}
       />
     )
   }

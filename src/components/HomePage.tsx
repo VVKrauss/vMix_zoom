@@ -45,33 +45,33 @@ export function HomePage() {
           <div className="home-auth-block">
             {user ? (
               <div className="home-user-block">
-                <div className="home-greeting">
-                  <Link to="/dashboard" className="home-greeting__dashboard" title="Дашборд">
-                    {avatarUrl
-                      ? <img src={avatarUrl} alt={displayName} className="home-greeting__avatar" />
-                      : <DashboardIcon />
-                    }
-                  </Link>
-                  <span className="home-greeting__text">
-                    Привет, <strong>{displayName}</strong>
-                  </span>
-                  <div className="home-greeting__actions">
-                    <button
-                      type="button"
-                      className="home-greeting__signout"
-                      onClick={() => signOut()}
-                    >
-                      Выйти
-                    </button>
+                <div className="home-user-identity">
+                  <div className="home-user-identity__avatar-wrap" aria-hidden>
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt="" className="home-user-identity__avatar" draggable={false} />
+                    ) : (
+                      <span className="home-user-identity__avatar home-user-identity__avatar--placeholder">
+                        <DashboardIcon />
+                      </span>
+                    )}
                   </div>
+                  <p className="home-user-identity__name" title={displayName}>
+                    {displayName}
+                  </p>
                 </div>
-                {canAccessAdmin && (
-                  <div className="home-admin-below">
-                    <Link to="/admin" className="home-admin-below__link">
-                      Админка →
+                <nav className="home-user-nav" aria-label="Разделы аккаунта">
+                  <Link to="/dashboard" className="admin-sidebar__link">
+                    Личный кабинет
+                  </Link>
+                  {canAccessAdmin ? (
+                    <Link to="/admin" className="admin-sidebar__link">
+                      Войти в админку
                     </Link>
-                  </div>
-                )}
+                  ) : null}
+                </nav>
+                <button type="button" className="home-user-signout" onClick={() => signOut()}>
+                  Выйти
+                </button>
               </div>
             ) : (
               <div className="home-auth-links">

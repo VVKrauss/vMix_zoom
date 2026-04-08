@@ -56,3 +56,15 @@ export function InviteIcon() {
     </svg>
   )
 }
+
+/** Участники в шапке комнаты: силуэты гостей. */
+export function ParticipantsBadgeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="9" cy="7" r="3.5" />
+      <path d="M3 19v-1.5a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5V19" />
+      <circle cx="17" cy="8" r="2.5" />
+      <path d="M21 19v-1a3.5 3.5 0 0 0-2.45-3.33" />
+    </svg>
+  )
+}

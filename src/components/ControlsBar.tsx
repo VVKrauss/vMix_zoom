@@ -107,6 +107,14 @@ interface Props {
   onInviteParticipants?: () => void
   /** Ссылка «Админка» в мобильном листе (superadmin / platform_admin / support_admin). */
   showAdminPanelLink?: boolean
+  /** Камера в плитках: true — без полей (cover), false — весь кадр (contain). */
+  hideVideoLetterboxing: boolean
+  onHideVideoLetterboxingChange: (value: boolean) => void
+  /**
+   * Остановить приём программы vMix/SRT и открыть параметры подключения (шеврон).
+   * Только хост комнаты / админы (не гости без прав).
+   */
+  canManageVmixProgramIngress?: boolean
 }
 
 type OpenPopover = 'mic' | 'cam' | 'headphones' | 'chat' | 'reaction' | 'layout' | 'screen' | 'settings' | null
@@ -150,6 +158,9 @@ export function ControlsBar({
   chromeHidden,
   onInviteParticipants,
   showAdminPanelLink = false,
+  hideVideoLetterboxing,
+  onHideVideoLetterboxingChange,
+  canManageVmixProgramIngress = false,
 }: Props) {
   const { user, signOut } = useAuth()
   const [open, setOpen] = useState<OpenPopover>(null)
@@ -400,14 +411,52 @@ export function ControlsBar({
           onToggleImmersiveAutoHide={onToggleImmersiveAutoHide}
           streamerMode={streamerMode}
           onStreamerModeChange={onStreamerModeChange}
+          hideVideoLetterboxing={hideVideoLetterboxing}
+          onHideVideoLetterboxingChange={onHideVideoLetterboxingChange}
         />
       )}
     </div>
   )
 
+  /** Только мьют + слайдер громкости программы (для всех гостей при активном приёме SRT). */
+  const vmixProgramAudioControls = () => (
+    <div
+      className={`ctrl-vmix-audio ctrl-vmix-audio--${vmixPhase === 'live' ? 'live' : 'waiting'}`}
+      role="group"
+      aria-label="Звук программы vMix"
+    >
+      <button
+        type="button"
+        className={`ctrl-vmix-audio__mute${vmixProgramMuted ? ' ctrl-vmix-audio__mute--off' : ''}`}
+        title={vmixProgramMuted ? 'Включить звук программы vMix' : 'Отключить звук программы vMix'}
+        aria-pressed={vmixProgramMuted}
+        disabled={vmixIngressLoading}
+        onClick={onToggleVmixProgramMuted}
+      >
+        {vmixProgramMuted ? <ProgramSpeakerMutedIcon /> : <ProgramSpeakerIcon />}
+      </button>
+      <input
+        type="range"
+        className="ctrl-vmix-audio__slider"
+        min={0}
+        max={100}
+        value={Math.round(vmixProgramVolume * 100)}
+        onChange={(e) => onVmixProgramVolumeChange(Number(e.target.value) / 100)}
+        disabled={vmixIngressLoading}
+        title="Громкость программы vMix"
+        aria-label="Громкость программы vMix"
+      />
+    </div>
+  )
+
+  /**
+   * Кнопка «добавить SRT» — только в режиме «стример» (локально).
+   * При live/waiting: полная полоса (стоп + звук + шеврон) только с canManageVmixProgramIngress; иначе только звук.
+   */
   const vmixSourcesBlock = (sheet?: boolean) => {
     const shClass = sh('ctrl-group ctrl-group--vmix-source', sheet)
     if (vmixPhase === 'idle') {
+      if (!streamerMode) return null
       return (
         <button
           type="button"
@@ -438,6 +487,9 @@ export function ControlsBar({
       vmixPhase === 'live'
         ? 'Поток vMix активен. Нажмите, чтобы остановить'
         : 'Ожидание подключения vMix. Нажмите, чтобы остановить'
+    if (!canManageVmixProgramIngress) {
+      return <div className={shClass}>{vmixProgramAudioControls()}</div>
+    }
     return (
       <div className={shClass}>
         <button
@@ -457,33 +509,7 @@ export function ControlsBar({
             draggable={false}
           />
         </button>
-        <div
-          className={`ctrl-vmix-audio ctrl-vmix-audio--${vmixPhase === 'live' ? 'live' : 'waiting'}`}
-          role="group"
-          aria-label="Звук программы vMix"
-        >
-          <button
-            type="button"
-            className={`ctrl-vmix-audio__mute${vmixProgramMuted ? ' ctrl-vmix-audio__mute--off' : ''}`}
-            title={vmixProgramMuted ? 'Включить звук программы vMix' : 'Отключить звук программы vMix'}
-            aria-pressed={vmixProgramMuted}
-            disabled={vmixIngressLoading}
-            onClick={onToggleVmixProgramMuted}
-          >
-            {vmixProgramMuted ? <ProgramSpeakerMutedIcon /> : <ProgramSpeakerIcon />}
-          </button>
-          <input
-            type="range"
-            className="ctrl-vmix-audio__slider"
-            min={0}
-            max={100}
-            value={Math.round(vmixProgramVolume * 100)}
-            onChange={(e) => onVmixProgramVolumeChange(Number(e.target.value) / 100)}
-            disabled={vmixIngressLoading}
-            title="Громкость программы vMix"
-            aria-label="Громкость программы vMix"
-          />
-        </div>
+        {vmixProgramAudioControls()}
         <button
           type="button"
           className={`ctrl-chevron ${chevronPhase}`}
@@ -517,9 +543,9 @@ export function ControlsBar({
     </div>
   )
 
-  const sourcesStrip = (sheet: boolean) =>
-    streamerMode ? (
-      <div className={`controls-bar__sources${sheet ? ' controls-bar__sources--in-sheet' : ''}`} aria-label="Внешние источники">
+  const sourcesStrip = (sheet: boolean) => {
+    const ndi =
+      streamerMode ? (
         <button
           type="button"
           className="ctrl-btn ctrl-btn--source-ingest ctrl-btn--source-ingest--ndi"
@@ -535,9 +561,16 @@ export function ControlsBar({
             draggable={false}
           />
         </button>
-        {vmixSourcesBlock(sheet)}
+      ) : null
+    const vmixStrip = vmixSourcesBlock(sheet)
+    if (!ndi && !vmixStrip) return null
+    return (
+      <div className={`controls-bar__sources${sheet ? ' controls-bar__sources--in-sheet' : ''}`} aria-label="Внешние источники">
+        {ndi}
+        {vmixStrip}
       </div>
-    ) : null
+    )
+  }
 
   return (
     <div
@@ -1173,6 +1206,8 @@ function SettingsPopover({
   onToggleImmersiveAutoHide,
   streamerMode,
   onStreamerModeChange,
+  hideVideoLetterboxing,
+  onHideVideoLetterboxingChange,
 }: {
   showInfo: boolean
   onToggleInfo: () => void
@@ -1185,6 +1220,8 @@ function SettingsPopover({
   onToggleImmersiveAutoHide: () => void
   streamerMode: boolean
   onStreamerModeChange?: (value: boolean) => void
+  hideVideoLetterboxing: boolean
+  onHideVideoLetterboxingChange: (value: boolean) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   useOnOutsideClick(ref, onClose)
@@ -1212,6 +1249,20 @@ function SettingsPopover({
           checked={immersiveAutoHide}
           onCheckedChange={() => onToggleImmersiveAutoHide()}
           ariaLabel="Автоскрытие шапки и панели управления; тап по видео — показать"
+        />
+      </div>
+
+      <div className="settings-row settings-row--pill">
+        <span className="settings-label">Скрывать поля</span>
+        <PillToggle
+          compact
+          checked={hideVideoLetterboxing}
+          onCheckedChange={(v) => onHideVideoLetterboxingChange(v)}
+          ariaLabel={
+            hideVideoLetterboxing
+              ? 'Камера обрезается под плитку без чёрных полос'
+              : 'Камера вписывается целиком, возможны поля по краям'
+          }
         />
       </div>
 
