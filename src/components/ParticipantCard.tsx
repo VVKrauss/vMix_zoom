@@ -26,7 +26,7 @@ interface Props {
   reactionBurst?: RoomReactionBurst | null
   badge?: string | null
   /** Статистика входящего camera/vmix видео (не экран); без пропа — без индикатора. */
-  getRemoteInboundVideoQuality?: (peerId: string) => Promise<InboundVideoQuality | null>
+  getPeerUplinkVideoQuality?: (peerId: string) => Promise<InboundVideoQuality | null>
   showSoloViewerCopy?: boolean
   guestMute?: { show: boolean; onMute: () => void }
 }
@@ -38,7 +38,7 @@ export function ParticipantCard({
   playoutSinkId = '',
   reactionBurst,
   badge,
-  getRemoteInboundVideoQuality,
+  getPeerUplinkVideoQuality,
   showSoloViewerCopy = true,
   guestMute,
 }: Props) {
@@ -54,12 +54,12 @@ export function ParticipantCard({
   )
 
   const fetchInboundQuality = useCallback(() => {
-    if (!getRemoteInboundVideoQuality) return Promise.resolve(null)
-    return getRemoteInboundVideoQuality(participant.peerId)
-  }, [getRemoteInboundVideoQuality, participant.peerId])
+    if (!getPeerUplinkVideoQuality) return Promise.resolve(null)
+    return getPeerUplinkVideoQuality(participant.peerId)
+  }, [getPeerUplinkVideoQuality, participant.peerId])
 
   const linkQuality = useInboundVideoQualityPoll(
-    Boolean(getRemoteInboundVideoQuality && hasIncomingPicture),
+    Boolean(getPeerUplinkVideoQuality && hasIncomingPicture),
     fetchInboundQuality,
   )
 
@@ -99,7 +99,7 @@ export function ParticipantCard({
           )}
           <audio ref={audioRef} autoPlay playsInline />
 
-          {getRemoteInboundVideoQuality && hasIncomingPicture ? (
+          {getPeerUplinkVideoQuality && hasIncomingPicture ? (
             <RemoteVideoSignalBars quality={linkQuality} />
           ) : null}
           {showMeter && <AudioMeter stream={participant.audioStream ?? null} />}
@@ -112,7 +112,7 @@ export function ParticipantCard({
               srtConnectUrl={srtConnectUrl}
               showSoloViewerCopy={showSoloViewerCopy}
               linkQuality={
-                getRemoteInboundVideoQuality && hasIncomingPicture ? linkQuality : undefined
+                getPeerUplinkVideoQuality && hasIncomingPicture ? linkQuality : undefined
               }
             />
           )}

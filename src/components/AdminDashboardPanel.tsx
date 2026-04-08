@@ -3,6 +3,7 @@ import {
   fetchAdminOverview,
   fetchAdminPeersList,
   fetchAdminRoomsList,
+  type AdminHostMetrics,
   type AdminOverviewState,
   type AdminPeerRow,
   type AdminRoomRow,
@@ -12,6 +13,88 @@ import { hasAdminBearerToken } from '../utils/adminApiAuth'
 function formatMetric(n: number | null): string {
   if (n === null) return '—'
   return String(n)
+}
+
+function formatPercent1(n: number | null): string {
+  if (n === null) return '—'
+  return `${n.toFixed(1)}%`
+}
+
+function formatMemMb(used: number | null, total: number | null): string {
+  if (used === null && total === null) return '—'
+  if (total === null) return used === null ? '—' : `${used.toFixed(0)} МиБ`
+  if (used === null) return `— / ${total.toFixed(0)} МиБ`
+  return `${used.toFixed(0)} / ${total.toFixed(0)} МиБ`
+}
+
+function formatUptime(sec: number | null): string {
+  if (sec === null || !Number.isFinite(sec) || sec < 0) return '—'
+  const s = Math.floor(sec)
+  if (s < 60) return `${s} с`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m} мин`
+  const h = Math.floor(m / 60)
+  const rm = m % 60
+  if (h < 48) return `${h} ч ${rm} мин`
+  const d = Math.floor(h / 24)
+  const rh = h % 24
+  return `${d} д ${rh} ч`
+}
+
+function formatLoad1(n: number | null): string {
+  if (n === null) return '—'
+  return n.toFixed(2)
+}
+
+function HostMetricsStrip({ host }: { host: AdminHostMetrics }) {
+  const hasAny =
+    host.cpuPercent != null ||
+    host.memoryUsedMb != null ||
+    host.memoryTotalMb != null ||
+    host.uptimeSec != null ||
+    host.loadAvg1m != null ||
+    host.nodeVersion != null
+
+  if (!hasAny) {
+    return (
+      <p className="dashboard-section__hint admin-dashboard-hint" style={{ marginTop: 12 }}>
+        Метрики хоста не пришли в ответе. На signaling в{' '}
+        <code className="admin-dashboard-code">GET /api/admin/stats</code> можно добавить поля:{' '}
+        <code className="admin-dashboard-code">cpuPercent</code>,{' '}
+        <code className="admin-dashboard-code">memoryUsedMb</code>,{' '}
+        <code className="admin-dashboard-code">memoryTotalMb</code>,{' '}
+        <code className="admin-dashboard-code">uptimeSec</code>,{' '}
+        <code className="admin-dashboard-code">loadAvg1m</code>,{' '}
+        <code className="admin-dashboard-code">nodeVersion</code> (или те же ключи в snake_case / вложенный объект{' '}
+        <code className="admin-dashboard-code">host</code>).
+      </p>
+    )
+  }
+
+  return (
+    <div className="admin-host-metrics" aria-label="Метрики сервера">
+      <div className="admin-host-metrics__item">
+        <span className="admin-host-metrics__label">ЦП</span>
+        <span className="admin-host-metrics__value">{formatPercent1(host.cpuPercent)}</span>
+      </div>
+      <div className="admin-host-metrics__item">
+        <span className="admin-host-metrics__label">Память</span>
+        <span className="admin-host-metrics__value">{formatMemMb(host.memoryUsedMb, host.memoryTotalMb)}</span>
+      </div>
+      <div className="admin-host-metrics__item">
+        <span className="admin-host-metrics__label">Аптайм</span>
+        <span className="admin-host-metrics__value">{formatUptime(host.uptimeSec)}</span>
+      </div>
+      <div className="admin-host-metrics__item">
+        <span className="admin-host-metrics__label">Load 1m</span>
+        <span className="admin-host-metrics__value">{formatLoad1(host.loadAvg1m)}</span>
+      </div>
+      <div className="admin-host-metrics__item admin-host-metrics__item--wide">
+        <span className="admin-host-metrics__label">Node</span>
+        <span className="admin-host-metrics__value admin-host-metrics__value--mono">{host.nodeVersion ?? '—'}</span>
+      </div>
+    </div>
+  )
 }
 
 export function AdminDashboardPanel() {
@@ -66,6 +149,18 @@ export function AdminDashboardPanel() {
     setLoading(false)
   }, [])
 
+  const silentRefreshOverview = useCallback(async () => {
+    const next = await fetchAdminOverview()
+    setState(next)
+  }, [])
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      void silentRefreshOverview()
+    }, 2000)
+    return () => window.clearInterval(id)
+  }, [silentRefreshOverview])
+
   const refreshAll = useCallback(async () => {
     await loadOverviewOnly()
     if (peersOpen) await loadPeers()
@@ -118,10 +213,12 @@ export function AdminDashboardPanel() {
     <section className="dashboard-section admin-dashboard-section">
       <h2 className="dashboard-section__subtitle">Дашборд</h2>
       <p className="dashboard-section__hint">
-        Счётчики — <code className="admin-dashboard-code">GET /api/admin/stats</code>, списки —{' '}
-        <code className="admin-dashboard-code">GET /api/admin/peers</code> и{' '}
+        Счётчики и метрики хоста — <code className="admin-dashboard-code">GET /api/admin/stats</code> (опрос раз в 2 с),
+        списки — <code className="admin-dashboard-code">GET /api/admin/peers</code> и{' '}
         <code className="admin-dashboard-code">GET /api/admin/rooms</code> (Bearer).
       </p>
+
+      {state && state.kind !== 'error' ? <HostMetricsStrip host={state.stats.host} /> : null}
 
       <div className="admin-stats-grid">
         <div className="admin-stat-card">

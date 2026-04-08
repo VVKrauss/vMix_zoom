@@ -57,6 +57,37 @@ export function InviteIcon() {
   )
 }
 
+/** Завершить звонок: трубка в круге (как в Zoom / Meet). */
+export function EndCallIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <circle cx="12" cy="12" r="10" fill="currentColor" />
+      <path
+        fill="#fff"
+        d="M11.05 14.2c1.9.95 3.9.95 5.8 0 .28-.14.46-.42.46-.73v-.95c0-.26-.14-.5-.37-.63l-1.12-.56a.75.75 0 0 0-.88.18l-.35.47a.75.75 0 0 1-.95.18 6.2 6.2 0 0 1-2.18-2.18.75.75 0 0 1 .18-.95l.47-.35a.75.75 0 0 0 .18-.88l-.56-1.12a.75.75 0 0 0-.63-.37h-.95c-.31 0-.59.18-.73.46a8.1 8.1 0 0 0 0 7.4z"
+      />
+    </svg>
+  )
+}
+
+/** Во весь экран — четыре угла «наружу», одинаковый отступ от края viewBox. */
+export function FullscreenEnterIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M9 3H3v6M15 3h6v6M3 15v6h6M21 15v6h-6" />
+    </svg>
+  )
+}
+
+/** Выйти из полноэкранного — углы «внутрь», симметрично enter. */
+export function FullscreenExitIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6" />
+    </svg>
+  )
+}
+
 /** Участники в шапке комнаты: силуэты гостей. */
 export function ParticipantsBadgeIcon() {
   return (

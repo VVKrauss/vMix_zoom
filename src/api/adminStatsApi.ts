@@ -19,10 +19,30 @@ async function adminSettingsReachable(): Promise<boolean> {
   }
 }
 
+/** Метрики хоста signaling (опционально в том же JSON, что и счётчики). */
+export type AdminHostMetrics = {
+  cpuPercent: number | null
+  memoryUsedMb: number | null
+  memoryTotalMb: number | null
+  uptimeSec: number | null
+  loadAvg1m: number | null
+  nodeVersion: string | null
+}
+
+const EMPTY_HOST_METRICS: AdminHostMetrics = {
+  cpuPercent: null,
+  memoryUsedMb: null,
+  memoryTotalMb: null,
+  uptimeSec: null,
+  loadAvg1m: null,
+  nodeVersion: null,
+}
+
 /** Ответ signaling: GET /api/admin/stats (Bearer). Допускаются snake_case поля. */
 export type AdminServerStatsPayload = {
   onlineCount: number | null
   activeRooms: number | null
+  host: AdminHostMetrics
 }
 
 export type AdminOverviewState =
@@ -53,6 +73,73 @@ function pickFiniteInt(v: unknown): number | null {
   return Math.max(0, Math.floor(n))
 }
 
+function pickFiniteNumber(v: unknown): number | null {
+  if (v === null || v === undefined) return null
+  const n = typeof v === 'string' ? Number(v.trim()) : Number(v)
+  if (!Number.isFinite(n)) return null
+  return n
+}
+
+function pickVersionStr(v: unknown): string | null {
+  if (v === null || v === undefined) return null
+  if (typeof v !== 'string') return null
+  const s = v.trim()
+  return s || null
+}
+
+function parseHostMetrics(body: Record<string, unknown>): AdminHostMetrics {
+  const src =
+    body.host && typeof body.host === 'object' && !Array.isArray(body.host)
+      ? (body.host as Record<string, unknown>)
+      : body
+
+  const cpuPercent = pickFiniteNumber(
+    src.cpuPercent ?? src.cpu_percent ?? src.cpu ?? src.cpuLoad ?? src.cpu_load,
+  )
+  const memoryUsedMb = pickFiniteNumber(
+    src.memoryUsedMb ??
+      src.memory_used_mb ??
+      src.memUsedMb ??
+      src.mem_used_mb ??
+      src.rssMb ??
+      src.rss_mb,
+  )
+  const memoryTotalMb = pickFiniteNumber(
+    src.memoryTotalMb ??
+      src.memory_total_mb ??
+      src.memTotalMb ??
+      src.mem_total_mb ??
+      src.totalMemMb ??
+      src.total_mem_mb,
+  )
+  const uptimeSec = pickFiniteNumber(
+    src.uptimeSec ?? src.uptime_sec ?? src.uptime ?? src.uptimeSeconds,
+  )
+  const loadAvg1m = pickFiniteNumber(
+    src.loadAvg1m ?? src.load_avg_1m ?? src.load1 ?? src.loadavg1,
+  )
+  const nodeVersion = pickVersionStr(src.nodeVersion ?? src.node_version ?? src.node)
+
+  const allNull =
+    cpuPercent == null &&
+    memoryUsedMb == null &&
+    memoryTotalMb == null &&
+    uptimeSec == null &&
+    loadAvg1m == null &&
+    nodeVersion == null
+
+  if (allNull) return { ...EMPTY_HOST_METRICS }
+
+  return {
+    cpuPercent,
+    memoryUsedMb,
+    memoryTotalMb,
+    uptimeSec,
+    loadAvg1m,
+    nodeVersion,
+  }
+}
+
 function parseStatsBody(body: Record<string, unknown>): AdminServerStatsPayload {
   const onlineCount = pickFiniteInt(
     body.onlineCount ?? body.online_count ?? body.peers ?? body.connectedClients ?? body.connected_clients ?? body.sockets,
@@ -60,7 +147,8 @@ function parseStatsBody(body: Record<string, unknown>): AdminServerStatsPayload 
   const activeRooms = pickFiniteInt(
     body.activeRooms ?? body.active_rooms ?? body.roomCount ?? body.room_count ?? body.rooms,
   )
-  return { onlineCount, activeRooms }
+  const host = parseHostMetrics(body)
+  return { onlineCount, activeRooms, host }
 }
 
 async function probeSocketIoPolling(): Promise<boolean> {
@@ -105,9 +193,9 @@ export async function fetchAdminOverview(): Promise<AdminOverviewState> {
           return {
             kind: 'degraded',
             serverReachable: true,
-            stats: { onlineCount: null, activeRooms: null },
+            stats: { onlineCount: null, activeRooms: null, host: { ...EMPTY_HOST_METRICS } },
             statsEndpointMissing: true,
-            hint: `На signaling нет маршрута ${STATS_PATH}. Добавьте его или расширьте ответ JSON полями onlineCount и activeRooms.`,
+            hint: `На signaling нет маршрута ${STATS_PATH}. Добавьте его или расширьте ответ JSON полями onlineCount, activeRooms и опционально host (cpuPercent, memoryUsedMb, memoryTotalMb, uptimeSec, …).`,
           }
         }
         return {
@@ -134,9 +222,9 @@ export async function fetchAdminOverview(): Promise<AdminOverviewState> {
     return {
       kind: 'degraded',
       serverReachable: true,
-      stats: { onlineCount: null, activeRooms: null },
+      stats: { onlineCount: null, activeRooms: null, host: { ...EMPTY_HOST_METRICS } },
       statsEndpointMissing: true,
-      hint: 'Задайте VITE_ADMIN_API_SECRET и реализуйте GET /api/admin/stats на signaling, чтобы видеть онлайн и комнаты.',
+      hint: 'Задайте VITE_ADMIN_API_SECRET и реализуйте GET /api/admin/stats на signaling, чтобы видеть онлайн, комнаты и опционально метрики хоста.',
     }
   }
   return {

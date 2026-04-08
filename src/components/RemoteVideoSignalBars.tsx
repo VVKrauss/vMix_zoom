@@ -26,8 +26,8 @@ export function RemoteVideoSignalBars({ quality }: Props) {
       role="img"
       aria-label={
         level != null
-          ? `Качество приёма видео: ${level} из 5`
-          : 'Качество приёма видео: измерение…'
+          ? `Качество видео до сервера: ${level} из 5`
+          : 'Качество видео до сервера: измерение…'
       }
     >
       {BAR_HEIGHTS_PX.map((h, i) => {
@@ -39,7 +39,7 @@ export function RemoteVideoSignalBars({ quality }: Props) {
             className={`remote-signal-bars__bar${active ? ' remote-signal-bars__bar--active' : ''}`}
             style={{
               height: h,
-              backgroundColor: active ? activeColor : 'rgba(120, 120, 120, 0.25)',
+              backgroundColor: active ? activeColor : 'rgba(45, 45, 45, 0.55)',
             }}
           />
         )

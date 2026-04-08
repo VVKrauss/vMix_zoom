@@ -347,12 +347,13 @@ html.app-root--room #root {
 .home-user-nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
-a.admin-sidebar__link {
+.home-user-nav__btn {
+  text-align: center;
   text-decoration: none;
-  color: inherit;
+  display: block;
   box-sizing: border-box;
 }
 
@@ -735,6 +736,50 @@ a.admin-sidebar__link {
 
 .admin-dashboard-section .dashboard-section__subtitle {
   margin-top: 0;
+}
+
+.admin-host-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px 14px;
+  margin-top: 14px;
+  padding: 14px 16px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.admin-host-metrics__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.admin-host-metrics__item--wide {
+  grid-column: 1 / -1;
+}
+
+.admin-host-metrics__label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.admin-host-metrics__value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+}
+
+.admin-host-metrics__value--mono {
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .admin-stats-grid {
@@ -1743,12 +1788,56 @@ button.admin-stat-card--interactive:disabled {
   top: calc(env(safe-area-inset-top, 0px) + 60px);
 }
 
-.room-page.room-page--viewport-mobile:not(.room-page--mobile-pip) .room-layout-cycle-fab--float {
-  top: calc(env(safe-area-inset-top, 0px) + 54px);
+/* Мобильный хэдер убран: FAB смены вида ниже, левее кнопки «во весь экран» у правого края */
+.room-page.room-page--viewport-mobile .room-layout-cycle-fab--float {
+  top: max(10px, env(safe-area-inset-top, 0px));
+  right: calc(max(12px, env(safe-area-inset-right, 0px)) + 44px + 10px);
 }
 
-.room-page.room-page--viewport-mobile.room-page--mobile-pip .room-layout-cycle-fab--float {
-  top: calc(env(safe-area-inset-top, 0px) + 12px);
+.room-mobile-fullscreen-btn {
+  position: fixed;
+  z-index: 10029;
+  top: max(10px, env(safe-area-inset-top, 0px));
+  right: max(12px, env(safe-area-inset-right, 0px));
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.12s ease;
+}
+
+.room-mobile-fullscreen-btn:hover {
+  border-color: var(--red);
+  background: rgba(229, 57, 53, 0.12);
+  color: #fff;
+}
+
+.room-mobile-fullscreen-btn:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.room-mobile-fullscreen-btn:active {
+  transform: scale(0.96);
+}
+
+.room-mobile-fullscreen-btn svg {
+  width: 22px;
+  height: 22px;
+  display: block;
 }
 
 .room-page--chrome-hidden .room-layout-cycle-fab--float {
@@ -1757,11 +1846,15 @@ button.admin-stat-card--interactive:disabled {
   pointer-events: none;
 }
 
-/* Диалог выхода: только модалка, без круглых кнопок поверх */
+/* Кнопка «во весь экран» на мобильных остаётся видимой и живая при скрытых панелях */
+
+/* Диалог выхода: только модалка, без мобильных контролов поверх */
+.room-page--leave-dialog .ctrl-mobile-bottom-bar,
 .room-page--leave-dialog .ctrl-mobile-pip-chrome,
 .room-page--leave-dialog .ctrl-mobile-fab-dock,
 .room-page--leave-dialog .ctrl-mobile-pip-quick-backdrop,
-.room-page--leave-dialog .room-layout-cycle-fab--float {
+.room-page--leave-dialog .room-layout-cycle-fab--float,
+.room-page--leave-dialog .room-mobile-fullscreen-btn {
   visibility: hidden !important;
   pointer-events: none !important;
   opacity: 0 !important;
@@ -1827,18 +1920,43 @@ button.admin-stat-card--interactive:disabled {
 }
 
 .room-page {
-  display: grid;
-  grid-template-rows: auto 1fr 72px;
+  display: flex;
+  flex-direction: column;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
-  transition: grid-template-rows 0.32s ease;
 }
 
-.room-page--chrome-hidden {
-  grid-template-rows: 0 1fr 0;
+/* Колонка шапка + сцена + панель — без лишних строк сетки у оверлеев/тостов */
+.room-page__column {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-.room-page--chrome-hidden .room-page__top-chrome {
+.room-page__column > .room-page__top-chrome {
+  flex: 0 0 auto;
+}
+
+.room-page__column > .room-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.room-page__column > .controls-bar {
+  flex: 0 0 auto;
+}
+
+.room-page__column > .controls-bar.controls-bar--fab-dock {
+  flex: 0 0 0;
+  min-height: 0;
+  max-height: 0;
+}
+
+.room-page--chrome-hidden .room-page__column > .room-page__top-chrome {
+  flex: 0 0 0;
   min-height: 0 !important;
   max-height: 0 !important;
   height: 0 !important;
@@ -1851,7 +1969,9 @@ button.admin-stat-card--interactive:disabled {
   border: none !important;
 }
 
-.room-page--chrome-hidden .controls-bar {
+/* Скрытие только десктопной полосы; мобильная FAB-панель (.controls-bar--fab-dock) остаётся кликабельной */
+.room-page--chrome-hidden .controls-bar:not(.controls-bar--fab-dock) {
+  flex: 0 0 0;
   min-height: 0;
   max-height: 0;
   height: 0;
@@ -1876,6 +1996,128 @@ button.admin-stat-card--interactive:disabled {
   background: transparent;
   overflow: visible;
   pointer-events: none;
+}
+
+/* Нижняя панель мобильной комнаты: наушники | центр | смена вида */
+.ctrl-mobile-bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 8202;
+  display: grid;
+  grid-template-columns: 52px 1fr 52px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+  pointer-events: none;
+  background: linear-gradient(to top, rgba(14, 14, 14, 0.96) 0%, rgba(14, 14, 14, 0.82) 55%, rgba(14, 14, 14, 0.35) 100%);
+  border-top: 1px solid var(--border);
+}
+
+.ctrl-mobile-bottom-bar__edge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.ctrl-mobile-bottom-bar__edge--left {
+  justify-content: flex-start;
+}
+
+.ctrl-mobile-bottom-bar__edge--right {
+  justify-content: flex-end;
+}
+
+.ctrl-mobile-bottom-bar__center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.ctrl-mobile-bottom-bar__btn {
+  pointer-events: auto;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.42);
+  font: inherit;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background 0.15s ease,
+    transform 0.1s ease,
+    border-color 0.15s ease;
+}
+
+.ctrl-mobile-bottom-bar__btn--main {
+  width: 52px;
+  height: 52px;
+}
+
+.ctrl-mobile-bottom-bar__btn--main svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+/* ~70% от основной кнопки 52px: боковые наушники и смена вида */
+.ctrl-mobile-bottom-bar__btn--compact {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+
+.ctrl-mobile-bottom-bar__btn--compact svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.ctrl-mobile-bottom-bar__btn--compact .layout-mode-picker-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.ctrl-mobile-bottom-bar__btn--off {
+  border-color: rgba(229, 57, 53, 0.45);
+  color: var(--text-dim);
+}
+
+.ctrl-mobile-bottom-bar__btn--end-call {
+  border-color: rgba(229, 57, 53, 0.5);
+  background: rgba(229, 57, 53, 0.16);
+  color: #e53935;
+}
+
+.ctrl-mobile-bottom-bar__btn--end-call:hover {
+  background: rgba(229, 57, 53, 0.26);
+  border-color: var(--red);
+}
+
+.ctrl-mobile-bottom-bar__btn:active {
+  transform: scale(0.96);
+}
+
+.ctrl-mobile-bottom-bar__btn:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
 }
 
 /* Плавающие круги: меню + камера, микрофон, выход (мобильный viewport) */
@@ -4157,24 +4399,6 @@ button.vio-row--peer:focus-visible {
     padding: 28px 24px;
   }
 
-  /* Room layout — smaller header & controls */
-  .room-page { grid-template-rows: auto 1fr 56px; }
-  .room-page.room-page--viewport-mobile {
-    grid-template-rows: auto 1fr 0;
-  }
-  .room-page.room-page--chrome-hidden {
-    grid-template-rows: 0 1fr 0;
-  }
-  /* Явно: «авто» у viewport не должен оставлять строку шапки при immersive */
-  .room-page.room-page--viewport-mobile.room-page--chrome-hidden {
-    grid-template-rows: 0 1fr 0;
-  }
-
-  /* Первая строка — полоса с кнопкой смены вида (скрывается с immersive chrome) */
-  .room-page.room-page--viewport-mobile.room-page--mobile-pip {
-    grid-template-rows: auto minmax(0, 1fr) 0;
-  }
-
   /* Header */
   .room-header { padding: 0 10px; }
   .brand-logo--header-h { height: 32px; }
@@ -4302,10 +4526,11 @@ button.vio-row--peer:focus-visible {
     max-width: 40px;
   }
 
-  /* Popovers — fixed to viewport so they don't overflow */
+  /* Popovers — fixed to viewport so they don't overflow (над нижней панелью) */
   .room-page--viewport-mobile .device-popover,
   .room-page--viewport-mobile .settings-popover {
-    bottom: max(88px, calc(env(safe-area-inset-bottom) + 72px));
+    bottom: max(100px, calc(env(safe-area-inset-bottom) + 84px));
+    z-index: 8310;
   }
 
   .device-popover,

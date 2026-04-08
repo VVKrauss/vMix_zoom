@@ -22,11 +22,14 @@ import { readVmixIngressEmitExtras } from '../config/serverSettingsStorage'
 import {
   applyEma,
   buildQuality,
-  deltaFromSamples,
-  pickInboundVideoRtp,
   type InboundVideoQuality,
-  type InboundVideoStatsSample,
 } from '../utils/inboundVideoStats'
+import {
+  deltaUplinkFromSamples,
+  pickUplinkVideoPair,
+  sampleFromUplinkPair,
+  type UplinkVideoStatsSample,
+} from '../utils/uplinkVideoStats'
 import { signalingHttpBase, signalingSocketUrl } from '../utils/signalingBase'
 import {
   getStoredVideoPreset,
@@ -136,6 +139,21 @@ function mergeIncomingChatMessage(prev: RoomChatMessage[], msg: RoomChatMessage)
     }
   }
   return [...prev, msg].slice(-CHAT_MESSAGES_CAP)
+}
+
+function parseVideoUplinkBroadcast(raw: unknown): InboundVideoQuality | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  const bitrateBps = Number(o.bitrateBps ?? o.bitrate_bps)
+  const fractionLost = Number(o.fractionLost ?? o.fraction_lost)
+  if (!Number.isFinite(bitrateBps) || !Number.isFinite(fractionLost)) return null
+  const j = o.jitterMs ?? o.jitter_ms
+  const jitterMs = j == null || j === '' ? null : Number(j)
+  return buildQuality(
+    bitrateBps,
+    fractionLost,
+    jitterMs != null && Number.isFinite(jitterMs) ? jitterMs : null,
+  )
 }
 
 function capVideoFramerate(presetFps: number, track?: MediaStreamTrack | null): number {
@@ -258,8 +276,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const consumersRef = useRef<Map<string, Consumer>>(new Map())
   /** producerId → метаданные для producerClosed и очистки */
   const producerMetaRef = useRef<Map<string, ProducerMeta>>(new Map())
-  const inboundVideoPrevRef = useRef<Map<string, InboundVideoStatsSample>>(new Map())
-  const inboundVideoEmaRef = useRef<Map<string, { bitrateBps: number; fractionLost: number }>>(new Map())
+  /** Локальное видео → SFU: одна цепочка сэмплов + EMA (и для UI, и для reportVideoUplink). */
+  const uplinkLocalPrevRef = useRef<UplinkVideoStatsSample | undefined>(undefined)
+  const uplinkLocalEmaRef = useRef<Map<string, { bitrateBps: number; fractionLost: number }>>(new Map())
+  const lastVideoUplinkEmitAtRef = useRef(0)
+  /** Чужие uplink-метрики с сигналинга (broadcast после reportVideoUplink). */
+  const peerUplinkVideoQualityRef = useRef<Record<string, InboundVideoQuality>>({})
+  const [peerUplinkBroadcastTick, setPeerUplinkBroadcastTick] = useState(0)
   const roomIdRef = useRef<string>(DEFAULT_ROOM)
   const localStreamRef = useRef<MediaStream | null>(null)
   const [sessionMeta, setSessionMeta] = useState<{ roomId: string; localPeerId: string } | null>(null)
@@ -339,11 +362,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         if (m.consumerId === meta.consumerId) {
           producerMetaRef.current.delete(k)
         }
-      }
-
-      if (meta.kind === 'video' && meta.videoSource !== 'screen') {
-        inboundVideoPrevRef.current.delete(meta.anchorPeerId)
-        inboundVideoEmaRef.current.delete(meta.anchorPeerId)
       }
 
       setParticipants((prev) => {
@@ -820,6 +838,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           next.delete(peerId)
           return next
         })
+        delete peerUplinkVideoQualityRef.current[peerId]
+        setPeerUplinkBroadcastTick((t) => t + 1)
         setSrtByPeer((prev) => {
           const n = { ...prev }
           delete n[peerId]
@@ -871,15 +891,22 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         appendChat(m as RoomChatMessage)
       })
 
-      /** Хост/админ запросил выключить микрофон этому клиенту (сигналинг должен эмитить событие). */
+      /**
+       * Хост/админ запросил выключить микрофон этому клиенту.
+       * Без обработчика на сигналинге событие не придёт — см. `requestPeerMicMute`.
+       */
       socket.on('forceMicMute', () => {
         const producer = audioProducerRef.current
         const stream = localStreamRef.current
         const track = stream?.getAudioTracks()[0]
-        if (producer && track) {
-          producer.pause()
-          track.enabled = false
+        if (producer) {
+          try {
+            producer.pause()
+          } catch {
+            /* mediasoup client */
+          }
         }
+        if (track) track.enabled = false
         setIsMuted(true)
       })
 
@@ -917,6 +944,23 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         setChatMessages((prev) => [...prev, reactionLine].slice(-CHAT_MESSAGES_CAP))
       })
 
+      /**
+       * Uplink видео участника → SFU (broadcast с signaling после `reportVideoUplink`).
+       * Свой же пакет не применяем — локальная метрика считается через getStats.
+       */
+      socket.on('videoUplink', (raw: unknown) => {
+        const sid = socket.id
+        if (!sid) return
+        const o = raw as Record<string, unknown>
+        if (typeof o.roomId === 'string' && o.roomId !== roomIdRef.current) return
+        const peerId = typeof o.peerId === 'string' ? o.peerId.trim() : ''
+        if (!peerId || peerId === sid) return
+        const q = parseVideoUplinkBroadcast(raw)
+        if (!q) return
+        peerUplinkVideoQualityRef.current = { ...peerUplinkVideoQualityRef.current, [peerId]: q }
+        setPeerUplinkBroadcastTick((t) => t + 1)
+      })
+
       setStatus('connected')
     } catch (err) {
       if (gen !== joinGenerationRef.current) {
@@ -930,6 +974,11 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       setChatMessages([])
       setReactionBursts([])
       setRemoteScreenConsumePending(false)
+      peerUplinkVideoQualityRef.current = {}
+      setPeerUplinkBroadcastTick(0)
+      uplinkLocalPrevRef.current = undefined
+      uplinkLocalEmaRef.current.clear()
+      lastVideoUplinkEmitAtRef.current = 0
       const s = socketRef.current
       socketRef.current = null
       if (s) disposeSignalingSocket(s)
@@ -977,6 +1026,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     if (!track) { v.getTracks().forEach((t) => t.stop()); return }
     mergeTrackIntoLocalStream(track)
     videoProducerRef.current = await produceVideoFromTrack(sendTransport, track, preset)
+    uplinkLocalPrevRef.current = undefined
+    uplinkLocalEmaRef.current.delete('__local__')
+    lastVideoUplinkEmitAtRef.current = 0
   }, [])
 
   // Поллинг дашборда — подтягивает srt[] после рестарта сервера и синхронизирует состав
@@ -1025,8 +1077,15 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   // ─── Controls ────────────────────────────────────────────────────────────
 
   /**
-   * Попросить сигналинг выключить микрофон участника (обрабатывает сервер → `forceMicMute` у цели).
-   * Контракт: `socket.emit('hostRequestPeerMicMute', { roomId, targetPeerId })`.
+   * Попросить сигналинг выключить микрофон участника.
+   * Клиент шлёт: `socket.emit('hostRequestPeerMicMute', { roomId, targetPeerId })`,
+   * где `targetPeerId` — тот же id, что у участника в ростере (= обычно `socket.id` цели).
+   *
+   * На сервере Socket.IO (отдельный репозиторий) нужно:
+   * 1) слушать `hostRequestPeerMicMute`;
+   * 2) проверить, что отправитель — хост комнаты / админ (ваша модель прав);
+   * 3) найти сокет цели по `targetPeerId` и вызвать у него `emit('forceMicMute')` (или `socket.to(id).emit` — как у вас принято).
+   * Без шага 3 клиент цели не получит событие и звук не прервётся.
    */
   const requestPeerMicMute = useCallback((targetPeerId: string) => {
     const sock = socketRef.current
@@ -1125,6 +1184,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
     swapTrack(stream, 'video', newTrack, setLocalStream)
     if (producer) await producer.replaceTrack({ track: newTrack })
+    uplinkLocalPrevRef.current = undefined
+    uplinkLocalEmaRef.current.delete('__local__')
+    lastVideoUplinkEmitAtRef.current = 0
   }, [])
 
   const switchMic = useCallback(async (deviceId: string) => {
@@ -1169,6 +1231,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
     swapTrack(stream, 'video', newTrack, setLocalStream)
     await producer.replaceTrack({ track: newTrack })
+    uplinkLocalPrevRef.current = undefined
+    uplinkLocalEmaRef.current.delete('__local__')
+    lastVideoUplinkEmitAtRef.current = 0
 
     const sender = producer.rtpSender
     if (sender) {
@@ -1399,44 +1464,57 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     }
   }, [])
 
-  const getRemoteInboundVideoQuality = useCallback(async (anchorPeerId: string): Promise<InboundVideoQuality | null> => {
-    let consumerId: string | null = null
-    for (const m of producerMetaRef.current.values()) {
-      if (m.anchorPeerId !== anchorPeerId) continue
-      if (m.kind !== 'video') continue
-      if (m.videoSource === 'screen') continue
-      consumerId = m.consumerId
-      break
-    }
-    if (!consumerId) return null
-    const consumer = consumersRef.current.get(consumerId)
-    if (!consumer || consumer.closed || consumer.kind !== 'video') return null
-    let report: RTCStatsReport
-    try {
-      report = await consumer.getStats()
-    } catch {
-      return null
-    }
-    const rtp = pickInboundVideoRtp(report)
-    if (!rtp) return null
+  const getPeerUplinkVideoQuality = useCallback(
+    async (anchorPeerId: string): Promise<InboundVideoQuality | null> => {
+      const localId = sessionMeta?.localPeerId
+      if (!localId || anchorPeerId !== localId) {
+        return peerUplinkVideoQualityRef.current[anchorPeerId] ?? null
+      }
 
-    const now = performance.now()
-    const bytes = Number(rtp.bytesReceived ?? 0)
-    const pr = Number(rtp.packetsReceived ?? 0)
-    const pl = Number(rtp.packetsLost ?? 0)
-    const prev = inboundVideoPrevRef.current.get(anchorPeerId)
-    const delta = deltaFromSamples(rtp, prev, now)
-    inboundVideoPrevRef.current.set(anchorPeerId, {
-      t: now,
-      bytesReceived: bytes,
-      packetsReceived: pr,
-      packetsLost: pl,
-    })
-    if (!delta) return null
+      const producer = videoProducerRef.current
+      if (!producer || producer.closed || producer.kind !== 'video') return null
+      const src = (producer.appData as { source?: string } | undefined)?.source
+      if (src === 'screen') return null
 
-    const ema = applyEma(anchorPeerId, inboundVideoEmaRef.current, delta.bitrateBps, delta.fractionLost)
-    return buildQuality(ema.bitrateBps, ema.fractionLost, delta.jitterMs)
-  }, [])
+      let report: RTCStatsReport
+      try {
+        report = await producer.getStats()
+      } catch {
+        return null
+      }
+      const pair = pickUplinkVideoPair(report)
+      if (!pair) return null
+
+      const now = performance.now()
+      const sample = sampleFromUplinkPair(pair.outbound, pair.remoteInbound, now)
+      const prev = uplinkLocalPrevRef.current
+      const delta = deltaUplinkFromSamples(pair.outbound, pair.remoteInbound, prev, now)
+      uplinkLocalPrevRef.current = sample
+      if (!delta) return null
+
+      const ema = applyEma('__local__', uplinkLocalEmaRef.current, delta.bitrateBps, delta.fractionLost)
+      const q = buildQuality(ema.bitrateBps, ema.fractionLost, delta.jitterMs)
+
+      const sock = socketRef.current
+      const rid = roomIdRef.current?.trim()
+      if (sock?.connected && rid) {
+        const t = Date.now()
+        if (t - lastVideoUplinkEmitAtRef.current >= 2000) {
+          lastVideoUplinkEmitAtRef.current = t
+          sock.emit('reportVideoUplink', {
+            roomId: rid,
+            level: q.level,
+            bitrateBps: q.bitrateBps,
+            fractionLost: q.fractionLost,
+            jitterMs: q.jitterMs,
+          })
+        }
+      }
+
+      return q
+    },
+    [sessionMeta?.localPeerId, peerUplinkBroadcastTick],
+  )
 
   const leave = useCallback(() => {
     joinGenerationRef.current += 1
@@ -1446,8 +1524,11 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     consumersRef.current.forEach((c) => c.close())
     consumersRef.current.clear()
     producerMetaRef.current.clear()
-    inboundVideoPrevRef.current.clear()
-    inboundVideoEmaRef.current.clear()
+    uplinkLocalPrevRef.current = undefined
+    uplinkLocalEmaRef.current.clear()
+    lastVideoUplinkEmitAtRef.current = 0
+    peerUplinkVideoQualityRef.current = {}
+    setPeerUplinkBroadcastTick(0)
     sendTransportRef.current?.close()
     recvTransportRef.current?.close()
     const s = socketRef.current
@@ -1500,6 +1581,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     stopVmixIngress,
     vmixIngressInfo,
     vmixIngressLoading,
-    getRemoteInboundVideoQuality,
+    getPeerUplinkVideoQuality,
   }
 }

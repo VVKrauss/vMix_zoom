@@ -7,7 +7,14 @@ import { ControlsBar } from './ControlsBar'
 import { ParticipantCard } from './ParticipantCard'
 import { DraggablePip } from './DraggablePip'
 import { AudioMeter } from './AudioMeter'
-import { MicOffIcon, DashboardIcon, InviteIcon, ParticipantsBadgeIcon } from './icons'
+import {
+  MicOffIcon,
+  DashboardIcon,
+  InviteIcon,
+  ParticipantsBadgeIcon,
+  FullscreenEnterIcon,
+  FullscreenExitIcon,
+} from './icons'
 import { useAuth } from '../context/AuthContext'
 import { shouldClosePopoverOnOutsidePointer } from '../utils/popoverOutsideClick'
 import { useAudioOutputs } from '../hooks/useAudioOutputs'
@@ -100,6 +107,20 @@ function guestMuteTargetPeerId(tileId: string, localPeerId: string): string | nu
   return tileId
 }
 
+type DocumentWithFs = Document & {
+  webkitFullscreenElement?: Element | null
+  webkitExitFullscreen?: () => Promise<void>
+}
+
+type ElementWithFs = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void
+}
+
+function getBrowserFullscreenElement(): Element | null {
+  const d = document as DocumentWithFs
+  return document.fullscreenElement ?? d.webkitFullscreenElement ?? null
+}
+
 export type LayoutMode = StoredLayoutMode
 
 /** vMix: ingress запущен, но видео ещё нет — оранжевая кнопка; есть видео — красная. */
@@ -150,7 +171,7 @@ interface Props {
   onStartVmixIngress: () => Promise<{ ok: true; info: VmixIngressInfo } | { ok: false; error: string }>
   onStopVmixIngress: () => Promise<{ ok: boolean; error?: string }>
   /** Входящее camera/vmix видео по участнику (не локальная плитка, не экран). */
-  getRemoteInboundVideoQuality?: (peerId: string) => Promise<InboundVideoQuality | null>
+  getPeerUplinkVideoQuality?: (peerId: string) => Promise<InboundVideoQuality | null>
   /** Удалённое выключение микрофона гостя (сигналинг). */
   requestPeerMicMute?: (targetPeerId: string) => void
 }
@@ -172,7 +193,7 @@ export function RoomPage({
   vmixIngressLoading,
   onStartVmixIngress,
   onStopVmixIngress,
-  getRemoteInboundVideoQuality,
+  getPeerUplinkVideoQuality,
   requestPeerMicMute,
 }: Props) {
   const isViewportMobile = useMediaQuery(mediaQueryMaxWidthMobile)
@@ -252,6 +273,7 @@ export function RoomPage({
   const inviteToastTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
   const [inviteOpen, setInviteOpen] = useState(false)
   const inviteRef = useRef<HTMLDivElement>(null)
+  const [fullscreenActive, setFullscreenActive] = useState(false)
 
   useEffect(() => {
     if (!inviteOpen) return
@@ -301,6 +323,34 @@ export function RoomPage({
 
   useEffect(() => () => {
     if (inviteToastTimerRef.current != null) window.clearTimeout(inviteToastTimerRef.current)
+  }, [])
+
+  useEffect(() => {
+    const sync = () => setFullscreenActive(Boolean(getBrowserFullscreenElement()))
+    sync()
+    document.addEventListener('fullscreenchange', sync)
+    document.addEventListener('webkitfullscreenchange', sync)
+    return () => {
+      document.removeEventListener('fullscreenchange', sync)
+      document.removeEventListener('webkitfullscreenchange', sync)
+    }
+  }, [])
+
+  const toggleBrowserFullscreen = useCallback(async () => {
+    const d = document as DocumentWithFs
+    const root = document.documentElement as ElementWithFs
+    try {
+      if (getBrowserFullscreenElement()) {
+        if (document.exitFullscreen) await document.exitFullscreen()
+        else await d.webkitExitFullscreen?.()
+      } else if (root.requestFullscreen) {
+        await root.requestFullscreen()
+      } else {
+        await Promise.resolve(root.webkitRequestFullscreen?.())
+      }
+    } catch {
+      /* нет API, отклонено пользователем или iOS */
+    }
   }, [])
 
   const { audioOutputs, refreshAudioOutputs } = useAudioOutputs()
@@ -434,6 +484,12 @@ export function RoomPage({
 
   const remoteList = useMemo(() => [...participants.values()], [participants])
 
+  /** Участники-люди в счётчике шапки (без виртуального vMix/SRT). */
+  const remoteHumanPeers = useMemo(
+    () => remoteList.filter((p) => p.name !== 'vMix'),
+    [remoteList],
+  )
+
   const vmixPeer = useMemo(
     () => remoteList.find((p) => p.name === 'vMix'),
     [remoteList],
@@ -495,17 +551,13 @@ export function RoomPage({
     () => remoteList.filter((p) => p.screenStream).length,
     [remoteList],
   )
-  /** Локальная камера + удалённые + плитки демонстрации (своя и чужие) */
-  const rosterCount =
-    remoteList.length +
-    1 +
-    (isScreenSharing && localScreenStream ? 1 : 0) +
-    remoteScreenTileCount
+  /** Только люди: вы + удалённые гости; без vMix/SRT и без плиток демонстрации экрана. */
+  const rosterCount = remoteHumanPeers.length + 1
 
   const mobileSoloTiles =
     isViewportMobile &&
     layoutUsesTiledView(layout) &&
-    remoteList.length === 0 &&
+    remoteHumanPeers.length === 0 &&
     !(isScreenSharing && localScreenStream) &&
     remoteScreenTileCount === 0
 
@@ -676,8 +728,8 @@ export function RoomPage({
   }
 
   const onLogoHomeClick = () => {
-    if (remoteList.length === 0) onLeave()
-    else openLeaveDialog('home', remoteList.length)
+    if (remoteHumanPeers.length === 0) onLeave()
+    else openLeaveDialog('home', remoteHumanPeers.length)
   }
 
   const requestStopScreenSharing = () => {
@@ -758,7 +810,7 @@ export function RoomPage({
     [orderedTileIds, pipFloatTileId],
   )
 
-  const remoteGuestCount = remoteList.length
+  const remoteGuestCount = remoteHumanPeers.length
 
   const swapPipGridTileToFloat = useCallback(
     (tileId: string) => {
@@ -904,7 +956,7 @@ export function RoomPage({
         playoutVolume={isVmixTile ? playoutVolume * vmixPlayoutGain : cardPlayout.playoutVolume}
         playoutSinkId={cardPlayout.playoutSinkId}
         reactionBurst={pickLatestBurstForPeer(reactionBursts, p.peerId)}
-        getRemoteInboundVideoQuality={getRemoteInboundVideoQuality}
+        getPeerUplinkVideoQuality={getPeerUplinkVideoQuality}
         showSoloViewerCopy={canUseElevatedRoomTools}
         guestMute={
           !isVmixTile && canUseElevatedRoomTools && requestPeerMicMute
@@ -1002,8 +1054,8 @@ export function RoomPage({
       className={`room-page${streamerMode ? ' room-page--streamer-mode' : ''}${
         immersiveAutoHide && chromeHidden ? ' room-page--chrome-hidden' : ''
       }${isViewportMobile ? ' room-page--viewport-mobile' : ''}${
-        isViewportMobile && layout === 'pip' ? ' room-page--mobile-pip' : ''
-      }${leaveDialog !== null ? ' room-page--leave-dialog' : ''}`}
+        leaveDialog !== null ? ' room-page--leave-dialog' : ''
+      }`}
     >
       <ConfirmDialog
         open={leaveDialog !== null}
@@ -1042,50 +1094,10 @@ export function RoomPage({
         onConfirm={confirmStopScreenSharing}
       />
 
-      {/* ── Верх: шапка + полоса смены вида (ниже хэдера, в одном chrome для immersive) ── */}
-      <div className="room-page__top-chrome">
-        {isViewportMobile && layout === 'pip' ? (
-          <div className="room-page__pip-safe-strip" aria-hidden />
-        ) : isViewportMobile ? (
-          <div className="room-header-mobile-shell">
-            <header className="room-header room-header--mobile-compact">
-              <div className="room-header-mobile-brand" aria-hidden>
-                <img className="brand-logo brand-logo--header" src="/logo.png" alt="" draggable={false} />
-              </div>
-              <div className="room-header-mobile-actions">
-                <div
-                  className="room-header-participant-count"
-                  title={`${rosterCount} ${ruParticipantsWord(rosterCount)}`}
-                  aria-label={`${rosterCount} ${ruParticipantsWord(rosterCount)}`}
-                >
-                  <ParticipantsBadgeIcon />
-                  <span className="room-header-participant-count__num">{rosterCount}</span>
-                </div>
-                <div className="room-invite-menu room-invite-menu--compact" ref={inviteRef}>
-                  <button
-                    type="button"
-                    className={`room-invite-btn-compact${inviteOpen ? ' room-invite-btn-compact--open' : ''}`}
-                    onClick={() => setInviteOpen((v) => !v)}
-                    title="Пригласить участников"
-                    aria-label="Пригласить участников"
-                  >
-                    <InviteIcon />
-                  </button>
-                  {inviteOpen && (
-                    <div className="room-invite-dropdown">
-                      <button type="button" className="room-invite-dropdown__item" onClick={handleCopyInviteUrl}>
-                        Скопировать ссылку
-                      </button>
-                      <button type="button" className="room-invite-dropdown__item" onClick={handleCopyInviteId}>
-                        Скопировать ID комнаты
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </header>
-          </div>
-        ) : (
+      <div className="room-page__column">
+      {/* ── Шапка: только десктоп; на мобильных без исключения не показываем ── */}
+      {!isViewportMobile ? (
+        <div className="room-page__top-chrome">
           <header className="room-header">
             <button type="button" className="room-logo-btn" onClick={onLogoHomeClick} title="На главную" aria-label="На главную">
               <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
@@ -1177,7 +1189,7 @@ export function RoomPage({
                         className="header-user-dropdown__item"
                         onClick={() => {
                           setUserMenuOpen(false)
-                          openLeaveDialog('leave', remoteList.length)
+                          openLeaveDialog('leave', remoteHumanPeers.length)
                         }}
                       >
                         Выйти из комнаты
@@ -1196,10 +1208,22 @@ export function RoomPage({
               )}
             </div>
           </header>
-        )}
-      </div>
+        </div>
+      ) : null}
 
-      {showLayoutToggle && canUseElevatedRoomTools ? (
+      {isViewportMobile ? (
+        <button
+          type="button"
+          className="room-mobile-fullscreen-btn"
+          onClick={() => { void toggleBrowserFullscreen() }}
+          title={fullscreenActive ? 'Выйти из полноэкранного режима' : 'Во весь экран'}
+          aria-label={fullscreenActive ? 'Выйти из полноэкранного режима' : 'Во весь экран (как F11)'}
+        >
+          {fullscreenActive ? <FullscreenExitIcon /> : <FullscreenEnterIcon />}
+        </button>
+      ) : null}
+
+      {!isViewportMobile && showLayoutToggle && canUseElevatedRoomTools ? (
         <LayoutCycleFabButton
           className="room-layout-cycle-fab--float"
           onPickNextLayout={() => setLayout((l) => nextLayoutMode(l))}
@@ -1383,7 +1407,7 @@ export function RoomPage({
         selectedMicId={selectedMicId}
         onToggleMute={onToggleMute}
         onToggleCam={onToggleCam}
-        onLeaveRequest={() => openLeaveDialog('leave', remoteList.length)}
+        onLeaveRequest={() => openLeaveDialog('leave', remoteHumanPeers.length)}
         onSwitchCamera={id => { setSelectedCameraId(id); onSwitchCamera(id) }}
         onSwitchMic={id => { setSelectedMicId(id); onSwitchMic(id) }}
         activePreset={activePreset}
@@ -1437,7 +1461,9 @@ export function RoomPage({
         hideVideoLetterboxing={hideVideoLetterboxing}
         onHideVideoLetterboxingChange={setHideVideoLetterboxing}
         canManageVmixProgramIngress={canUseElevatedRoomTools}
+        showMobileLayoutCycle={showLayoutToggle && canUseElevatedRoomTools}
       />
+      </div>
 
       {chatOpen && !chatEmbed && (
         <RoomChatPanel

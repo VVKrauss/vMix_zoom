@@ -60,11 +60,11 @@ export function HomePage() {
                   </p>
                 </div>
                 <nav className="home-user-nav" aria-label="Разделы аккаунта">
-                  <Link to="/dashboard" className="admin-sidebar__link">
+                  <Link to="/dashboard" className="join-btn join-btn--secondary join-btn--block home-user-nav__btn">
                     Личный кабинет
                   </Link>
                   {canAccessAdmin ? (
-                    <Link to="/admin" className="admin-sidebar__link">
+                    <Link to="/admin" className="join-btn join-btn--secondary join-btn--block home-user-nav__btn">
                       Войти в админку
                     </Link>
                   ) : null}

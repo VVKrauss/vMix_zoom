@@ -209,7 +209,7 @@ export function VideoInfoOverlay({
       {linkQuality ? (
         <>
           <span className="vio-row">
-            <span className="vio-key">Приём видео</span>
+            <span className="vio-key">Видео к серверу</span>
             <span className="vio-val">{formatMbps(linkQuality.bitrateBps)} Мбит/с</span>
           </span>
           <span className="vio-row">

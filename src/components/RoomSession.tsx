@@ -95,7 +95,7 @@ export function RoomSession({ roomId }: Props) {
     chatMessages, sendChatMessage, sendReaction, reactionBursts,
     remoteScreenConsumePending,
     startVmixIngress, stopVmixIngress, vmixIngressInfo, vmixIngressLoading,
-    getRemoteInboundVideoQuality,
+    getPeerUplinkVideoQuality,
     requestPeerMicMute,
   } = useRoom(roomActivityNotifyRef)
 
@@ -206,7 +206,7 @@ export function RoomSession({ roomId }: Props) {
         vmixIngressLoading={vmixIngressLoading}
         onStartVmixIngress={startVmixIngress}
         onStopVmixIngress={stopVmixIngress}
-        getRemoteInboundVideoQuality={getRemoteInboundVideoQuality}
+        getPeerUplinkVideoQuality={getPeerUplinkVideoQuality}
         requestPeerMicMute={requestPeerMicMute}
       />
     )

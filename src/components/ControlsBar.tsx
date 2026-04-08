@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo, type PointerEvent as ReactPointerEvent } from 'react'
 import { DevicePopover } from './DevicePopover'
 import { PillToggle } from './PillToggle'
 import { ScreenSharePickerModal } from './ScreenSharePickerModal'
@@ -6,10 +6,9 @@ import type { VideoPreset } from '../types'
 import { presetToSimpleTier, simpleTierToPreset } from '../utils/simpleVideoQuality'
 import type { LayoutMode, VmixIngressPhase } from './RoomPage'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
-import { MicIcon, MicOffIcon, CamIcon, CamOffIcon } from './icons'
+import { MicIcon, MicOffIcon, CamIcon, CamOffIcon, InviteIcon, EndCallIcon } from './icons'
 import { useOnOutsideClick } from '../hooks/useOnOutsideClick'
 import { nextLayoutMode } from '../config/layoutModeCycle'
-import { useAuth } from '../context/AuthContext'
 
 function layoutModeLabel(mode: LayoutMode): string {
   switch (mode) {
@@ -115,6 +114,50 @@ interface Props {
    * Только хост комнаты / админы (не гости без прав).
    */
   canManageVmixProgramIngress?: boolean
+  /** Мобильная нижняя панель: кнопка смены вида (стример / админ). */
+  showMobileLayoutCycle?: boolean
+}
+
+const LONG_PRESS_MS = 550
+
+function useMobileDualAction(onShort: () => void, onLong: () => void) {
+  const timer = useRef(0)
+  const longFired = useRef(false)
+  const shortRef = useRef(onShort)
+  const longRef = useRef(onLong)
+  shortRef.current = onShort
+  longRef.current = onLong
+  return useMemo(
+    () => ({
+      onPointerDown(e: ReactPointerEvent<HTMLButtonElement>) {
+        if (e.button !== 0) return
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId)
+        } catch {
+          /* Safari / старые движки */
+        }
+        longFired.current = false
+        window.clearTimeout(timer.current)
+        timer.current = window.setTimeout(() => {
+          longFired.current = true
+          timer.current = 0
+          longRef.current()
+        }, LONG_PRESS_MS)
+      },
+      onPointerUp() {
+        window.clearTimeout(timer.current)
+        timer.current = 0
+        if (!longFired.current) shortRef.current()
+        longFired.current = false
+      },
+      onPointerCancel() {
+        window.clearTimeout(timer.current)
+        timer.current = 0
+        longFired.current = false
+      },
+    }),
+    [],
+  )
 }
 
 type OpenPopover = 'mic' | 'cam' | 'headphones' | 'chat' | 'reaction' | 'layout' | 'screen' | 'settings' | null
@@ -161,12 +204,10 @@ export function ControlsBar({
   hideVideoLetterboxing,
   onHideVideoLetterboxingChange,
   canManageVmixProgramIngress = false,
+  showMobileLayoutCycle = false,
 }: Props) {
-  const { user, signOut } = useAuth()
   const [open, setOpen] = useState<OpenPopover>(null)
   const [screenPickerOpen, setScreenPickerOpen] = useState(false)
-  const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
-  const [mobilePipQuickOpen, setMobilePipQuickOpen] = useState(false)
   const playoutSavedRef = useRef(1)
 
   useEffect(() => {
@@ -187,61 +228,24 @@ export function ControlsBar({
   }, [playoutVolume, onPlayoutVolumeChange])
 
   useEffect(() => {
-    if (!forceMobileFabMenu) {
-      setMobileMoreOpen(false)
-      setMobilePipQuickOpen(false)
-    }
-  }, [forceMobileFabMenu])
-
-  useEffect(() => {
     if (!chromeHidden) return
     setOpen(null)
-    setMobileMoreOpen(false)
-    setMobilePipQuickOpen(false)
   }, [chromeHidden])
 
   useEffect(() => {
-    if (layout !== 'pip') setMobilePipQuickOpen(false)
-  }, [layout])
-
-  useEffect(() => {
-    if (!mobileMoreOpen && !mobilePipQuickOpen) return
+    if (!forceMobileFabMenu || !open) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setOpen(null)
-        setMobileMoreOpen(false)
-        setMobilePipQuickOpen(false)
-      }
+      if (e.key === 'Escape') setOpen(null)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [mobileMoreOpen, mobilePipQuickOpen])
+  }, [forceMobileFabMenu, open])
 
-  const closeMobileMore = () => {
-    setOpen(null)
-    setMobileMoreOpen(false)
-  }
-
-  const toggleMobileSheet = () => {
-    setOpen(null)
-    setMobilePipQuickOpen(false)
-    setMobileMoreOpen((v) => !v)
-  }
-
-  const openMainSheetFromPip = () => {
-    setOpen(null)
-    setMobilePipQuickOpen(false)
-    setMobileMoreOpen(true)
-  }
-
-  const closeMobilePipQuick = () => {
-    setMobilePipQuickOpen(false)
-  }
+  const camPress = useMobileDualAction(onToggleCam, () => setOpen('cam'))
+  const micPress = useMobileDualAction(onToggleMute, () => setOpen('mic'))
+  const hpPress = useMobileDualAction(togglePlayoutMute, () => setOpen('headphones'))
 
   const showMainBar = !forceMobileFabMenu
-  const sheetMenuOpen = mobileMoreOpen && forceMobileFabMenu
-  const mobilePipChrome = forceMobileFabMenu && layout === 'pip'
-  const showClassicMobileDock = forceMobileFabMenu && !mobilePipChrome
 
   const sh = (base: string, sheet?: boolean) => sheet ? `${base} ctrl-group--sheet` : base
 
@@ -658,131 +662,115 @@ export function ControlsBar({
       </div>
       ) : null}
 
-      {mobilePipChrome ? (
-        <div className="ctrl-mobile-pip-chrome">
-          {mobilePipQuickOpen && !sheetMenuOpen ? (
-            <div
-              className="ctrl-mobile-pip-quick-backdrop"
-              role="presentation"
-              onPointerDown={(e) => {
-                if (e.button !== 0) return
-                closeMobilePipQuick()
-              }}
-              onClick={(e) => {
-                e.preventDefault()
-                closeMobilePipQuick()
-              }}
-            />
-          ) : null}
-          {!sheetMenuOpen ? (
-            <div className="ctrl-mobile-pip-column">
-              {mobilePipQuickOpen ? (
-                <div className="ctrl-mobile-pip-quick-stack">
-                  <button
-                    type="button"
-                    className="ctrl-mobile-fab ctrl-mobile-fab--pip-quick"
-                    title="Полное меню"
-                    aria-label="Открыть полное меню"
-                    onClick={openMainSheetFromPip}
-                  >
-                    <ChevronUpIcon />
-                  </button>
-                  <button
-                    type="button"
-                    className={`ctrl-mobile-fab ctrl-mobile-fab--pip-quick${isCamOff ? ' ctrl-mobile-fab--off' : ''}`}
-                    onClick={onToggleCam}
-                    title={isCamOff ? 'Включить камеру' : 'Выключить камеру'}
-                    aria-label={isCamOff ? 'Включить камеру' : 'Выключить камеру'}
-                  >
-                    {isCamOff ? <CamOffIcon /> : <CamIcon />}
-                  </button>
-                  <button
-                    type="button"
-                    className={`ctrl-mobile-fab ctrl-mobile-fab--pip-quick${isMuted ? ' ctrl-mobile-fab--off' : ''}`}
-                    onClick={onToggleMute}
-                    title={isMuted ? 'Включить микрофон' : 'Выключить микрофон'}
-                    aria-label={isMuted ? 'Включить микрофон' : 'Выключить микрофон'}
-                  >
-                    {isMuted ? <MicOffIcon /> : <MicIcon />}
-                  </button>
-                  <button
-                    type="button"
-                    className="ctrl-mobile-fab ctrl-mobile-fab--pip-quick"
-                    title="Скопировать ссылку на комнату"
-                    aria-label="Пригласить: скопировать ссылку"
-                    onClick={() => {
-                      onInviteParticipants?.()
-                      closeMobilePipQuick()
-                    }}
-                  >
-                    <PlusIcon />
-                  </button>
-                  <button
-                    type="button"
-                    className="ctrl-mobile-fab ctrl-mobile-fab--pip-quick ctrl-mobile-fab--leave"
-                    onClick={onLeaveRequest}
-                    title="Выйти из комнаты"
-                    aria-label="Выйти из комнаты"
-                  >
-                    <LeaveIcon />
-                  </button>
-                </div>
+      {forceMobileFabMenu ? (
+        <>
+          <div className="ctrl-mobile-bottom-bar" role="toolbar" aria-label="Управление комнатой">
+            <div className="ctrl-mobile-bottom-bar__edge ctrl-mobile-bottom-bar__edge--left">
+              <button
+                type="button"
+                className={`ctrl-mobile-bottom-bar__btn ctrl-mobile-bottom-bar__btn--compact${
+                  playoutVolume < 0.02 ? ' ctrl-mobile-bottom-bar__btn--off' : ''
+                }`}
+                {...hpPress}
+                title="Коротко: звук участников. Долго: громкость и устройство вывода"
+                aria-label="Звук участников; долгое нажатие — настройки вывода"
+              >
+                {playoutVolume < 0.02 ? <HeadphonesMutedIcon /> : <HeadphonesIcon />}
+              </button>
+            </div>
+            <div className="ctrl-mobile-bottom-bar__center">
+              <button
+                type="button"
+                className={`ctrl-mobile-bottom-bar__btn ctrl-mobile-bottom-bar__btn--main${
+                  isCamOff ? ' ctrl-mobile-bottom-bar__btn--off' : ''
+                }`}
+                {...camPress}
+                title="Коротко: камера. Долго: выбрать камеру"
+                aria-label="Камера; долгое нажатие — выбор устройства"
+              >
+                {isCamOff ? <CamOffIcon /> : <CamIcon />}
+              </button>
+              <button
+                type="button"
+                className={`ctrl-mobile-bottom-bar__btn ctrl-mobile-bottom-bar__btn--main${
+                  isMuted ? ' ctrl-mobile-bottom-bar__btn--off' : ''
+                }`}
+                {...micPress}
+                title="Коротко: микрофон. Долго: выбрать микрофон"
+                aria-label="Микрофон; долгое нажатие — выбор устройства"
+              >
+                {isMuted ? <MicOffIcon /> : <MicIcon />}
+              </button>
+              {onInviteParticipants ? (
+                <button
+                  type="button"
+                  className="ctrl-mobile-bottom-bar__btn ctrl-mobile-bottom-bar__btn--main"
+                  onClick={() => onInviteParticipants()}
+                  title="Пригласить участников"
+                  aria-label="Пригласить участников"
+                >
+                  <InviteIcon />
+                </button>
               ) : null}
               <button
                 type="button"
-                className="ctrl-mobile-pip-logo-btn"
-                onClick={() => setMobilePipQuickOpen((v) => !v)}
-                title={mobilePipQuickOpen ? 'Закрыть' : 'Меню'}
-                aria-label={mobilePipQuickOpen ? 'Закрыть быстрые действия' : 'Открыть быстрые действия'}
-                aria-expanded={mobilePipQuickOpen}
+                className="ctrl-mobile-bottom-bar__btn ctrl-mobile-bottom-bar__btn--main ctrl-mobile-bottom-bar__btn--end-call"
+                onClick={onLeaveRequest}
+                title="Завершить звонок"
+                aria-label="Завершить звонок"
               >
-                <img src="/logo.png" alt="" draggable={false} />
+                <EndCallIcon />
               </button>
             </div>
+            <div className="ctrl-mobile-bottom-bar__edge ctrl-mobile-bottom-bar__edge--right">
+              {showMobileLayoutCycle ? (
+                <button
+                  type="button"
+                  className="ctrl-mobile-bottom-bar__btn ctrl-mobile-bottom-bar__btn--compact"
+                  onClick={() => onLayoutChange(nextLayoutMode(layout))}
+                  title={`Сейчас: ${layoutModeLabel(layout)}. Далее: ${layoutModeLabel(nextLayoutMode(layout))}`}
+                  aria-label="Сменить вид отображения"
+                >
+                  <LayoutModePickerIcon />
+                </button>
+              ) : null}
+            </div>
+          </div>
+          {open === 'cam' && forceMobileFabMenu ? (
+            <DevicePopover
+              label="Камера"
+              devices={cameras}
+              selectedId={selectedCameraId}
+              onSelect={(id) => { onSwitchCamera(id) }}
+              onClose={() => setOpen(null)}
+              videoQualityTier={presetToSimpleTier(activePreset)}
+              onVideoQualityTierChange={(tier) => { void onChangePreset(simpleTierToPreset(tier)) }}
+              mirrorLocalPreview={mirrorLocalCamera}
+              onToggleMirrorLocalPreview={onToggleMirrorLocalCamera}
+            />
           ) : null}
-        </div>
-      ) : showClassicMobileDock ? (
-        <div
-          className={`ctrl-mobile-fab-dock${sheetMenuOpen ? ' ctrl-mobile-fab-dock--sheet-open' : ''}`}
-        >
-          <button
-            type="button"
-            className="ctrl-mobile-fab ctrl-mobile-fab--menu"
-            onClick={toggleMobileSheet}
-            title="Меню управления"
-            aria-label="Меню управления"
-            aria-expanded={mobileMoreOpen}
-          >
-            <MenuHamburgerIcon />
-          </button>
-          <button
-            type="button"
-            className="ctrl-mobile-fab ctrl-mobile-fab--leave"
-            onClick={onLeaveRequest}
-            title="Выйти из комнаты"
-            aria-label="Выйти из комнаты"
-          >
-            <LeaveIcon />
-          </button>
-          <button
-            type="button"
-            className={`ctrl-mobile-fab${isMuted ? ' ctrl-mobile-fab--off' : ''}`}
-            onClick={onToggleMute}
-            title={isMuted ? 'Включить микрофон' : 'Выключить микрофон'}
-            aria-label={isMuted ? 'Включить микрофон' : 'Выключить микрофон'}
-          >
-            {isMuted ? <MicOffIcon /> : <MicIcon />}
-          </button>
-          <button
-            type="button"
-            className={`ctrl-mobile-fab${isCamOff ? ' ctrl-mobile-fab--off' : ''}`}
-            onClick={onToggleCam}
-            title={isCamOff ? 'Включить камеру' : 'Выключить камеру'}
-            aria-label={isCamOff ? 'Включить камеру' : 'Выключить камеру'}
-          >
-            {isCamOff ? <CamOffIcon /> : <CamIcon />}
-          </button>
-        </div>
+          {open === 'mic' && forceMobileFabMenu ? (
+            <DevicePopover
+              label="Микрофон"
+              devices={microphones}
+              selectedId={selectedMicId}
+              onSelect={(id) => { onSwitchMic(id) }}
+              onClose={() => setOpen(null)}
+              audioMeter={showMeter}
+              onToggleAudioMeter={onToggleMeter}
+            />
+          ) : null}
+          {open === 'headphones' && forceMobileFabMenu ? (
+            <PlayoutPopover
+              onClose={() => setOpen(null)}
+              playoutVolume={playoutVolume}
+              onPlayoutVolumeChange={onPlayoutVolumeChange}
+              audioOutputs={audioOutputs}
+              playoutSinkId={playoutSinkId}
+              onPlayoutSinkChange={onPlayoutSinkChange}
+            />
+          ) : null}
+        </>
       ) : null}
 
       {screenPickerOpen && (
@@ -801,141 +789,6 @@ export function ControlsBar({
         </div>
       )}
 
-      {sheetMenuOpen && (
-        <>
-          <div
-            className="mobile-controls-sheet-backdrop"
-            role="presentation"
-            onPointerDown={(e) => {
-              if (e.button !== 0) return
-              closeMobileMore()
-            }}
-            onClick={(e) => {
-              e.preventDefault()
-              closeMobileMore()
-            }}
-          />
-          <div
-            className="mobile-controls-sheet"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Меню управления"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mobile-controls-sheet__title">Меню</div>
-            <div className="mobile-controls-sheet__groups">
-              {sourcesStrip(true)}
-              <div className="ctrl-group ctrl-group--sheet">
-                <button
-                  className={`ctrl-btn ${isCamOff ? 'ctrl-btn--off' : ''}`}
-                  onClick={onToggleCam}
-                  title={isCamOff ? 'Включить камеру' : 'Выключить камеру'}
-                >
-                  {isCamOff ? <CamOffIcon /> : <CamIcon />}
-                  <span>{isCamOff ? 'Включить' : 'Камера'}</span>
-                </button>
-                <button
-                  type="button"
-                  className={`ctrl-chevron ${isCamOff ? 'ctrl-btn--off' : ''} ${open === 'cam' ? 'ctrl-chevron--open' : ''}`}
-                  onClick={() => toggleOpen('cam')}
-                  title="Выбрать камеру"
-                >
-                  <ChevronIcon />
-                </button>
-                {open === 'cam' && (
-                  <DevicePopover
-                    label="Камера"
-                    devices={cameras}
-                    selectedId={selectedCameraId}
-                    onSelect={id => { onSwitchCamera(id) }}
-                    onClose={() => setOpen(null)}
-                    videoQualityTier={presetToSimpleTier(activePreset)}
-                    onVideoQualityTierChange={(tier) => { void onChangePreset(simpleTierToPreset(tier)) }}
-                    mirrorLocalPreview={mirrorLocalCamera}
-                    onToggleMirrorLocalPreview={onToggleMirrorLocalCamera}
-                  />
-                )}
-              </div>
-              <div className="ctrl-group ctrl-group--sheet">
-                <button
-                  className={`ctrl-btn ${isMuted ? 'ctrl-btn--off' : ''}`}
-                  onClick={onToggleMute}
-                  title={isMuted ? 'Включить микрофон' : 'Выключить микрофон'}
-                >
-                  {isMuted ? <MicOffIcon /> : <MicIcon />}
-                  <span>{isMuted ? 'Включить' : 'Микрофон'}</span>
-                </button>
-                <button
-                  type="button"
-                  className={`ctrl-chevron ${isMuted ? 'ctrl-btn--off' : ''} ${open === 'mic' ? 'ctrl-chevron--open' : ''}`}
-                  onClick={() => toggleOpen('mic')}
-                  title="Выбрать микрофон"
-                >
-                  <ChevronIcon />
-                </button>
-                {open === 'mic' && (
-                  <DevicePopover
-                    label="Микрофон"
-                    devices={microphones}
-                    selectedId={selectedMicId}
-                    onSelect={id => { onSwitchMic(id) }}
-                    onClose={() => setOpen(null)}
-                    audioMeter={showMeter}
-                    onToggleAudioMeter={onToggleMeter}
-                  />
-                )}
-              </div>
-              {headphonesGroup(true)}
-              {chatGroup(true)}
-              {layoutGroup(true)}
-              {screenShareGroup(true)}
-              {settingsGroup(true)}
-              {reactionGroup(true)}
-              {user ? (
-                <div className="mobile-controls-sheet__account">
-                  <a
-                    href="/dashboard"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="header-user-dropdown__item"
-                    onClick={closeMobileMore}
-                  >
-                    Личный кабинет
-                  </a>
-                  {showAdminPanelLink ? (
-                    <a
-                      href="/admin"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="header-user-dropdown__item"
-                      onClick={closeMobileMore}
-                    >
-                      Админка
-                    </a>
-                  ) : null}
-                  <div className="header-user-dropdown__separator" />
-                  <button
-                    type="button"
-                    className="header-user-dropdown__item header-user-dropdown__item--danger"
-                    onClick={() => {
-                      closeMobileMore()
-                      signOut()
-                    }}
-                  >
-                    Выйти из аккаунта
-                  </button>
-                </div>
-              ) : null}
-              <div className="mobile-controls-sheet__leave-wrap">
-                <button type="button" className="ctrl-btn ctrl-btn--leave ctrl-btn--leave-sheet" onClick={() => { closeMobileMore(); onLeaveRequest() }}>
-                  <LeaveIcon />
-                  <span>Выйти</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
     </div>
   )
 }
@@ -952,30 +805,6 @@ function ProgramSpeakerMutedIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
       <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
-    </svg>
-  )
-}
-
-function MenuHamburgerIcon() {
-  return (
-    <svg className="ctrl-mobile-fab__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-      <path d="M4 7h16M4 12h16M4 17h16" />
-    </svg>
-  )
-}
-
-function ChevronUpIcon() {
-  return (
-    <svg className="ctrl-mobile-fab__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M18 15l-6-6-6 6" />
-    </svg>
-  )
-}
-
-function PlusIcon() {
-  return (
-    <svg className="ctrl-mobile-fab__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-      <path d="M12 5v14M5 12h14" />
     </svg>
   )
 }
