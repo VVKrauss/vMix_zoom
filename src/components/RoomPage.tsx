@@ -54,6 +54,7 @@ import { ParticipantTileIdle } from './ParticipantTileIdle'
 import { RoomChatPanel } from './RoomChatPanel'
 import { ReactionBurstOverlay } from './ReactionBurstOverlay'
 import { VmixIngressModal } from './VmixIngressModal'
+import { StudioModeWorkspace } from './studio/StudioModeWorkspace'
 import { PillToggle } from './PillToggle'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useActiveSpeaker } from '../hooks/useActiveSpeaker'
@@ -65,6 +66,7 @@ import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useProfile } from '../hooks/useProfile'
 import { useIsDbSpaceRoomHost } from '../hooks/useSpaceRoomHost'
 import { isSessionHostFor } from '../lib/spaceRoom'
+import type { StudioOutputPreset } from '../types/studio'
 
 function LayoutCycleFabButton({
   className = '',
@@ -174,6 +176,17 @@ interface Props {
   getPeerUplinkVideoQuality?: (peerId: string) => Promise<InboundVideoQuality | null>
   /** Удалённое выключение микрофона гостя (сигналинг). */
   requestPeerMicMute?: (targetPeerId: string) => void
+  /** RTMP-эфир из режима «Студия». */
+  startStudioProgram: (
+    videoTrack: MediaStreamTrack,
+    audioTrack: MediaStreamTrack | null,
+    rtmpUrl: string,
+    streamKey: string,
+    output: StudioOutputPreset,
+  ) => Promise<{ ok: boolean; error?: string }>
+  stopStudioProgram: () => void
+  replaceStudioProgramAudioTrack: (track: MediaStreamTrack | null) => Promise<void>
+  studioBroadcastHealth: 'idle' | 'connecting' | 'live' | 'warning'
 }
 
 export function RoomPage({
@@ -195,6 +208,10 @@ export function RoomPage({
   onStopVmixIngress,
   getPeerUplinkVideoQuality,
   requestPeerMicMute,
+  startStudioProgram,
+  stopStudioProgram,
+  replaceStudioProgramAudioTrack,
+  studioBroadcastHealth,
 }: Props) {
   const isViewportMobile = useMediaQuery(mediaQueryMaxWidthMobile)
   const [immersiveAutoHide, setImmersiveAutoHide] = useLocalStorageBool(
@@ -427,8 +444,13 @@ export function RoomPage({
   })
 
   const [streamerMode, setStreamerMode] = useLocalStorageBool('vmix_streamer_mode', false)
+  const [studioOpen, setStudioOpen] = useState(false)
   /** Только локальное превью; отправляемый поток без отражения. */
   const [mirrorLocalCamera, setMirrorLocalCamera] = useLocalStorageBool('vmix_local_camera_mirror', true)
+
+  useEffect(() => {
+    if (!streamerMode) setStudioOpen(false)
+  }, [streamerMode])
 
   const blockImmersiveChromeHide = useMemo(
     () =>
@@ -436,12 +458,14 @@ export function RoomPage({
       vmixModalOpen ||
       screenStopDialogOpen ||
       vmixStopDialogOpen ||
+      studioOpen ||
       (chatOpen && !chatEmbed),
     [
       leaveDialog,
       vmixModalOpen,
       screenStopDialogOpen,
       vmixStopDialogOpen,
+      studioOpen,
       chatOpen,
       chatEmbed,
     ],
@@ -1462,6 +1486,9 @@ export function RoomPage({
         onHideVideoLetterboxingChange={setHideVideoLetterboxing}
         canManageVmixProgramIngress={canUseElevatedRoomTools}
         showMobileLayoutCycle={showLayoutToggle && canUseElevatedRoomTools}
+        showStudioEntry={streamerMode && canUseElevatedRoomTools && !isViewportMobile}
+        studioOpen={studioOpen}
+        onStudioToggle={() => setStudioOpen((v) => !v)}
       />
       </div>
 
@@ -1475,6 +1502,20 @@ export function RoomPage({
           onSend={onSendChatMessage}
         />
       )}
+
+      <StudioModeWorkspace
+        open={studioOpen}
+        onClose={() => setStudioOpen(false)}
+        participants={participants}
+        localPeerId={localPeerId || null}
+        localStream={localStream}
+        localScreenStream={localScreenStream}
+        localDisplayName={name}
+        startStudioProgram={startStudioProgram}
+        stopStudioProgram={stopStudioProgram}
+        replaceStudioProgramAudioTrack={replaceStudioProgramAudioTrack}
+        studioBroadcastHealth={studioBroadcastHealth}
+      />
     </div>
   )
 }

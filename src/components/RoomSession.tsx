@@ -97,6 +97,10 @@ export function RoomSession({ roomId }: Props) {
     startVmixIngress, stopVmixIngress, vmixIngressInfo, vmixIngressLoading,
     getPeerUplinkVideoQuality,
     requestPeerMicMute,
+    startStudioProgram,
+    stopStudioProgram,
+    replaceStudioProgramAudioTrack,
+    studioBroadcastHealth,
   } = useRoom(roomActivityNotifyRef)
 
   useEffect(() => {
@@ -208,6 +212,10 @@ export function RoomSession({ roomId }: Props) {
         onStopVmixIngress={stopVmixIngress}
         getPeerUplinkVideoQuality={getPeerUplinkVideoQuality}
         requestPeerMicMute={requestPeerMicMute}
+        startStudioProgram={startStudioProgram}
+        stopStudioProgram={stopStudioProgram}
+        replaceStudioProgramAudioTrack={replaceStudioProgramAudioTrack}
+        studioBroadcastHealth={studioBroadcastHealth}
       />
     )
   }

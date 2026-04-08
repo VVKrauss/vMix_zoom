@@ -1,0 +1,457 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { RemoteParticipant } from '../../types'
+import {
+  DEFAULT_STUDIO_OUTPUT_PRESET_ID,
+  STUDIO_OUTPUT_PRESETS,
+  emptyStudioBoard,
+  findStudioOutputPreset,
+  type StudioOutputPreset,
+  type StudioSourceOption,
+} from '../../types/studio'
+import { drawVideoCover } from '../../utils/studioCanvasDraw'
+import { buildStudioSources } from './buildStudioSources'
+import { connectStudioProgramAudioMix, type StudioProgramMixHandle, type StudioSourceMixMap } from './buildProgramAudioMix'
+import { StudioBoardPanel } from './StudioBoardPanel'
+import { StudioSourceStripItem } from './StudioSourceStripItem'
+import { AudioMeter } from '../AudioMeter'
+
+const LS_RTMP_URL = 'vmix_studio_rtmp_url'
+const LS_RTMP_KEY = 'vmix_studio_rtmp_key'
+const LS_STUDIO_OUTPUT = 'vmix_studio_output_preset'
+const LS_STUDIO_SEND_AUDIO = 'vmix_studio_send_audio'
+
+function sourceMeterStream(s: StudioSourceOption): MediaStream | null {
+  if (s.meterStream?.getAudioTracks().length) return s.meterStream
+  if (s.stream.getAudioTracks().length) return s.stream
+  return null
+}
+
+interface Props {
+  open: boolean
+  onClose: () => void
+  participants: Map<string, RemoteParticipant>
+  localPeerId: string | null
+  localStream: MediaStream | null
+  localScreenStream: MediaStream | null
+  localDisplayName: string
+  startStudioProgram: (
+    videoTrack: MediaStreamTrack,
+    audioTrack: MediaStreamTrack | null,
+    rtmpUrl: string,
+    streamKey: string,
+    output: StudioOutputPreset,
+  ) => Promise<{ ok: boolean; error?: string }>
+  stopStudioProgram: () => void
+  replaceStudioProgramAudioTrack: (track: MediaStreamTrack | null) => Promise<void>
+  studioBroadcastHealth: 'idle' | 'connecting' | 'live' | 'warning'
+}
+
+export function StudioModeWorkspace({
+  open,
+  onClose,
+  participants,
+  localPeerId,
+  localStream,
+  localScreenStream,
+  localDisplayName,
+  startStudioProgram,
+  stopStudioProgram,
+  replaceStudioProgramAudioTrack,
+  studioBroadcastHealth,
+}: Props) {
+  const [boards, setBoards] = useState(() => ({
+    preview: emptyStudioBoard(),
+    program: emptyStudioBoard(),
+  }))
+  const previewBoard = boards.preview
+  const programBoard = boards.program
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [rtmpUrl, setRtmpUrl] = useState(() => localStorage.getItem(LS_RTMP_URL) ?? '')
+  const [rtmpKey, setRtmpKey] = useState(() => localStorage.getItem(LS_RTMP_KEY) ?? '')
+  const [outputPresetId, setOutputPresetId] = useState(
+    () => localStorage.getItem(LS_STUDIO_OUTPUT) ?? DEFAULT_STUDIO_OUTPUT_PRESET_ID,
+  )
+  const [sendStudioAudio, setSendStudioAudio] = useState(
+    () => localStorage.getItem(LS_STUDIO_SEND_AUDIO) !== '0',
+  )
+  const [liveActive, setLiveActive] = useState(false)
+  const [liveError, setLiveError] = useState<string | null>(null)
+  const [programMixStream, setProgramMixStream] = useState<MediaStream | null>(null)
+  const [sourceMix, setSourceMix] = useState<StudioSourceMixMap>({})
+
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const rafRef = useRef<number>(0)
+  const captureStreamRef = useRef<MediaStream | null>(null)
+  const programVideoElsRef = useRef<(HTMLVideoElement | null)[]>(Array.from({ length: 6 }, () => null))
+  const programBoardRef = useRef(programBoard)
+  programBoardRef.current = programBoard
+
+  const outputPresetRef = useRef<StudioOutputPreset>(findStudioOutputPreset(outputPresetId))
+  outputPresetRef.current = findStudioOutputPreset(outputPresetId)
+
+  const mixAudioCtxRef = useRef<AudioContext | null>(null)
+  const mixDisconnectRef = useRef<(() => void) | null>(null)
+  const mixHandleRef = useRef<StudioProgramMixHandle | null>(null)
+  const sourceMixRef = useRef(sourceMix)
+  sourceMixRef.current = sourceMix
+
+  const sources = useMemo(
+    () =>
+      buildStudioSources(
+        participants,
+        localPeerId,
+        localStream,
+        localScreenStream,
+        localDisplayName,
+      ),
+    [participants, localPeerId, localStream, localScreenStream, localDisplayName],
+  )
+
+  useEffect(() => {
+    setSourceMix((prev) => {
+      const next = { ...prev }
+      for (const s of sources) {
+        if (!(s.key in next)) next[s.key] = { volume: 1, muted: false }
+      }
+      return next
+    })
+  }, [sources])
+
+  const registerProgramVideo = useCallback((slotIndex: number, el: HTMLVideoElement | null) => {
+    programVideoElsRef.current[slotIndex] = el
+  }, [])
+
+  const swapBoards = useCallback(() => {
+    setBoards((b) => ({ preview: b.program, program: b.preview }))
+  }, [])
+
+  const setSourceVolume = useCallback((key: string, volume: number) => {
+    setSourceMix((p) => ({
+      ...p,
+      [key]: { ...(p[key] ?? { volume: 1, muted: false }), volume },
+    }))
+  }, [])
+
+  const setSourceMuted = useCallback((key: string, muted: boolean) => {
+    setSourceMix((p) => ({
+      ...p,
+      [key]: { ...(p[key] ?? { volume: 1, muted: false }), muted },
+    }))
+  }, [])
+
+  const stopCaptureLoop = useCallback(() => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    rafRef.current = 0
+    captureStreamRef.current?.getTracks().forEach((t) => t.stop())
+    captureStreamRef.current = null
+  }, [])
+
+  const runCaptureLoop = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return null
+    const { width: CAP_W, height: CAP_H, maxFramerate } = outputPresetRef.current
+    canvas.width = CAP_W
+    canvas.height = CAP_H
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+
+    const tick = () => {
+      ctx.fillStyle = '#0a0a0a'
+      ctx.fillRect(0, 0, CAP_W, CAP_H)
+      const b = programBoardRef.current
+      for (let i = 0; i < 6; i++) {
+        const slot = b.slots[i]
+        const v = programVideoElsRef.current[i]
+        if (!slot?.sourceKey || !v) continue
+        const dx = slot.rect.x * CAP_W
+        const dy = slot.rect.y * CAP_H
+        const dw = slot.rect.w * CAP_W
+        const dh = slot.rect.h * CAP_H
+        drawVideoCover(ctx, v, dx, dy, dw, dh)
+      }
+      rafRef.current = requestAnimationFrame(tick)
+    }
+    rafRef.current = requestAnimationFrame(tick)
+    const stream = canvas.captureStream(maxFramerate)
+    captureStreamRef.current = stream
+    return stream.getVideoTracks()[0] ?? null
+  }, [])
+
+  useEffect(() => {
+    if (!open) {
+      mixDisconnectRef.current?.()
+      mixDisconnectRef.current = null
+      mixHandleRef.current = null
+      void mixAudioCtxRef.current?.close()
+      mixAudioCtxRef.current = null
+      setProgramMixStream(null)
+      return
+    }
+
+    let ctx = mixAudioCtxRef.current
+    if (!ctx || ctx.state === 'closed') {
+      ctx = new AudioContext()
+      mixAudioCtxRef.current = ctx
+    }
+    void ctx.resume()
+
+    mixDisconnectRef.current?.()
+    const handle = connectStudioProgramAudioMix(programBoard, sources, ctx, sourceMixRef.current)
+    mixHandleRef.current = handle
+    mixDisconnectRef.current = handle.disconnect
+    setProgramMixStream(handle.stream)
+
+    return () => {
+      handle.disconnect()
+      mixHandleRef.current = null
+      mixDisconnectRef.current = null
+    }
+  }, [open, programBoard, sources])
+
+  useEffect(() => {
+    mixHandleRef.current?.applyLevels(sourceMix)
+  }, [sourceMix])
+
+  useEffect(() => {
+    if (!open) return
+    void mixAudioCtxRef.current?.resume()
+  }, [open])
+
+  useEffect(() => {
+    if (!liveActive) return
+    const t = sendStudioAudio ? programMixStream?.getAudioTracks()[0] ?? null : null
+    void replaceStudioProgramAudioTrack(t)
+  }, [liveActive, sendStudioAudio, programMixStream, replaceStudioProgramAudioTrack])
+
+  const handleLiveToggle = useCallback(async () => {
+    if (liveActive) {
+      stopCaptureLoop()
+      stopStudioProgram()
+      setLiveActive(false)
+      setLiveError(null)
+      return
+    }
+    const url = rtmpUrl.trim()
+    const key = rtmpKey.trim()
+    if (!url || !key) {
+      setSettingsOpen(true)
+      setLiveError('Укажите URL и ключ в настройках потока')
+      return
+    }
+    setLiveError(null)
+    const preset = findStudioOutputPreset(outputPresetId)
+    outputPresetRef.current = preset
+    const track = runCaptureLoop()
+    if (!track) {
+      setLiveError('Не удалось захватить канвас')
+      return
+    }
+    const audioTrack =
+      sendStudioAudio && programMixStream?.getAudioTracks()[0]
+        ? programMixStream.getAudioTracks()[0]!
+        : null
+    const res = await startStudioProgram(track, audioTrack, url, key, preset)
+    if (!res.ok) {
+      stopCaptureLoop()
+      setLiveError(res.error ?? 'Ошибка публикации')
+      setLiveActive(false)
+      return
+    }
+    setLiveActive(true)
+  }, [
+    liveActive,
+    rtmpUrl,
+    rtmpKey,
+    outputPresetId,
+    sendStudioAudio,
+    programMixStream,
+    runCaptureLoop,
+    startStudioProgram,
+    stopCaptureLoop,
+    stopStudioProgram,
+  ])
+
+  useEffect(() => {
+    if (!open) {
+      stopCaptureLoop()
+      stopStudioProgram()
+      setLiveActive(false)
+      setLiveError(null)
+    }
+  }, [open, stopCaptureLoop, stopStudioProgram])
+
+  useEffect(() => {
+    return () => {
+      stopCaptureLoop()
+    }
+  }, [stopCaptureLoop])
+
+  const saveRtmpSettings = useCallback(() => {
+    localStorage.setItem(LS_RTMP_URL, rtmpUrl.trim())
+    localStorage.setItem(LS_RTMP_KEY, rtmpKey.trim())
+    localStorage.setItem(LS_STUDIO_OUTPUT, outputPresetId)
+    localStorage.setItem(LS_STUDIO_SEND_AUDIO, sendStudioAudio ? '1' : '0')
+    setSettingsOpen(false)
+  }, [rtmpUrl, rtmpKey, outputPresetId, sendStudioAudio])
+
+  if (!open) return null
+
+  const liveBtnClass =
+    liveActive && studioBroadcastHealth === 'live'
+      ? 'studio-chrome__live studio-chrome__live--on-air'
+      : liveActive && (studioBroadcastHealth === 'connecting' || studioBroadcastHealth === 'warning')
+        ? 'studio-chrome__live studio-chrome__live--warn'
+        : 'studio-chrome__live'
+
+  return (
+    <div className="studio-mode-workspace" role="dialog" aria-modal="true" aria-label="Режим студии">
+      <canvas
+        ref={canvasRef}
+        className="studio-mode-workspace__capture-canvas"
+        width={findStudioOutputPreset(outputPresetId).width}
+        height={findStudioOutputPreset(outputPresetId).height}
+        aria-hidden
+      />
+
+      <header className="studio-chrome">
+        <button type="button" className="studio-chrome__close" onClick={onClose}>
+          Закрыть студию
+        </button>
+        <div className="studio-chrome__actions">
+          <button type="button" className="studio-chrome__settings" onClick={() => setSettingsOpen(true)}>
+            Настройки потока
+          </button>
+          <button
+            type="button"
+            className={liveBtnClass}
+            onClick={() => void handleLiveToggle()}
+            title={
+              liveActive
+                ? 'Остановить эфир'
+                : 'Начать эфир (в эфир идёт только доска «Эфир»)'
+            }
+          >
+            LIVE
+          </button>
+        </div>
+      </header>
+
+      {liveError ? <div className="studio-mode-workspace__error" role="alert">{liveError}</div> : null}
+
+      <div className="studio-mode-workspace__body">
+        <div className="studio-mode-workspace__boards-row">
+          <StudioBoardPanel
+            title="Превью"
+            board={previewBoard}
+            onBoardChange={(next) => setBoards((b) => ({ ...b, preview: next }))}
+            sources={sources}
+          />
+          <button type="button" className="studio-swap-btn studio-swap-btn--between" onClick={swapBoards} title="Поменять превью и эфир местами">
+            ⇄
+          </button>
+          <div className="studio-board-column studio-board-column--program">
+            <StudioBoardPanel
+              title="Эфир"
+              board={programBoard}
+              onBoardChange={(next) => setBoards((b) => ({ ...b, program: next }))}
+              sources={sources}
+              registerProgramVideo={registerProgramVideo}
+              hideSlotPickers
+              readOnlyStage
+            />
+            <div className="studio-program-output-meter">
+              <div className="studio-program-output-meter__head">
+                <span className="studio-program-output-meter__label">Смесь эфира</span>
+              </div>
+              <div className="studio-program-output-meter__meter">
+                {programMixStream ? (
+                  <AudioMeter stream={programMixStream} orientation="horizontal" />
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="studio-source-strip" role="region" aria-label="Источники">
+          {sources.map((s) => (
+            <StudioSourceStripItem
+              key={s.key}
+              source={s}
+              meterStream={sourceMeterStream(s)}
+              volume={sourceMix[s.key]?.volume ?? 1}
+              muted={sourceMix[s.key]?.muted ?? false}
+              onVolumeChange={(v) => setSourceVolume(s.key, v)}
+              onMutedChange={(m) => setSourceMuted(s.key, m)}
+            />
+          ))}
+        </div>
+      </div>
+
+      {settingsOpen ? (
+        <div className="studio-settings-overlay" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && setSettingsOpen(false)}>
+          <div className="studio-settings-modal" role="dialog" aria-labelledby="studio-settings-title" onClick={(e) => e.stopPropagation()}>
+            <h2 id="studio-settings-title" className="studio-settings-modal__title">Настройки потока</h2>
+            <p className="studio-settings-modal__hint">Custom RTMP (например rtmps://a.rtmps.youtube.com:443/live2)</p>
+            <label className="studio-settings-modal__field">
+              <span>Разрешение выхода</span>
+              <select
+                className="studio-settings-modal__input studio-settings-modal__select"
+                value={outputPresetId}
+                disabled={liveActive}
+                onChange={(e) => setOutputPresetId(e.target.value)}
+              >
+                {STUDIO_OUTPUT_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label} ({p.width}×{p.height})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="studio-settings-modal__field studio-settings-modal__field--row">
+              <input
+                type="checkbox"
+                checked={sendStudioAudio}
+                disabled={liveActive}
+                onChange={(e) => setSendStudioAudio(e.target.checked)}
+              />
+              <span>Передавать звук на RTMP (микшер слотов «Эфир»)</span>
+            </label>
+            <label className="studio-settings-modal__field">
+              <span>URL</span>
+              <input
+                type="url"
+                className="studio-settings-modal__input"
+                value={rtmpUrl}
+                onChange={(e) => setRtmpUrl(e.target.value)}
+                placeholder="rtmps://…"
+                autoComplete="off"
+              />
+            </label>
+            <label className="studio-settings-modal__field">
+              <span>Ключ / stream key</span>
+              <input
+                type="password"
+                className="studio-settings-modal__input"
+                value={rtmpKey}
+                onChange={(e) => setRtmpKey(e.target.value)}
+                placeholder="Секретный ключ"
+                autoComplete="off"
+              />
+            </label>
+            {liveActive ? (
+              <p className="studio-settings-modal__live-hint">Во время эфира разрешение и звук не меняются — остановите LIVE.</p>
+            ) : null}
+            <div className="studio-settings-modal__actions">
+              <button type="button" className="studio-settings-modal__btn" onClick={() => setSettingsOpen(false)}>
+                Отмена
+              </button>
+              <button type="button" className="studio-settings-modal__btn studio-settings-modal__btn--primary" onClick={saveRtmpSettings}>
+                Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}

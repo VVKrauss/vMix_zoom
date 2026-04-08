@@ -116,6 +116,10 @@ interface Props {
   canManageVmixProgramIngress?: boolean
   /** Мобильная нижняя панель: кнопка смены вида (стример / админ). */
   showMobileLayoutCycle?: boolean
+  /** Кнопка «Студия» рядом с SRT (режим стримера и права хоста/админа). */
+  showStudioEntry?: boolean
+  studioOpen?: boolean
+  onStudioToggle?: () => void
 }
 
 const LONG_PRESS_MS = 550
@@ -205,6 +209,9 @@ export function ControlsBar({
   onHideVideoLetterboxingChange,
   canManageVmixProgramIngress = false,
   showMobileLayoutCycle = false,
+  showStudioEntry = false,
+  studioOpen = false,
+  onStudioToggle,
 }: Props) {
   const [open, setOpen] = useState<OpenPopover>(null)
   const [screenPickerOpen, setScreenPickerOpen] = useState(false)
@@ -567,11 +574,25 @@ export function ControlsBar({
         </button>
       ) : null
     const vmixStrip = vmixSourcesBlock(sheet)
-    if (!ndi && !vmixStrip) return null
+    const studioBtn =
+      streamerMode && showStudioEntry && onStudioToggle ? (
+        <button
+          type="button"
+          className={`ctrl-btn ctrl-btn--source-ingest ctrl-btn--studio${studioOpen ? ' ctrl-btn--studio--open' : ''}`}
+          onClick={onStudioToggle}
+          title={studioOpen ? 'Закрыть студию' : 'Режим «Студия»'}
+        >
+          <span className="ctrl-btn__studio-mark" aria-hidden>
+            СТ
+          </span>
+        </button>
+      ) : null
+    if (!ndi && !vmixStrip && !studioBtn) return null
     return (
       <div className={`controls-bar__sources${sheet ? ' controls-bar__sources--in-sheet' : ''}`} aria-label="Внешние источники">
         {ndi}
         {vmixStrip}
+        {studioBtn}
       </div>
     )
   }

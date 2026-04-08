@@ -1,8 +1,17 @@
 import { useEffect, useRef } from 'react'
 
+type FaderRef = { gain: number; muted: boolean }
+
 interface Props {
   stream: MediaStream | null
   stereo?: boolean
+  /** Горизонтальные сегменты (полная ширина родителя). */
+  orientation?: 'vertical' | 'horizontal'
+  /** Усиление после фейдера 0…1 (для метра «после громкости»). */
+  outputGain?: number
+  /** Полное заглушение перед анализом. */
+  outputMuted?: boolean
+  className?: string
 }
 
 const MIN_DB = -60
@@ -33,12 +42,29 @@ function getRms(analyser: AnalyserNode, buf: Float32Array<ArrayBuffer>): number 
   return rms === 0 ? MIN_DB : Math.max(MIN_DB, 20 * Math.log10(rms))
 }
 
-export function AudioMeter({ stream, stereo = false }: Props) {
+export function AudioMeter({
+  stream,
+  stereo = false,
+  orientation = 'vertical',
+  outputGain,
+  outputMuted = false,
+  className = '',
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rafRef    = useRef<number>(0)
+  const faderRef  = useRef<FaderRef>({
+    gain: outputGain ?? 1,
+    muted: outputMuted,
+  })
+  faderRef.current = {
+    gain: outputGain ?? 1,
+    muted: outputMuted,
+  }
 
   const channels = stereo ? 2 : 1
   const canvasW  = channels * CHAN_W + (channels - 1) * CHAN_GAP
+  const horizontal = orientation === 'horizontal'
+  const useOutputFader = outputGain !== undefined || outputMuted
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -49,11 +75,27 @@ export function AudioMeter({ stream, stereo = false }: Props) {
 
     const audioCtx = getAudioContext()
     const source   = audioCtx.createMediaStreamSource(stream)
+    const useFader = useOutputFader
+    const fader = useFader ? audioCtx.createGain() : null
+    if (fader) {
+      source.connect(fader)
+    }
+
     const analysers: AnalyserNode[] = []
+
+    const setFaderGain = () => {
+      if (!fader) return
+      const { gain, muted } = faderRef.current
+      const g = muted ? 0 : Math.max(0, Math.min(1, gain))
+      fader.gain.value = g
+    }
+    setFaderGain()
+
+    const inlet = fader ?? source
 
     if (stereo) {
       const splitter = audioCtx.createChannelSplitter(2)
-      source.connect(splitter)
+      inlet.connect(splitter)
       for (let i = 0; i < 2; i++) {
         const a = audioCtx.createAnalyser()
         a.fftSize = 512
@@ -65,7 +107,7 @@ export function AudioMeter({ stream, stereo = false }: Props) {
       const a = audioCtx.createAnalyser()
       a.fftSize = 512
       a.smoothingTimeConstant = 0.6
-      source.connect(a)
+      inlet.connect(a)
       analysers.push(a)
     }
 
@@ -73,6 +115,7 @@ export function AudioMeter({ stream, stereo = false }: Props) {
     const ctx2d = canvas.getContext('2d')!
 
     const draw = () => {
+      setFaderGain()
       const wrap = canvas.parentElement as HTMLElement
       const h = wrap ? wrap.clientHeight : 200
       const w = wrap ? wrap.clientWidth  : canvasW
@@ -81,20 +124,36 @@ export function AudioMeter({ stream, stereo = false }: Props) {
 
       ctx2d.clearRect(0, 0, w, h)
 
-      const segH = Math.max(2, (h - SEGMENTS * SEG_GAP) / SEGMENTS)
+      if (horizontal) {
+        const chH = Math.max(4, (h - (channels - 1) * CHAN_GAP) / channels)
+        analysers.forEach((analyser, ch) => {
+          const db = getRms(analyser, buf)
+          const active = Math.round(((db - MIN_DB) / (MAX_DB - MIN_DB)) * SEGMENTS)
+          const y0 = ch * (chH + CHAN_GAP)
+          const segW = Math.max(2, (w - (SEGMENTS + 1) * SEG_GAP) / SEGMENTS)
+          for (let s = 0; s < SEGMENTS; s++) {
+            const segDb = MIN_DB + (s / SEGMENTS) * (MAX_DB - MIN_DB)
+            const x = SEG_GAP + s * (segW + SEG_GAP)
+            ctx2d.fillStyle = segmentColour(segDb, s < active)
+            ctx2d.fillRect(x, y0, segW, chH)
+          }
+        })
+      } else {
+        const segH = Math.max(2, (h - SEGMENTS * SEG_GAP) / SEGMENTS)
 
-      analysers.forEach((analyser, ch) => {
-        const db      = getRms(analyser, buf)
-        const active  = Math.round(((db - MIN_DB) / (MAX_DB - MIN_DB)) * SEGMENTS)
-        const xOffset = ch * (CHAN_W + CHAN_GAP)
+        analysers.forEach((analyser, ch) => {
+          const db      = getRms(analyser, buf)
+          const active  = Math.round(((db - MIN_DB) / (MAX_DB - MIN_DB)) * SEGMENTS)
+          const xOffset = ch * (CHAN_W + CHAN_GAP)
 
-        for (let s = 0; s < SEGMENTS; s++) {
-          const segDb = MIN_DB + (s / SEGMENTS) * (MAX_DB - MIN_DB)
-          const y     = h - (s + 1) * (segH + SEG_GAP) + SEG_GAP
-          ctx2d.fillStyle = segmentColour(segDb, s < active)
-          ctx2d.fillRect(xOffset, y, CHAN_W, segH)
-        }
-      })
+          for (let s = 0; s < SEGMENTS; s++) {
+            const segDb = MIN_DB + (s / SEGMENTS) * (MAX_DB - MIN_DB)
+            const y     = h - (s + 1) * (segH + SEG_GAP) + SEG_GAP
+            ctx2d.fillStyle = segmentColour(segDb, s < active)
+            ctx2d.fillRect(xOffset, y, CHAN_W, segH)
+          }
+        })
+      }
 
       rafRef.current = requestAnimationFrame(draw)
     }
@@ -104,12 +163,15 @@ export function AudioMeter({ stream, stereo = false }: Props) {
     return () => {
       cancelAnimationFrame(rafRef.current)
       source.disconnect()
+      fader?.disconnect()
       analysers.forEach(a => a.disconnect())
     }
-  }, [stream, stereo, canvasW])
+  }, [stream, stereo, canvasW, horizontal, useOutputFader])
+
+  const wrapStyle = horizontal ? { width: '100%' as const } : { width: canvasW + 6 }
 
   return (
-    <div className="audio-meter-wrap" style={{ width: canvasW + 6 }}>
+    <div className={`audio-meter-wrap${horizontal ? ' audio-meter-wrap--horizontal' : ''}${className ? ` ${className}` : ''}`} style={wrapStyle}>
       <canvas ref={canvasRef} className="audio-meter-canvas" width={canvasW} height={4} />
     </div>
   )

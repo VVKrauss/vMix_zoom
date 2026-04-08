@@ -38,6 +38,7 @@ import {
   readPreferredMicId,
 } from '../config/roomUiStorage'
 import { formatMediaJoinError } from '../utils/formatMediaJoinError'
+import type { StudioOutputPreset } from '../types/studio'
 
 const SIGNALING_HTTP = signalingHttpBase()
 const DEFAULT_ROOM = import.meta.env.VITE_DEFAULT_ROOM as string ?? 'test'
@@ -268,6 +269,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const audioProducerRef = useRef<Producer | null>(null)
   const videoProducerRef = useRef<Producer | null>(null)
   const screenProducerRef = useRef<Producer | null>(null)
+  const studioProgramVideoProducerRef = useRef<Producer | null>(null)
+  const studioProgramAudioProducerRef = useRef<Producer | null>(null)
   const localScreenStreamRef = useRef<MediaStream | null>(null)
   const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null)
   const [isScreenSharing, setIsScreenSharing] = useState(false)
@@ -296,6 +299,10 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   /** Пока consume удалённого экрана не завершился — раскладка meet у гостей */
   const [remoteScreenConsumePending, setRemoteScreenConsumePending] = useState(false)
   const [vmixIngressInfo, setVmixIngressInfo] = useState<VmixIngressInfo | null>(null)
+  /** Эфир «Студии» на RTMP (состояние UI + опционально `studioBroadcastHealth` с signaling). */
+  const [studioBroadcastHealth, setStudioBroadcastHealth] = useState<
+    'idle' | 'connecting' | 'live' | 'warning'
+  >('idle')
   const lastLocalReactionAtRef = useRef(0)
   const displayNameRef = useRef('')
   /** Инкремент при leave или новом join — отмена незавершённого join без ложных ошибок в консоли. */
@@ -817,6 +824,16 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       socket.on('producerClosed', (payload: unknown) => {
         if (import.meta.env.DEV) console.log('[producerClosed] raw payload:', JSON.stringify(payload))
         const id = producerIdFromClosedPayload(payload)
+        if (id && studioProgramVideoProducerRef.current?.id === id) {
+          studioProgramVideoProducerRef.current = null
+          setStudioBroadcastHealth('warning')
+          return
+        }
+        if (id && studioProgramAudioProducerRef.current?.id === id) {
+          studioProgramAudioProducerRef.current = null
+          setStudioBroadcastHealth('warning')
+          return
+        }
         if (id) dropProducerById(id)
         else if (import.meta.env.DEV) console.warn('[producerClosed] could not extract id from payload')
       })
@@ -961,6 +978,17 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         setPeerUplinkBroadcastTick((t) => t + 1)
       })
 
+      socket.on('studioBroadcastHealth', (raw: unknown) => {
+        const o = raw as Record<string, unknown>
+        if (typeof o.roomId === 'string' && o.roomId !== roomIdRef.current) return
+        if (studioProgramVideoProducerRef.current == null) return
+        const st = String(o.state ?? o.status ?? '').toLowerCase()
+        if (o.ok === true || st === 'live') setStudioBroadcastHealth('live')
+        else if (o.ok === false || st === 'warning' || st === 'error' || st === 'stalled') {
+          setStudioBroadcastHealth('warning')
+        }
+      })
+
       setStatus('connected')
     } catch (err) {
       if (gen !== joinGenerationRef.current) {
@@ -974,6 +1002,11 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       setChatMessages([])
       setReactionBursts([])
       setRemoteScreenConsumePending(false)
+      studioProgramVideoProducerRef.current?.close()
+      studioProgramVideoProducerRef.current = null
+      studioProgramAudioProducerRef.current?.close()
+      studioProgramAudioProducerRef.current = null
+      setStudioBroadcastHealth('idle')
       peerUplinkVideoQualityRef.current = {}
       setPeerUplinkBroadcastTick(0)
       uplinkLocalPrevRef.current = undefined
@@ -1516,9 +1549,118 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     [sessionMeta?.localPeerId, peerUplinkBroadcastTick],
   )
 
+  const stopStudioProgram = useCallback(() => {
+    const socket = socketRef.current
+    const roomId = roomIdRef.current
+    const audioP = studioProgramAudioProducerRef.current
+    const videoP = studioProgramVideoProducerRef.current
+    if (audioP && socket?.connected) {
+      socket.emit('closeProducer', { roomId, producerId: audioP.id })
+    }
+    if (videoP && socket?.connected) {
+      socket.emit('closeProducer', { roomId, producerId: videoP.id })
+    }
+    audioP?.close()
+    videoP?.close()
+    studioProgramAudioProducerRef.current = null
+    studioProgramVideoProducerRef.current = null
+    setStudioBroadcastHealth('idle')
+  }, [])
+
+  const replaceStudioProgramAudioTrack = useCallback(async (track: MediaStreamTrack | null) => {
+    const producer = studioProgramAudioProducerRef.current
+    if (!producer) return
+    try {
+      await producer.replaceTrack({ track })
+      if (track) {
+        producer.resume()
+      } else {
+        producer.pause()
+      }
+    } catch {
+      /* mediasoup-client */
+    }
+  }, [])
+
+  const startStudioProgram = useCallback(
+    async (
+      videoTrack: MediaStreamTrack,
+      audioTrack: MediaStreamTrack | null,
+      rtmpUrl: string,
+      streamKey: string,
+      output: StudioOutputPreset,
+    ): Promise<{ ok: boolean; error?: string }> => {
+      const sendTransport = sendTransportRef.current
+      if (!sendTransport) {
+        setStudioBroadcastHealth('warning')
+        return { ok: false, error: 'Нет WebRTC-транспорта' }
+      }
+      const url = rtmpUrl.trim()
+      const key = streamKey.trim()
+      if (!url || !key) {
+        setStudioBroadcastHealth('warning')
+        return { ok: false, error: 'Укажите URL и ключ RTMP' }
+      }
+      stopStudioProgram()
+      setStudioBroadcastHealth('connecting')
+      try {
+        const videoProducer = await sendTransport.produce({
+          track: videoTrack,
+          appData: {
+            source: 'studio_program',
+            rtmpUrl: url,
+            rtmpKey: key,
+            outputWidth: output.width,
+            outputHeight: output.height,
+            maxBitrate: output.maxBitrate,
+          },
+          encodings: [{ maxBitrate: output.maxBitrate, maxFramerate: output.maxFramerate }],
+        })
+        studioProgramVideoProducerRef.current = videoProducer
+        videoProducer.on('transportclose', () => {
+          studioProgramVideoProducerRef.current = null
+          setStudioBroadcastHealth('warning')
+        })
+
+        if (audioTrack) {
+          try {
+            const audioProducer = await sendTransport.produce({
+              track: audioTrack,
+              appData: {
+                source: 'studio_program_audio',
+                rtmpUrl: url,
+                rtmpKey: key,
+              },
+            })
+            studioProgramAudioProducerRef.current = audioProducer
+            audioProducer.on('transportclose', () => {
+              studioProgramAudioProducerRef.current = null
+              setStudioBroadcastHealth('warning')
+            })
+          } catch (e) {
+            videoProducer.close()
+            studioProgramVideoProducerRef.current = null
+            setStudioBroadcastHealth('warning')
+            return { ok: false, error: formatMediaJoinError(e) }
+          }
+        } else {
+          studioProgramAudioProducerRef.current = null
+        }
+
+        setStudioBroadcastHealth('live')
+        return { ok: true }
+      } catch (e) {
+        setStudioBroadcastHealth('warning')
+        return { ok: false, error: formatMediaJoinError(e) }
+      }
+    },
+    [stopStudioProgram],
+  )
+
   const leave = useCallback(() => {
     joinGenerationRef.current += 1
     stopScreenShare()
+    stopStudioProgram()
     videoProducerRef.current?.close()
     audioProducerRef.current?.close()
     consumersRef.current.forEach((c) => c.close())
@@ -1546,7 +1688,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     setChatMessages([])
     setReactionBursts([])
     setVmixIngressInfo(null)
-  }, [stopScreenShare])
+  }, [stopScreenShare, stopStudioProgram])
 
   return {
     join,
@@ -1582,5 +1724,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     vmixIngressInfo,
     vmixIngressLoading,
     getPeerUplinkVideoQuality,
+    startStudioProgram,
+    stopStudioProgram,
+    replaceStudioProgramAudioTrack,
+    studioBroadcastHealth,
   }
 }
