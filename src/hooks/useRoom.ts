@@ -189,6 +189,16 @@ function capVideoFramerate(presetFps: number, track?: MediaStreamTrack | null): 
   return presetFps
 }
 
+function isEndedTrackError(err: unknown): boolean {
+  if (err instanceof DOMException) {
+    return /track ended|ended/i.test(err.message)
+  }
+  if (err instanceof Error) {
+    return /track ended|ended/i.test(err.message)
+  }
+  return false
+}
+
 /**
  * Simulcast как в типичном Meet: r0 / r1 / r2, scaleResolutionDownBy 4 / 2 / 1,
  * maxBitrate снизу вверх (SFU может выбирать слой под сеть; SRT/egress может брать один слой — см. бэкенд).
@@ -1642,6 +1652,35 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     }
   }, [])
 
+  const requestStopStudioBroadcast = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
+    const socket = socketRef.current
+    const roomId = roomIdRef.current
+    if (!socket?.connected || !roomId) {
+      return { ok: false, error: 'Нет соединения с сервером' }
+    }
+    return await new Promise<{ ok: boolean; error?: string }>((resolve) => {
+      socket.timeout(15_000).emit(
+        'stopStudioBroadcast',
+        { roomId },
+        (err: Error | null, res?: Record<string, unknown>) => {
+          if (err) {
+            resolve({
+              ok: false,
+              error: 'Сервер не подтвердил остановку эфира (таймаут или обрыв соединения).',
+            })
+            return
+          }
+          const data = res ?? {}
+          if (data.error) {
+            resolve({ ok: false, error: String(data.error) })
+            return
+          }
+          resolve({ ok: true })
+        },
+      )
+    })
+  }, [])
+
   const getPeerUplinkVideoQuality = useCallback(
     async (anchorPeerId: string): Promise<InboundVideoQuality | null> => {
       const localId = sessionMeta?.localPeerId
@@ -1701,16 +1740,16 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     }
 
     const stopPromise = (async () => {
-      const socket = socketRef.current
-      const roomId = roomIdRef.current
       const audioP = studioProgramAudioProducerRef.current
       const videoP = studioProgramVideoProducerRef.current
+      const shouldRequestServerStop =
+        (videoP != null || audioP != null || studioBroadcastHealth !== 'idle') &&
+        socketRef.current?.connected &&
+        !!roomIdRef.current
 
-      if (audioP && socket?.connected) {
-        socket.emit('closeProducer', { roomId, producerId: audioP.id })
-      }
-      if (videoP && socket?.connected) {
-        socket.emit('closeProducer', { roomId, producerId: videoP.id })
+      let stopRes: { ok: boolean; error?: string } = { ok: true }
+      if (shouldRequestServerStop) {
+        stopRes = await requestStopStudioBroadcast()
       }
 
       try {
@@ -1728,9 +1767,14 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       videoP?.close()
       studioProgramAudioProducerRef.current = null
       studioProgramVideoProducerRef.current = null
-      setStudioBroadcastHealth('idle')
-      setStudioBroadcastHealthDetail(null)
-      setStudioServerLogLines([])
+      if (stopRes.ok) {
+        setStudioBroadcastHealth('idle')
+        setStudioBroadcastHealthDetail(null)
+        setStudioServerLogLines([])
+      } else {
+        setStudioBroadcastHealth('warning')
+        setStudioBroadcastHealthDetail(stopRes.error ?? 'Эфир остановлен локально, но сервер не подтвердил teardown.')
+      }
 
       await new Promise((resolve) => window.setTimeout(resolve, 450))
     })()
@@ -1741,7 +1785,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     } finally {
       studioStopInFlightRef.current = null
     }
-  }, [])
+  }, [requestStopStudioBroadcast, studioBroadcastHealth])
 
   const replaceStudioProgramAudioTrack = useCallback(async (track: MediaStreamTrack | null) => {
     const producer = studioProgramAudioProducerRef.current
@@ -1765,7 +1809,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       rtmpUrl: string,
       streamKey: string,
       output: StudioOutputPreset,
-    ): Promise<{ ok: boolean; error?: string }> => {
+    ): Promise<{ ok: boolean; error?: string; warning?: string }> => {
       const sendTransport = sendTransportRef.current
       if (!sendTransport) {
         setStudioBroadcastHealth('warning')
@@ -1829,36 +1873,46 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           setStudioBroadcastHealthDetail(null)
         })
 
+        let audioWarning: string | undefined
+
         if (audioTrack) {
           try {
-            const audioProducer = await sendTransport.produce({
-              track: audioTrack,
-              appData: {
-                source: 'studio_program_audio',
-                rtmpUrl: url,
-                rtmpKey: key,
-              },
-            })
-            studioProgramAudioProducerRef.current = audioProducer
-            audioProducer.on('transportclose', () => {
-              studioProgramAudioProducerRef.current = null
-              setStudioBroadcastHealth('warning')
-              setStudioBroadcastHealthDetail(null)
-            })
+            if (audioTrack.readyState !== 'live') {
+              audioWarning = 'Студийный аудиотрек оказался завершён до publish. Эфир запущен без звука.'
+            } else {
+              const audioProducer = await sendTransport.produce({
+                track: audioTrack,
+                appData: {
+                  source: 'studio_program_audio',
+                  rtmpUrl: url,
+                  rtmpKey: key,
+                },
+              })
+              studioProgramAudioProducerRef.current = audioProducer
+              audioProducer.on('transportclose', () => {
+                studioProgramAudioProducerRef.current = null
+                setStudioBroadcastHealth('warning')
+                setStudioBroadcastHealthDetail(null)
+              })
+            }
           } catch (e) {
-            videoProducer.close()
-            studioProgramVideoProducerRef.current = null
-            setStudioBroadcastHealth('warning')
-            setStudioBroadcastHealthDetail(null)
-            return { ok: false, error: formatStudioProgramError(e) }
+            studioProgramAudioProducerRef.current = null
+            if (import.meta.env.DEV) {
+              console.warn('[studio] audio produce failed; continuing video-only', e)
+            }
+            if (isEndedTrackError(e)) {
+              audioWarning = 'Студийный аудиотрек завершился. Эфир запущен без звука.'
+            } else {
+              audioWarning = `Не удалось подключить звук студии: ${formatStudioProgramError(e)}`
+            }
           }
         } else {
           studioProgramAudioProducerRef.current = null
         }
 
         setStudioBroadcastHealth('live')
-        setStudioBroadcastHealthDetail(null)
-        return { ok: true }
+        setStudioBroadcastHealthDetail(audioWarning ?? null)
+        return audioWarning ? { ok: true, warning: audioWarning } : { ok: true }
       } catch (e) {
         setStudioBroadcastHealth('warning')
         setStudioBroadcastHealthDetail(null)

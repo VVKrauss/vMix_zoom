@@ -308,7 +308,7 @@ interface Props {
     rtmpUrl: string,
     streamKey: string,
     output: StudioOutputPreset,
-  ) => Promise<{ ok: boolean; error?: string }>
+  ) => Promise<{ ok: boolean; error?: string; warning?: string }>
   stopStudioProgram: () => Promise<void>
   replaceStudioProgramAudioTrack: (track: MediaStreamTrack | null) => Promise<void>
   studioBroadcastHealth: 'idle' | 'connecting' | 'live' | 'warning'
@@ -1129,7 +1129,7 @@ export function RoomPage({
       return (
         <StudioProgramShareTile
           stream={studioPresenter.studioProgramStream}
-          label={`${studioPresenter.name} — эфир`}
+          label={`ЭФИР · ${studioPresenter.name}`}
           roomId={roomId}
           linkPeerId={studioPresenter.studioProgramPeerId ?? undefined}
           videoStyle={screenShareVideoStyle}
@@ -1158,7 +1158,7 @@ export function RoomPage({
       return (
         <StudioProgramShareTile
           stream={sp.studioProgramStream}
-          label={`${sp.name} — эфир`}
+          label={`ЭФИР · ${sp.name}`}
           roomId={roomId}
           linkPeerId={sp.studioProgramPeerId ?? undefined}
           videoStyle={screenShareVideoStyle}

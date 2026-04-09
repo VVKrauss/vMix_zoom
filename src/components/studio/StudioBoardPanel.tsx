@@ -223,6 +223,32 @@ function StudioBoardPanelInner({
       <div className="studio-board-panel__header">
         <div className="studio-board-panel__title-row">
           <div className="studio-board-panel__title">{title}</div>
+          {!hideSlotPickers ? (
+            <div className="studio-slot-picker studio-slot-picker--header-add">
+              <button
+                type="button"
+                className={`studio-slot-picker__btn studio-slot-picker__btn--header${openMenu === 'add' ? ' studio-slot-picker__btn--open' : ''}`}
+                onClick={() => setOpenMenu((v) => (v === 'add' ? null : 'add'))}
+                aria-label={`Добавить источник на ${title}`}
+              >
+                Добавить источник
+              </button>
+              {openMenu === 'add' ? (
+                <div className="studio-slot-picker__menu" role="listbox">
+                  {sources.map((s) => (
+                    <button
+                      key={s.key}
+                      type="button"
+                      className="studio-slot-picker__item"
+                      onClick={() => addSourceToBoard(s.key)}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <span className={`studio-board-panel__badge studio-board-panel__badge--${variant}`}>
             {variant === 'program' ? 'LIVE' : 'PREVIEW'}
           </span>
@@ -230,30 +256,6 @@ function StudioBoardPanelInner({
       </div>
       {hideSlotPickers ? null : (
         <div className="studio-slot-pickers studio-slot-pickers--compact" role="toolbar" aria-label={`Источники: ${title}`}>
-          <div className="studio-slot-picker studio-slot-picker--add">
-            <button
-              type="button"
-              className={`studio-slot-picker__btn studio-slot-picker__btn--add${openMenu === 'add' ? ' studio-slot-picker__btn--open' : ''}`}
-              onClick={() => setOpenMenu((v) => (v === 'add' ? null : 'add'))}
-              aria-label={`Добавить источник на ${title}`}
-            >
-              +
-            </button>
-            {openMenu === 'add' ? (
-              <div className="studio-slot-picker__menu" role="listbox">
-                {sources.map((s) => (
-                  <button
-                    key={s.key}
-                    type="button"
-                    className="studio-slot-picker__item"
-                    onClick={() => addSourceToBoard(s.key)}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
           {boardState.slots.map((slot, i) =>
             slot.sourceKey ? (
               <div key={i} className="studio-slot-chip">

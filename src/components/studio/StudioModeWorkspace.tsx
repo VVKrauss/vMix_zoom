@@ -15,6 +15,7 @@ import { connectStudioProgramAudioMix, type StudioProgramMixHandle, type StudioS
 import { StudioBoardPanel } from './StudioBoardPanel'
 import StudioSourceStripItem from './StudioSourceStripItem'
 import { AudioMeter } from '../AudioMeter'
+import { ConfirmDialog } from '../ConfirmDialog'
 
 type LogLevel = 'info' | 'ok' | 'warn' | 'error' | 'server'
 interface LogEntry { ts: string; level: LogLevel; text: string }
@@ -39,10 +40,14 @@ const StudioSourcesStrip = memo(function StudioSourcesStrip({
   sources,
   sourceMix,
   setSourceVolume,
+  onAddToPreview,
+  onSendToProgram,
 }: {
   sources: StudioSourceOption[]
   sourceMix: StudioSourceMixMap
   setSourceVolume: (key: string, volume: number) => void
+  onAddToPreview: (key: string) => void
+  onSendToProgram: (key: string) => void
 }) {
   return (
     <div className="studio-source-strip" role="region" aria-label="Источники">
@@ -53,6 +58,8 @@ const StudioSourcesStrip = memo(function StudioSourcesStrip({
           meterStream={sourceMeterStream(s)}
           volume={sourceMix[s.key]?.volume ?? 1}
           setVolume={setSourceVolume}
+          onAddToPreview={onAddToPreview}
+          onSendToProgram={onSendToProgram}
         />
       ))}
     </div>
@@ -73,7 +80,7 @@ interface Props {
     rtmpUrl: string,
     streamKey: string,
     output: StudioOutputPreset,
-  ) => Promise<{ ok: boolean; error?: string }>
+  ) => Promise<{ ok: boolean; error?: string; warning?: string }>
   stopStudioProgram: () => Promise<void>
   replaceStudioProgramAudioTrack: (track: MediaStreamTrack | null) => Promise<void>
   studioBroadcastHealth: 'idle' | 'connecting' | 'live' | 'warning'
@@ -118,6 +125,7 @@ export function StudioModeWorkspace({
   const [sourceMix, setSourceMix] = useState<StudioSourceMixMap>({})
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [logsOpen, setLogsOpen] = useState(false)
+  const [stopConfirmOpen, setStopConfirmOpen] = useState(false)
   const logsEndRef = useRef<HTMLDivElement>(null)
 
   const addLog = useCallback((level: LogLevel, text: string) => {
@@ -197,6 +205,26 @@ export function StudioModeWorkspace({
       ...p,
       [key]: { ...(p[key] ?? { volume: 1 }), volume },
     }))
+  }, [])
+
+  const placeSourceOnBoard = useCallback((boardName: 'preview' | 'program', sourceKey: string, fullFrame = false) => {
+    setBoards((prev) => {
+      const board = prev[boardName]
+      let slots = board.slots.map((slot) => ({ ...slot }))
+      if (fullFrame) {
+        slots = slots.map((slot, index) => ({
+          ...slot,
+          sourceKey: index === 0 ? sourceKey : null,
+          rect: index === 0 ? { x: 0, y: 0, w: 1, h: 1 } : slot.rect,
+        }))
+      } else {
+        const existingIndex = slots.findIndex((slot) => slot.sourceKey === sourceKey)
+        const targetIndex = existingIndex >= 0 ? existingIndex : slots.findIndex((slot) => !slot.sourceKey)
+        const finalIndex = targetIndex >= 0 ? targetIndex : 0
+        slots[finalIndex] = { ...slots[finalIndex], sourceKey }
+      }
+      return { ...prev, [boardName]: { ...board, slots } }
+    })
   }, [])
 
   const stopCaptureLoop = useCallback(() => {
@@ -313,17 +341,7 @@ export function StudioModeWorkspace({
     if (liveBusy) return
 
     if (liveActive) {
-      setLiveBusy(true)
-      addLog('info', 'Остановка эфира пользователем')
-      stopCaptureLoop()
-      try {
-        await stopStudioProgram()
-        setLiveActive(false)
-        setLiveError(null)
-        addLog('info', 'Эфир остановлен')
-      } finally {
-        setLiveBusy(false)
-      }
+      setStopConfirmOpen(true)
       return
     }
 
@@ -373,6 +391,9 @@ export function StudioModeWorkspace({
       return
     }
     setLiveActive(true)
+    if (res.warning) {
+      addLog('warn', res.warning)
+    }
     addLog('ok', 'produce() успешно, ждём подтверждения сервера (studioBroadcastHealth)…')
     setLiveBusy(false)
   }, [
@@ -389,6 +410,21 @@ export function StudioModeWorkspace({
     stopCaptureLoop,
     stopStudioProgram,
   ])
+
+  const confirmStopLive = useCallback(async () => {
+    setStopConfirmOpen(false)
+    setLiveBusy(true)
+    addLog('info', 'Остановка эфира пользователем')
+    stopCaptureLoop()
+    try {
+      await stopStudioProgram()
+      setLiveActive(false)
+      setLiveError(null)
+      addLog('info', 'Эфир остановлен')
+    } finally {
+      setLiveBusy(false)
+    }
+  }, [addLog, stopCaptureLoop, stopStudioProgram])
 
   useEffect(() => {
     if (!open) {
@@ -469,18 +505,15 @@ export function StudioModeWorkspace({
 
       <header className="studio-chrome">
         <div className="studio-chrome__identity">
-          <div className="studio-chrome__kicker">Control Room</div>
           <div className="studio-chrome__title-row">
+            <img className="studio-chrome__logo" src="/logo.png" alt="" draggable={false} />
             <h1 className="studio-chrome__title">Студия</h1>
-            <span className={`studio-chrome__health studio-chrome__health--${studioBroadcastHealth}`}>
-              {healthLabel}
-            </span>
           </div>
         </div>
         <div className="studio-chrome__actions">
-          <button type="button" className="studio-chrome__settings" onClick={() => setSettingsOpen(true)}>
-            Поток
-          </button>
+          <span className={`studio-chrome__health studio-chrome__health--${studioBroadcastHealth}`}>
+            {healthLabel}
+          </span>
           <button
             type="button"
             className={liveBtnClass}
@@ -490,8 +523,11 @@ export function StudioModeWorkspace({
           >
             LIVE
           </button>
+          <button type="button" className="studio-chrome__settings" onClick={() => setSettingsOpen(true)} aria-label="Настройки потока" title="Настройки потока">
+            <GearIcon />
+          </button>
           <button type="button" className="studio-chrome__close" onClick={onClose}>
-            Закрыть
+            Закрыть студию
           </button>
         </div>
       </header>
@@ -529,11 +565,8 @@ export function StudioModeWorkspace({
             sources={sources}
           />
           <div className="studio-action-rail" aria-label="Действия между preview и program">
-            <button type="button" className="studio-swap-btn studio-swap-btn--take" onClick={swapBoards} title="Отправить превью в эфир">
-              TAKE
-            </button>
-            <button type="button" className="studio-swap-btn studio-swap-btn--between" onClick={swapBoards} title="Поменять превью и эфир местами">
-              Swap
+            <button type="button" className="studio-swap-btn studio-swap-btn--switch" onClick={swapBoards} title="Поменять превью и эфир местами">
+              Switch
             </button>
           </div>
           <div className="studio-board-column studio-board-column--program">
@@ -558,7 +591,13 @@ export function StudioModeWorkspace({
           </div>
         </div>
 
-        <StudioSourcesStrip sources={sources} sourceMix={sourceMix} setSourceVolume={setSourceVolume} />
+        <StudioSourcesStrip
+          sources={sources}
+          sourceMix={sourceMix}
+          setSourceVolume={setSourceVolume}
+          onAddToPreview={(key) => placeSourceOnBoard('preview', key)}
+          onSendToProgram={(key) => placeSourceOnBoard('program', key, true)}
+        />
       </div>
 
       {logsOpen ? (
@@ -677,6 +716,28 @@ export function StudioModeWorkspace({
           </div>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        open={stopConfirmOpen}
+        title="Остановить эфир?"
+        message="Текущий RTMP-поток будет остановлен. После подтверждения эфир можно будет запустить снова."
+        confirmLabel="Остановить эфир"
+        cancelLabel="Отмена"
+        confirmLoading={liveBusy}
+        onConfirm={() => void confirmStopLive()}
+        onCancel={() => {
+          if (!liveBusy) setStopConfirmOpen(false)
+        }}
+      />
     </div>
+  )
+}
+
+function GearIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82L4.21 7.2a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
   )
 }
