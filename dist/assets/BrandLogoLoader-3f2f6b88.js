@@ -1,1 +1,0 @@
-import{j as r}from"./index-33504327.js";function e({size:a=48}){return r.jsx("div",{className:"brand-logo-loader-wrap","aria-hidden":!0,children:r.jsx("img",{className:"brand-logo-loader",src:"/logo.png",alt:"",width:a,height:a,draggable:!1})})}export{e as B};
