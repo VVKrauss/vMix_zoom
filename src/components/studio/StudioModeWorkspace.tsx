@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+﻿import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RemoteParticipant } from '../../types'
 import {
   DEFAULT_STUDIO_OUTPUT_PRESET_ID,
@@ -13,10 +13,9 @@ import { drawVideoCover } from '../../utils/studioCanvasDraw'
 import { buildStudioSources } from './buildStudioSources'
 import { connectStudioProgramAudioMix, type StudioProgramMixHandle, type StudioSourceMixMap } from './buildProgramAudioMix'
 import { StudioBoardPanel } from './StudioBoardPanel'
-import { StudioSourceStripItem } from './StudioSourceStripItem'
+import StudioSourceStripItem from './StudioSourceStripItem'
 import { AudioMeter } from '../AudioMeter'
 
-/* ─── Studio debug log ──────────────────────────────────────────────── */
 type LogLevel = 'info' | 'ok' | 'warn' | 'error' | 'server'
 interface LogEntry { ts: string; level: LogLevel; text: string }
 const LOG_MAX = 100
@@ -36,7 +35,6 @@ function sourceMeterStream(s: StudioSourceOption): MediaStream | null {
   return null
 }
 
-/** Полоса источников не зависит от programBoard — memo, чтобы не дёргать DOM при движении слоёв. */
 const StudioSourcesStrip = memo(function StudioSourcesStrip({
   sources,
   sourceMix,
@@ -76,11 +74,10 @@ interface Props {
     streamKey: string,
     output: StudioOutputPreset,
   ) => Promise<{ ok: boolean; error?: string }>
-  stopStudioProgram: () => void
+  stopStudioProgram: () => Promise<void>
   replaceStudioProgramAudioTrack: (track: MediaStreamTrack | null) => Promise<void>
   studioBroadcastHealth: 'idle' | 'connecting' | 'live' | 'warning'
   studioBroadcastHealthDetail?: string | null
-  /** Строки с сокета (useRoom); в панели отображаются фиолетовым. */
   studioServerLogLines?: readonly string[]
 }
 
@@ -115,6 +112,7 @@ export function StudioModeWorkspace({
     () => localStorage.getItem(LS_STUDIO_SEND_AUDIO) !== '0',
   )
   const [liveActive, setLiveActive] = useState(false)
+  const [liveBusy, setLiveBusy] = useState(false)
   const [liveError, setLiveError] = useState<string | null>(null)
   const [programMixStream, setProgramMixStream] = useState<MediaStream | null>(null)
   const [sourceMix, setSourceMix] = useState<StudioSourceMixMap>({})
@@ -152,7 +150,6 @@ export function StudioModeWorkspace({
   const mixAudioCtxRef = useRef<AudioContext | null>(null)
   const mixDisconnectRef = useRef<(() => void) | null>(null)
   const mixHandleRef = useRef<StudioProgramMixHandle | null>(null)
-  /** Пересборка Web Audio только при смене источников в слотах / состава streams, не при каждом drag rect. */
   const programMixRebuildKeyRef = useRef('')
   const sourceMixRef = useRef(sourceMix)
   sourceMixRef.current = sourceMix
@@ -235,7 +232,6 @@ export function StudioModeWorkspace({
       rafRef.current = requestAnimationFrame(tick)
     }
 
-    /* Рисуем первый кадр ДО captureStream, чтобы трек сразу содержал данные. */
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => {
         tick()
@@ -243,9 +239,6 @@ export function StudioModeWorkspace({
       })
     })
 
-    /* captureStream(fps) — фиксированная частота кадров обязательна:
-       без аргумента Chrome создаёт трек с frameRate=0, WebRTC-кодер
-       не получает стабильного потока и держит битрейт ~100 кбит/с. */
     const stream = canvas.captureStream(maxFramerate)
     captureStreamRef.current = stream
     const v = stream.getVideoTracks()[0] ?? null
@@ -253,7 +246,6 @@ export function StudioModeWorkspace({
       try {
         v.contentHint = 'motion'
       } catch {
-        /* ignore */
       }
     }
     return v
@@ -318,21 +310,31 @@ export function StudioModeWorkspace({
   }, [liveActive, sendStudioAudio, programMixStream, replaceStudioProgramAudioTrack])
 
   const handleLiveToggle = useCallback(async () => {
+    if (liveBusy) return
+
     if (liveActive) {
+      setLiveBusy(true)
       addLog('info', 'Остановка эфира пользователем')
       stopCaptureLoop()
-      stopStudioProgram()
-      setLiveActive(false)
-      setLiveError(null)
-      addLog('info', 'Эфир остановлен')
+      try {
+        await stopStudioProgram()
+        setLiveActive(false)
+        setLiveError(null)
+        addLog('info', 'Эфир остановлен')
+      } finally {
+        setLiveBusy(false)
+      }
       return
     }
+
+    setLiveBusy(true)
     const url = rtmpUrl.trim()
     const key = rtmpKey.trim()
     if (!url || !key) {
       setSettingsOpen(true)
       setLiveError('Укажите URL и ключ в настройках потока')
       addLog('error', 'Старт эфира: не задан URL или ключ')
+      setLiveBusy(false)
       return
     }
     setLiveError(null)
@@ -351,10 +353,11 @@ export function StudioModeWorkspace({
     const trackSettings = track.getSettings()
     addLog('ok', `Трек захвачен: ${trackSettings.width ?? '?'}×${trackSettings.height ?? '?'} @ ${trackSettings.frameRate ?? '?'} fps, readyState=${track.readyState}`)
 
-    const audioTrack =
+    const audioSourceTrack =
       sendStudioAudio && programMixStream?.getAudioTracks()[0]
         ? programMixStream.getAudioTracks()[0]!
         : null
+    const audioTrack = audioSourceTrack ? audioSourceTrack.clone() : null
     addLog('info', audioTrack ? `Аудио: ${audioTrack.label || 'программный микс'}` : 'Аудио: без звука')
 
     addLog('info', 'produce() → signaling…')
@@ -364,12 +367,16 @@ export function StudioModeWorkspace({
       const errMsg = res.error ?? 'Ошибка публикации'
       setLiveError(errMsg)
       setLiveActive(false)
+      audioTrack?.stop()
       addLog('error', `startStudioProgram failed: ${errMsg}`)
+      setLiveBusy(false)
       return
     }
     setLiveActive(true)
     addLog('ok', 'produce() успешно, ждём подтверждения сервера (studioBroadcastHealth)…')
+    setLiveBusy(false)
   }, [
+    liveBusy,
     liveActive,
     rtmpUrl,
     rtmpKey,
@@ -429,11 +436,13 @@ export function StudioModeWorkspace({
       ? 'studio-chrome__live studio-chrome__live--on-air'
       : liveActive && (studioBroadcastHealth === 'connecting' || studioBroadcastHealth === 'warning')
         ? 'studio-chrome__live studio-chrome__live--warn'
-        : 'studio-chrome__live'
+        : liveBusy || studioBroadcastHealth === 'connecting'
+          ? 'studio-chrome__live studio-chrome__live--warn'
+          : 'studio-chrome__live'
 
   const liveBtnTitle =
     !liveActive
-      ? 'Начать эфир (в эфир идёт только доска «Эфир»)'
+      ? 'Начать эфир (в эфир идёт только доска «Эфир»)' 
       : studioBroadcastHealth === 'live'
         ? 'Остановить эфир'
         : studioBroadcastHealthDetail
@@ -442,56 +451,95 @@ export function StudioModeWorkspace({
             ? 'Подключение RTMP…'
             : 'Эфир: предупреждение от сервера'
 
+  const healthLabel =
+    studioBroadcastHealth === 'live'
+      ? 'В эфире'
+      : studioBroadcastHealth === 'connecting'
+        ? 'Подключение'
+        : studioBroadcastHealth === 'warning'
+          ? 'Нужна проверка'
+          : 'Готово'
+
+  const latestLog = logs.length > 0 ? logs[logs.length - 1] : null
+  const latestLogText = latestLog ? `${latestLog.ts} ${latestLog.text}` : 'Лог пуст, студия готова к работе'
+
   return (
     <div className="studio-mode-workspace" role="dialog" aria-modal="true" aria-label="Режим студии">
-      {/*
-        Не задаём width/height здесь: при commit React сбрасывает bitmap canvas и завершает
-        MediaStreamTrack из captureStream(). Размер выставляет только runCaptureLoop().
-      */}
       <canvas ref={canvasRef} className="studio-mode-workspace__capture-canvas" aria-hidden />
 
       <header className="studio-chrome">
-        <button type="button" className="studio-chrome__close" onClick={onClose}>
-          Закрыть студию
-        </button>
+        <div className="studio-chrome__identity">
+          <div className="studio-chrome__kicker">Control Room</div>
+          <div className="studio-chrome__title-row">
+            <h1 className="studio-chrome__title">Студия</h1>
+            <span className={`studio-chrome__health studio-chrome__health--${studioBroadcastHealth}`}>
+              {healthLabel}
+            </span>
+          </div>
+        </div>
         <div className="studio-chrome__actions">
           <button type="button" className="studio-chrome__settings" onClick={() => setSettingsOpen(true)}>
-            Настройки потока
+            Поток
           </button>
           <button
             type="button"
             className={liveBtnClass}
             onClick={() => void handleLiveToggle()}
             title={liveBtnTitle}
+            disabled={liveBusy}
           >
             LIVE
+          </button>
+          <button type="button" className="studio-chrome__close" onClick={onClose}>
+            Закрыть
           </button>
         </div>
       </header>
 
       {liveError ? <div className="studio-mode-workspace__error" role="alert">{liveError}</div> : null}
-      {liveActive &&
-      studioBroadcastHealth !== 'live' &&
-      studioBroadcastHealthDetail ? (
+      {liveActive && studioBroadcastHealth !== 'live' && studioBroadcastHealthDetail ? (
         <div className="studio-mode-workspace__health-hint" role="status">
           {studioBroadcastHealthDetail}
         </div>
       ) : null}
 
       <div className="studio-mode-workspace__body">
+        <section className="studio-info-panel" aria-label="Информация студии">
+          <div className="studio-info-card studio-info-card--summary">
+            <span className="studio-info-card__label">Статус</span>
+            <strong className="studio-info-card__value">{healthLabel}</strong>
+            <span className="studio-info-card__subtle studio-info-card__subtle--truncate">
+              {studioBroadcastHealthDetail || latestLogText}
+            </span>
+            <div className="studio-info-card__meta-inline">
+              {logs.length > 0 ? <span className="studio-info-card__counter">{logs.length}</span> : null}
+              <button type="button" className="studio-info-card__action" onClick={() => setLogsOpen(true)}>
+                Открыть лог
+              </button>
+            </div>
+          </div>
+        </section>
+
         <div className="studio-mode-workspace__boards-row">
           <StudioBoardPanel
             title="Превью"
+            variant="preview"
             board={previewBoard}
             onBoardChange={onPreviewBoardChange}
             sources={sources}
           />
-          <button type="button" className="studio-swap-btn studio-swap-btn--between" onClick={swapBoards} title="Поменять превью и эфир местами">
-            ⇄
-          </button>
+          <div className="studio-action-rail" aria-label="Действия между preview и program">
+            <button type="button" className="studio-swap-btn studio-swap-btn--take" onClick={swapBoards} title="Отправить превью в эфир">
+              TAKE
+            </button>
+            <button type="button" className="studio-swap-btn studio-swap-btn--between" onClick={swapBoards} title="Поменять превью и эфир местами">
+              Swap
+            </button>
+          </div>
           <div className="studio-board-column studio-board-column--program">
             <StudioBoardPanel
               title="Эфир"
+              variant="program"
               board={programBoard}
               onBoardChange={onProgramBoardChange}
               sources={sources}
@@ -504,30 +552,24 @@ export function StudioModeWorkspace({
                 <span className="studio-program-output-meter__label">Смесь эфира</span>
               </div>
               <div className="studio-program-output-meter__meter">
-                {programMixStream ? (
-                  <AudioMeter stream={programMixStream} orientation="horizontal" />
-                ) : null}
+                {programMixStream ? <AudioMeter stream={programMixStream} orientation="horizontal" /> : null}
               </div>
             </div>
           </div>
         </div>
 
         <StudioSourcesStrip sources={sources} sourceMix={sourceMix} setSourceVolume={setSourceVolume} />
+      </div>
 
-        <div className="studio-debug-log">
-          <div className="studio-debug-log__header">
-            <button
-              type="button"
-              className="studio-debug-log__toggle"
-              onClick={() => setLogsOpen((v) => !v)}
-            >
-              {logsOpen ? '▾' : '▸'} Лог подключения
-              {logs.length > 0 && (
-                <span className="studio-debug-log__count">{logs.length}</span>
-              )}
-            </button>
-            {logsOpen && (
-              <>
+      {logsOpen ? (
+        <div className="studio-debug-log-modal" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && setLogsOpen(false)}>
+          <div className="studio-debug-log-modal__dialog" role="dialog" aria-labelledby="studio-debug-log-title" onClick={(e) => e.stopPropagation()}>
+            <div className="studio-debug-log__header studio-debug-log__header--modal">
+              <div className="studio-debug-log__title-wrap">
+                <h2 id="studio-debug-log-title" className="studio-debug-log__title">Лог студии</h2>
+                {logs.length > 0 ? <span className="studio-debug-log__count">{logs.length}</span> : null}
+              </div>
+              <div className="studio-debug-log__actions">
                 <button
                   type="button"
                   className="studio-debug-log__copy"
@@ -544,11 +586,16 @@ export function StudioModeWorkspace({
                 >
                   Очистить
                 </button>
-              </>
-            )}
-          </div>
-          {logsOpen && (
-            <div className="studio-debug-log__body">
+                <button
+                  type="button"
+                  className="studio-debug-log__close"
+                  onClick={() => setLogsOpen(false)}
+                >
+                  Закрыть
+                </button>
+              </div>
+            </div>
+            <div className="studio-debug-log__body studio-debug-log__body--modal">
               {logs.length === 0 ? (
                 <span className="studio-debug-log__empty">Нет событий</span>
               ) : (
@@ -561,9 +608,9 @@ export function StudioModeWorkspace({
               )}
               <div ref={logsEndRef} />
             </div>
-          )}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {settingsOpen ? (
         <div className="studio-settings-overlay" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && setSettingsOpen(false)}>

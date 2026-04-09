@@ -309,7 +309,7 @@ interface Props {
     streamKey: string,
     output: StudioOutputPreset,
   ) => Promise<{ ok: boolean; error?: string }>
-  stopStudioProgram: () => void
+  stopStudioProgram: () => Promise<void>
   replaceStudioProgramAudioTrack: (track: MediaStreamTrack | null) => Promise<void>
   studioBroadcastHealth: 'idle' | 'connecting' | 'live' | 'warning'
   /** Пояснение с сервера (stderr FFmpeg и т.д.) при studioBroadcastHealth ≠ live. */

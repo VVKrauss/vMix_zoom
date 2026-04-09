@@ -296,6 +296,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const screenProducerRef = useRef<Producer | null>(null)
   const studioProgramVideoProducerRef = useRef<Producer | null>(null)
   const studioProgramAudioProducerRef = useRef<Producer | null>(null)
+  const studioStopInFlightRef = useRef<Promise<void> | null>(null)
   const localScreenStreamRef = useRef<MediaStream | null>(null)
   const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null)
   const [isScreenSharing, setIsScreenSharing] = useState(false)
@@ -1089,6 +1090,12 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           })
         }
 
+        if (st === 'idle' || st === 'off') {
+          setStudioBroadcastHealth('idle')
+          setStudioBroadcastHealthDetail(null)
+          return
+        }
+
         if (studioProgramVideoProducerRef.current == null) return
 
         if (o.ok === true || st === 'live') {
@@ -1687,24 +1694,53 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     [sessionMeta?.localPeerId, peerUplinkBroadcastTick],
   )
 
-  const stopStudioProgram = useCallback(() => {
-    const socket = socketRef.current
-    const roomId = roomIdRef.current
-    const audioP = studioProgramAudioProducerRef.current
-    const videoP = studioProgramVideoProducerRef.current
-    if (audioP && socket?.connected) {
-      socket.emit('closeProducer', { roomId, producerId: audioP.id })
+  const stopStudioProgram = useCallback(async () => {
+    if (studioStopInFlightRef.current) {
+      await studioStopInFlightRef.current
+      return
     }
-    if (videoP && socket?.connected) {
-      socket.emit('closeProducer', { roomId, producerId: videoP.id })
+
+    const stopPromise = (async () => {
+      const socket = socketRef.current
+      const roomId = roomIdRef.current
+      const audioP = studioProgramAudioProducerRef.current
+      const videoP = studioProgramVideoProducerRef.current
+
+      if (audioP && socket?.connected) {
+        socket.emit('closeProducer', { roomId, producerId: audioP.id })
+      }
+      if (videoP && socket?.connected) {
+        socket.emit('closeProducer', { roomId, producerId: videoP.id })
+      }
+
+      try {
+        audioP?.pause()
+      } catch {
+        /* ignore */
+      }
+      try {
+        videoP?.pause()
+      } catch {
+        /* ignore */
+      }
+
+      audioP?.close()
+      videoP?.close()
+      studioProgramAudioProducerRef.current = null
+      studioProgramVideoProducerRef.current = null
+      setStudioBroadcastHealth('idle')
+      setStudioBroadcastHealthDetail(null)
+      setStudioServerLogLines([])
+
+      await new Promise((resolve) => window.setTimeout(resolve, 450))
+    })()
+
+    studioStopInFlightRef.current = stopPromise
+    try {
+      await stopPromise
+    } finally {
+      studioStopInFlightRef.current = null
     }
-    audioP?.close()
-    videoP?.close()
-    studioProgramAudioProducerRef.current = null
-    studioProgramVideoProducerRef.current = null
-    setStudioBroadcastHealth('idle')
-    setStudioBroadcastHealthDetail(null)
-    setStudioServerLogLines([])
   }, [])
 
   const replaceStudioProgramAudioTrack = useCallback(async (track: MediaStreamTrack | null) => {
@@ -1743,9 +1779,10 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         setStudioBroadcastHealthDetail(null)
         return { ok: false, error: 'Укажите URL и ключ RTMP' }
       }
-      stopStudioProgram()
+      await stopStudioProgram()
       setStudioBroadcastHealth('connecting')
       setStudioBroadcastHealthDetail(null)
+      await new Promise((resolve) => window.setTimeout(resolve, 180))
       try {
         const fpsCap = capVideoFramerate(output.maxFramerate, videoTrack)
         const startBr = Math.max(

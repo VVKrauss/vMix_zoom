@@ -1,10 +1,9 @@
-import React, { memo, useCallback, useEffect, useRef, useState } from 'react'
+﻿import React, { memo, useCallback, useEffect, useRef, useState } from 'react'
 import type { StudioBoardState, StudioSourceOption } from '../../types/studio'
 import { clamp01 } from '../../utils/studioCanvasDraw'
 
 type DragMode = 'move' | 'resize-se' | null
 
-/** w/h в нормализованных координатах доски 16:9, чтобы пиксельное соотношение слоя = aspect видео. */
 function normalizedWidthOverHeight(video: HTMLVideoElement | null): number {
   const av =
     video && video.videoWidth > 0 && video.videoHeight > 0
@@ -15,18 +14,15 @@ function normalizedWidthOverHeight(video: HTMLVideoElement | null): number {
 
 interface Props {
   title: string
+  variant?: 'preview' | 'program'
   board: StudioBoardState
   onBoardChange: (next: StudioBoardState) => void
   sources: StudioSourceOption[]
-  /** Только для доски «Эфир» — видео для захвата canvas. */
   registerProgramVideo?: (slotIndex: number, el: HTMLVideoElement | null) => void
-  /** Скрыть ряд кнопок выбора источника (только «Эфир»). */
   hideSlotPickers?: boolean
-  /** Запретить перетаскивание и ресайз слоёв (только «Эфир»). */
   readOnlyStage?: boolean
 }
 
-/** Стабильный ref + srcObject в effect — иначе при каждом движении слоя inline ref сбрасывает видео (моргание). */
 function StudioSlotVideo({
   slotIndex,
   stream,
@@ -53,25 +49,22 @@ function StudioSlotVideo({
     }
   }, [stream])
 
-  return (
-    <video
-      ref={videoRef}
-      className="studio-layer__video"
-      autoPlay
-      playsInline
-      muted
-    />
-  )
+  return <video ref={videoRef} className="studio-layer__video" autoPlay playsInline muted />
 }
 
 function slotLabel(boardState: StudioBoardState, index: number, sources: StudioSourceOption[]): string {
-  const k = boardState.slots[index]?.sourceKey
-  if (!k) return 'Нет'
-  return sources.find((s) => s.key === k)?.label ?? k
+  const key = boardState.slots[index]?.sourceKey
+  if (!key) return 'Нет'
+  return sources.find((s) => s.key === key)?.label ?? key
+}
+
+function compactSlotLabel(boardState: StudioBoardState, index: number, sources: StudioSourceOption[]): string {
+  return slotLabel(boardState, index, sources).split(' - ')[0].split(' — ')[0]
 }
 
 function StudioBoardPanelInner({
   title,
+  variant = 'preview',
   board: boardState,
   onBoardChange,
   sources,
@@ -79,7 +72,7 @@ function StudioBoardPanelInner({
   hideSlotPickers = false,
   readOnlyStage = false,
 }: Props) {
-  const [openMenu, setOpenMenu] = useState<number | null>(null)
+  const [openMenu, setOpenMenu] = useState<number | 'add' | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{
@@ -121,6 +114,26 @@ function StudioBoardPanelInner({
       setOpenMenu(null)
     },
     [boardState.slots, onBoardChange],
+  )
+
+  const moveSlot = useCallback(
+    (slot: number, direction: -1 | 1) => {
+      const nextIndex = slot + direction
+      if (nextIndex < 0 || nextIndex >= boardState.slots.length) return
+      const nextSlots = [...boardState.slots]
+      ;[nextSlots[slot], nextSlots[nextIndex]] = [nextSlots[nextIndex], nextSlots[slot]]
+      onBoardChange({ slots: nextSlots })
+    },
+    [boardState.slots, onBoardChange],
+  )
+
+  const addSourceToBoard = useCallback(
+    (key: string) => {
+      const emptyIndex = boardState.slots.findIndex((slot) => !slot.sourceKey)
+      const targetIndex = emptyIndex >= 0 ? emptyIndex : boardState.slots.length - 1
+      updateSlotSource(targetIndex, key)
+    },
+    [boardState.slots, updateSlotSource],
   )
 
   const onPointerMove = useCallback(
@@ -182,7 +195,6 @@ function StudioBoardPanelInner({
       try {
         e.currentTarget.setPointerCapture(e.pointerId)
       } catch {
-        /* ignore */
       }
       const r = boardEl.getBoundingClientRect()
       const s = boardState.slots[slot]
@@ -207,42 +219,53 @@ function StudioBoardPanelInner({
   )
 
   return (
-    <div className="studio-board-panel" ref={rootRef}>
-      <div className="studio-board-panel__title">{title}</div>
+    <div className={`studio-board-panel studio-board-panel--${variant}`} ref={rootRef}>
+      <div className="studio-board-panel__header">
+        <div className="studio-board-panel__title-row">
+          <div className="studio-board-panel__title">{title}</div>
+          <span className={`studio-board-panel__badge studio-board-panel__badge--${variant}`}>
+            {variant === 'program' ? 'LIVE' : 'PREVIEW'}
+          </span>
+        </div>
+      </div>
       {hideSlotPickers ? null : (
-        <div className="studio-slot-pickers" role="toolbar" aria-label={`Источники: ${title}`}>
-          {boardState.slots.map((_, i) => (
-            <div key={i} className="studio-slot-picker">
-              <button
-                type="button"
-                className={`studio-slot-picker__btn${openMenu === i ? ' studio-slot-picker__btn--open' : ''}`}
-                onClick={() => setOpenMenu((v) => (v === i ? null : i))}
-              >
-                {slotLabel(boardState, i, sources)}
-              </button>
-              {openMenu === i ? (
-                <div className="studio-slot-picker__menu" role="listbox">
+        <div className="studio-slot-pickers studio-slot-pickers--compact" role="toolbar" aria-label={`Источники: ${title}`}>
+          <div className="studio-slot-picker studio-slot-picker--add">
+            <button
+              type="button"
+              className={`studio-slot-picker__btn studio-slot-picker__btn--add${openMenu === 'add' ? ' studio-slot-picker__btn--open' : ''}`}
+              onClick={() => setOpenMenu((v) => (v === 'add' ? null : 'add'))}
+              aria-label={`Добавить источник на ${title}`}
+            >
+              +
+            </button>
+            {openMenu === 'add' ? (
+              <div className="studio-slot-picker__menu" role="listbox">
+                {sources.map((s) => (
                   <button
+                    key={s.key}
                     type="button"
                     className="studio-slot-picker__item"
-                    onClick={() => updateSlotSource(i, null)}
+                    onClick={() => addSourceToBoard(s.key)}
                   >
-                    Нет
+                    {s.label}
                   </button>
-                  {sources.map((s) => (
-                    <button
-                      key={s.key}
-                      type="button"
-                      className="studio-slot-picker__item"
-                      onClick={() => updateSlotSource(i, s.key)}
-                    >
-                      {s.label}
-                    </button>
-                  ))}
+                ))}
+              </div>
+            ) : null}
+          </div>
+          {boardState.slots.map((slot, i) =>
+            slot.sourceKey ? (
+              <div key={i} className="studio-slot-chip">
+                <span className="studio-slot-chip__label">{compactSlotLabel(boardState, i, sources)}</span>
+                <div className="studio-slot-chip__actions">
+                  <button type="button" className="studio-slot-chip__btn" onClick={() => moveSlot(i, -1)} disabled={i === 0} aria-label="Выше по слою">↑</button>
+                  <button type="button" className="studio-slot-chip__btn" onClick={() => moveSlot(i, 1)} disabled={i === boardState.slots.length - 1} aria-label="Ниже по слою">↓</button>
+                  <button type="button" className="studio-slot-chip__btn studio-slot-chip__btn--danger" onClick={() => updateSlotSource(i, null)} aria-label="Убрать источник">×</button>
                 </div>
-              ) : null}
-            </div>
-          ))}
+              </div>
+            ) : null,
+          )}
         </div>
       )}
       <div className={`studio-board-stage${readOnlyStage ? ' studio-board-stage--readonly' : ''}`} ref={stageRef}>
@@ -270,16 +293,12 @@ function StudioBoardPanelInner({
                         }
                   }
                 >
-                  <StudioSlotVideo
-                    slotIndex={i}
-                    stream={stream}
-                    registerProgramVideo={registerProgramVideo}
-                  />
+                  <StudioSlotVideo slotIndex={i} stream={stream} registerProgramVideo={registerProgramVideo} />
                   {readOnlyStage ? null : (
                     <button
                       type="button"
                       className="studio-layer__resize"
-                      aria-label="Размер (пропорции источника)"
+                      aria-label="Размер"
                       onPointerDown={(e) => {
                         e.stopPropagation()
                         const stage = stageRef.current

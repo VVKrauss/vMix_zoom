@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+﻿import { useEffect, useRef } from 'react'
 import { PillToggle } from './PillToggle'
 import { shouldClosePopoverOnOutsidePointer } from '../utils/popoverOutsideClick'
 import type { SimpleVideoQualityTier } from '../utils/simpleVideoQuality'
@@ -13,13 +13,10 @@ interface Props {
   selectedId: string
   onSelect: (deviceId: string) => void
   onClose: () => void
-  /** Локальное превью как в зеркале (только для камеры). */
   mirrorLocalPreview?: boolean
   onToggleMirrorLocalPreview?: () => void
-  /** Простое качество исходящего видео (меню камеры). */
   videoQualityTier?: SimpleVideoQualityTier
   onVideoQualityTierChange?: (tier: SimpleVideoQualityTier) => void
-  /** Аудиометр на плитках (меню микрофона). */
   audioMeter?: boolean
   onToggleAudioMeter?: () => void
 }
@@ -39,26 +36,43 @@ export function DevicePopover({
 }: Props) {
   const ref = useRef<HTMLDivElement>(null)
 
-  // Close on outside click
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
+    const handler = (e: MouseEvent | PointerEvent) => {
       if (shouldClosePopoverOnOutsidePointer(ref.current, e.target)) onClose()
     }
-    document.addEventListener('click', handler)
-    return () => document.removeEventListener('click', handler)
+    document.addEventListener('pointerup', handler)
+    return () => document.removeEventListener('pointerup', handler)
   }, [onClose])
 
+  const selectDevice = (deviceId: string) => {
+    onSelect(deviceId)
+    onClose()
+  }
+
   return (
-    <div className="device-popover" ref={ref}>
+    <div
+      className="device-popover"
+      ref={ref}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
       <div className="device-popover__title">{label}</div>
-      {devices.length === 0 && (
-        <div className="device-popover__empty">Нет доступных устройств</div>
-      )}
-      {devices.map(d => (
+      {devices.length === 0 && <div className="device-popover__empty">Нет доступных устройств</div>}
+      {devices.map((d) => (
         <button
           key={d.deviceId}
+          type="button"
           className={`device-popover__item ${d.deviceId === selectedId ? 'device-popover__item--active' : ''}`}
-          onClick={() => { onSelect(d.deviceId); onClose() }}
+          onPointerUp={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            selectDevice(d.deviceId)
+          }}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+          }}
         >
           {d.deviceId === selectedId && <CheckIcon />}
           <span>{d.label || `Устройство ${d.deviceId.slice(0, 8)}`}</span>
@@ -73,7 +87,15 @@ export function DevicePopover({
                 key={tier}
                 type="button"
                 className={`device-popover__quality-tier${videoQualityTier === tier ? ' device-popover__quality-tier--active' : ''}`}
-                onClick={() => onVideoQualityTierChange(tier)}
+                onPointerUp={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  onVideoQualityTierChange(tier)
+                }}
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                }}
               >
                 {SIMPLE_VIDEO_QUALITY_LABELS[tier]}
               </button>

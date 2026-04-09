@@ -6,10 +6,10 @@ export function useOnOutsideClick(
   onClose: () => void,
 ) {
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
+    const handler = (e: MouseEvent | PointerEvent) => {
       if (shouldClosePopoverOnOutsidePointer(ref.current, e.target)) onClose()
     }
-    document.addEventListener('click', handler)
-    return () => document.removeEventListener('click', handler)
+    document.addEventListener('pointerup', handler)
+    return () => document.removeEventListener('pointerup', handler)
   }, [ref, onClose])
 }
