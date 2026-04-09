@@ -8,6 +8,21 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return
+            if (id.includes('mediasoup-client') || id.includes('socket.io-client')) {
+              return 'webrtc'
+            }
+            if (id.includes('@supabase/supabase-js')) {
+              return 'supabase'
+            }
+          },
+        },
+      },
+    },
     server: {
       port: 5173,
       proxy: {

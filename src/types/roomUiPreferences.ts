@@ -42,9 +42,11 @@ export function mergeRoomUiPrefs(raw: unknown): {
   const o = raw as Record<string, unknown>
   const layoutRaw = o.layout_mode
   const layout_mode =
-    layoutRaw === 'grid' || layoutRaw === 'pip' || layoutRaw === 'speaker' || layoutRaw === 'meet'
-      ? layoutRaw
-      : base.layout_mode
+    layoutRaw === 'meet'
+      ? 'speaker'
+      : layoutRaw === 'grid' || layoutRaw === 'pip' || layoutRaw === 'speaker'
+        ? layoutRaw
+        : base.layout_mode
   const show_layout_toggle =
     typeof o.show_layout_toggle === 'boolean' ? o.show_layout_toggle : base.show_layout_toggle
   const hide_video_letterboxing =

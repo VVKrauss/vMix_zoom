@@ -56,13 +56,19 @@ export function isSessionHostFor(slug: string): boolean {
 export async function isSpaceRoomJoinable(slug: string): Promise<boolean> {
   const trimmed = slug.trim()
   if (!trimmed) return false
+  if (matchesPendingHostClaim(trimmed) || isSessionHostFor(trimmed)) {
+    return true
+  }
   const { data, error } = await supabase
     .from('space_rooms')
     .select('status')
     .eq('slug', trimmed)
     .maybeSingle()
-  if (error) return true
-  if (!data) return true
+  if (error) {
+    console.warn('isSpaceRoomJoinable:', error.message)
+    return false
+  }
+  if (!data) return false
   return data.status === 'open'
 }
 

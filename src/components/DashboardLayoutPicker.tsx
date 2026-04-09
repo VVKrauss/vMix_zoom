@@ -5,7 +5,6 @@ import type { StoredLayoutMode } from '../config/roomUiStorage'
 const OPTIONS: { value: StoredLayoutMode; label: string }[] = [
   { value: 'pip', label: 'Картинка в картинке' },
   { value: 'grid', label: 'Плитки' },
-  { value: 'meet', label: 'Лента (Meet)' },
   { value: 'speaker', label: 'Спикер' },
 ]
 

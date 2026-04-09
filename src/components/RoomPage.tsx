@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import React from 'react'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import { GridTilePlaceholder } from './GridTilePlaceholder'
@@ -60,7 +60,6 @@ import { ParticipantTileIdle } from './ParticipantTileIdle'
 import { RoomChatPanel } from './RoomChatPanel'
 import { ReactionBurstOverlay } from './ReactionBurstOverlay'
 import { VmixIngressModal } from './VmixIngressModal'
-import { StudioModeWorkspace } from './studio/StudioModeWorkspace'
 import { PillToggle } from './PillToggle'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useActiveSpeaker } from '../hooks/useActiveSpeaker'
@@ -73,6 +72,11 @@ import { useProfile } from '../hooks/useProfile'
 import { useIsDbSpaceRoomHost } from '../hooks/useSpaceRoomHost'
 import { isSessionHostFor } from '../lib/spaceRoom'
 import type { StudioOutputPreset } from '../types/studio'
+
+const StudioModeWorkspace = lazy(async () => {
+  const mod = await import('./studio/StudioModeWorkspace')
+  return { default: mod.StudioModeWorkspace }
+})
 
 function LayoutCycleFabButton({
   className = '',
@@ -127,6 +131,7 @@ function guestMuteTargetPeerId(tileId: string, localPeerId: string): string | nu
 
 type DocumentWithFs = Document & {
   webkitFullscreenElement?: Element | null
+  webkitFullscreenEnabled?: boolean
   webkitExitFullscreen?: () => Promise<void>
 }
 
@@ -139,11 +144,112 @@ function getBrowserFullscreenElement(): Element | null {
   return document.fullscreenElement ?? d.webkitFullscreenElement ?? null
 }
 
+function canToggleBrowserFullscreen(): boolean {
+  if (typeof document === 'undefined') return false
+  const d = document as DocumentWithFs
+  const root = document.documentElement as ElementWithFs
+  return Boolean(
+    document.fullscreenEnabled ||
+    d.webkitFullscreenEnabled ||
+    document.exitFullscreen ||
+    d.webkitExitFullscreen ||
+    root.requestFullscreen ||
+    root.webkitRequestFullscreen,
+  )
+}
+
 export type LayoutMode = StoredLayoutMode
 
 /** vMix: ingress запущен, но видео ещё нет — оранжевая кнопка; есть видео — красная. */
 export type VmixIngressPhase = 'idle' | 'waiting' | 'live'
 
+const SPEAKER_PIN_LONG_PRESS_MS = 550
+
+function SpeakerStripTile({
+  tileId,
+  active,
+  pinned,
+  onTogglePin,
+  children,
+}: {
+  tileId: string
+  active: boolean
+  pinned: boolean
+  onTogglePin: (tileId: string) => void
+  children: React.ReactNode
+}) {
+  const timerRef = useRef<number | null>(null)
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
+
+  const clearPressTimer = useCallback(() => {
+    if (timerRef.current != null) {
+      window.clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+  }, [])
+
+  const togglePinned = useCallback(() => {
+    clearPressTimer()
+    onTogglePin(tileId)
+  }, [clearPressTimer, onTogglePin, tileId])
+
+  const startLongPress = useCallback(() => {
+    clearPressTimer()
+    timerRef.current = window.setTimeout(togglePinned, SPEAKER_PIN_LONG_PRESS_MS)
+  }, [clearPressTimer, togglePinned])
+
+  const handleTouchStart = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0]
+    touchStartRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null
+    startLongPress()
+  }, [startLongPress])
+
+  const handleTouchMove = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
+    const start = touchStartRef.current
+    const touch = event.touches[0]
+    if (!start || !touch) return
+    const dx = Math.abs(touch.clientX - start.x)
+    const dy = Math.abs(touch.clientY - start.y)
+    if (dx > 10 || dy > 10) {
+      clearPressTimer()
+    }
+  }, [clearPressTimer])
+
+  const handleContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    togglePinned()
+  }, [togglePinned])
+
+  const handleMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    startLongPress()
+  }, [startLongPress])
+
+  const handlePressEnd = useCallback(() => {
+    touchStartRef.current = null
+    clearPressTimer()
+  }, [clearPressTimer])
+
+  useEffect(() => clearPressTimer, [clearPressTimer])
+
+  return (
+    <div
+      className={`room-speaker-strip-tile${active ? ' room-speaker-strip-tile--on-stage' : ''}${pinned ? ' room-speaker-strip-tile--pinned' : ''}`}
+      onContextMenu={handleContextMenu}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handlePressEnd}
+      onTouchCancel={handlePressEnd}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handlePressEnd}
+      onMouseLeave={handlePressEnd}
+      title={pinned ? 'Закреплено. Долгое нажатие или правая кнопка мыши — снять закреп.' : 'Долгое нажатие или правая кнопка мыши — закрепить на сцене.'}
+      aria-label={pinned ? 'Снять закреп со сцены' : 'Закрепить на сцене'}
+    >
+      {children}
+    </div>
+  )
+}
 /** Раскладки с «плитками» (мобильное заполнение сетки). */
 export function layoutUsesTiledView(mode: LayoutMode): boolean {
   return mode === 'grid'
@@ -317,6 +423,7 @@ export function RoomPage({
   const [inviteOpen, setInviteOpen] = useState(false)
   const inviteRef = useRef<HTMLDivElement>(null)
   const [fullscreenActive, setFullscreenActive] = useState(false)
+  const fullscreenSupported = canToggleBrowserFullscreen()
 
   useEffect(() => {
     if (!inviteOpen) return
@@ -395,6 +502,25 @@ export function RoomPage({
       /* нет API, отклонено пользователем или iOS */
     }
   }, [])
+
+  const mobilePresentationActive = fullscreenSupported
+    ? fullscreenActive
+    : immersiveAutoHide && chromeHidden
+
+  const toggleMobilePresentationMode = useCallback(async () => {
+    if (fullscreenSupported) {
+      await toggleBrowserFullscreen()
+      return
+    }
+    if (mobilePresentationActive) {
+      setChromeHidden(false)
+      return
+    }
+    if (!immersiveAutoHideRef.current) {
+      setImmersiveAutoHide(true)
+    }
+    setChromeHidden(true)
+  }, [fullscreenSupported, mobilePresentationActive, setImmersiveAutoHide, toggleBrowserFullscreen])
 
   const { audioOutputs, refreshAudioOutputs } = useAudioOutputs()
   const [playoutVolume, setPlayoutVolume] = useLocalStorageNumber('vmix_playout_volume', 1, 0, 1)
@@ -579,7 +705,7 @@ export function RoomPage({
   const hadScreenShareRef = useRef(false)
   useEffect(() => {
     if (hasAnyScreenShare && !hadScreenShareRef.current) {
-      setLayout('meet')
+      setLayout('speaker')
     }
     hadScreenShareRef.current = hasAnyScreenShare
   }, [hasAnyScreenShare])
@@ -667,44 +793,33 @@ export function RoomPage({
 
   const allTileIdsSet = useMemo(() => new Set(orderedTileIds), [orderedTileIds])
 
-  const stageLayout = layout === 'speaker' || layout === 'meet'
+  const stageLayout = layout === 'speaker'
+  const [pinnedSpeakerTileId, setPinnedSpeakerTileId] = useState<string | null>(null)
 
-  const meetPickDefault = useCallback(
-    (ids: string[]) => {
-      if (ids.length === 0) return localPeerId
-      for (const id of ids) {
-        if (isScreenTileId(id)) return id
-      }
-      if (ids.includes(localPeerId)) return localPeerId
-      return ids[0]!
-    },
-    [localPeerId],
-  )
+  useEffect(() => {
+    setPinnedSpeakerTileId((prev) => (prev && allTileIdsSet.has(prev) ? prev : null))
+  }, [allTileIdsSet])
 
-  const [meetStageTileId, setMeetStageTileId] = useState<string | null>(null)
+  const togglePinnedSpeakerTile = useCallback((tileId: string) => {
+    setPinnedSpeakerTileId((prev) => (prev === tileId ? null : tileId))
+  }, [])
 
-  useLayoutEffect(() => {
-    if (layout !== 'meet') return
-    setMeetStageTileId((prev) => {
-      if (prev && orderedTileIds.includes(prev)) return prev
-      return meetPickDefault(orderedTileIds)
-    })
-  }, [layout, orderedTileIds, meetPickDefault])
+  const speakerFallbackTileId = useMemo(() => {
+    if (orderedTileIds.length === 0) return localPeerId
+    const presentationTileId = orderedTileIds.find((id) => isScreenTileId(id) || isStudioProgramTileId(id))
+    if (presentationTileId) return presentationTileId
+    if (allTileIdsSet.has(activeSpeakerPeerId) && !isScreenTileId(activeSpeakerPeerId)) {
+      return activeSpeakerPeerId
+    }
+    return remoteList[0]?.peerId ?? localPeerId
+  }, [orderedTileIds, localPeerId, allTileIdsSet, activeSpeakerPeerId, remoteList])
 
-  const meetFeaturedId = useMemo(() => {
-    if (layout !== 'meet') return null
-    if (meetStageTileId && orderedTileIds.includes(meetStageTileId)) return meetStageTileId
-    return meetPickDefault(orderedTileIds)
-  }, [layout, meetStageTileId, orderedTileIds, meetPickDefault])
+  const speakerFeaturedPeerId =
+    pinnedSpeakerTileId && allTileIdsSet.has(pinnedSpeakerTileId)
+      ? pinnedSpeakerTileId
+      : speakerFallbackTileId
 
-  const speakerFeaturedPeerId = useMemo(() => {
-    const fallbackSpeaker = remoteList[0]?.peerId ?? localPeerId
-    return allTileIdsSet.has(activeSpeakerPeerId) && !isScreenTileId(activeSpeakerPeerId)
-      ? activeSpeakerPeerId
-      : fallbackSpeaker
-  }, [remoteList, localPeerId, allTileIdsSet, activeSpeakerPeerId])
-
-  const featuredPeerId = layout === 'meet' ? meetFeaturedId : layout === 'speaker' ? speakerFeaturedPeerId : null
+  const featuredPeerId = layout === 'speaker' ? speakerFeaturedPeerId : null
 
   useEffect(() => {
     if (!isScreenSharing) setScreenStopDialogOpen(false)
@@ -1359,11 +1474,19 @@ export function RoomPage({
         <button
           type="button"
           className="room-mobile-fullscreen-btn"
-          onClick={() => { void toggleBrowserFullscreen() }}
-          title={fullscreenActive ? 'Выйти из полноэкранного режима' : 'Во весь экран'}
-          aria-label={fullscreenActive ? 'Выйти из полноэкранного режима' : 'Во весь экран (как F11)'}
+          onClick={() => { void toggleMobilePresentationMode() }}
+          title={
+            fullscreenSupported
+              ? (fullscreenActive ? 'Выйти из полноэкранного режима' : 'Во весь экран')
+              : (mobilePresentationActive ? 'Показать панели' : 'Скрыть панели')
+          }
+          aria-label={
+            fullscreenSupported
+              ? (fullscreenActive ? 'Выйти из полноэкранного режима' : 'Во весь экран (как F11)')
+              : (mobilePresentationActive ? 'Показать панели управления' : 'Скрыть панели управления')
+          }
         >
-          {fullscreenActive ? <FullscreenExitIcon /> : <FullscreenEnterIcon />}
+          {mobilePresentationActive ? <FullscreenExitIcon /> : <FullscreenEnterIcon />}
         </button>
       ) : null}
 
@@ -1430,37 +1553,25 @@ export function RoomPage({
             showChromeAndArmImmersiveTimer()
           }}
         >
-      {/* ── Speaker / Meet (сцена + полоса превью) ─────────────────────── */}
+      {/* ── Speaker (сцена + полоса превью) ────────────────────────────── */}
       {stageLayout && featuredPeerId && (
         <>
-          <div className={layout === 'meet' ? 'room-meet-main' : 'room-speaker-main'}>
+          <div className="room-speaker-main">
             {renderConferenceTile(featuredPeerId)}
           </div>
-          {layout === 'meet' ? (
-            <div className="room-meet-strip">
-              {orderedTileIds.map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  className={`room-meet-strip-tile${id === meetFeaturedId ? ' room-meet-strip-tile--active' : ''}`}
-                  onClick={() => setMeetStageTileId(id)}
-                >
-                  {renderConferenceTile(id)}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="room-speaker-strip">
-              {orderedTileIds.map((id) => (
-                <div
-                  key={id}
-                  className={`room-speaker-strip-tile${id === speakerFeaturedPeerId ? ' room-speaker-strip-tile--on-stage' : ''}`}
-                >
-                  {renderConferenceTile(id)}
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="room-speaker-strip">
+            {orderedTileIds.map((id) => (
+              <SpeakerStripTile
+                key={id}
+                tileId={id}
+                active={id === speakerFeaturedPeerId}
+                pinned={id === pinnedSpeakerTileId}
+                onTogglePin={togglePinnedSpeakerTile}
+              >
+                {renderConferenceTile(id)}
+              </SpeakerStripTile>
+            ))}
+          </div>
         </>
       )}
 
@@ -1605,7 +1716,7 @@ export function RoomPage({
         hideVideoLetterboxing={hideVideoLetterboxing}
         onHideVideoLetterboxingChange={setHideVideoLetterboxing}
         canManageVmixProgramIngress={canUseElevatedRoomTools}
-        showMobileLayoutCycle={showLayoutToggle && canUseElevatedRoomTools}
+        showMobileLayoutCycle={showLayoutToggle}
         showStudioEntry={streamerMode && canUseElevatedRoomTools && !isViewportMobile}
         studioOpen={studioOpen}
         onStudioToggle={() => setStudioOpen((v) => !v)}
@@ -1623,21 +1734,25 @@ export function RoomPage({
         />
       )}
 
-      <StudioModeWorkspace
-        open={studioOpen}
-        onClose={() => setStudioOpen(false)}
-        participants={participants}
-        localPeerId={localPeerId || null}
-        localStream={localStream}
-        localScreenStream={localScreenStream}
-        localDisplayName={name}
-        startStudioProgram={startStudioProgram}
-        stopStudioProgram={stopStudioProgram}
-        replaceStudioProgramAudioTrack={replaceStudioProgramAudioTrack}
-        studioBroadcastHealth={studioBroadcastHealth}
-        studioBroadcastHealthDetail={studioBroadcastHealthDetail}
-        studioServerLogLines={studioServerLogLines}
-      />
+      {studioOpen ? (
+        <Suspense fallback={<div className="join-screen"><div className="auth-loading" aria-label="Загрузка…" /></div>}>
+          <StudioModeWorkspace
+            open={studioOpen}
+            onClose={() => setStudioOpen(false)}
+            participants={participants}
+            localPeerId={localPeerId || null}
+            localStream={localStream}
+            localScreenStream={localScreenStream}
+            localDisplayName={name}
+            startStudioProgram={startStudioProgram}
+            stopStudioProgram={stopStudioProgram}
+            replaceStudioProgramAudioTrack={replaceStudioProgramAudioTrack}
+            studioBroadcastHealth={studioBroadcastHealth}
+            studioBroadcastHealthDetail={studioBroadcastHealthDetail}
+            studioServerLogLines={studioServerLogLines}
+          />
+        </Suspense>
+      ) : null}
     </div>
   )
 }
@@ -1805,4 +1920,3 @@ function gridTrailingPlaceholders(itemCount: number, cols: number): number {
   const r = itemCount % cols
   return r === 0 ? 0 : cols - r
 }
-

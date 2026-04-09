@@ -2525,6 +2525,15 @@ button.admin-stat-card--interactive:disabled {
   overflow: hidden;
 }
 
+.room-page--viewport-mobile {
+  --room-mobile-bottom-bar-space: max(104px, calc(env(safe-area-inset-bottom, 0px) + 84px));
+}
+
+.room-page--viewport-mobile .room-body {
+  padding-bottom: var(--room-mobile-bottom-bar-space);
+  box-sizing: border-box;
+}
+
 .room-body--with-embed-chat .room-main {
   min-width: 0;
 }
@@ -2583,6 +2592,8 @@ button.admin-stat-card--interactive:disabled {
   background: #202124;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
 }
 
 .room-speaker-strip-tile {
@@ -2591,15 +2602,38 @@ button.admin-stat-card--interactive:disabled {
   height: 99px;
   min-width: 152px;
   max-width: 220px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
   box-sizing: border-box;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .room-speaker-strip-tile--on-stage {
   box-shadow:
     0 0 0 2px var(--red),
+    0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.room-speaker-strip-tile--pinned {
+  box-shadow:
+    0 0 0 2px rgba(255, 193, 7, 0.9),
+    0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.room-speaker-strip-tile--on-stage.room-speaker-strip-tile--pinned {
+  box-shadow:
+    0 0 0 2px var(--red),
+    0 0 0 4px rgba(255, 193, 7, 0.78),
     0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
@@ -2611,86 +2645,6 @@ button.admin-stat-card--interactive:disabled {
 }
 
 .room-speaker-strip-tile .participant-card--local::after {
-  border-radius: 7px;
-}
-
-/* ─── Meet (Google Meet): крупная сцена + нижняя полоса превью ─────────── */
-.room-main .room-meet-main {
-  flex: 1;
-  min-height: 0;
-}
-
-.room-meet-main {
-  position: relative;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #000;
-}
-
-.room-meet-main > .participant-card {
-  width: 100%;
-  height: 100%;
-  max-height: 100%;
-}
-
-.room-meet-strip {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  gap: 10px;
-  padding: 10px 14px 12px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: flex-start;
-  background: #202124;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  -webkit-overflow-scrolling: touch;
-}
-
-.room-meet-strip-tile {
-  flex: 0 0 auto;
-  width: 176px;
-  height: 99px;
-  min-width: 152px;
-  max-width: 220px;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-  margin: 0;
-  padding: 0;
-  border: none;
-  background: transparent;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
-  box-sizing: border-box;
-}
-
-.room-meet-strip-tile:focus-visible {
-  outline: 2px solid rgba(255, 255, 255, 0.45);
-  outline-offset: 2px;
-}
-
-.room-meet-strip-tile--active {
-  box-shadow:
-    0 0 0 2px var(--red),
-    0 1px 3px rgba(0, 0, 0, 0.5);
-}
-
-.room-meet-strip-tile .participant-card {
-  height: 100%;
-  max-height: none;
-  border-radius: 8px;
-  border-color: rgba(255, 255, 255, 0.14);
-}
-
-.room-meet-strip-tile .participant-card--local::after {
   border-radius: 7px;
 }
 
@@ -4729,30 +4683,8 @@ button.vio-row--peer:focus-visible {
     object-fit: contain !important;
     object-position: center !important;
   }
-
-  .room-meet-strip {
-    padding: 8px 10px 10px;
-    gap: 8px;
-  }
-
-  .room-meet-strip-tile {
-    width: 132px;
-    height: 74px;
-    min-width: 118px;
-    max-width: 200px;
-    border-radius: 6px;
-  }
-
-  .room-meet-strip-tile .participant-card {
-    border-radius: 6px;
-  }
-
-  .room-meet-strip-tile .participant-card--local::after {
-    border-radius: 5px;
-  }
-
   .room-speaker-strip {
-    padding: 8px 10px 10px;
+    padding: 8px 10px 12px;
     gap: 8px;
   }
 

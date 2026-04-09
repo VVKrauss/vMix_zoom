@@ -1,6 +1,6 @@
 import type { StoredLayoutMode } from './roomUiStorage'
 
-export const LAYOUT_CYCLE: StoredLayoutMode[] = ['grid', 'meet', 'speaker', 'pip']
+export const LAYOUT_CYCLE: StoredLayoutMode[] = ['grid', 'speaker', 'pip']
 
 export function nextLayoutMode(current: StoredLayoutMode): StoredLayoutMode {
   const i = LAYOUT_CYCLE.indexOf(current)
@@ -11,8 +11,6 @@ export function layoutModeShortLabel(mode: StoredLayoutMode): string {
   switch (mode) {
     case 'grid':
       return 'Сетка'
-    case 'meet':
-      return 'Meet'
     case 'speaker':
       return 'Спикер'
     case 'pip':

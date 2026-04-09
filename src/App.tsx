@@ -1,15 +1,55 @@
-import { useMemo } from 'react'
+import { Suspense, lazy, useMemo } from 'react'
 import { Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { HomePage } from './components/HomePage'
-import { RoomSession } from './components/RoomSession'
-import { SoloViewerPage } from './components/SoloViewerPage'
-import { LoginPage } from './components/LoginPage'
-import { DashboardPage } from './components/DashboardPage'
-import { AdminPage } from './components/AdminPage'
 import { AdminProtectedRoute } from './components/AdminProtectedRoute'
 import { ProtectedRoute } from './components/ProtectedRoute'
-import { RoomClosedPage } from './components/RoomClosedPage'
-import { EmailConfirmedPage } from './components/EmailConfirmedPage'
+
+const HomePage = lazy(async () => {
+  const mod = await import('./components/HomePage')
+  return { default: mod.HomePage }
+})
+
+const RoomSession = lazy(async () => {
+  const mod = await import('./components/RoomSession')
+  return { default: mod.RoomSession }
+})
+
+const SoloViewerPage = lazy(async () => {
+  const mod = await import('./components/SoloViewerPage')
+  return { default: mod.SoloViewerPage }
+})
+
+const LoginPage = lazy(async () => {
+  const mod = await import('./components/LoginPage')
+  return { default: mod.LoginPage }
+})
+
+const DashboardPage = lazy(async () => {
+  const mod = await import('./components/DashboardPage')
+  return { default: mod.DashboardPage }
+})
+
+const AdminPage = lazy(async () => {
+  const mod = await import('./components/AdminPage')
+  return { default: mod.AdminPage }
+})
+
+const RoomClosedPage = lazy(async () => {
+  const mod = await import('./components/RoomClosedPage')
+  return { default: mod.RoomClosedPage }
+})
+
+const EmailConfirmedPage = lazy(async () => {
+  const mod = await import('./components/EmailConfirmedPage')
+  return { default: mod.EmailConfirmedPage }
+})
+
+function RouteLoadingFallback() {
+  return (
+    <div className="join-screen">
+      <div className="auth-loading" aria-label="Загрузка…" />
+    </div>
+  )
+}
 
 function HomeRoute() {
   const [sp] = useSearchParams()
@@ -55,15 +95,17 @@ function RoomRoute() {
 
 export function App() {
   return (
-    <Routes>
-      <Route path="/" element={<HomeRoute />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/auth/email-confirmed" element={<EmailConfirmedPage />} />
-      <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-      <Route path="/admin" element={<AdminProtectedRoute><AdminPage /></AdminProtectedRoute>} />
-      <Route path="/room-closed" element={<RoomClosedPage />} />
-      <Route path="/r/:roomId" element={<RoomRoute />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <Suspense fallback={<RouteLoadingFallback />}>
+      <Routes>
+        <Route path="/" element={<HomeRoute />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/auth/email-confirmed" element={<EmailConfirmedPage />} />
+        <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+        <Route path="/admin" element={<AdminProtectedRoute><AdminPage /></AdminProtectedRoute>} />
+        <Route path="/room-closed" element={<RoomClosedPage />} />
+        <Route path="/r/:roomId" element={<RoomRoute />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   )
 }

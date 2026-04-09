@@ -41,11 +41,11 @@ export function DevicePopover({
 
   // Close on outside click
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
+    const handler = (e: PointerEvent) => {
       if (shouldClosePopoverOnOutsidePointer(ref.current, e.target)) onClose()
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('pointerdown', handler)
+    return () => document.removeEventListener('pointerdown', handler)
   }, [onClose])
 
   return (

@@ -13,9 +13,9 @@ const LS_VIDEO_PRESET_INDEX = 'vmix_video_preset_index'
 const LS_PREFERRED_CAMERA = 'vmix_preferred_camera_id'
 const LS_PREFERRED_MIC = 'vmix_preferred_mic_id'
 
-const LAYOUT_MODES = new Set<string>(['grid', 'pip', 'speaker', 'meet'])
+const LAYOUT_MODES = new Set<string>(['grid', 'pip', 'speaker'])
 
-export type StoredLayoutMode = 'grid' | 'pip' | 'speaker' | 'meet'
+export type StoredLayoutMode = 'grid' | 'pip' | 'speaker'
 
 export function getDefaultLayoutMode(): StoredLayoutMode {
   if (typeof window === 'undefined') return 'pip'
@@ -27,6 +27,7 @@ export function readStoredLayoutMode(isMobileViewport: boolean): StoredLayoutMod
   try {
     const raw = localStorage.getItem(key)
     if (raw === 'facetile') return 'pip'
+    if (raw === 'meet') return 'speaker'
     if (raw != null && LAYOUT_MODES.has(raw)) return raw as StoredLayoutMode
   } catch {
     /* noop */
@@ -181,3 +182,5 @@ export function writePreferredMicId(deviceId: string): void {
     /* noop */
   }
 }
+
+

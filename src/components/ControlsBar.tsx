@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, useCallback, useMemo, type PointerEvent as ReactPointerEvent } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+  type MouseEvent as ReactMouseEvent,
+  type TouchEvent as ReactTouchEvent,
+} from 'react'
 import { DevicePopover } from './DevicePopover'
 import { PillToggle } from './PillToggle'
 import { ScreenSharePickerModal } from './ScreenSharePickerModal'
@@ -14,8 +22,6 @@ function layoutModeLabel(mode: LayoutMode): string {
   switch (mode) {
     case 'grid':
       return 'Плитки'
-    case 'meet':
-      return 'Лента'
     case 'speaker':
       return 'Спикер'
     case 'pip':
@@ -131,36 +137,49 @@ function useMobileDualAction(onShort: () => void, onLong: () => void) {
   const longRef = useRef(onLong)
   shortRef.current = onShort
   longRef.current = onLong
+  const startPress = useCallback(() => {
+    longFired.current = false
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => {
+      longFired.current = true
+      timer.current = 0
+      longRef.current()
+    }, LONG_PRESS_MS)
+  }, [])
+  const finishPress = useCallback((triggerShort: boolean) => {
+    window.clearTimeout(timer.current)
+    timer.current = 0
+    if (triggerShort && !longFired.current) shortRef.current()
+    longFired.current = false
+  }, [])
   return useMemo(
     () => ({
-      onPointerDown(e: ReactPointerEvent<HTMLButtonElement>) {
+      onTouchStart(e: ReactTouchEvent<HTMLButtonElement>) {
+        e.stopPropagation()
+        startPress()
+      },
+      onTouchEnd(e: ReactTouchEvent<HTMLButtonElement>) {
+        e.stopPropagation()
+        finishPress(true)
+      },
+      onTouchCancel() {
+        finishPress(false)
+      },
+      onMouseDown(e: ReactMouseEvent<HTMLButtonElement>) {
         if (e.button !== 0) return
-        try {
-          e.currentTarget.setPointerCapture(e.pointerId)
-        } catch {
-          /* Safari / старые движки */
-        }
-        longFired.current = false
-        window.clearTimeout(timer.current)
-        timer.current = window.setTimeout(() => {
-          longFired.current = true
-          timer.current = 0
-          longRef.current()
-        }, LONG_PRESS_MS)
+        startPress()
       },
-      onPointerUp() {
-        window.clearTimeout(timer.current)
-        timer.current = 0
-        if (!longFired.current) shortRef.current()
-        longFired.current = false
+      onMouseUp() {
+        finishPress(true)
       },
-      onPointerCancel() {
-        window.clearTimeout(timer.current)
-        timer.current = 0
-        longFired.current = false
+      onMouseLeave() {
+        finishPress(false)
+      },
+      onContextMenu(e: ReactMouseEvent<HTMLButtonElement>) {
+        e.preventDefault()
       },
     }),
-    [],
+    [finishPress, startPress],
   )
 }
 
@@ -861,7 +880,6 @@ function LayoutPopover({
 
   const rows: { mode: LayoutMode; label: string }[] = [
     { mode: 'grid', label: 'Плитки' },
-    { mode: 'meet', label: 'Лента' },
     { mode: 'speaker', label: 'Спикер' },
     { mode: 'pip', label: 'Картинка в картинке' },
   ]
