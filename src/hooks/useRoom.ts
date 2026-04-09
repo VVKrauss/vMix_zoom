@@ -37,7 +37,7 @@ import {
   readPreferredCameraId,
   readPreferredMicId,
 } from '../config/roomUiStorage'
-import { formatMediaJoinError } from '../utils/formatMediaJoinError'
+import { formatMediaJoinError, formatStudioProgramError } from '../utils/formatMediaJoinError'
 import type { StudioOutputPreset } from '../types/studio'
 
 const SIGNALING_HTTP = signalingHttpBase()
@@ -129,7 +129,7 @@ type ProducerMeta = {
   anchorPeerId: string
   producerPeerId: string
   kind: 'audio' | 'video'
-  videoSource?: 'camera' | 'screen' | 'vmix'
+  videoSource?: 'camera' | 'screen' | 'vmix' | 'studio_program'
 }
 
 function registerProducerMeta(
@@ -323,6 +323,12 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const [reactionBursts, setReactionBursts] = useState<RoomReactionBurst[]>([])
   /** Пока consume удалённого экрана не завершился — раскладка meet у гостей */
   const [remoteScreenConsumePending, setRemoteScreenConsumePending] = useState(false)
+  /** Аналогично для видео эфира студии (отдельный producer). */
+  const [remoteStudioProgramConsumePending, setRemoteStudioProgramConsumePending] = useState(false)
+  /** У гостей: фаза RTMP эфира по peerId ведущего (событие studioBroadcastHealth + опционально broadcasterPeerId). */
+  const [remoteStudioRtmpByPeer, setRemoteStudioRtmpByPeer] = useState<
+    Record<string, 'idle' | 'connecting' | 'live' | 'warning'>
+  >({})
   const [vmixIngressInfo, setVmixIngressInfo] = useState<VmixIngressInfo | null>(null)
   /** Эфир «Студии» на RTMP (состояние UI + опционально `studioBroadcastHealth` с signaling). */
   const [studioBroadcastHealth, setStudioBroadcastHealth] = useState<
@@ -412,9 +418,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         const p = next.get(meta.anchorPeerId)
         if (!p) return next
         const cleared: Partial<RemoteParticipant> =
-          meta.kind === 'audio' ? { audioStream: undefined }
-          : meta.videoSource === 'screen' ? { screenStream: undefined, screenPeerId: undefined }
-          : { videoStream: undefined }
+          meta.kind === 'audio'
+            ? { audioStream: undefined }
+            : meta.videoSource === 'screen'
+              ? { screenStream: undefined, screenPeerId: undefined }
+              : meta.videoSource === 'studio_program'
+                ? { studioProgramStream: undefined, studioProgramPeerId: undefined }
+                : { videoStream: undefined }
         const updated = { ...p, ...cleared }
         next.set(meta.anchorPeerId, updated)
         return next
@@ -422,6 +432,14 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
       if (meta.kind === 'video' && meta.videoSource === 'screen') {
         stripScreenChatForPeer(meta.anchorPeerId)
+      }
+      if (meta.kind === 'video' && meta.videoSource === 'studio_program') {
+        setRemoteStudioRtmpByPeer((prev) => {
+          if (!prev[meta.anchorPeerId]) return prev
+          const n = { ...prev }
+          delete n[meta.anchorPeerId]
+          return n
+        })
       }
     },
     [stripScreenChatForPeer],
@@ -440,9 +458,15 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       if (producer.kind === 'video') {
         const aid = videoAnchorPeerId(producer)
         const ex = participantsRef.current.get(aid)
-        if (resolveConsumeVideoRole(producer, !!ex?.videoStream) === 'screen') {
-          setRemoteScreenConsumePending(true)
-          endRemoteScreenPending = () => setRemoteScreenConsumePending(false)
+        const role = resolveConsumeVideoRole(producer, !!ex?.videoStream)
+        if (role === 'screen' || role === 'studio_program') {
+          if (role === 'screen') {
+            setRemoteScreenConsumePending(true)
+            endRemoteScreenPending = () => setRemoteScreenConsumePending(false)
+          } else {
+            setRemoteStudioProgramConsumePending(true)
+            endRemoteScreenPending = () => setRemoteStudioProgramConsumePending(false)
+          }
         }
       }
 
@@ -543,6 +567,15 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
               screenStream: stream,
               ...(distinct ? { screenPeerId: distinct } : { screenPeerId: undefined }),
             })
+          } else if (resolved === 'studio_program') {
+            const distinct = producer.peerId !== anchorId ? producer.peerId : undefined
+            next.set(anchorId, {
+              ...existing,
+              name: producer.name || existing.name,
+              avatarUrl: producer.avatarUrl ?? existing.avatarUrl ?? null,
+              studioProgramStream: stream,
+              ...(distinct ? { studioProgramPeerId: distinct } : { studioProgramPeerId: undefined }),
+            })
           } else {
             next.set(anchorId, {
               ...existing,
@@ -590,6 +623,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     setError(null)
     setLocalScreenPeerId(null)
     setRemoteScreenConsumePending(false)
+    setRemoteStudioProgramConsumePending(false)
     roomIdRef.current = roomId
     displayNameRef.current = name.trim() || 'Гость'
 
@@ -1019,14 +1053,49 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       socket.on('studioBroadcastHealth', (raw: unknown) => {
         const o = raw as Record<string, unknown>
         if (typeof o.roomId === 'string' && o.roomId !== roomIdRef.current) return
-        if (studioProgramVideoProducerRef.current == null) return
         appendStudioServerLogRef.current(stringifyStudioServerSocketPayload('studioBroadcastHealth', raw))
+
         const st = String(o.state ?? o.status ?? '').toLowerCase()
         const detailRaw = o.detail
         const detail =
           typeof detailRaw === 'string' && detailRaw.trim() ? detailRaw.trim() : null
+
+        const anchorRaw =
+          o.broadcasterPeerId ??
+          o.broadcaster_peer_id ??
+          o.anchorPeerId ??
+          o.anchor_peer_id ??
+          o.producerPeerId ??
+          o.producer_peer_id
+        const anchor = typeof anchorRaw === 'string' ? anchorRaw.trim() : ''
+        const sid = socket.id ?? ''
+        if (anchor && anchor !== sid) {
+          setRemoteStudioRtmpByPeer((prev) => {
+            const next = { ...prev }
+            if (o.ok === true || st === 'live') next[anchor] = 'live'
+            else if (st === 'connecting') next[anchor] = 'connecting'
+            else if (
+              o.ok === false ||
+              st === 'warning' ||
+              st === 'error' ||
+              st === 'stalled' ||
+              Boolean(detail)
+            ) {
+              next[anchor] = 'warning'
+            } else if (st === 'idle' || st === 'off') {
+              delete next[anchor]
+            }
+            return next
+          })
+        }
+
+        if (studioProgramVideoProducerRef.current == null) return
+
         if (o.ok === true || st === 'live') {
           setStudioBroadcastHealth('live')
+          setStudioBroadcastHealthDetail(null)
+        } else if (st === 'connecting') {
+          setStudioBroadcastHealth('connecting')
           setStudioBroadcastHealthDetail(null)
         } else if (o.ok === false || st === 'warning' || st === 'error' || st === 'stalled') {
           setStudioBroadcastHealth('warning')
@@ -1067,6 +1136,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       setChatMessages([])
       setReactionBursts([])
       setRemoteScreenConsumePending(false)
+      setRemoteStudioProgramConsumePending(false)
+      setRemoteStudioRtmpByPeer({})
       studioProgramVideoProducerRef.current?.close()
       studioProgramVideoProducerRef.current = null
       studioProgramAudioProducerRef.current?.close()
@@ -1574,7 +1645,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       const producer = videoProducerRef.current
       if (!producer || producer.closed || producer.kind !== 'video') return null
       const src = (producer.appData as { source?: string } | undefined)?.source
-      if (src === 'screen') return null
+      if (src === 'screen' || src === 'studio_program') return null
 
       let report: RTCStatsReport
       try {
@@ -1681,14 +1752,23 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           400_000,
           Math.min(Math.round(output.maxBitrate * 0.28), 3_500_000),
         )
-        /* Предпочитаем H.264 — меньше артефактов при прохождении через FFmpeg на сервере.
-           Если сервер не объявил H.264 в rtpCapabilities, codec === undefined и produce выберет сам. */
-        const h264Codec = deviceRef.current?.rtpCapabilities.codecs?.find(
-          (c) => c.mimeType.toLowerCase() === 'video/h264',
+        const minBr = Math.max(
+          300_000,
+          Math.min(Math.round(output.maxBitrate * 0.12), 1_200_000),
         )
+        /* Canvas → WebRTC → FFmpeg: H.264 из Chrome часто даёт decode errors на сервере;
+           VP8/VP9 обычно стабильнее для декодера перед libx264 в RTMP. */
+        const codecs = deviceRef.current?.rtpCapabilities.codecs ?? []
+        const pickMime = (mime: string) =>
+          codecs.find((c) => c.mimeType.toLowerCase() === mime)
+        const studioVideoCodec =
+          pickMime('video/vp8') ??
+          pickMime('video/vp9') ??
+          pickMime('video/h264') ??
+          undefined
         const videoProducer = await sendTransport.produce({
           track: videoTrack,
-          codec: h264Codec ?? undefined,
+          codec: studioVideoCodec,
           appData: {
             source: 'studio_program',
             rtmpUrl: url,
@@ -1698,7 +1778,11 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
             maxBitrate: output.maxBitrate,
             maxFramerate: fpsCap,
           },
-          codecOptions: { videoGoogleStartBitrate: startBr },
+          codecOptions: {
+            videoGoogleStartBitrate: startBr,
+            videoGoogleMinBitrate: minBr,
+            videoGoogleMaxBitrate: output.maxBitrate,
+          },
           encodings: [{ maxBitrate: output.maxBitrate, maxFramerate: fpsCap }],
         })
         studioProgramVideoProducerRef.current = videoProducer
@@ -1729,7 +1813,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
             studioProgramVideoProducerRef.current = null
             setStudioBroadcastHealth('warning')
             setStudioBroadcastHealthDetail(null)
-            return { ok: false, error: formatMediaJoinError(e) }
+            return { ok: false, error: formatStudioProgramError(e) }
           }
         } else {
           studioProgramAudioProducerRef.current = null
@@ -1741,7 +1825,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       } catch (e) {
         setStudioBroadcastHealth('warning')
         setStudioBroadcastHealthDetail(null)
-        return { ok: false, error: formatMediaJoinError(e) }
+        return { ok: false, error: formatStudioProgramError(e) }
       }
     },
     [stopStudioProgram],
@@ -1778,6 +1862,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     setChatMessages([])
     setReactionBursts([])
     setVmixIngressInfo(null)
+    setRemoteStudioProgramConsumePending(false)
+    setRemoteStudioRtmpByPeer({})
   }, [stopScreenShare, stopStudioProgram])
 
   return {
@@ -1809,6 +1895,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     sendReaction,
     reactionBursts,
     remoteScreenConsumePending,
+    remoteStudioProgramConsumePending,
+    remoteStudioRtmpByPeer,
     startVmixIngress,
     stopVmixIngress,
     vmixIngressInfo,

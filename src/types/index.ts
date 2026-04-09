@@ -27,7 +27,7 @@ export type ProducerDescriptor = {
   /** С сервера / ростера; для плитки без видео */
   avatarUrl?: string | null
   /** Явный источник видео (из producer.appData на бэке). */
-  videoSource?: 'camera' | 'screen' | 'vmix'
+  videoSource?: 'camera' | 'screen' | 'vmix' | 'studio_program'
   /** Если peerId у видео экрана — отдельный, здесь peerId «хозяина» (камера/имя в комнате). */
   ownerPeerId?: string
   /** Сырой appData с бэка; часто `{ source: 'screen', ownerPeerId }`. */
@@ -56,6 +56,9 @@ export type RemoteParticipant = {
   screenStream?: MediaStream
   /** Отдельный peerId продюсера экрана (соло-ссылка и SRT), если отдаёт бэкенд. */
   screenPeerId?: string
+  /** RTMP-выход режима «Студия» (отдельно от демонстрации экрана). */
+  studioProgramStream?: MediaStream
+  studioProgramPeerId?: string
 }
 
 /** Socket.IO `srtStarted` и элементы `srt[]` из GET /api/frontend/rooms/:roomId */

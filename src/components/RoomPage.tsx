@@ -47,7 +47,13 @@ import {
   parseScreenTilePeerId,
   screenTileKey,
 } from '../utils/screenTileKey'
+import {
+  isStudioProgramTileId,
+  parseStudioProgramTilePeerId,
+  studioProgramTileKey,
+} from '../utils/studioProgramTileKey'
 import { LocalScreenShareTile } from './LocalScreenShareTile'
+import { StudioProgramShareTile } from './StudioProgramShareTile'
 import type { RoomChatMessage, RoomReactionBurst } from '../types/roomComms'
 import { pickLatestBurstForPeer } from '../types/roomComms'
 import { ParticipantTileIdle } from './ParticipantTileIdle'
@@ -98,11 +104,21 @@ function remoteScreenTileId(p: RemoteParticipant): string | null {
   return p.screenPeerId ?? screenTileKey(p.peerId)
 }
 
+function remoteStudioProgramTileId(p: RemoteParticipant): string | null {
+  if (!p.studioProgramStream) return null
+  return p.studioProgramPeerId ?? studioProgramTileKey(p.peerId)
+}
+
 /** peerId гостя для пункта «выключить звук гостю» (не локальная плитка). */
 function guestMuteTargetPeerId(tileId: string, localPeerId: string): string | null {
   if (!tileId || tileId === localPeerId) return null
   if (isScreenTileId(tileId)) {
     const owner = parseScreenTilePeerId(tileId)
+    if (!owner || owner === localPeerId) return null
+    return owner
+  }
+  if (isStudioProgramTileId(tileId)) {
+    const owner = parseStudioProgramTilePeerId(tileId)
     if (!owner || owner === localPeerId) return null
     return owner
   }
@@ -168,6 +184,9 @@ interface Props {
   onToggleChatToastNotifications: () => void
   /** У гостей: идёт приём newProducer экрана, ещё нет screenStream в state */
   remoteScreenSharePending?: boolean
+  remoteStudioProgramConsumePending?: boolean
+  /** Фаза RTMP эфира студии по peerId ведущего (для индикатора на плитке «Эфир»). */
+  remoteStudioRtmpByPeer?: Readonly<Record<string, 'idle' | 'connecting' | 'live' | 'warning'>>
   vmixIngressInfo: VmixIngressInfo | null
   vmixIngressLoading: boolean
   onStartVmixIngress: () => Promise<{ ok: true; info: VmixIngressInfo } | { ok: false; error: string }>
@@ -205,6 +224,8 @@ export function RoomPage({
   onDismissChatIncomingPreview,
   chatToastNotifications, onToggleChatToastNotifications,
   remoteScreenSharePending = false,
+  remoteStudioProgramConsumePending = false,
+  remoteStudioRtmpByPeer = {},
   vmixIngressInfo,
   vmixIngressLoading,
   onStartVmixIngress,
@@ -543,10 +564,18 @@ export function RoomPage({
     () => remoteList.some((p) => p.screenStream),
     [remoteList],
   )
+  const remoteStudioProgramActive = useMemo(
+    () => remoteList.some((p) => p.studioProgramStream),
+    [remoteList],
+  )
   const canStartScreenShare = !remoteScreenActive && !remoteScreenSharePending
 
   const hasAnyScreenShare =
-    isScreenSharing || remoteScreenActive || remoteScreenSharePending
+    isScreenSharing ||
+    remoteScreenActive ||
+    remoteScreenSharePending ||
+    remoteStudioProgramActive ||
+    remoteStudioProgramConsumePending
   const hadScreenShareRef = useRef(false)
   useEffect(() => {
     if (hasAnyScreenShare && !hadScreenShareRef.current) {
@@ -580,6 +609,10 @@ export function RoomPage({
     () => remoteList.filter((p) => p.screenStream).length,
     [remoteList],
   )
+  const remoteStudioProgramTileCount = useMemo(
+    () => remoteList.filter((p) => p.studioProgramStream).length,
+    [remoteList],
+  )
   /** Только люди: вы + удалённые гости; без vMix/SRT и без плиток демонстрации экрана. */
   const rosterCount = remoteHumanPeers.length + 1
 
@@ -588,7 +621,8 @@ export function RoomPage({
     layoutUsesTiledView(layout) &&
     remoteHumanPeers.length === 0 &&
     !(isScreenSharing && localScreenStream) &&
-    remoteScreenTileCount === 0
+    remoteScreenTileCount === 0 &&
+    remoteStudioProgramTileCount === 0
 
   const mobileMultiTiles = isViewportMobile && layoutUsesTiledView(layout) && !mobileSoloTiles
 
@@ -622,6 +656,8 @@ export function RoomPage({
       ids.push(p.peerId)
       const sid = remoteScreenTileId(p)
       if (sid) ids.push(sid)
+      const stu = remoteStudioProgramTileId(p)
+      if (stu) ids.push(stu)
     }
     return ids
   }, [localPeerId, localScreenTileId, remoteList])
@@ -969,6 +1005,62 @@ export function RoomPage({
         />
       )
     }
+    const studioPresenter = remoteList.find((p) => remoteStudioProgramTileId(p) === id)
+    if (studioPresenter?.studioProgramStream) {
+      const owner = studioPresenter.peerId
+      const phase =
+        remoteStudioRtmpByPeer[owner] ??
+        (remoteStudioProgramConsumePending ? 'connecting' : 'live')
+      return (
+        <StudioProgramShareTile
+          stream={studioPresenter.studioProgramStream}
+          label={`${studioPresenter.name} — эфир`}
+          roomId={roomId}
+          linkPeerId={studioPresenter.studioProgramPeerId ?? undefined}
+          videoStyle={screenShareVideoStyle}
+          showInfo={showInfo}
+          srtConnectUrl={srtByPeer[owner]?.connectUrlPublic}
+          srtListenPort={srtByPeer[owner]?.listenPort}
+          reactionBurst={pickLatestBurstForPeer(reactionBursts, owner)}
+          showSoloViewerCopy={canUseElevatedRoomTools}
+          rtmpPhase={phase}
+          guestMute={
+            canUseElevatedRoomTools && requestPeerMicMute
+              ? { show: true, onMute: () => requestPeerMicMute(owner) }
+              : undefined
+          }
+        />
+      )
+    }
+    if (isStudioProgramTileId(id)) {
+      const owner = parseStudioProgramTilePeerId(id)
+      if (!owner || owner === localPeerId) return null
+      const sp = participants.get(owner)
+      if (!sp?.studioProgramStream) return null
+      const phase =
+        remoteStudioRtmpByPeer[owner] ??
+        (remoteStudioProgramConsumePending ? 'connecting' : 'live')
+      return (
+        <StudioProgramShareTile
+          stream={sp.studioProgramStream}
+          label={`${sp.name} — эфир`}
+          roomId={roomId}
+          linkPeerId={sp.studioProgramPeerId ?? undefined}
+          videoStyle={screenShareVideoStyle}
+          showInfo={showInfo}
+          srtConnectUrl={srtByPeer[owner]?.connectUrlPublic}
+          srtListenPort={srtByPeer[owner]?.listenPort}
+          reactionBurst={pickLatestBurstForPeer(reactionBursts, owner)}
+          showSoloViewerCopy={canUseElevatedRoomTools}
+          rtmpPhase={phase}
+          guestMute={
+            canUseElevatedRoomTools && requestPeerMicMute
+              ? { show: true, onMute: () => requestPeerMicMute(owner) }
+              : undefined
+          }
+        />
+      )
+    }
     const p = participants.get(id)
     if (!p) return null
     const isVmixTile = p.name === 'vMix'
@@ -1025,6 +1117,16 @@ export function RoomPage({
                   peerId: remotePresenter.peerId,
                 }
               }
+              const remoteStudioPr = remoteList.find((p) => remoteStudioProgramTileId(p) === id)
+              if (remoteStudioPr?.studioProgramStream) {
+                const s = srtByPeer[remoteStudioPr.peerId]
+                return {
+                  ...base,
+                  connectUrl: s?.connectUrlPublic,
+                  listenPort: s?.listenPort,
+                  peerId: remoteStudioPr.studioProgramPeerId ?? remoteStudioPr.peerId,
+                }
+              }
               if (isScreenTileId(id)) {
                 const owner = parseScreenTilePeerId(id)
                 if (owner === localPeerId) {
@@ -1042,6 +1144,19 @@ export function RoomPage({
                     connectUrl: s?.connectUrlPublic,
                     listenPort: s?.listenPort,
                     peerId: owner,
+                  }
+                }
+              }
+              if (isStudioProgramTileId(id)) {
+                const owner = parseStudioProgramTilePeerId(id)
+                if (owner) {
+                  const s = srtByPeer[owner]
+                  const sp = participants.get(owner)
+                  return {
+                    ...base,
+                    connectUrl: s?.connectUrlPublic,
+                    listenPort: s?.listenPort,
+                    peerId: sp?.studioProgramPeerId ?? owner,
                   }
                 }
               }

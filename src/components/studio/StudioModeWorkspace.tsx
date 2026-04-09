@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RemoteParticipant } from '../../types'
 import {
   DEFAULT_STUDIO_OUTPUT_PRESET_ID,
   STUDIO_OUTPUT_PRESETS,
   emptyStudioBoard,
   findStudioOutputPreset,
+  type StudioBoardState,
   type StudioOutputPreset,
   type StudioSourceOption,
 } from '../../types/studio'
@@ -34,6 +35,31 @@ function sourceMeterStream(s: StudioSourceOption): MediaStream | null {
   if (s.stream.getAudioTracks().length) return s.stream
   return null
 }
+
+/** Полоса источников не зависит от programBoard — memo, чтобы не дёргать DOM при движении слоёв. */
+const StudioSourcesStrip = memo(function StudioSourcesStrip({
+  sources,
+  sourceMix,
+  setSourceVolume,
+}: {
+  sources: StudioSourceOption[]
+  sourceMix: StudioSourceMixMap
+  setSourceVolume: (key: string, volume: number) => void
+}) {
+  return (
+    <div className="studio-source-strip" role="region" aria-label="Источники">
+      {sources.map((s) => (
+        <StudioSourceStripItem
+          key={s.key}
+          source={s}
+          meterStream={sourceMeterStream(s)}
+          volume={sourceMix[s.key]?.volume ?? 1}
+          setVolume={setSourceVolume}
+        />
+      ))}
+    </div>
+  )
+})
 
 interface Props {
   open: boolean
@@ -126,6 +152,8 @@ export function StudioModeWorkspace({
   const mixAudioCtxRef = useRef<AudioContext | null>(null)
   const mixDisconnectRef = useRef<(() => void) | null>(null)
   const mixHandleRef = useRef<StudioProgramMixHandle | null>(null)
+  /** Пересборка Web Audio только при смене источников в слотах / состава streams, не при каждом drag rect. */
+  const programMixRebuildKeyRef = useRef('')
   const sourceMixRef = useRef(sourceMix)
   sourceMixRef.current = sourceMix
 
@@ -157,6 +185,14 @@ export function StudioModeWorkspace({
 
   const swapBoards = useCallback(() => {
     setBoards((b) => ({ preview: b.program, program: b.preview }))
+  }, [])
+
+  const onPreviewBoardChange = useCallback((next: StudioBoardState) => {
+    setBoards((b) => ({ ...b, preview: next }))
+  }, [])
+
+  const onProgramBoardChange = useCallback((next: StudioBoardState) => {
+    setBoards((b) => ({ ...b, program: next }))
   }, [])
 
   const setSourceVolume = useCallback((key: string, volume: number) => {
@@ -212,11 +248,20 @@ export function StudioModeWorkspace({
        не получает стабильного потока и держит битрейт ~100 кбит/с. */
     const stream = canvas.captureStream(maxFramerate)
     captureStreamRef.current = stream
-    return stream.getVideoTracks()[0] ?? null
+    const v = stream.getVideoTracks()[0] ?? null
+    if (v && 'contentHint' in v) {
+      try {
+        v.contentHint = 'motion'
+      } catch {
+        /* ignore */
+      }
+    }
+    return v
   }, [])
 
   useEffect(() => {
     if (!open) {
+      programMixRebuildKeyRef.current = ''
       mixDisconnectRef.current?.()
       mixDisconnectRef.current = null
       mixHandleRef.current = null
@@ -225,6 +270,17 @@ export function StudioModeWorkspace({
       setProgramMixStream(null)
       return
     }
+
+    const slotPart = programBoard.slots.map((s) => s.sourceKey ?? '').join('|')
+    const streamPart = sources
+      .map((s) => `${s.key}:${s.stream.id}`)
+      .sort()
+      .join('|')
+    const rebuildKey = `${slotPart}||${streamPart}`
+    if (rebuildKey === programMixRebuildKeyRef.current && mixHandleRef.current) {
+      return
+    }
+    programMixRebuildKeyRef.current = rebuildKey
 
     let ctx = mixAudioCtxRef.current
     if (!ctx || ctx.state === 'closed') {
@@ -388,13 +444,11 @@ export function StudioModeWorkspace({
 
   return (
     <div className="studio-mode-workspace" role="dialog" aria-modal="true" aria-label="Режим студии">
-      <canvas
-        ref={canvasRef}
-        className="studio-mode-workspace__capture-canvas"
-        width={findStudioOutputPreset(outputPresetId).width}
-        height={findStudioOutputPreset(outputPresetId).height}
-        aria-hidden
-      />
+      {/*
+        Не задаём width/height здесь: при commit React сбрасывает bitmap canvas и завершает
+        MediaStreamTrack из captureStream(). Размер выставляет только runCaptureLoop().
+      */}
+      <canvas ref={canvasRef} className="studio-mode-workspace__capture-canvas" aria-hidden />
 
       <header className="studio-chrome">
         <button type="button" className="studio-chrome__close" onClick={onClose}>
@@ -429,7 +483,7 @@ export function StudioModeWorkspace({
           <StudioBoardPanel
             title="Превью"
             board={previewBoard}
-            onBoardChange={(next) => setBoards((b) => ({ ...b, preview: next }))}
+            onBoardChange={onPreviewBoardChange}
             sources={sources}
           />
           <button type="button" className="studio-swap-btn studio-swap-btn--between" onClick={swapBoards} title="Поменять превью и эфир местами">
@@ -439,7 +493,7 @@ export function StudioModeWorkspace({
             <StudioBoardPanel
               title="Эфир"
               board={programBoard}
-              onBoardChange={(next) => setBoards((b) => ({ ...b, program: next }))}
+              onBoardChange={onProgramBoardChange}
               sources={sources}
               registerProgramVideo={registerProgramVideo}
               hideSlotPickers
@@ -458,17 +512,7 @@ export function StudioModeWorkspace({
           </div>
         </div>
 
-        <div className="studio-source-strip" role="region" aria-label="Источники">
-          {sources.map((s) => (
-            <StudioSourceStripItem
-              key={s.key}
-              source={s}
-              meterStream={sourceMeterStream(s)}
-              volume={sourceMix[s.key]?.volume ?? 1}
-              onVolumeChange={(v) => setSourceVolume(s.key, v)}
-            />
-          ))}
-        </div>
+        <StudioSourcesStrip sources={sources} sourceMix={sourceMix} setSourceVolume={setSourceVolume} />
 
         <div className="studio-debug-log">
           <div className="studio-debug-log__header">

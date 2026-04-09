@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react'
+import { memo, useEffect, useRef } from 'react'
 import { AudioMeter } from '../AudioMeter'
 import type { StudioSourceOption } from '../../types/studio'
 
@@ -6,32 +7,39 @@ interface Props {
   source: StudioSourceOption
   meterStream: MediaStream | null
   volume: number
-  onVolumeChange: (v: number) => void
+  /** Стабильная ссылка из родителя — для React.memo полосы источников. */
+  setVolume: (sourceKey: string, v: number) => void
 }
 
-export function StudioSourceStripItem({
+export const StudioSourceStripItem = memo(function StudioSourceStripItem({
   source,
   meterStream,
   volume,
-  onVolumeChange,
+  setVolume,
 }: Props) {
   const volPct = `${Math.round(volume * 100)}%`
+  const thumbRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    const el = thumbRef.current
+    if (!el) return
+    el.srcObject = source.stream
+    void el.play().catch(() => {})
+    return () => {
+      el.srcObject = null
+    }
+  }, [source.stream])
 
   return (
     <div className="studio-source-strip__item" title={source.label}>
       <div className="studio-source-strip__row">
         <div className="studio-source-strip__vm-bundle">
           <video
+            ref={thumbRef}
             className="studio-source-strip__thumb"
             autoPlay
             playsInline
             muted
-            ref={(el) => {
-              if (el) {
-                el.srcObject = source.stream
-                void el.play().catch(() => {})
-              }
-            }}
           />
           <div
             className="studio-source-strip__meter-col"
@@ -64,7 +72,7 @@ export function StudioSourceStripItem({
                 max={100}
                 step={1}
                 value={Math.round(volume * 100)}
-                onChange={(e) => onVolumeChange(Number(e.target.value) / 100)}
+                onChange={(e) => setVolume(source.key, Number(e.target.value) / 100)}
                 aria-label={`Громкость: ${source.label}`}
                 style={{ '--studio-vol-pct': volPct } as CSSProperties}
               />
@@ -75,4 +83,4 @@ export function StudioSourceStripItem({
       <span className="studio-source-strip__cap">{source.label.split(' — ')[0]}</span>
     </div>
   )
-}
+})

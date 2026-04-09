@@ -7,10 +7,12 @@ export function ownerPeerFromDescriptor(p: ProducerDescriptor): string | undefin
   return typeof v === 'string' && v.trim() ? v.trim() : undefined
 }
 
-export function descriptorVideoSource(p: ProducerDescriptor): 'camera' | 'screen' | 'vmix' | undefined {
+export function descriptorVideoSource(
+  p: ProducerDescriptor,
+): 'camera' | 'screen' | 'vmix' | 'studio_program' | undefined {
   if (p.videoSource) return p.videoSource
   const src = p.appData?.source
-  if (src === 'screen' || src === 'camera' || src === 'vmix') return src
+  if (src === 'screen' || src === 'camera' || src === 'vmix' || src === 'studio_program') return src
   return undefined
 }
 
@@ -25,6 +27,8 @@ export function resolveVideoProducerRole(
 ): 'camera' | 'screen' {
   const t = descriptorVideoSource(producer)
   if (t === 'vmix') return 'camera'
+  /** В соло/эвристике студия идёт в «экранный» слот, но в комнате — отдельный studioProgramStream. */
+  if (t === 'studio_program') return 'screen'
   if (t === 'screen') return 'screen'
   if (t === 'camera') return 'camera'
   return hasCameraStream ? 'screen' : 'camera'
@@ -47,9 +51,10 @@ export function videoAnchorPeerId(p: ProducerDescriptor): string {
 export function resolveConsumeVideoRole(
   producer: ProducerDescriptor,
   hasCameraStream: boolean,
-): 'camera' | 'screen' {
+): 'camera' | 'screen' | 'studio_program' {
   const src = descriptorVideoSource(producer)
   if (src === 'vmix') return 'camera'
+  if (src === 'studio_program') return 'studio_program'
   const owner = ownerPeerFromDescriptor(producer)
   const separateScreenPeer = Boolean(owner && producer.peerId !== owner)
   if (src === 'screen' || separateScreenPeer) return 'screen'

@@ -94,6 +94,8 @@ export function RoomSession({ roomId }: Props) {
     localScreenStream, localScreenPeerId, isScreenSharing, toggleScreenShare, startScreenShare,
     chatMessages, sendChatMessage, sendReaction, reactionBursts,
     remoteScreenConsumePending,
+    remoteStudioProgramConsumePending,
+    remoteStudioRtmpByPeer,
     startVmixIngress, stopVmixIngress, vmixIngressInfo, vmixIngressLoading,
     getPeerUplinkVideoQuality,
     requestPeerMicMute,
@@ -208,6 +210,8 @@ export function RoomSession({ roomId }: Props) {
         chatToastNotifications={chatToastNotifications}
         onToggleChatToastNotifications={() => setChatToastNotifications((v) => !v)}
         remoteScreenSharePending={remoteScreenConsumePending}
+        remoteStudioProgramConsumePending={remoteStudioProgramConsumePending}
+        remoteStudioRtmpByPeer={remoteStudioRtmpByPeer}
         vmixIngressInfo={vmixIngressInfo}
         vmixIngressLoading={vmixIngressLoading}
         onStartVmixIngress={startVmixIngress}

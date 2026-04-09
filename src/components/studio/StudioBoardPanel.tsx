@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react'
 import type { StudioBoardState, StudioSourceOption } from '../../types/studio'
 import { clamp01 } from '../../utils/studioCanvasDraw'
 
@@ -26,13 +26,51 @@ interface Props {
   readOnlyStage?: boolean
 }
 
+/** Стабильный ref + srcObject в effect — иначе при каждом движении слоя inline ref сбрасывает видео (моргание). */
+function StudioSlotVideo({
+  slotIndex,
+  stream,
+  registerProgramVideo,
+}: {
+  slotIndex: number
+  stream: MediaStream
+  registerProgramVideo?: (i: number, el: HTMLVideoElement | null) => void
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    registerProgramVideo?.(slotIndex, videoRef.current)
+    return () => registerProgramVideo?.(slotIndex, null)
+  }, [slotIndex, registerProgramVideo])
+
+  useEffect(() => {
+    const el = videoRef.current
+    if (!el) return
+    el.srcObject = stream
+    void el.play().catch(() => {})
+    return () => {
+      el.srcObject = null
+    }
+  }, [stream])
+
+  return (
+    <video
+      ref={videoRef}
+      className="studio-layer__video"
+      autoPlay
+      playsInline
+      muted
+    />
+  )
+}
+
 function slotLabel(boardState: StudioBoardState, index: number, sources: StudioSourceOption[]): string {
   const k = boardState.slots[index]?.sourceKey
   if (!k) return 'Нет'
   return sources.find((s) => s.key === k)?.label ?? k
 }
 
-export function StudioBoardPanel({
+function StudioBoardPanelInner({
   title,
   board: boardState,
   onBoardChange,
@@ -232,18 +270,10 @@ export function StudioBoardPanel({
                         }
                   }
                 >
-                  <video
-                    ref={(el) => {
-                      if (registerProgramVideo) registerProgramVideo(i, el)
-                      if (el) {
-                        el.srcObject = stream
-                        void el.play().catch(() => {})
-                      }
-                    }}
-                    className="studio-layer__video"
-                    autoPlay
-                    playsInline
-                    muted
+                  <StudioSlotVideo
+                    slotIndex={i}
+                    stream={stream}
+                    registerProgramVideo={registerProgramVideo}
                   />
                   {readOnlyStage ? null : (
                     <button
@@ -267,3 +297,5 @@ export function StudioBoardPanel({
     </div>
   )
 }
+
+export const StudioBoardPanel = memo(StudioBoardPanelInner)
