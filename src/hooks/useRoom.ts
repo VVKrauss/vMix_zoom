@@ -45,6 +45,31 @@ const DEFAULT_ROOM = import.meta.env.VITE_DEFAULT_ROOM as string ?? 'test'
 
 const ROOM_POLL_MS = 4000
 
+/** Строки с сокета для панели отладки студии (RTMP); UI подтягивает их фиолетовым. */
+const STUDIO_SERVER_LOG_CAP = 80
+
+function stringifyStudioServerSocketPayload(label: string, raw: unknown): string {
+  if (raw == null || typeof raw !== 'object') return `${label} ${String(raw)}`
+  const o = { ...(raw as Record<string, unknown>) }
+  if (typeof o.detail === 'string' && o.detail.length > 900) {
+    o.detail = `${o.detail.slice(0, 900)}…`
+  }
+  try {
+    const s = JSON.stringify(o, (key, value) => {
+      if (
+        typeof key === 'string' &&
+        /key|secret|password|token|rtmpkey|streamkey|authorization|auth/i.test(key)
+      ) {
+        return '***'
+      }
+      return value
+    })
+    return `${label} ${s}`
+  } catch {
+    return `${label} ${String(raw)}`
+  }
+}
+
 /** Совпадение с недавним локальным сообщением (оптимистичным) — заменяем серверной версией. */
 const CHAT_ECHO_DEDUP_MS = 12_000
 const CHAT_ECHO_DEDUP_SCAN = 48
@@ -305,6 +330,15 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   >('idle')
   /** Хвост stderr / пояснение с бэка (событие studioBroadcastHealth), только при проблемах эфира. */
   const [studioBroadcastHealthDetail, setStudioBroadcastHealthDetail] = useState<string | null>(null)
+  /** Сырые строки событий студии с сервера (socket) — для лога в UI. */
+  const [studioServerLogLines, setStudioServerLogLines] = useState<string[]>([])
+  const appendStudioServerLogRef = useRef<(line: string) => void>(() => {})
+  appendStudioServerLogRef.current = (line: string) => {
+    setStudioServerLogLines((prev) => {
+      const next = [...prev, line]
+      return next.length > STUDIO_SERVER_LOG_CAP ? next.slice(-STUDIO_SERVER_LOG_CAP) : next
+    })
+  }
   const lastLocalReactionAtRef = useRef(0)
   const displayNameRef = useRef('')
   /** Инкремент при leave или новом join — отмена незавершённого join без ложных ошибок в консоли. */
@@ -986,6 +1020,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         const o = raw as Record<string, unknown>
         if (typeof o.roomId === 'string' && o.roomId !== roomIdRef.current) return
         if (studioProgramVideoProducerRef.current == null) return
+        appendStudioServerLogRef.current(stringifyStudioServerSocketPayload('studioBroadcastHealth', raw))
         const st = String(o.state ?? o.status ?? '').toLowerCase()
         const detailRaw = o.detail
         const detail =
@@ -996,6 +1031,26 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         } else if (o.ok === false || st === 'warning' || st === 'error' || st === 'stalled') {
           setStudioBroadcastHealth('warning')
           setStudioBroadcastHealthDetail(detail)
+        }
+      })
+
+      /** Опционально: бэк шлёт поэтапные сообщения (FFmpeg, RTMP connect, …). */
+      socket.on('studioBroadcastLog', (raw: unknown) => {
+        const o = raw as Record<string, unknown>
+        if (typeof o.roomId === 'string' && o.roomId !== roomIdRef.current) return
+        if (studioProgramVideoProducerRef.current == null) return
+        const msg =
+          typeof o.message === 'string'
+            ? o.message.trim()
+            : typeof o.msg === 'string'
+              ? o.msg.trim()
+              : typeof o.text === 'string'
+                ? o.text.trim()
+                : null
+        if (msg) {
+          appendStudioServerLogRef.current(`studioBroadcastLog ${msg}`)
+        } else {
+          appendStudioServerLogRef.current(stringifyStudioServerSocketPayload('studioBroadcastLog', raw))
         }
       })
 
@@ -1018,6 +1073,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       studioProgramAudioProducerRef.current = null
       setStudioBroadcastHealth('idle')
       setStudioBroadcastHealthDetail(null)
+      setStudioServerLogLines([])
       peerUplinkVideoQualityRef.current = {}
       setPeerUplinkBroadcastTick(0)
       uplinkLocalPrevRef.current = undefined
@@ -1577,6 +1633,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     studioProgramVideoProducerRef.current = null
     setStudioBroadcastHealth('idle')
     setStudioBroadcastHealthDetail(null)
+    setStudioServerLogLines([])
   }, [])
 
   const replaceStudioProgramAudioTrack = useCallback(async (track: MediaStreamTrack | null) => {
@@ -1762,5 +1819,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     replaceStudioProgramAudioTrack,
     studioBroadcastHealth,
     studioBroadcastHealthDetail,
+    studioServerLogLines,
   }
 }

@@ -5960,6 +5960,108 @@ button.vio-row--peer:focus-visible {
   overflow-y: auto;
 }
 
+/* ── Debug log panel ────────────────────────────────────────────── */
+.studio-debug-log {
+  flex-shrink: 0;
+  margin: 0 10px 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.35);
+  font-family: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', monospace;
+  font-size: 0.72rem;
+}
+
+.studio-debug-log__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+}
+
+.studio-debug-log__toggle {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  font-size: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  text-align: left;
+}
+.studio-debug-log__toggle:hover { color: rgba(255, 255, 255, 0.8); }
+
+.studio-debug-log__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.65rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.studio-debug-log__copy,
+.studio-debug-log__clear {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.68rem;
+  padding: 2px 8px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+.studio-debug-log__copy:hover,
+.studio-debug-log__clear:hover { color: rgba(255, 255, 255, 0.9); border-color: rgba(255, 255, 255, 0.4); }
+
+.studio-debug-log__body {
+  max-height: 160px;
+  overflow-y: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 4px 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+
+.studio-debug-log__empty {
+  display: block;
+  padding: 4px 12px;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.studio-debug-log__line {
+  display: flex;
+  gap: 10px;
+  padding: 2px 12px;
+  line-height: 1.4;
+}
+.studio-debug-log__line:hover { background: rgba(255,255,255,0.04); }
+
+.studio-debug-log__ts {
+  color: rgba(255, 255, 255, 0.3);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.studio-debug-log__text { word-break: break-word; }
+
+.studio-debug-log__line--info  .studio-debug-log__text { color: rgba(255, 255, 255, 0.65); }
+.studio-debug-log__line--ok    .studio-debug-log__text { color: #69f0ae; }
+.studio-debug-log__line--warn  .studio-debug-log__text { color: #ffe082; }
+.studio-debug-log__line--error .studio-debug-log__text { color: #ff5252; }
+.studio-debug-log__line--server .studio-debug-log__text { color: #ce93d8; }
+
+/* ─────────────────────────────────────────────────────────────── */
 .studio-mode-workspace__body {
   flex: 1;
   display: flex;

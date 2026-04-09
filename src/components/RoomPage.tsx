@@ -189,6 +189,7 @@ interface Props {
   studioBroadcastHealth: 'idle' | 'connecting' | 'live' | 'warning'
   /** Пояснение с сервера (stderr FFmpeg и т.д.) при studioBroadcastHealth ≠ live. */
   studioBroadcastHealthDetail?: string | null
+  studioServerLogLines?: readonly string[]
 }
 
 export function RoomPage({
@@ -215,6 +216,7 @@ export function RoomPage({
   replaceStudioProgramAudioTrack,
   studioBroadcastHealth,
   studioBroadcastHealthDetail = null,
+  studioServerLogLines = [],
 }: Props) {
   const isViewportMobile = useMediaQuery(mediaQueryMaxWidthMobile)
   const [immersiveAutoHide, setImmersiveAutoHide] = useLocalStorageBool(
@@ -1519,6 +1521,7 @@ export function RoomPage({
         replaceStudioProgramAudioTrack={replaceStudioProgramAudioTrack}
         studioBroadcastHealth={studioBroadcastHealth}
         studioBroadcastHealthDetail={studioBroadcastHealthDetail}
+        studioServerLogLines={studioServerLogLines}
       />
     </div>
   )

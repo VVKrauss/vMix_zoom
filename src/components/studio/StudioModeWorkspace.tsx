@@ -15,6 +15,15 @@ import { StudioBoardPanel } from './StudioBoardPanel'
 import { StudioSourceStripItem } from './StudioSourceStripItem'
 import { AudioMeter } from '../AudioMeter'
 
+/* ─── Studio debug log ──────────────────────────────────────────────── */
+type LogLevel = 'info' | 'ok' | 'warn' | 'error' | 'server'
+interface LogEntry { ts: string; level: LogLevel; text: string }
+const LOG_MAX = 100
+function nowTs() {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}.${String(d.getMilliseconds()).padStart(3, '0')}`
+}
+
 const LS_RTMP_URL = 'vmix_studio_rtmp_url'
 const LS_RTMP_KEY = 'vmix_studio_rtmp_key'
 const LS_STUDIO_OUTPUT = 'vmix_studio_output_preset'
@@ -45,6 +54,8 @@ interface Props {
   replaceStudioProgramAudioTrack: (track: MediaStreamTrack | null) => Promise<void>
   studioBroadcastHealth: 'idle' | 'connecting' | 'live' | 'warning'
   studioBroadcastHealthDetail?: string | null
+  /** Строки с сокета (useRoom); в панели отображаются фиолетовым. */
+  studioServerLogLines?: readonly string[]
 }
 
 export function StudioModeWorkspace({
@@ -60,6 +71,7 @@ export function StudioModeWorkspace({
   replaceStudioProgramAudioTrack,
   studioBroadcastHealth,
   studioBroadcastHealthDetail = null,
+  studioServerLogLines = [],
 }: Props) {
   const [boards, setBoards] = useState(() => ({
     preview: emptyStudioBoard(),
@@ -80,6 +92,26 @@ export function StudioModeWorkspace({
   const [liveError, setLiveError] = useState<string | null>(null)
   const [programMixStream, setProgramMixStream] = useState<MediaStream | null>(null)
   const [sourceMix, setSourceMix] = useState<StudioSourceMixMap>({})
+  const [logs, setLogs] = useState<LogEntry[]>([])
+  const [logsOpen, setLogsOpen] = useState(false)
+  const logsEndRef = useRef<HTMLDivElement>(null)
+
+  const addLog = useCallback((level: LogLevel, text: string) => {
+    const entry: LogEntry = { ts: nowTs(), level, text }
+    setLogs((prev) => {
+      const next = [...prev, entry]
+      return next.length > LOG_MAX ? next.slice(next.length - LOG_MAX) : next
+    })
+    if (import.meta.env.DEV) {
+      const fn =
+        level === 'error'
+          ? console.error
+          : level === 'warn'
+            ? console.warn
+            : console.log
+      fn(`[studio ${level === 'server' ? 'SERVER' : 'client'} ${entry.ts}]`, text)
+    }
+  }, [])
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rafRef = useRef<number>(0)
@@ -231,10 +263,12 @@ export function StudioModeWorkspace({
 
   const handleLiveToggle = useCallback(async () => {
     if (liveActive) {
+      addLog('info', 'Остановка эфира пользователем')
       stopCaptureLoop()
       stopStudioProgram()
       setLiveActive(false)
       setLiveError(null)
+      addLog('info', 'Эфир остановлен')
       return
     }
     const url = rtmpUrl.trim()
@@ -242,28 +276,43 @@ export function StudioModeWorkspace({
     if (!url || !key) {
       setSettingsOpen(true)
       setLiveError('Укажите URL и ключ в настройках потока')
+      addLog('error', 'Старт эфира: не задан URL или ключ')
       return
     }
     setLiveError(null)
     const preset = findStudioOutputPreset(outputPresetId)
     outputPresetRef.current = preset
+    addLog('info', `Старт эфира → ${preset.label} (${preset.width}×${preset.height}, ${Math.round(preset.maxBitrate / 1000)} кбит/с, ${preset.maxFramerate} fps)`)
+    addLog('info', `RTMP URL: ${url.replace(/\/[^/]+$/, '/***')}`)
+
+    addLog('info', 'Захват канваса…')
     const track = await runCaptureLoop()
     if (!track) {
       setLiveError('Не удалось захватить канвас')
+      addLog('error', 'canvas.captureStream() вернул null — трек не получен')
       return
     }
+    const trackSettings = track.getSettings()
+    addLog('ok', `Трек захвачен: ${trackSettings.width ?? '?'}×${trackSettings.height ?? '?'} @ ${trackSettings.frameRate ?? '?'} fps, readyState=${track.readyState}`)
+
     const audioTrack =
       sendStudioAudio && programMixStream?.getAudioTracks()[0]
         ? programMixStream.getAudioTracks()[0]!
         : null
+    addLog('info', audioTrack ? `Аудио: ${audioTrack.label || 'программный микс'}` : 'Аудио: без звука')
+
+    addLog('info', 'produce() → signaling…')
     const res = await startStudioProgram(track, audioTrack, url, key, preset)
     if (!res.ok) {
       stopCaptureLoop()
-      setLiveError(res.error ?? 'Ошибка публикации')
+      const errMsg = res.error ?? 'Ошибка публикации'
+      setLiveError(errMsg)
       setLiveActive(false)
+      addLog('error', `startStudioProgram failed: ${errMsg}`)
       return
     }
     setLiveActive(true)
+    addLog('ok', 'produce() успешно, ждём подтверждения сервера (studioBroadcastHealth)…')
   }, [
     liveActive,
     rtmpUrl,
@@ -271,6 +320,7 @@ export function StudioModeWorkspace({
     outputPresetId,
     sendStudioAudio,
     programMixStream,
+    addLog,
     runCaptureLoop,
     startStudioProgram,
     stopCaptureLoop,
@@ -291,6 +341,22 @@ export function StudioModeWorkspace({
       stopCaptureLoop()
     }
   }, [stopCaptureLoop])
+
+  useEffect(() => {
+    if (logsOpen) logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [logs, logsOpen])
+
+  const serverLogConsumedRef = useRef(0)
+  useEffect(() => {
+    if (studioServerLogLines.length === 0) {
+      serverLogConsumedRef.current = 0
+      return
+    }
+    for (; serverLogConsumedRef.current < studioServerLogLines.length; serverLogConsumedRef.current++) {
+      const line = studioServerLogLines[serverLogConsumedRef.current]
+      if (line) addLog('server', line)
+    }
+  }, [studioServerLogLines, addLog])
 
   const saveRtmpSettings = useCallback(() => {
     localStorage.setItem(LS_RTMP_URL, rtmpUrl.trim())
@@ -402,6 +468,56 @@ export function StudioModeWorkspace({
               onVolumeChange={(v) => setSourceVolume(s.key, v)}
             />
           ))}
+        </div>
+
+        <div className="studio-debug-log">
+          <div className="studio-debug-log__header">
+            <button
+              type="button"
+              className="studio-debug-log__toggle"
+              onClick={() => setLogsOpen((v) => !v)}
+            >
+              {logsOpen ? '▾' : '▸'} Лог подключения
+              {logs.length > 0 && (
+                <span className="studio-debug-log__count">{logs.length}</span>
+              )}
+            </button>
+            {logsOpen && (
+              <>
+                <button
+                  type="button"
+                  className="studio-debug-log__copy"
+                  onClick={() => void navigator.clipboard.writeText(
+                    logs.map((e) => `[${e.ts}] [${e.level.toUpperCase()}] ${e.text}`).join('\n')
+                  )}
+                >
+                  Копировать
+                </button>
+                <button
+                  type="button"
+                  className="studio-debug-log__clear"
+                  onClick={() => setLogs([])}
+                >
+                  Очистить
+                </button>
+              </>
+            )}
+          </div>
+          {logsOpen && (
+            <div className="studio-debug-log__body">
+              {logs.length === 0 ? (
+                <span className="studio-debug-log__empty">Нет событий</span>
+              ) : (
+                logs.map((e, i) => (
+                  <div key={i} className={`studio-debug-log__line studio-debug-log__line--${e.level}`}>
+                    <span className="studio-debug-log__ts">{e.ts}</span>
+                    <span className="studio-debug-log__text">{e.text}</span>
+                  </div>
+                ))
+              )}
+              <div ref={logsEndRef} />
+            </div>
+          )}
         </div>
       </div>
 
