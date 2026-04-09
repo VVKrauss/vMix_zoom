@@ -174,6 +174,12 @@ function useMobileDualAction(onShort: () => void, onLong: () => void) {
         e.preventDefault()
         finishPress(false)
       },
+      onClick(e: ReactMouseEvent<HTMLButtonElement>) {
+        if (shouldIgnoreMouse()) {
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      },
       onMouseDown(e: ReactMouseEvent<HTMLButtonElement>) {
         if (shouldIgnoreMouse()) {
           e.preventDefault()
@@ -773,10 +779,10 @@ export function ControlsBar({
                 type="button"
                 className="ctrl-mobile-bottom-bar__btn ctrl-mobile-bottom-bar__btn--main ctrl-mobile-bottom-bar__btn--end-call"
                 onClick={onLeaveRequest}
-                title="Завершить звонок"
-                aria-label="Завершить звонок"
+                title="Выйти из комнаты"
+                aria-label="Выйти из комнаты"
               >
-                <EndCallIcon />
+                <LeaveIcon />
               </button>
             </div>
             <div className="ctrl-mobile-bottom-bar__edge ctrl-mobile-bottom-bar__edge--right">

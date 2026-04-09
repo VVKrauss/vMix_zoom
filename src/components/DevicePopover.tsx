@@ -44,8 +44,8 @@ export function DevicePopover({
     const handler = (e: MouseEvent) => {
       if (shouldClosePopoverOnOutsidePointer(ref.current, e.target)) onClose()
     }
-    document.addEventListener('click', handler, true)
-    return () => document.removeEventListener('click', handler, true)
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
   }, [onClose])
 
   return (

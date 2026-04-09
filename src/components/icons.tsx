@@ -57,7 +57,7 @@ export function InviteIcon() {
   )
 }
 
-/** Завершить звонок: трубка в круге (как в Zoom / Meet). */
+/** Завершить звонок: трубка в круге. */
 export function EndCallIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden>
