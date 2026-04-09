@@ -133,6 +133,7 @@ const LONG_PRESS_MS = 550
 function useMobileDualAction(onShort: () => void, onLong: () => void) {
   const timer = useRef(0)
   const longFired = useRef(false)
+  const touchHandledAt = useRef(0)
   const shortRef = useRef(onShort)
   const longRef = useRef(onLong)
   shortRef.current = onShort
@@ -152,24 +153,40 @@ function useMobileDualAction(onShort: () => void, onLong: () => void) {
     if (triggerShort && !longFired.current) shortRef.current()
     longFired.current = false
   }, [])
+
+  const shouldIgnoreMouse = useCallback(() => Date.now() - touchHandledAt.current < 750, [])
   return useMemo(
     () => ({
       onTouchStart(e: ReactTouchEvent<HTMLButtonElement>) {
+        touchHandledAt.current = Date.now()
+        e.preventDefault()
         e.stopPropagation()
         startPress()
       },
       onTouchEnd(e: ReactTouchEvent<HTMLButtonElement>) {
+        touchHandledAt.current = Date.now()
+        e.preventDefault()
         e.stopPropagation()
         finishPress(true)
       },
-      onTouchCancel() {
+      onTouchCancel(e: ReactTouchEvent<HTMLButtonElement>) {
+        touchHandledAt.current = Date.now()
+        e.preventDefault()
         finishPress(false)
       },
       onMouseDown(e: ReactMouseEvent<HTMLButtonElement>) {
+        if (shouldIgnoreMouse()) {
+          e.preventDefault()
+          return
+        }
         if (e.button !== 0) return
         startPress()
       },
-      onMouseUp() {
+      onMouseUp(e: ReactMouseEvent<HTMLButtonElement>) {
+        if (shouldIgnoreMouse()) {
+          e.preventDefault()
+          return
+        }
         finishPress(true)
       },
       onMouseLeave() {
@@ -179,7 +196,7 @@ function useMobileDualAction(onShort: () => void, onLong: () => void) {
         e.preventDefault()
       },
     }),
-    [finishPress, startPress],
+    [finishPress, shouldIgnoreMouse, startPress],
   )
 }
 

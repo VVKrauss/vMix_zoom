@@ -2063,6 +2063,9 @@ button.admin-stat-card--interactive:disabled {
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.42);
   font: inherit;
   touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
   transition:
     background 0.15s ease,
