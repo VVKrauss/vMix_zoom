@@ -144,7 +144,7 @@ export function StudioModeWorkspace({
   const runCaptureLoop = useCallback(async (): Promise<MediaStreamTrack | null> => {
     const canvas = canvasRef.current
     if (!canvas) return null
-    const { width: CAP_W, height: CAP_H } = outputPresetRef.current
+    const { width: CAP_W, height: CAP_H, maxFramerate } = outputPresetRef.current
     canvas.width = CAP_W
     canvas.height = CAP_H
     const ctx = canvas.getContext('2d')
@@ -167,7 +167,7 @@ export function StudioModeWorkspace({
       rafRef.current = requestAnimationFrame(tick)
     }
 
-    /* Рисуем хотя бы один кадр ДО captureStream, чтобы трек был не пустым. */
+    /* Рисуем первый кадр ДО captureStream, чтобы трек сразу содержал данные. */
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => {
         tick()
@@ -175,8 +175,10 @@ export function StudioModeWorkspace({
       })
     })
 
-    /* captureStream() без аргумента — кадр на каждое обновление rAF. */
-    const stream = canvas.captureStream()
+    /* captureStream(fps) — фиксированная частота кадров обязательна:
+       без аргумента Chrome создаёт трек с frameRate=0, WebRTC-кодер
+       не получает стабильного потока и держит битрейт ~100 кбит/с. */
+    const stream = canvas.captureStream(maxFramerate)
     captureStreamRef.current = stream
     return stream.getVideoTracks()[0] ?? null
   }, [])
