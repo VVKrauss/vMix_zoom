@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react'
 import { memo, useEffect, useRef } from 'react'
 import { AudioMeter } from '../AudioMeter'
+import { ParticipantTileIdle } from '../ParticipantTileIdle'
 import type { StudioSourceOption } from '../../types/studio'
 
 interface Props {
@@ -13,8 +14,7 @@ interface Props {
 }
 
 function getSourceKindLabel(source: StudioSourceOption): string {
-  const label = source.label.toLowerCase()
-  if (source.key.includes('screen') || label.includes('screen') || label.includes('экран')) {
+  if (source.kind === 'screen') {
     return 'Screen'
   }
   return 'Camera'
@@ -32,10 +32,11 @@ const StudioSourceStripItem = memo(function StudioSourceStripItem({
   const primaryLabel = source.label.split(' - ')[0].split(' — ')[0]
   const volumePct = Math.round(volume * 100)
   const isMuted = volumePct === 0
+  const hasLiveVideo = Boolean(source.stream)
 
   useEffect(() => {
     const el = thumbRef.current
-    if (!el) return
+    if (!el || !source.stream) return
     el.srcObject = source.stream
     void el.play().catch(() => {})
     return () => {
@@ -47,13 +48,19 @@ const StudioSourceStripItem = memo(function StudioSourceStripItem({
     <div className="studio-source-strip__item" title={source.label}>
       <div className="studio-source-strip__top-row">
         <div className="studio-source-strip__thumb-frame">
-          <video
-            ref={thumbRef}
-            className="studio-source-strip__thumb"
-            autoPlay
-            playsInline
-            muted
-          />
+          {hasLiveVideo ? (
+            <video
+              ref={thumbRef}
+              className="studio-source-strip__thumb"
+              autoPlay
+              playsInline
+              muted
+            />
+          ) : (
+            <div className="studio-source-strip__thumb-placeholder">
+              <ParticipantTileIdle name={source.displayName} avatarUrl={source.avatarUrl} />
+            </div>
+          )}
           <div className="studio-source-strip__thumb-overlay">
             <span className="studio-source-strip__thumb-chip">{getSourceKindLabel(source)}</span>
             {meterStream ? (

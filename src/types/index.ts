@@ -50,6 +50,8 @@ export type RemoteParticipant = {
   peerId: string
   name: string
   avatarUrl?: string | null
+  virtualSourceType?: 'studio_program'
+  sourceOwnerPeerId?: string
   audioStream?: MediaStream
   videoStream?: MediaStream
   /** Второй video producer (демонстрация экрана). */

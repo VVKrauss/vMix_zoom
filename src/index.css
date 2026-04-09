@@ -7074,6 +7074,28 @@ button.vio-row--peer:focus-visible {
   position: relative;
 }
 
+.studio-source-strip__thumb-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(30, 30, 34, 0.96), rgba(18, 18, 20, 0.98));
+}
+
+.studio-source-strip__thumb-placeholder .participant-tile-idle {
+  transform: scale(0.72);
+}
+
+.studio-layer__placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(28, 28, 32, 0.96), rgba(16, 16, 19, 0.98));
+}
+
 .studio-source-strip__thumb {
   border-radius: 12px;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);

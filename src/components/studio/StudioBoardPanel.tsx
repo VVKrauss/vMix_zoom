@@ -1,6 +1,7 @@
 ﻿import React, { memo, useCallback, useEffect, useRef, useState } from 'react'
 import type { StudioBoardState, StudioSourceOption } from '../../types/studio'
 import { clamp01 } from '../../utils/studioCanvasDraw'
+import { ParticipantTileIdle } from '../ParticipantTileIdle'
 
 type DragMode = 'move' | 'resize-se' | null
 
@@ -29,7 +30,7 @@ function StudioSlotVideo({
   registerProgramVideo,
 }: {
   slotIndex: number
-  stream: MediaStream
+  stream: MediaStream | null
   registerProgramVideo?: (i: number, el: HTMLVideoElement | null) => void
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -41,7 +42,7 @@ function StudioSlotVideo({
 
   useEffect(() => {
     const el = videoRef.current
-    if (!el) return
+    if (!el || !stream) return
     el.srcObject = stream
     void el.play().catch(() => {})
     return () => {
@@ -49,6 +50,7 @@ function StudioSlotVideo({
     }
   }, [stream])
 
+  if (!stream) return null
   return <video ref={videoRef} className="studio-layer__video" autoPlay playsInline muted />
 }
 
@@ -276,7 +278,7 @@ function StudioBoardPanelInner({
           const stream = src?.stream
           return (
             <div key={i} className="studio-board-stage__slot-wrap">
-              {stream ? (
+              {src ? (
                 <div
                   className={`studio-layer${readOnlyStage ? ' studio-layer--readonly' : ''}`}
                   style={{
@@ -295,7 +297,13 @@ function StudioBoardPanelInner({
                         }
                   }
                 >
-                  <StudioSlotVideo slotIndex={i} stream={stream} registerProgramVideo={registerProgramVideo} />
+                  {stream ? (
+                    <StudioSlotVideo slotIndex={i} stream={stream} registerProgramVideo={registerProgramVideo} />
+                  ) : (
+                    <div className="studio-layer__placeholder">
+                      <ParticipantTileIdle name={src.displayName} avatarUrl={src.avatarUrl} />
+                    </div>
+                  )}
                   {readOnlyStage ? null : (
                     <button
                       type="button"

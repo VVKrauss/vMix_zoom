@@ -5,7 +5,7 @@ export type StudioSourceMixMap = Record<string, { volume: number }>
 function streamWithAudio(opt: StudioSourceOption): MediaStream | null {
   const m = opt.meterStream
   if (m?.getAudioTracks().length) return m
-  if (opt.stream.getAudioTracks().length) return opt.stream
+  if (opt.stream?.getAudioTracks().length) return opt.stream
   return null
 }
 

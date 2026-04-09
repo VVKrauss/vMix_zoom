@@ -9,7 +9,7 @@ import {
   type StudioOutputPreset,
   type StudioSourceOption,
 } from '../../types/studio'
-import { drawVideoCover } from '../../utils/studioCanvasDraw'
+import { drawStudioParticipantPlaceholder, drawVideoCover } from '../../utils/studioCanvasDraw'
 import { buildStudioSources } from './buildStudioSources'
 import { connectStudioProgramAudioMix, type StudioProgramMixHandle, type StudioSourceMixMap } from './buildProgramAudioMix'
 import { StudioBoardPanel } from './StudioBoardPanel'
@@ -32,7 +32,7 @@ const LS_STUDIO_SEND_AUDIO = 'vmix_studio_send_audio'
 
 function sourceMeterStream(s: StudioSourceOption): MediaStream | null {
   if (s.meterStream?.getAudioTracks().length) return s.meterStream
-  if (s.stream.getAudioTracks().length) return s.stream
+  if (s.stream?.getAudioTracks().length) return s.stream
   return null
 }
 
@@ -249,13 +249,19 @@ export function StudioModeWorkspace({
       const b = programBoardRef.current
       for (let i = 0; i < 6; i++) {
         const slot = b.slots[i]
-        const v = programVideoElsRef.current[i]
-        if (!slot?.sourceKey || !v) continue
+        if (!slot?.sourceKey) continue
+        const src = sources.find((item) => item.key === slot.sourceKey)
+        if (!src) continue
         const dx = slot.rect.x * CAP_W
         const dy = slot.rect.y * CAP_H
         const dw = slot.rect.w * CAP_W
         const dh = slot.rect.h * CAP_H
-        drawVideoCover(ctx, v, dx, dy, dw, dh)
+        const v = programVideoElsRef.current[i]
+        if (src.stream && v) {
+          drawVideoCover(ctx, v, dx, dy, dw, dh)
+        } else {
+          drawStudioParticipantPlaceholder(ctx, src.displayName, dx, dy, dw, dh)
+        }
       }
       rafRef.current = requestAnimationFrame(tick)
     }
@@ -293,7 +299,7 @@ export function StudioModeWorkspace({
 
     const slotPart = programBoard.slots.map((s) => s.sourceKey ?? '').join('|')
     const streamPart = sources
-      .map((s) => `${s.key}:${s.stream.id}`)
+      .map((s) => `${s.key}:${s.stream?.id ?? 'placeholder'}`)
       .sort()
       .join('|')
     const rebuildKey = `${slotPart}||${streamPart}`

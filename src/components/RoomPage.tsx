@@ -662,7 +662,7 @@ export function RoomPage({
 
   /** Участники-люди в счётчике шапки (без виртуального vMix/SRT). */
   const remoteHumanPeers = useMemo(
-    () => remoteList.filter((p) => p.name !== 'vMix'),
+    () => remoteList.filter((p) => p.name !== 'vMix' && p.virtualSourceType !== 'studio_program'),
     [remoteList],
   )
 
@@ -691,7 +691,7 @@ export function RoomPage({
     [remoteList],
   )
   const remoteStudioProgramActive = useMemo(
-    () => remoteList.some((p) => p.studioProgramStream),
+    () => remoteList.some((p) => p.studioProgramStream || p.virtualSourceType === 'studio_program'),
     [remoteList],
   )
   const canStartScreenShare = !remoteScreenActive && !remoteScreenSharePending
@@ -736,7 +736,7 @@ export function RoomPage({
     [remoteList],
   )
   const remoteStudioProgramTileCount = useMemo(
-    () => remoteList.filter((p) => p.studioProgramStream).length,
+    () => remoteList.filter((p) => p.studioProgramStream || p.virtualSourceType === 'studio_program').length,
     [remoteList],
   )
   /** Только люди: вы + удалённые гости; без vMix/SRT и без плиток демонстрации экрана. */
@@ -1178,6 +1178,32 @@ export function RoomPage({
     }
     const p = participants.get(id)
     if (!p) return null
+    if (p.virtualSourceType === 'studio_program' && p.videoStream) {
+      const owner = p.sourceOwnerPeerId ?? p.peerId
+      const phase =
+        remoteStudioRtmpByPeer[owner] ??
+        (remoteStudioProgramConsumePending ? 'connecting' : 'live')
+      return (
+        <StudioProgramShareTile
+          stream={p.videoStream}
+          label="ЭФИР"
+          roomId={roomId}
+          linkPeerId={owner}
+          videoStyle={screenShareVideoStyle}
+          showInfo={showInfo}
+          srtConnectUrl={srtByPeer[owner]?.connectUrlPublic}
+          srtListenPort={srtByPeer[owner]?.listenPort}
+          reactionBurst={pickLatestBurstForPeer(reactionBursts, owner)}
+          showSoloViewerCopy={canUseElevatedRoomTools}
+          rtmpPhase={phase}
+          guestMute={
+            canUseElevatedRoomTools && requestPeerMicMute
+              ? { show: true, onMute: () => requestPeerMicMute(owner) }
+              : undefined
+          }
+        />
+      )
+    }
     const isVmixTile = p.name === 'vMix'
     return (
       <ParticipantCard

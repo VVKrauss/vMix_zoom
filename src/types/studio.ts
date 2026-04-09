@@ -58,8 +58,12 @@ export function studioSourceScreenKey(peerId: string): StudioSourceKey {
 export type StudioSourceOption = {
   key: StudioSourceKey
   label: string
-  /** Видео для превью и канваса. */
-  stream: MediaStream
+  kind: 'camera' | 'screen'
+  peerId: string
+  displayName: string
+  avatarUrl?: string | null
+  /** Видео для превью и канваса. Если null, источник рисуется как заглушка участника. */
+  stream: MediaStream | null
   /** Отдельный поток для метра (например микрофон при `videoStream` без звука). */
   meterStream?: MediaStream | null
 }

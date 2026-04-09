@@ -15,6 +15,7 @@ import {
   REACTION_TTL_DEFAULT_MS,
 } from '../types/roomComms'
 import {
+  ownerPeerFromDescriptor,
   resolveConsumeVideoRole,
   videoAnchorPeerId,
 } from '../utils/producerVideoRole'
@@ -121,6 +122,8 @@ function applyRosterRow(
     videoStream: ex?.videoStream,
     screenStream: ex?.screenStream,
     screenPeerId: ex?.screenPeerId,
+    studioProgramStream: ex?.studioProgramStream,
+    studioProgramPeerId: ex?.studioProgramPeerId,
   })
 }
 
@@ -428,6 +431,10 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         const next = new Map(prev)
         const p = next.get(meta.anchorPeerId)
         if (!p) return next
+        if (meta.kind === 'video' && meta.videoSource === 'studio_program' && p.virtualSourceType === 'studio_program') {
+          next.delete(meta.anchorPeerId)
+          return next
+        }
         const cleared: Partial<RemoteParticipant> =
           meta.kind === 'audio'
             ? { audioStream: undefined }
@@ -560,6 +567,38 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
           const resolved = resolveConsumeVideoRole(producer, !!existing.videoStream)
 
+          if (resolved === 'studio_program') {
+            const ownerPeerId = ownerPeerFromDescriptor(producer) ?? anchorId
+            const virtualPeerId = producer.peerId
+            const owner = next.get(ownerPeerId)
+            const studioExisting: RemoteParticipant = next.get(virtualPeerId) ?? {
+              peerId: virtualPeerId,
+              name: 'ЭФИР',
+              avatarUrl: owner?.avatarUrl ?? producer.avatarUrl ?? undefined,
+              virtualSourceType: 'studio_program',
+              sourceOwnerPeerId: ownerPeerId,
+            }
+
+            const videoMeta = {
+              consumerId: consumer.id,
+              anchorPeerId: virtualPeerId,
+              producerPeerId: producer.peerId,
+              kind: 'video' as const,
+              videoSource: resolved,
+            }
+            registerProducerMeta(producerMetaRef.current, producer.producerId, consumer.producerId, videoMeta)
+
+            next.set(virtualPeerId, {
+              ...studioExisting,
+              name: 'ЭФИР',
+              avatarUrl: owner?.avatarUrl ?? producer.avatarUrl ?? studioExisting.avatarUrl ?? null,
+              virtualSourceType: 'studio_program',
+              sourceOwnerPeerId: ownerPeerId,
+              videoStream: stream,
+            })
+            return next
+          }
+
           const videoMeta = {
             consumerId: consumer.id,
             anchorPeerId: anchorId,
@@ -577,15 +616,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
               avatarUrl: producer.avatarUrl ?? existing.avatarUrl ?? null,
               screenStream: stream,
               ...(distinct ? { screenPeerId: distinct } : { screenPeerId: undefined }),
-            })
-          } else if (resolved === 'studio_program') {
-            const distinct = producer.peerId !== anchorId ? producer.peerId : undefined
-            next.set(anchorId, {
-              ...existing,
-              name: producer.name || existing.name,
-              avatarUrl: producer.avatarUrl ?? existing.avatarUrl ?? null,
-              studioProgramStream: stream,
-              ...(distinct ? { studioProgramPeerId: distinct } : { studioProgramPeerId: undefined }),
             })
           } else {
             next.set(anchorId, {
