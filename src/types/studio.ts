@@ -75,7 +75,8 @@ export type StudioOutputPreset = {
 }
 
 export const STUDIO_OUTPUT_PRESETS: StudioOutputPreset[] = [
-  { id: '854x480', label: '480p', width: 854, height: 480, maxBitrate: 1_500_000, maxFramerate: 30 },
+  /** 848 вместо 854: ширина кратна 16 — меньше сюрпризов у libx264/RTMP после масштабирования. */
+  { id: '854x480', label: '480p', width: 848, height: 480, maxBitrate: 1_500_000, maxFramerate: 30 },
   { id: '1280x720', label: '720p', width: 1280, height: 720, maxBitrate: 4_000_000, maxFramerate: 30 },
   { id: '1920x1080', label: '1080p', width: 1920, height: 1080, maxBitrate: 6_000_000, maxFramerate: 30 },
   { id: '1920x1080-hi', label: '1080p · высокий битрейт', width: 1920, height: 1080, maxBitrate: 10_000_000, maxFramerate: 30 },

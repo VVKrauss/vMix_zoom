@@ -1,6 +1,6 @@
 import type { StudioBoardState, StudioSourceOption } from '../../types/studio'
 
-export type StudioSourceMixMap = Record<string, { volume: number; muted: boolean }>
+export type StudioSourceMixMap = Record<string, { volume: number }>
 
 function streamWithAudio(opt: StudioSourceOption): MediaStream | null {
   const m = opt.meterStream
@@ -17,7 +17,7 @@ export type StudioProgramMixHandle = {
 
 /**
  * Смешивает аудио источников на доске «Эфир» (уникальные треки).
- * Громкость/мьют обновляются через `applyLevels` без пересборки графа.
+ * Громкость обновляется через `applyLevels` без пересборки графа.
  */
 export function connectStudioProgramAudioMix(
   board: StudioBoardState,
@@ -52,8 +52,8 @@ export function connectStudioProgramAudioMix(
 
   const applyLevels = (mixMap: StudioSourceMixMap) => {
     for (const [key, gainNode] of gainBySourceKey) {
-      const m = mixMap[key] ?? { volume: 1, muted: false }
-      const u = m.muted ? 0 : Math.max(0, Math.min(1, m.volume))
+      const m = mixMap[key] ?? { volume: 1 }
+      const u = Math.max(0, Math.min(1, m.volume))
       gainNode.gain.value = base * u
     }
   }

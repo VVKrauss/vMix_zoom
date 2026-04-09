@@ -101,6 +101,7 @@ export function RoomSession({ roomId }: Props) {
     stopStudioProgram,
     replaceStudioProgramAudioTrack,
     studioBroadcastHealth,
+    studioBroadcastHealthDetail,
   } = useRoom(roomActivityNotifyRef)
 
   useEffect(() => {
@@ -216,6 +217,7 @@ export function RoomSession({ roomId }: Props) {
         stopStudioProgram={stopStudioProgram}
         replaceStudioProgramAudioTrack={replaceStudioProgramAudioTrack}
         studioBroadcastHealth={studioBroadcastHealth}
+        studioBroadcastHealthDetail={studioBroadcastHealthDetail}
       />
     )
   }

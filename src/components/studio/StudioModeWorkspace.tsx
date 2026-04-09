@@ -44,6 +44,7 @@ interface Props {
   stopStudioProgram: () => void
   replaceStudioProgramAudioTrack: (track: MediaStreamTrack | null) => Promise<void>
   studioBroadcastHealth: 'idle' | 'connecting' | 'live' | 'warning'
+  studioBroadcastHealthDetail?: string | null
 }
 
 export function StudioModeWorkspace({
@@ -58,6 +59,7 @@ export function StudioModeWorkspace({
   stopStudioProgram,
   replaceStudioProgramAudioTrack,
   studioBroadcastHealth,
+  studioBroadcastHealthDetail = null,
 }: Props) {
   const [boards, setBoards] = useState(() => ({
     preview: emptyStudioBoard(),
@@ -111,7 +113,7 @@ export function StudioModeWorkspace({
     setSourceMix((prev) => {
       const next = { ...prev }
       for (const s of sources) {
-        if (!(s.key in next)) next[s.key] = { volume: 1, muted: false }
+        if (!(s.key in next)) next[s.key] = { volume: 1 }
       }
       return next
     })
@@ -128,14 +130,7 @@ export function StudioModeWorkspace({
   const setSourceVolume = useCallback((key: string, volume: number) => {
     setSourceMix((p) => ({
       ...p,
-      [key]: { ...(p[key] ?? { volume: 1, muted: false }), volume },
-    }))
-  }, [])
-
-  const setSourceMuted = useCallback((key: string, muted: boolean) => {
-    setSourceMix((p) => ({
-      ...p,
-      [key]: { ...(p[key] ?? { volume: 1, muted: false }), muted },
+      [key]: { ...(p[key] ?? { volume: 1 }), volume },
     }))
   }, [])
 
@@ -146,10 +141,10 @@ export function StudioModeWorkspace({
     captureStreamRef.current = null
   }, [])
 
-  const runCaptureLoop = useCallback(() => {
+  const runCaptureLoop = useCallback(async (): Promise<MediaStreamTrack | null> => {
     const canvas = canvasRef.current
     if (!canvas) return null
-    const { width: CAP_W, height: CAP_H, maxFramerate } = outputPresetRef.current
+    const { width: CAP_W, height: CAP_H } = outputPresetRef.current
     canvas.width = CAP_W
     canvas.height = CAP_H
     const ctx = canvas.getContext('2d')
@@ -171,8 +166,17 @@ export function StudioModeWorkspace({
       }
       rafRef.current = requestAnimationFrame(tick)
     }
-    rafRef.current = requestAnimationFrame(tick)
-    const stream = canvas.captureStream(maxFramerate)
+
+    /* Рисуем хотя бы один кадр ДО captureStream, чтобы трек был не пустым. */
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => {
+        tick()
+        resolve()
+      })
+    })
+
+    /* captureStream() без аргумента — кадр на каждое обновление rAF. */
+    const stream = canvas.captureStream()
     captureStreamRef.current = stream
     return stream.getVideoTracks()[0] ?? null
   }, [])
@@ -241,7 +245,7 @@ export function StudioModeWorkspace({
     setLiveError(null)
     const preset = findStudioOutputPreset(outputPresetId)
     outputPresetRef.current = preset
-    const track = runCaptureLoop()
+    const track = await runCaptureLoop()
     if (!track) {
       setLiveError('Не удалось захватить канвас')
       return
@@ -303,6 +307,17 @@ export function StudioModeWorkspace({
         ? 'studio-chrome__live studio-chrome__live--warn'
         : 'studio-chrome__live'
 
+  const liveBtnTitle =
+    !liveActive
+      ? 'Начать эфир (в эфир идёт только доска «Эфир»)'
+      : studioBroadcastHealth === 'live'
+        ? 'Остановить эфир'
+        : studioBroadcastHealthDetail
+          ? `Сервер: ${studioBroadcastHealthDetail}`
+          : studioBroadcastHealth === 'connecting'
+            ? 'Подключение RTMP…'
+            : 'Эфир: предупреждение от сервера'
+
   return (
     <div className="studio-mode-workspace" role="dialog" aria-modal="true" aria-label="Режим студии">
       <canvas
@@ -325,11 +340,7 @@ export function StudioModeWorkspace({
             type="button"
             className={liveBtnClass}
             onClick={() => void handleLiveToggle()}
-            title={
-              liveActive
-                ? 'Остановить эфир'
-                : 'Начать эфир (в эфир идёт только доска «Эфир»)'
-            }
+            title={liveBtnTitle}
           >
             LIVE
           </button>
@@ -337,6 +348,13 @@ export function StudioModeWorkspace({
       </header>
 
       {liveError ? <div className="studio-mode-workspace__error" role="alert">{liveError}</div> : null}
+      {liveActive &&
+      studioBroadcastHealth !== 'live' &&
+      studioBroadcastHealthDetail ? (
+        <div className="studio-mode-workspace__health-hint" role="status">
+          {studioBroadcastHealthDetail}
+        </div>
+      ) : null}
 
       <div className="studio-mode-workspace__body">
         <div className="studio-mode-workspace__boards-row">
@@ -379,9 +397,7 @@ export function StudioModeWorkspace({
               source={s}
               meterStream={sourceMeterStream(s)}
               volume={sourceMix[s.key]?.volume ?? 1}
-              muted={sourceMix[s.key]?.muted ?? false}
               onVolumeChange={(v) => setSourceVolume(s.key, v)}
-              onMutedChange={(m) => setSourceMuted(s.key, m)}
             />
           ))}
         </div>

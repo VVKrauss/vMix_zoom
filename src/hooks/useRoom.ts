@@ -303,6 +303,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const [studioBroadcastHealth, setStudioBroadcastHealth] = useState<
     'idle' | 'connecting' | 'live' | 'warning'
   >('idle')
+  /** Хвост stderr / пояснение с бэка (событие studioBroadcastHealth), только при проблемах эфира. */
+  const [studioBroadcastHealthDetail, setStudioBroadcastHealthDetail] = useState<string | null>(null)
   const lastLocalReactionAtRef = useRef(0)
   const displayNameRef = useRef('')
   /** Инкремент при leave или новом join — отмена незавершённого join без ложных ошибок в консоли. */
@@ -827,11 +829,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         if (id && studioProgramVideoProducerRef.current?.id === id) {
           studioProgramVideoProducerRef.current = null
           setStudioBroadcastHealth('warning')
+          setStudioBroadcastHealthDetail(null)
           return
         }
         if (id && studioProgramAudioProducerRef.current?.id === id) {
           studioProgramAudioProducerRef.current = null
           setStudioBroadcastHealth('warning')
+          setStudioBroadcastHealthDetail(null)
           return
         }
         if (id) dropProducerById(id)
@@ -983,9 +987,15 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         if (typeof o.roomId === 'string' && o.roomId !== roomIdRef.current) return
         if (studioProgramVideoProducerRef.current == null) return
         const st = String(o.state ?? o.status ?? '').toLowerCase()
-        if (o.ok === true || st === 'live') setStudioBroadcastHealth('live')
-        else if (o.ok === false || st === 'warning' || st === 'error' || st === 'stalled') {
+        const detailRaw = o.detail
+        const detail =
+          typeof detailRaw === 'string' && detailRaw.trim() ? detailRaw.trim() : null
+        if (o.ok === true || st === 'live') {
+          setStudioBroadcastHealth('live')
+          setStudioBroadcastHealthDetail(null)
+        } else if (o.ok === false || st === 'warning' || st === 'error' || st === 'stalled') {
           setStudioBroadcastHealth('warning')
+          setStudioBroadcastHealthDetail(detail)
         }
       })
 
@@ -1007,6 +1017,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       studioProgramAudioProducerRef.current?.close()
       studioProgramAudioProducerRef.current = null
       setStudioBroadcastHealth('idle')
+      setStudioBroadcastHealthDetail(null)
       peerUplinkVideoQualityRef.current = {}
       setPeerUplinkBroadcastTick(0)
       uplinkLocalPrevRef.current = undefined
@@ -1565,6 +1576,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     studioProgramAudioProducerRef.current = null
     studioProgramVideoProducerRef.current = null
     setStudioBroadcastHealth('idle')
+    setStudioBroadcastHealthDetail(null)
   }, [])
 
   const replaceStudioProgramAudioTrack = useCallback(async (track: MediaStreamTrack | null) => {
@@ -1593,19 +1605,33 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       const sendTransport = sendTransportRef.current
       if (!sendTransport) {
         setStudioBroadcastHealth('warning')
+        setStudioBroadcastHealthDetail(null)
         return { ok: false, error: 'Нет WebRTC-транспорта' }
       }
       const url = rtmpUrl.trim()
       const key = streamKey.trim()
       if (!url || !key) {
         setStudioBroadcastHealth('warning')
+        setStudioBroadcastHealthDetail(null)
         return { ok: false, error: 'Укажите URL и ключ RTMP' }
       }
       stopStudioProgram()
       setStudioBroadcastHealth('connecting')
+      setStudioBroadcastHealthDetail(null)
       try {
+        const fpsCap = capVideoFramerate(output.maxFramerate, videoTrack)
+        const startBr = Math.max(
+          400_000,
+          Math.min(Math.round(output.maxBitrate * 0.28), 3_500_000),
+        )
+        /* Предпочитаем H.264 — меньше артефактов при прохождении через FFmpeg на сервере.
+           Если сервер не объявил H.264 в rtpCapabilities, codec === undefined и produce выберет сам. */
+        const h264Codec = deviceRef.current?.rtpCapabilities.codecs?.find(
+          (c) => c.mimeType.toLowerCase() === 'video/h264',
+        )
         const videoProducer = await sendTransport.produce({
           track: videoTrack,
+          codec: h264Codec ?? undefined,
           appData: {
             source: 'studio_program',
             rtmpUrl: url,
@@ -1613,13 +1639,16 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
             outputWidth: output.width,
             outputHeight: output.height,
             maxBitrate: output.maxBitrate,
+            maxFramerate: fpsCap,
           },
-          encodings: [{ maxBitrate: output.maxBitrate, maxFramerate: output.maxFramerate }],
+          codecOptions: { videoGoogleStartBitrate: startBr },
+          encodings: [{ maxBitrate: output.maxBitrate, maxFramerate: fpsCap }],
         })
         studioProgramVideoProducerRef.current = videoProducer
         videoProducer.on('transportclose', () => {
           studioProgramVideoProducerRef.current = null
           setStudioBroadcastHealth('warning')
+          setStudioBroadcastHealthDetail(null)
         })
 
         if (audioTrack) {
@@ -1636,11 +1665,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
             audioProducer.on('transportclose', () => {
               studioProgramAudioProducerRef.current = null
               setStudioBroadcastHealth('warning')
+              setStudioBroadcastHealthDetail(null)
             })
           } catch (e) {
             videoProducer.close()
             studioProgramVideoProducerRef.current = null
             setStudioBroadcastHealth('warning')
+            setStudioBroadcastHealthDetail(null)
             return { ok: false, error: formatMediaJoinError(e) }
           }
         } else {
@@ -1648,9 +1679,11 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         }
 
         setStudioBroadcastHealth('live')
+        setStudioBroadcastHealthDetail(null)
         return { ok: true }
       } catch (e) {
         setStudioBroadcastHealth('warning')
+        setStudioBroadcastHealthDetail(null)
         return { ok: false, error: formatMediaJoinError(e) }
       }
     },
@@ -1728,5 +1761,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     stopStudioProgram,
     replaceStudioProgramAudioTrack,
     studioBroadcastHealth,
+    studioBroadcastHealthDetail,
   }
 }

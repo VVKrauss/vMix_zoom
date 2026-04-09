@@ -73,8 +73,10 @@ html.app-root--room #root {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 100dvh;
   height: 100%;
   background: radial-gradient(ellipse at 50% 40%, #1a0000 0%, var(--bg) 70%);
+  background-color: var(--bg);
 }
 
 .join-card {
@@ -1724,8 +1726,10 @@ button.admin-stat-card--interactive:disabled {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  min-height: 100dvh;
   height: 100%;
   gap: 16px;
+  background: var(--bg);
   color: var(--text-dim);
   font-size: 14px;
 }
@@ -3816,6 +3820,12 @@ button.vio-row--peer:focus-visible {
 }
 
 .audio-meter-wrap--horizontal {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.audio-meter-wrap--strip-vertical {
   position: relative;
   width: 100%;
   height: 100%;
@@ -5934,6 +5944,22 @@ button.vio-row--peer:focus-visible {
   font-size: 0.86rem;
 }
 
+.studio-mode-workspace__health-hint {
+  flex-shrink: 0;
+  margin: 0 14px 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 213, 79, 0.45);
+  background: rgba(255, 193, 7, 0.1);
+  color: #ffe082;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  font-family: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', monospace;
+  word-break: break-word;
+  max-height: 5.5rem;
+  overflow-y: auto;
+}
+
 .studio-mode-workspace__body {
   flex: 1;
   display: flex;
@@ -5970,31 +5996,97 @@ button.vio-row--peer:focus-visible {
   scrollbar-gutter: stable;
 }
 
+/* Плитка: слева блок «превью + метр» (одна высота), справа регуляторы */
 .studio-source-strip__item {
   flex: 0 0 auto;
   display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  gap: 10px;
-  min-height: 200px;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.studio-source-strip__thumb-wrap {
-  flex: 0 0 auto;
-  width: 200px;
-  max-width: 40vw;
+.studio-source-strip__row {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Высота = высота видео 16:9; метр тянется по высоте превью, не по высоте слайдера */
+.studio-source-strip__vm-bundle {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
 }
 
 .studio-source-strip__thumb {
-  width: 100%;
+  flex: 0 0 auto;
+  width: 200px;
+  max-width: 40vw;
   aspect-ratio: 16 / 9;
   border-radius: 6px;
   background: #0a0a0a;
   object-fit: cover;
-  vertical-align: top;
+  display: block;
+  align-self: flex-start;
+}
+
+/* Узкая полоса: ~5% от типичной ширины блока превью+метр (~220px) ≈ 11px, визуально как макет */
+.studio-source-strip__meter-col {
+  flex: 0 0 18px;
+  width: 18px;
+  min-width: 14px;
+  max-width: 22px;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.55);
+  box-sizing: border-box;
+}
+
+.studio-source-strip__meter-inner {
+  flex: 1;
+  min-height: 48px;
+  min-width: 0;
+  position: relative;
+}
+
+.studio-source-strip__meter-inner .audio-meter-wrap {
+  position: absolute !important;
+  inset: 2px 1px !important;
+  left: 1px !important;
+  right: 1px !important;
+  top: 2px !important;
+  bottom: 2px !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box;
+  background: transparent !important;
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.studio-source-strip__meter-col--empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
 }
 
 .studio-source-strip__cap {
@@ -6005,108 +6097,132 @@ button.vio-row--peer:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: center;
+  max-width: 280px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.studio-source-strip__controls {
+.studio-source-strip__controls-col {
   flex: 0 0 auto;
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  gap: 8px;
-  min-width: 0;
-}
-
-.studio-source-strip__slider-wrap {
-  width: 36px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 140px;
-}
-
-.studio-source-strip__vol {
-  width: 120px;
-  height: 28px;
-  margin: 0;
-  transform: rotate(-90deg);
-  transform-origin: center center;
-  cursor: pointer;
-  accent-color: rgba(120, 160, 255, 0.9);
-}
-
-.studio-source-strip__level-col {
-  flex: 1 1 72px;
-  min-width: 64px;
-  max-width: 120px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  align-items: stretch;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  width: 48px;
+  align-self: stretch;
+  max-height: 100%;
+  padding: 4px 2px;
+  box-sizing: border-box;
+  background: transparent;
+  border: none;
 }
 
-.studio-source-strip__level-value {
-  font-size: 0.75rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-dim);
-  text-align: center;
-  line-height: 1.2;
-}
-
-.studio-source-strip__level-meter {
-  flex: 1;
-  min-height: 36px;
+/* Вертикальный громкость: палитра проекта, дорожка и рычажок не вылезают из .fader-inner */
+.studio-source-strip__fader {
   position: relative;
+  flex: 1 1 0;
+  min-height: 88px;
+  width: 100%;
+  max-width: 40px;
+  margin: 0 auto;
 }
 
-.studio-source-strip__level-meter .audio-meter-wrap--horizontal {
-  position: absolute !important;
-  inset: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
-  right: auto !important;
-  top: auto !important;
-  bottom: auto !important;
-  left: 0 !important;
-}
-
-.studio-source-strip__mute {
-  flex: 0 0 auto;
-  align-self: center;
-  width: 40px;
-  height: 40px;
-  padding: 0;
+.studio-source-strip__fader-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 88px;
+  max-width: 34px;
+  margin: 0 auto;
+  padding: 10px 5px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: #1e1e1e;
-  color: var(--text);
-  cursor: pointer;
 }
 
-.studio-source-strip__mute:hover {
-  border-color: rgba(255, 255, 255, 0.22);
-  background: #2a2a2a;
+.studio-source-strip__fader-inner .studio-source-strip__vol {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 1;
+  width: 56px;
+  height: 20px;
+  margin: 0;
+  transform: translate(-50%, -50%) rotate(-90deg);
+  transform-origin: center center;
+  cursor: grab;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  accent-color: transparent;
 }
 
-.studio-source-strip__mute--on {
-  border-color: rgba(229, 57, 53, 0.55);
-  background: rgba(229, 57, 53, 0.15);
-  color: #ffcdd2;
+.studio-source-strip__fader-inner .studio-source-strip__vol:active {
+  cursor: grabbing;
 }
 
-.studio-source-strip__mute-icon {
-  display: flex;
-  width: 22px;
-  height: 22px;
+.studio-source-strip__fader-inner .studio-source-strip__vol:focus {
+  outline: none;
 }
 
-.studio-source-strip__mute-icon svg {
-  width: 100%;
-  height: 100%;
+.studio-source-strip__fader-inner .studio-source-strip__vol:focus-visible {
+  outline: 2px solid var(--logo-red);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.studio-source-strip__fader-inner .studio-source-strip__vol::-webkit-slider-runnable-track {
+  height: 3px;
+  border: none;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--logo-red) 0%,
+    var(--logo-red) var(--studio-vol-pct, 0%),
+    var(--surface2) var(--studio-vol-pct, 0%),
+    var(--surface2) 100%
+  );
+}
+
+.studio-source-strip__fader-inner .studio-source-strip__vol::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4.5px;
+  border-radius: 50%;
+  border: none;
+  background: var(--logo-red);
+  box-shadow: none;
+}
+
+.studio-source-strip__fader-inner .studio-source-strip__vol::-moz-range-track {
+  height: 3px;
+  border: none;
+  border-radius: 2px;
+  background: var(--surface2);
+}
+
+.studio-source-strip__fader-inner .studio-source-strip__vol::-moz-range-progress {
+  height: 3px;
+  border: none;
+  border-radius: 2px;
+  background: var(--logo-red);
+}
+
+.studio-source-strip__fader-inner .studio-source-strip__vol::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 50%;
+  background: var(--logo-red);
+  box-shadow: none;
 }
 
 .studio-swap-btn {
@@ -6444,15 +6560,4 @@ button.vio-row--peer:focus-visible {
   border-radius: 6px;
   padding: 4px 6px;
   box-sizing: border-box;
-}
-
-.studio-source-strip__meter--empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  font-size: 0.62rem;
-  color: var(--text-dim);
-  background: rgba(0, 0, 0, 0.35);
-  border-radius: 4px;
 }

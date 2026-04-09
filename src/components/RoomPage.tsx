@@ -187,6 +187,8 @@ interface Props {
   stopStudioProgram: () => void
   replaceStudioProgramAudioTrack: (track: MediaStreamTrack | null) => Promise<void>
   studioBroadcastHealth: 'idle' | 'connecting' | 'live' | 'warning'
+  /** Пояснение с сервера (stderr FFmpeg и т.д.) при studioBroadcastHealth ≠ live. */
+  studioBroadcastHealthDetail?: string | null
 }
 
 export function RoomPage({
@@ -212,6 +214,7 @@ export function RoomPage({
   stopStudioProgram,
   replaceStudioProgramAudioTrack,
   studioBroadcastHealth,
+  studioBroadcastHealthDetail = null,
 }: Props) {
   const isViewportMobile = useMediaQuery(mediaQueryMaxWidthMobile)
   const [immersiveAutoHide, setImmersiveAutoHide] = useLocalStorageBool(
@@ -1515,6 +1518,7 @@ export function RoomPage({
         stopStudioProgram={stopStudioProgram}
         replaceStudioProgramAudioTrack={replaceStudioProgramAudioTrack}
         studioBroadcastHealth={studioBroadcastHealth}
+        studioBroadcastHealthDetail={studioBroadcastHealthDetail}
       />
     </div>
   )

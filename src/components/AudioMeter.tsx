@@ -12,6 +12,8 @@ interface Props {
   /** Полное заглушение перед анализом. */
   outputMuted?: boolean
   className?: string
+  /** Заполнить родителя (узкая колонка студии); сегменты на всю ширину колонки. */
+  fillParent?: boolean
 }
 
 const MIN_DB = -60
@@ -49,6 +51,7 @@ export function AudioMeter({
   outputGain,
   outputMuted = false,
   className = '',
+  fillParent = false,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rafRef    = useRef<number>(0)
@@ -64,6 +67,7 @@ export function AudioMeter({
   const channels = stereo ? 2 : 1
   const canvasW  = channels * CHAN_W + (channels - 1) * CHAN_GAP
   const horizontal = orientation === 'horizontal'
+  const narrowColumnFill = fillParent && !horizontal
   const useOutputFader = outputGain !== undefined || outputMuted
 
   useEffect(() => {
@@ -138,6 +142,21 @@ export function AudioMeter({
             ctx2d.fillRect(x, y0, segW, chH)
           }
         })
+      } else if (narrowColumnFill) {
+        const segH = Math.max(1, (h - SEGMENTS * SEG_GAP) / SEGMENTS)
+        analysers.forEach((analyser, ch) => {
+          const db = getRms(analyser, buf)
+          const active = Math.round(((db - MIN_DB) / (MAX_DB - MIN_DB)) * SEGMENTS)
+          const sliceW =
+            channels > 1 ? Math.max(2, (w - CHAN_GAP) / channels) : w
+          const xOff = ch * (sliceW + (channels > 1 ? CHAN_GAP : 0))
+          for (let s = 0; s < SEGMENTS; s++) {
+            const segDb = MIN_DB + (s / SEGMENTS) * (MAX_DB - MIN_DB)
+            const y = h - (s + 1) * (segH + SEG_GAP) + SEG_GAP
+            ctx2d.fillStyle = segmentColour(segDb, s < active)
+            ctx2d.fillRect(xOff, y, sliceW, segH)
+          }
+        })
       } else {
         const segH = Math.max(2, (h - SEGMENTS * SEG_GAP) / SEGMENTS)
 
@@ -166,12 +185,19 @@ export function AudioMeter({
       fader?.disconnect()
       analysers.forEach(a => a.disconnect())
     }
-  }, [stream, stereo, canvasW, horizontal, useOutputFader])
+  }, [stream, stereo, canvasW, horizontal, narrowColumnFill, useOutputFader])
 
-  const wrapStyle = horizontal ? { width: '100%' as const } : { width: canvasW + 6 }
+  const wrapStyle = fillParent
+    ? { width: '100%' as const, height: '100%' as const }
+    : horizontal
+      ? { width: '100%' as const }
+      : { width: canvasW + 6 }
 
   return (
-    <div className={`audio-meter-wrap${horizontal ? ' audio-meter-wrap--horizontal' : ''}${className ? ` ${className}` : ''}`} style={wrapStyle}>
+    <div
+      className={`audio-meter-wrap${horizontal ? ' audio-meter-wrap--horizontal' : ''}${narrowColumnFill ? ' audio-meter-wrap--strip-vertical' : ''}${className ? ` ${className}` : ''}`}
+      style={wrapStyle}
+    >
       <canvas ref={canvasRef} className="audio-meter-canvas" width={canvasW} height={4} />
     </div>
   )
