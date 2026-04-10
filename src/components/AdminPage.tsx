@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
+import { AdminDashboardPanel } from './AdminDashboardPanel'
 import { AdminRegisteredUsersTable } from './AdminRegisteredUsersTable'
 import { ServerSettingsModal } from './ServerSettingsModal'
-import { AdminDashboardPanel } from './AdminDashboardPanel'
+import { TelegramNotificationsPanel } from './TelegramNotificationsPanel'
 
-type AdminTab = 'dashboard' | 'users' | 'server'
+type AdminTab = 'dashboard' | 'users' | 'server' | 'notifications'
 
 export function AdminPage() {
   const { signOut } = useAuth()
@@ -26,7 +27,11 @@ export function AdminPage() {
           <Link to="/dashboard" className="dashboard-topbar__nav-link">
             Личный кабинет
           </Link>
-          <button type="button" className="dashboard-topbar__nav-link dashboard-topbar__nav-link--btn" onClick={() => signOut()}>
+          <button
+            type="button"
+            className="dashboard-topbar__nav-link dashboard-topbar__nav-link--btn"
+            onClick={() => signOut()}
+          >
             Выйти
           </button>
         </nav>
@@ -57,6 +62,13 @@ export function AdminPage() {
             >
               Сервер
             </button>
+            <button
+              type="button"
+              className={`admin-sidebar__link${tab === 'notifications' ? ' admin-sidebar__link--active' : ''}`}
+              onClick={() => setTab('notifications')}
+            >
+              Telegram
+            </button>
           </nav>
         </aside>
 
@@ -71,6 +83,8 @@ export function AdminPage() {
           ) : null}
 
           {tab === 'server' ? <ServerSettingsModal variant="inline" open /> : null}
+
+          {tab === 'notifications' ? <TelegramNotificationsPanel /> : null}
         </div>
       </div>
     </div>

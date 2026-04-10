@@ -4,19 +4,8 @@ import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useProfile } from '../hooks/useProfile'
 import { supabase } from '../lib/supabase'
-import {
-  fetchTelegramNotifications,
-  sendTelegramNotificationsTest,
-  updateTelegramNotifications,
-} from '../api/telegramNotificationsApi'
 import type { StoredLayoutMode } from '../config/roomUiStorage'
 import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
-import type {
-  TelegramMode,
-  TelegramNotificationsPayload,
-  TelegramNotificationsResponse,
-} from '../types/telegramAdminSettings'
-import { hasAdminBearerToken } from '../utils/adminApiAuth'
 import { newRoomId } from '../utils/roomId'
 import { setPendingHostClaim } from '../lib/spaceRoom'
 import { DashboardProfileModal } from './DashboardProfileModal'
@@ -24,20 +13,19 @@ import { DashboardLayoutPicker } from './DashboardLayoutPicker'
 import { PillToggle } from './PillToggle'
 
 const STATUS_LABEL: Record<string, string> = {
-  active:  'Активен',
+  active: 'Активен',
   blocked: 'Заблокирован',
   pending: 'Ожидает подтверждения',
   deleted: 'Удалён',
 }
 
 const STATUS_CLASS: Record<string, string> = {
-  active:  'dashboard-badge--active',
+  active: 'dashboard-badge--active',
   blocked: 'dashboard-badge--blocked',
   pending: 'dashboard-badge--pending',
   deleted: 'dashboard-badge--deleted',
 }
 
-/** Подписи глобальных ролей в кабинете (справочник в БД на английском). */
 const GLOBAL_ROLE_LABEL: Record<string, string> = {
   superadmin: 'Суперадмин',
   platform_admin: 'Администратор платформы',
@@ -55,70 +43,24 @@ function globalRoleBadgeClass(code: string): string {
   return 'dashboard-badge dashboard-badge--role'
 }
 
-function modeFromTelegramSettings(data: TelegramNotificationsResponse): TelegramMode {
-  const events = [...data.immediateEvents].sort().join(',')
-  if (data.summaryHours === 4 && data.immediateEvents.length === 0) return 'summary_4h'
-  if (data.summaryHours === 8 && data.immediateEvents.length === 0) return 'summary_8h'
-  if (data.summaryHours === 24 && data.immediateEvents.length === 0) return 'summary_24h'
-  if (events === 'participant_joined') return 'new_users'
-  if (events === 'room_created') return 'room_created'
-  return 'all'
-}
-
-function telegramPayloadFromMode(mode: TelegramMode): TelegramNotificationsPayload {
-  switch (mode) {
-    case 'new_users':
-      return { enabled: true, immediateEvents: ['participant_joined'], summaryHours: 0 }
-    case 'room_created':
-      return { enabled: true, immediateEvents: ['room_created'], summaryHours: 0 }
-    case 'summary_4h':
-      return { enabled: true, immediateEvents: [], summaryHours: 4 }
-    case 'summary_8h':
-      return { enabled: true, immediateEvents: [], summaryHours: 8 }
-    case 'summary_24h':
-      return { enabled: true, immediateEvents: [], summaryHours: 24 }
-    case 'all':
-    default:
-      return {
-        enabled: true,
-        immediateEvents: [
-          'room_created',
-          'participant_joined',
-          'participant_left',
-          'room_closed',
-          'egress_started',
-          'egress_stopped',
-        ],
-        summaryHours: 0,
-      }
-  }
-}
-
 export function DashboardPage() {
   const navigate = useNavigate()
   const { signOut, user } = useAuth()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
-  const { profile, plan, loading, saving, uploadingAvatar, error, saveProfile, uploadAvatar, removeAvatar } = useProfile()
+  const { profile, plan, loading, saving, uploadingAvatar, error, saveProfile, uploadAvatar, removeAvatar } =
+    useProfile()
 
   const [displayName, setDisplayName] = useState('')
-  const [nameEdited, setNameEdited]   = useState(false)
-  const [saveMsg, setSaveMsg]         = useState<string | null>(null)
-  const [saveErr, setSaveErr]         = useState<string | null>(null)
-  const [roomLayout, setRoomLayout]   = useState<StoredLayoutMode>('pip')
+  const [nameEdited, setNameEdited] = useState(false)
+  const [saveMsg, setSaveMsg] = useState<string | null>(null)
+  const [saveErr, setSaveErr] = useState<string | null>(null)
+  const [roomLayout, setRoomLayout] = useState<StoredLayoutMode>('pip')
   const [roomShowLayoutToggle, setRoomShowLayoutToggle] = useState(true)
   const [roomHideVideoLetterboxing, setRoomHideVideoLetterboxing] = useState(true)
   const [roomSaveMsg, setRoomSaveMsg] = useState<string | null>(null)
   const [roomSaveErr, setRoomSaveErr] = useState<string | null>(null)
-  const [roomSaving, setRoomSaving]   = useState(false)
+  const [roomSaving, setRoomSaving] = useState(false)
   const [profileEditOpen, setProfileEditOpen] = useState(false)
-  const [telegramMode, setTelegramMode] = useState<TelegramMode>('all')
-  const [telegramConfigured, setTelegramConfigured] = useState(false)
-  const [telegramLoading, setTelegramLoading] = useState(false)
-  const [telegramSaving, setTelegramSaving] = useState(false)
-  const [telegramTesting, setTelegramTesting] = useState(false)
-  const [telegramSaveMsg, setTelegramSaveMsg] = useState<string | null>(null)
-  const [telegramSaveErr, setTelegramSaveErr] = useState<string | null>(null)
-  const canManageTelegram = canAccessAdmin && hasAdminBearerToken()
 
   useEffect(() => {
     if (!profile) return
@@ -136,26 +78,6 @@ export function DashboardPage() {
     setSaveErr(null)
   }, [profileEditOpen, profile])
 
-  useEffect(() => {
-    if (!canManageTelegram) return
-    let cancelled = false
-    setTelegramLoading(true)
-    setTelegramSaveErr(null)
-    void fetchTelegramNotifications().then((result) => {
-      if (cancelled) return
-      setTelegramLoading(false)
-      if (!result.ok) {
-        setTelegramSaveErr(result.message)
-        return
-      }
-      setTelegramConfigured(result.data.configured)
-      setTelegramMode(modeFromTelegramSettings(result.data))
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [canManageTelegram])
-
   const currentName = nameEdited ? displayName : (profile?.display_name ?? '')
 
   const handleNameChange = (v: string) => {
@@ -170,7 +92,8 @@ export function DashboardPage() {
     setSaveMsg(null)
     setSaveErr(null)
     const { error: err } = await saveProfile(currentName)
-    if (err) { setSaveErr(err) } else { setSaveMsg('Сохранено') }
+    if (err) setSaveErr(err)
+    else setSaveMsg('Сохранено')
   }
 
   const handleModalAvatarUpload = async (file: File) => {
@@ -229,37 +152,6 @@ export function DashboardPage() {
     else setRoomSaveMsg('Сохранено')
   }
 
-  const handleSaveTelegramPrefs = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!canManageTelegram) return
-    setTelegramSaving(true)
-    setTelegramSaveErr(null)
-    setTelegramSaveMsg(null)
-    const result = await updateTelegramNotifications(telegramPayloadFromMode(telegramMode))
-    setTelegramSaving(false)
-    if (!result.ok) {
-      setTelegramSaveErr(result.message)
-      return
-    }
-    setTelegramConfigured(result.data.configured)
-    setTelegramMode(modeFromTelegramSettings(result.data))
-    setTelegramSaveMsg('Настройки уведомлений сохранены')
-  }
-
-  const handleTelegramTest = async () => {
-    if (!canManageTelegram) return
-    setTelegramTesting(true)
-    setTelegramSaveErr(null)
-    setTelegramSaveMsg(null)
-    const result = await sendTelegramNotificationsTest()
-    setTelegramTesting(false)
-    if (!result.ok) {
-      setTelegramSaveErr(result.message)
-      return
-    }
-    setTelegramSaveMsg('Тестовое сообщение отправлено')
-  }
-
   if (loading) {
     return (
       <div className="dashboard-page">
@@ -294,14 +186,14 @@ export function DashboardPage() {
 
   return (
     <div className="dashboard-page">
-
-      {/* Топбар */}
       <header className="dashboard-topbar">
         <Link to="/" className="dashboard-topbar__logo" title="На главную">
           <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
         </Link>
         <nav className="dashboard-topbar__nav">
-          <Link to="/" className="dashboard-topbar__nav-link">На главную</Link>
+          <Link to="/" className="dashboard-topbar__nav-link">
+            На главную
+          </Link>
           <button
             type="button"
             className="dashboard-topbar__nav-link dashboard-topbar__nav-link--btn"
@@ -314,7 +206,11 @@ export function DashboardPage() {
               Админка
             </Link>
           ) : null}
-          <button type="button" className="dashboard-topbar__nav-link dashboard-topbar__nav-link--btn" onClick={() => signOut()}>
+          <button
+            type="button"
+            className="dashboard-topbar__nav-link dashboard-topbar__nav-link--btn"
+            onClick={() => signOut()}
+          >
             Выйти
           </button>
         </nav>
@@ -322,7 +218,6 @@ export function DashboardPage() {
 
       <div className="dashboard-body">
         <div className="dashboard-content dashboard-content--cabinet">
-
           <DashboardProfileModal
             open={profileEditOpen}
             onClose={closeProfileModal}
@@ -338,12 +233,15 @@ export function DashboardPage() {
             saveErr={saveErr}
             saveMsg={saveMsg}
             onSave={handleSave}
-            onRemoveAvatar={() => { void handleRemoveAvatar() }}
-            onUploadAvatar={(file) => { void handleModalAvatarUpload(file) }}
+            onRemoveAvatar={() => {
+              void handleRemoveAvatar()
+            }}
+            onUploadAvatar={(file) => {
+              void handleModalAvatarUpload(file)
+            }}
           />
 
           <div className="dashboard-profile-account-row">
-            {/* ── Профиль (компактно) ── */}
             <section className="dashboard-section">
               <h2 className="dashboard-section__title">Профиль</h2>
               <div className="dashboard-profile-summary">
@@ -370,7 +268,6 @@ export function DashboardPage() {
               </div>
             </section>
 
-            {/* ── Аккаунт ── */}
             <section className="dashboard-section">
               <h2 className="dashboard-section__title">Аккаунт</h2>
 
@@ -419,11 +316,11 @@ export function DashboardPage() {
             </section>
           </div>
 
-          {/* ── Комнаты (десктоп) ── */}
           <section className="dashboard-section">
             <h2 className="dashboard-section__title">Настройки комнаты</h2>
             <p className="dashboard-section__hint">
-              Для входа с компьютера: вид по умолчанию, кнопка смены раскладки и отображение камеры в плитках. На телефоне по-прежнему своя сетка и жесты.
+              Для входа с компьютера: вид по умолчанию, кнопка смены раскладки и отображение камеры в
+              плитках. На телефоне по-прежнему своя сетка и жесты.
             </p>
             <form onSubmit={handleSaveRoomPrefs} className="dashboard-form">
               <div className="dashboard-field">
@@ -463,78 +360,6 @@ export function DashboardPage() {
               </button>
             </form>
           </section>
-
-          {canAccessAdmin ? (
-            <section className="dashboard-section">
-              <h2 className="dashboard-section__title">Telegram уведомления</h2>
-              <p className="dashboard-section__hint">
-                Выбираем, какие серверные события отправлять в Telegram прямо сейчас.
-              </p>
-              {!hasAdminBearerToken() ? (
-                <p className="join-error">
-                  Добавьте <code>VITE_ADMIN_API_SECRET</code>, чтобы управлять уведомлениями с этой страницы.
-                </p>
-              ) : (
-                <form onSubmit={handleSaveTelegramPrefs} className="dashboard-form">
-                  <div className="dashboard-field">
-                    <div className="dashboard-field__inline dashboard-field__inline--stripe">
-                      <span className="dashboard-field__label">Режим уведомлений</span>
-                      <select
-                        className="device-popover__select"
-                        value={telegramMode}
-                        onChange={(e) => {
-                          setTelegramMode(e.target.value as TelegramMode)
-                          setTelegramSaveMsg(null)
-                          setTelegramSaveErr(null)
-                        }}
-                        disabled={telegramLoading || telegramSaving}
-                        aria-label="Режим Telegram уведомлений"
-                      >
-                        <option value="all">Показывать всё</option>
-                        <option value="new_users">Только новые пользователи</option>
-                        <option value="room_created">Только создание комнат</option>
-                        <option value="summary_4h">Сводка за 4 часа</option>
-                        <option value="summary_8h">Сводка за 8 часов</option>
-                        <option value="summary_24h">Сводка за день</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="dashboard-field">
-                    <div className="dashboard-field__inline dashboard-field__inline--stripe">
-                      <span className="dashboard-field__label">Состояние бота</span>
-                      <span className={`dashboard-badge ${telegramConfigured ? 'dashboard-badge--active' : 'dashboard-badge--pending'}`}>
-                        {telegramConfigured ? 'Подключён' : 'Не настроен на сервере'}
-                      </span>
-                    </div>
-                  </div>
-                  {telegramSaveErr && <p className="join-error">{telegramSaveErr}</p>}
-                  {telegramSaveMsg && <p className="dashboard-save-ok">{telegramSaveMsg}</p>}
-                  <div className="dashboard-field">
-                    <div className="dashboard-field__inline">
-                      <button
-                        type="submit"
-                        className="join-btn dashboard-form__save"
-                        disabled={telegramLoading || telegramSaving}
-                      >
-                        {telegramSaving ? 'Сохранение…' : 'Сохранить Telegram режим'}
-                      </button>
-                      <button
-                        type="button"
-                        className="join-btn join-btn--secondary"
-                        onClick={() => {
-                          void handleTelegramTest()
-                        }}
-                        disabled={telegramLoading || telegramTesting || !telegramConfigured}
-                      >
-                        {telegramTesting ? 'Отправка…' : 'Отправить тест'}
-                      </button>
-                    </div>
-                  </div>
-                </form>
-              )}
-            </section>
-          ) : null}
-
         </div>
       </div>
     </div>
