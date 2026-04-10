@@ -990,6 +990,11 @@ export function RoomPage({
     if (layout !== 'pip') setPipFloatTileId(localPeerId)
   }, [layout, localPeerId])
 
+  useEffect(() => {
+    if (layout !== 'pip' || isViewportMobile) return
+    setPipFloatTileId(localPeerId)
+  }, [layout, isViewportMobile, localPeerId])
+
   const orderedIdsKey = useMemo(() => orderedTileIds.join('\0'), [orderedTileIds])
   useEffect(() => {
     const ids = orderedTileIdsRef.current
