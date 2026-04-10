@@ -127,7 +127,9 @@ export function RoomSession({ roomId }: Props) {
   useEffect(() => {
     let cancelled = false
     void (async () => {
+      console.log('[room-session] joinable check:start', { roomId, userId: user?.id ?? null })
       const ok = await isSpaceRoomJoinable(roomId)
+      console.log('[room-session] joinable check:result', { roomId, ok, userId: user?.id ?? null })
       if (!cancelled && !ok) {
         navigate('/room-closed', { replace: true, state: { roomId } })
       }
@@ -151,9 +153,21 @@ export function RoomSession({ roomId }: Props) {
 
   const handleJoin = async (n: string, rid: string, preset: VideoPreset, media: JoinRoomMediaOptions) => {
     const trimmedRid = rid.trim()
+    console.log('[room-session] handleJoin:start', {
+      roomId: trimmedRid,
+      userId: user?.id ?? null,
+      pendingHostClaim: matchesPendingHostClaim(trimmedRid),
+      isSessionHost: isSessionHostFor(trimmedRid),
+      canAccessAdminPanel,
+    })
     if (user?.id && matchesPendingHostClaim(trimmedRid)) {
       clearPendingHostClaim()
       const ok = await registerSpaceRoomAsHost(trimmedRid, user.id)
+      console.log('[room-session] registerSpaceRoomAsHost', {
+        roomId: trimmedRid,
+        userId: user.id,
+        ok,
+      })
       if (ok) markSessionAsHostFor(trimmedRid)
     }
     setName(n)
@@ -168,6 +182,13 @@ export function RoomSession({ roomId }: Props) {
 
   const handleLeaveRoom = () => {
     const rid = (connectedRoomId ?? roomId).trim()
+    console.log('[room-session] handleLeaveRoom', {
+      roomId: rid,
+      userId: user?.id ?? null,
+      isSessionHost: isSessionHostFor(rid),
+      connectedRoomId,
+      routeRoomId: roomId,
+    })
     if (user?.id && isSessionHostFor(rid)) {
       void hostLeaveSpaceRoom(rid)
       clearHostSessionIfMatches(rid)
@@ -176,6 +197,30 @@ export function RoomSession({ roomId }: Props) {
     leave()
     navigate('/', { replace: true })
   }
+
+  useEffect(() => {
+    const onVisibility = () => {
+      console.log('[room-session] visibilitychange', {
+        roomId,
+        hidden: document.hidden,
+        status,
+      })
+    }
+    const onPageHide = () => {
+      console.log('[room-session] pagehide', { roomId, status })
+    }
+    const onPageShow = () => {
+      console.log('[room-session] pageshow', { roomId, status })
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', onPageHide)
+    window.addEventListener('pageshow', onPageShow)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', onPageHide)
+      window.removeEventListener('pageshow', onPageShow)
+    }
+  }, [roomId, status])
 
   if (status === 'connecting') {
     return (

@@ -800,6 +800,42 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
       setSessionMeta({ roomId: roomIdRef.current, localPeerId: socket.id ?? '' })
 
+      console.log('[room-client] socket connected', {
+        roomId: roomIdRef.current,
+        socketId: socket.id ?? null,
+        status: 'post-connect',
+      })
+      socket.on('disconnect', (reason: string) => {
+        console.log('[room-client] socket disconnect', {
+          roomId: roomIdRef.current,
+          socketId: socket.id ?? null,
+          reason,
+          status: status,
+        })
+      })
+      socket.on('connect', () => {
+        console.log('[room-client] socket reconnect/connect', {
+          roomId: roomIdRef.current,
+          socketId: socket.id ?? null,
+          status,
+        })
+      })
+      socket.io.on('reconnect_attempt', (attempt: number) => {
+        console.log('[room-client] reconnect_attempt', {
+          roomId: roomIdRef.current,
+          socketId: socket.id ?? null,
+          attempt,
+        })
+      })
+      socket.io.on('reconnect', (attempt: number) => {
+        console.log('[room-client] reconnect_success', {
+          roomId: roomIdRef.current,
+          socketId: socket.id ?? null,
+          attempt,
+          status,
+        })
+      })
+
       socket.on('peerJoined', (raw: unknown) => {
         const row = parsePeerRosterRow(raw)
         const sid = socket.id

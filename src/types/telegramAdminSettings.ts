@@ -3,6 +3,7 @@ export type TelegramEventType =
   | 'participant_joined'
   | 'participant_left'
   | 'room_closed'
+  | 'room_debug'
   | 'egress_started'
   | 'egress_stopped'
 

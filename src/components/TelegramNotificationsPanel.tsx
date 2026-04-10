@@ -12,6 +12,8 @@ import type {
 import { hasAdminBearerToken } from '../utils/adminApiAuth'
 import { PillToggle } from './PillToggle'
 
+const ROOM_DEBUG_EVENT: TelegramEventType = 'room_debug'
+
 const EVENT_OPTIONS: { key: TelegramEventType; label: string }[] = [
   { key: 'room_created', label: 'Новые комнаты' },
   { key: 'participant_joined', label: 'Новые пользователи' },
@@ -177,6 +179,28 @@ export function TelegramNotificationsPanel() {
               </div>
             )
           })}
+
+          <div className="dashboard-field">
+            <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-field__inline--stripe">
+              <span className="dashboard-field__label">Отладка жизни комнаты</span>
+              <PillToggle
+                checked={settings.immediateEvents.includes(ROOM_DEBUG_EVENT)}
+                onCheckedChange={(next) => {
+                  setSettings((prev) => ({
+                    ...prev,
+                    immediateEvents: next
+                      ? Array.from(new Set([...prev.immediateEvents, ROOM_DEBUG_EVENT]))
+                      : prev.immediateEvents.filter((item) => item !== ROOM_DEBUG_EVENT),
+                  }))
+                  setTelegramSaveMsg(null)
+                  setTelegramSaveErr(null)
+                }}
+                offLabel="Выкл"
+                onLabel="Вкл"
+                ariaLabel="Отладка жизни комнаты"
+              />
+            </div>
+          </div>
 
           <div className="dashboard-field">
             <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-field__inline--stripe">
