@@ -1163,6 +1163,36 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         })
       })
 
+      socket.on('studioProgramRoomNotify', (raw: unknown) => {
+        if (import.meta.env.DEV) console.log('[studioProgramRoomNotify] raw payload:', JSON.stringify(raw))
+        const payload = raw as {
+          open?: boolean
+          broadcasterPeerId?: string
+          broadcaster_peer_id?: string
+          ownerPeerId?: string
+          owner_peer_id?: string
+        } | null
+        const open = payload?.open === true
+        const ownerPeerId =
+          extractField(payload, 'ownerPeerId', 'owner_peer_id') ??
+          extractField(payload, 'broadcasterPeerId', 'broadcaster_peer_id')
+        if (!ownerPeerId || open) return
+
+        const holderPeerId = studioProgramTileKey(ownerPeerId)
+        setParticipants((prev) => {
+          if (!prev.has(holderPeerId)) return prev
+          const next = new Map(prev)
+          next.delete(holderPeerId)
+          return next
+        })
+        setRemoteStudioRtmpByPeer((prev) => {
+          if (!prev[ownerPeerId]) return prev
+          const next = { ...prev }
+          delete next[ownerPeerId]
+          return next
+        })
+      })
+
       socket.on('roomClosed', (raw: unknown) => {
         const payload = raw as { reason?: string } | null
         const reason: RoomClosedReason =

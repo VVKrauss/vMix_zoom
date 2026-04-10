@@ -702,7 +702,7 @@ export function RoomPage({
     [remoteList],
   )
   const remoteStudioProgramActive = useMemo(
-    () => remoteList.some((p) => p.studioProgramStream || p.virtualSourceType === 'studio_program'),
+    () => remoteList.some((p) => p.studioProgramStream || (p.virtualSourceType === 'studio_program' && p.videoStream)),
     [remoteList],
   )
   const canStartScreenShare = !remoteScreenActive && !remoteScreenSharePending
@@ -747,7 +747,7 @@ export function RoomPage({
     [remoteList],
   )
   const remoteStudioProgramTileCount = useMemo(
-    () => remoteList.filter((p) => p.studioProgramStream || p.virtualSourceType === 'studio_program').length,
+    () => remoteList.filter((p) => p.studioProgramStream || (p.virtualSourceType === 'studio_program' && p.videoStream)).length,
     [remoteList],
   )
   /** Только люди: вы + удалённые гости; без vMix/SRT и без плиток демонстрации экрана. */
@@ -790,6 +790,7 @@ export function RoomPage({
     const ids: string[] = [localPeerId]
     if (localScreenTileId) ids.push(localScreenTileId)
     for (const p of remoteList) {
+      if (p.virtualSourceType === 'studio_program' && !p.videoStream) continue
       ids.push(p.peerId)
       const sid = remoteScreenTileId(p)
       if (sid) ids.push(sid)
