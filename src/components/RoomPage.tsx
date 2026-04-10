@@ -793,6 +793,12 @@ export function RoomPage({
     return ids
   }, [localPeerId, localScreenTileId, remoteList])
 
+  const mobileStackedTiles =
+    isViewportMobile &&
+    layout === 'grid' &&
+    !mobileSoloTiles &&
+    orderedTileIds.length === 2
+
   const orderedTileIdsRef = useRef(orderedTileIds)
   orderedTileIdsRef.current = orderedTileIds
 
@@ -1022,7 +1028,7 @@ export function RoomPage({
     setPipSize(isViewportMobile ? { w: 140, h: 94 } : { w: 220, h: 148 })
   }, [isViewportMobile, localPeerId])
 
-  const galleryGridCols = mobileSoloTiles ? 1 : 2
+  const galleryGridCols = mobileSoloTiles || mobileStackedTiles ? 1 : 2
   const galleryPlaceholderCount = gridTrailingPlaceholders(orderedTileIds.length, galleryGridCols)
 
   const pipGridCols = gridCols(Math.max(1, pipGridTileIds.length))
@@ -1531,7 +1537,7 @@ export function RoomPage({
       {/* ── Grid layout ────────────────────────────────────────────────── */}
       {layout === 'grid' && (
         <div
-          className={`tile-grid tile-grid--gallery${mobileSoloTiles ? ' tile-grid--mobile-solo' : ''}${mobileMultiTiles ? ' tile-grid--mobile-multi' : ''}`}
+          className={`tile-grid tile-grid--gallery${mobileSoloTiles ? ' tile-grid--mobile-solo' : ''}${mobileMultiTiles ? ' tile-grid--mobile-multi' : ''}${mobileStackedTiles ? ' tile-grid--mobile-duo-stack' : ''}`}
           style={gridStyle(galleryGridCols)}
         >
           {orderedTileIds.map((id) => (
@@ -1586,7 +1592,12 @@ export function RoomPage({
             enableTouchDoubleTap={isViewportMobile && layout === 'pip'}
             onTouchDoubleTap={onPipFloatDoubleTap}
           >
-            {pipFloatTileId === localPeerId ? localTile(true) : renderConferenceTile(pipFloatTileId)}
+            {pipFloatTileId === localPeerId ? (
+              <div className="pip-preview-shell">
+                <span className="pip-preview-badge">Preview</span>
+                {localTile(true)}
+              </div>
+            ) : renderConferenceTile(pipFloatTileId)}
           </DraggablePip>
         </div>
       )}
