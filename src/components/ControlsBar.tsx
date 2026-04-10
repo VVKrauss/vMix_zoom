@@ -728,7 +728,8 @@ export function ControlsBar({
       {forceMobileFabMenu ? (
         <>
           <div className="ctrl-mobile-bottom-bar" role="toolbar" aria-label="Управление комнатой">
-            <div className="ctrl-mobile-bottom-bar__edge ctrl-mobile-bottom-bar__edge--left">
+            <div className="ctrl-mobile-bottom-bar__edge ctrl-mobile-bottom-bar__edge--left" />
+              {false ? (
               <button
                 type="button"
                 className={`ctrl-mobile-bottom-bar__btn ctrl-mobile-bottom-bar__btn--compact${
@@ -740,7 +741,7 @@ export function ControlsBar({
               >
                 {playoutVolume < 0.02 ? <HeadphonesMutedIcon /> : <HeadphonesIcon />}
               </button>
-            </div>
+              ) : null}
             <div className="ctrl-mobile-bottom-bar__center">
               <button
                 type="button"
@@ -823,7 +824,7 @@ export function ControlsBar({
               onToggleAudioMeter={onToggleMeter}
             />
           ) : null}
-          {open === 'headphones' && forceMobileFabMenu ? (
+          {false && open === 'headphones' && forceMobileFabMenu ? (
             <PlayoutPopover
               onClose={() => setOpen(null)}
               playoutVolume={playoutVolume}
