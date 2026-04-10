@@ -301,6 +301,8 @@ interface Props {
   getPeerUplinkVideoQuality?: (peerId: string) => Promise<InboundVideoQuality | null>
   /** Удалённое выключение микрофона гостя (сигналинг). */
   requestPeerMicMute?: (targetPeerId: string) => void
+  startStudioPreview: (videoTrack: MediaStreamTrack) => Promise<{ ok: boolean; error?: string }>
+  stopStudioPreview: () => Promise<void>
   /** RTMP-эфир из режима «Студия». */
   startStudioProgram: (
     videoTrack: MediaStreamTrack,
@@ -338,6 +340,8 @@ export function RoomPage({
   onStopVmixIngress,
   getPeerUplinkVideoQuality,
   requestPeerMicMute,
+  startStudioPreview,
+  stopStudioPreview,
   startStudioProgram,
   stopStudioProgram,
   replaceStudioProgramAudioTrack,
@@ -1125,7 +1129,7 @@ export function RoomPage({
       const owner = studioPresenter.peerId
       const phase =
         remoteStudioRtmpByPeer[owner] ??
-        (remoteStudioProgramConsumePending ? 'connecting' : 'live')
+        (remoteStudioProgramConsumePending ? 'connecting' : 'idle')
       return (
         <StudioProgramShareTile
           stream={studioPresenter.studioProgramStream}
@@ -1154,7 +1158,7 @@ export function RoomPage({
       if (!sp?.studioProgramStream) return null
       const phase =
         remoteStudioRtmpByPeer[owner] ??
-        (remoteStudioProgramConsumePending ? 'connecting' : 'live')
+        (remoteStudioProgramConsumePending ? 'connecting' : 'idle')
       return (
         <StudioProgramShareTile
           stream={sp.studioProgramStream}
@@ -1182,7 +1186,7 @@ export function RoomPage({
       const owner = p.sourceOwnerPeerId ?? p.peerId
       const phase =
         remoteStudioRtmpByPeer[owner] ??
-        (remoteStudioProgramConsumePending ? 'connecting' : 'live')
+        (remoteStudioProgramConsumePending ? 'connecting' : 'idle')
       return (
         <StudioProgramShareTile
           stream={p.videoStream}
@@ -1770,6 +1774,8 @@ export function RoomPage({
             localStream={localStream}
             localScreenStream={localScreenStream}
             localDisplayName={name}
+            startStudioPreview={startStudioPreview}
+            stopStudioPreview={stopStudioPreview}
             startStudioProgram={startStudioProgram}
             stopStudioProgram={stopStudioProgram}
             replaceStudioProgramAudioTrack={replaceStudioProgramAudioTrack}

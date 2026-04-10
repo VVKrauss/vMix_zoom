@@ -74,6 +74,8 @@ interface Props {
   localStream: MediaStream | null
   localScreenStream: MediaStream | null
   localDisplayName: string
+  startStudioPreview: (videoTrack: MediaStreamTrack) => Promise<{ ok: boolean; error?: string }>
+  stopStudioPreview: () => Promise<void>
   startStudioProgram: (
     videoTrack: MediaStreamTrack,
     audioTrack: MediaStreamTrack | null,
@@ -96,6 +98,8 @@ export function StudioModeWorkspace({
   localStream,
   localScreenStream,
   localDisplayName,
+  startStudioPreview,
+  stopStudioPreview,
   startStudioProgram,
   stopStudioProgram,
   replaceStudioProgramAudioTrack,
@@ -149,6 +153,7 @@ export function StudioModeWorkspace({
   const rafRef = useRef<number>(0)
   const captureStreamRef = useRef<MediaStream | null>(null)
   const programVideoElsRef = useRef<(HTMLVideoElement | null)[]>(Array.from({ length: 6 }, () => null))
+  const logoImageRef = useRef<HTMLImageElement | null>(null)
   const programBoardRef = useRef(programBoard)
   programBoardRef.current = programBoard
 
@@ -161,6 +166,16 @@ export function StudioModeWorkspace({
   const programMixRebuildKeyRef = useRef('')
   const sourceMixRef = useRef(sourceMix)
   sourceMixRef.current = sourceMix
+
+  useEffect(() => {
+    const img = new Image()
+    img.decoding = 'async'
+    img.src = '/logo.png'
+    logoImageRef.current = img
+    return () => {
+      if (logoImageRef.current === img) logoImageRef.current = null
+    }
+  }, [])
 
   const sources = useMemo(
     () =>
@@ -235,6 +250,9 @@ export function StudioModeWorkspace({
   }, [])
 
   const runCaptureLoop = useCallback(async (): Promise<MediaStreamTrack | null> => {
+    const existingTrack = captureStreamRef.current?.getVideoTracks()[0] ?? null
+    if (existingTrack && existingTrack.readyState === 'live') return existingTrack
+
     const canvas = canvasRef.current
     if (!canvas) return null
     const { width: CAP_W, height: CAP_H, maxFramerate } = outputPresetRef.current
@@ -247,6 +265,7 @@ export function StudioModeWorkspace({
       ctx.fillStyle = '#0a0a0a'
       ctx.fillRect(0, 0, CAP_W, CAP_H)
       const b = programBoardRef.current
+      let drewContent = false
       for (let i = 0; i < 6; i++) {
         const slot = b.slots[i]
         if (!slot?.sourceKey) continue
@@ -259,10 +278,46 @@ export function StudioModeWorkspace({
         const v = programVideoElsRef.current[i]
         if (src.stream && v) {
           drawVideoCover(ctx, v, dx, dy, dw, dh)
+          drewContent = true
         } else {
           drawStudioParticipantPlaceholder(ctx, src.displayName, dx, dy, dw, dh)
+          drewContent = true
         }
       }
+
+      if (!drewContent) {
+        const t = performance.now() / 1000
+        const pulse = 0.92 + Math.sin(t * 1.8) * 0.05
+        const glow = 0.16 + ((Math.sin(t * 1.4) + 1) / 2) * 0.1
+        const logo = logoImageRef.current
+        const size = Math.min(CAP_W, CAP_H) * 0.24 * pulse
+        const x = CAP_W / 2 - size / 2
+        const y = CAP_H / 2 - size * 0.8
+
+        const bg = ctx.createRadialGradient(CAP_W / 2, CAP_H / 2, 0, CAP_W / 2, CAP_H / 2, CAP_W * 0.55)
+        bg.addColorStop(0, `rgba(191, 18, 18, ${glow})`)
+        bg.addColorStop(1, 'rgba(0,0,0,0)')
+        ctx.fillStyle = bg
+        ctx.fillRect(0, 0, CAP_W, CAP_H)
+
+        if (logo && logo.complete) {
+          ctx.save()
+          ctx.globalAlpha = 0.88 + Math.sin(t * 1.6) * 0.08
+          ctx.drawImage(logo, x, y, size, size)
+          ctx.restore()
+        }
+
+        ctx.fillStyle = 'rgba(255,255,255,0.92)'
+        ctx.font = '600 34px Inter, Arial, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('ЭФИР', CAP_W / 2, CAP_H / 2 + 70)
+
+        ctx.fillStyle = 'rgba(255,255,255,0.55)'
+        ctx.font = '500 18px Inter, Arial, sans-serif'
+        ctx.fillText('Студия запущена', CAP_W / 2, CAP_H / 2 + 108)
+      }
+
       rafRef.current = requestAnimationFrame(tick)
     }
 
@@ -343,6 +398,23 @@ export function StudioModeWorkspace({
     void replaceStudioProgramAudioTrack(t)
   }, [liveActive, sendStudioAudio, programMixStream, replaceStudioProgramAudioTrack])
 
+  useEffect(() => {
+    if (!open || liveActive) return
+    let cancelled = false
+    void (async () => {
+      const track = await runCaptureLoop()
+      if (!track || cancelled) return
+      const res = await startStudioPreview(track)
+      if (!res.ok && !cancelled) {
+        setLiveError(res.error ?? 'Не удалось показать эфир в комнате')
+        addLog('warn', `Превью студии не опубликовано: ${res.error ?? 'неизвестная ошибка'}`)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [open, liveActive, runCaptureLoop, startStudioPreview, addLog])
+
   const handleLiveToggle = useCallback(async () => {
     if (liveBusy) return
 
@@ -387,12 +459,15 @@ export function StudioModeWorkspace({
     addLog('info', 'produce() → signaling…')
     const res = await startStudioProgram(track, audioTrack, url, key, preset)
     if (!res.ok) {
-      stopCaptureLoop()
       const errMsg = res.error ?? 'Ошибка публикации'
       setLiveError(errMsg)
       setLiveActive(false)
       audioTrack?.stop()
       addLog('error', `startStudioProgram failed: ${errMsg}`)
+      const previewRes = await startStudioPreview(track)
+      if (!previewRes.ok) {
+        addLog('warn', `Не удалось вернуть превью студии: ${previewRes.error ?? 'неизвестная ошибка'}`)
+      }
       setLiveBusy(false)
       return
     }
@@ -412,8 +487,8 @@ export function StudioModeWorkspace({
     programMixStream,
     addLog,
     runCaptureLoop,
+    startStudioPreview,
     startStudioProgram,
-    stopCaptureLoop,
     stopStudioProgram,
   ])
 
@@ -421,25 +496,32 @@ export function StudioModeWorkspace({
     setStopConfirmOpen(false)
     setLiveBusy(true)
     addLog('info', 'Остановка эфира пользователем')
-    stopCaptureLoop()
     try {
       await stopStudioProgram()
       setLiveActive(false)
       setLiveError(null)
       addLog('info', 'Эфир остановлен')
+      const track = await runCaptureLoop()
+      if (track) {
+        const res = await startStudioPreview(track)
+        if (!res.ok) {
+          addLog('warn', `Не удалось вернуть превью студии: ${res.error ?? 'неизвестная ошибка'}`)
+        }
+      }
     } finally {
       setLiveBusy(false)
     }
-  }, [addLog, stopCaptureLoop, stopStudioProgram])
+  }, [addLog, runCaptureLoop, startStudioPreview, stopStudioProgram])
 
   useEffect(() => {
     if (!open) {
+      void stopStudioPreview()
       stopCaptureLoop()
       stopStudioProgram()
       setLiveActive(false)
       setLiveError(null)
     }
-  }, [open, stopCaptureLoop, stopStudioProgram])
+  }, [open, stopCaptureLoop, stopStudioPreview, stopStudioProgram])
 
   useEffect(() => {
     return () => {

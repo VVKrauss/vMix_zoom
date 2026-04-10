@@ -307,6 +307,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const audioProducerRef = useRef<Producer | null>(null)
   const videoProducerRef = useRef<Producer | null>(null)
   const screenProducerRef = useRef<Producer | null>(null)
+  const studioPreviewVideoProducerRef = useRef<Producer | null>(null)
   const studioProgramVideoProducerRef = useRef<Producer | null>(null)
   const studioProgramAudioProducerRef = useRef<Producer | null>(null)
   const studioStopInFlightRef = useRef<Promise<void> | null>(null)
@@ -1832,6 +1833,72 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     }
   }, [])
 
+  const stopStudioPreview = useCallback(async () => {
+    const preview = studioPreviewVideoProducerRef.current
+    if (!preview) return
+    try {
+      preview.pause()
+    } catch {
+      /* ignore */
+    }
+    preview.close()
+    studioPreviewVideoProducerRef.current = null
+  }, [])
+
+  const startStudioPreview = useCallback(
+    async (videoTrack: MediaStreamTrack): Promise<{ ok: boolean; error?: string }> => {
+      const sendTransport = sendTransportRef.current
+      if (!sendTransport) {
+        return { ok: false, error: 'Нет WebRTC-транспорта' }
+      }
+
+      const existing = studioPreviewVideoProducerRef.current
+      if (existing && !existing.closed) {
+        try {
+          await existing.replaceTrack({ track: videoTrack })
+          existing.resume()
+          return { ok: true }
+        } catch (e) {
+          existing.close()
+          studioPreviewVideoProducerRef.current = null
+          if (import.meta.env.DEV) {
+            console.warn('[studio] preview replaceTrack failed; recreating producer', e)
+          }
+        }
+      }
+
+      try {
+        const codecs = deviceRef.current?.rtpCapabilities.codecs ?? []
+        const pickMime = (mime: string) =>
+          codecs.find((c) => c.mimeType.toLowerCase() === mime)
+        const studioVideoCodec =
+          pickMime('video/vp8') ??
+          pickMime('video/vp9') ??
+          pickMime('video/h264') ??
+          undefined
+
+        const previewProducer = await sendTransport.produce({
+          track: videoTrack,
+          codec: studioVideoCodec,
+          appData: {
+            source: 'studio_program',
+            previewOnly: true,
+          },
+        })
+        studioPreviewVideoProducerRef.current = previewProducer
+        previewProducer.on('transportclose', () => {
+          if (studioPreviewVideoProducerRef.current === previewProducer) {
+            studioPreviewVideoProducerRef.current = null
+          }
+        })
+        return { ok: true }
+      } catch (e) {
+        return { ok: false, error: formatStudioProgramError(e) }
+      }
+    },
+    [],
+  )
+
   const startStudioProgram = useCallback(
     async (
       videoTrack: MediaStreamTrack,
@@ -1853,6 +1920,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         setStudioBroadcastHealthDetail(null)
         return { ok: false, error: 'Укажите URL и ключ RTMP' }
       }
+      await stopStudioPreview()
       await stopStudioProgram()
       setStudioBroadcastHealth('connecting')
       setStudioBroadcastHealthDetail(null)
@@ -1949,12 +2017,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         return { ok: false, error: formatStudioProgramError(e) }
       }
     },
-    [stopStudioProgram],
+    [stopStudioPreview, stopStudioProgram],
   )
 
   const leave = useCallback(() => {
     joinGenerationRef.current += 1
     stopScreenShare()
+    stopStudioPreview()
     stopStudioProgram()
     videoProducerRef.current?.close()
     audioProducerRef.current?.close()
@@ -1985,7 +2054,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     setVmixIngressInfo(null)
     setRemoteStudioProgramConsumePending(false)
     setRemoteStudioRtmpByPeer({})
-  }, [stopScreenShare, stopStudioProgram])
+  }, [stopScreenShare, stopStudioPreview, stopStudioProgram])
 
   return {
     join,
@@ -2023,6 +2092,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     vmixIngressInfo,
     vmixIngressLoading,
     getPeerUplinkVideoQuality,
+    startStudioPreview,
+    stopStudioPreview,
     startStudioProgram,
     stopStudioProgram,
     replaceStudioProgramAudioTrack,

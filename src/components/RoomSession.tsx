@@ -99,6 +99,8 @@ export function RoomSession({ roomId }: Props) {
     startVmixIngress, stopVmixIngress, vmixIngressInfo, vmixIngressLoading,
     getPeerUplinkVideoQuality,
     requestPeerMicMute,
+    startStudioPreview,
+    stopStudioPreview,
     startStudioProgram,
     stopStudioProgram,
     replaceStudioProgramAudioTrack,
@@ -218,6 +220,8 @@ export function RoomSession({ roomId }: Props) {
         onStopVmixIngress={stopVmixIngress}
         getPeerUplinkVideoQuality={getPeerUplinkVideoQuality}
         requestPeerMicMute={requestPeerMicMute}
+        startStudioPreview={startStudioPreview}
+        stopStudioPreview={stopStudioPreview}
         startStudioProgram={startStudioProgram}
         stopStudioProgram={stopStudioProgram}
         replaceStudioProgramAudioTrack={replaceStudioProgramAudioTrack}
