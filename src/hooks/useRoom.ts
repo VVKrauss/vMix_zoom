@@ -302,7 +302,9 @@ export type RoomActivityNotifyRef = MutableRefObject<{
   flashChatPreview?: (author: string, text: string) => void
 }>
 
-export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
+type RoomDebugLogger = (message: string, payload?: unknown) => void
+
+export function useRoom(activityNotifyRef?: RoomActivityNotifyRef, debugLog?: RoomDebugLogger) {
   const [status, setStatus] = useState<RoomStatus>('idle')
   const [error, setError] = useState<string | null>(null)
   const [roomClosedReason, setRoomClosedReason] = useState<'room_closed' | 'manager_required' | null>(null)
@@ -800,40 +802,50 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
       setSessionMeta({ roomId: roomIdRef.current, localPeerId: socket.id ?? '' })
 
-      console.log('[room-client] socket connected', {
+      const connectedPayload = {
         roomId: roomIdRef.current,
         socketId: socket.id ?? null,
         status: 'post-connect',
-      })
+      }
+      console.log('[room-client] socket connected', connectedPayload)
+      debugLog?.('[room-client] socket connected', connectedPayload)
       socket.on('disconnect', (reason: string) => {
-        console.log('[room-client] socket disconnect', {
+        const payload = {
           roomId: roomIdRef.current,
           socketId: socket.id ?? null,
           reason,
           status: status,
-        })
+        }
+        console.log('[room-client] socket disconnect', payload)
+        debugLog?.('[room-client] socket disconnect', payload)
       })
       socket.on('connect', () => {
-        console.log('[room-client] socket reconnect/connect', {
+        const payload = {
           roomId: roomIdRef.current,
           socketId: socket.id ?? null,
           status,
-        })
+        }
+        console.log('[room-client] socket reconnect/connect', payload)
+        debugLog?.('[room-client] socket reconnect/connect', payload)
       })
       socket.io.on('reconnect_attempt', (attempt: number) => {
-        console.log('[room-client] reconnect_attempt', {
+        const payload = {
           roomId: roomIdRef.current,
           socketId: socket.id ?? null,
           attempt,
-        })
+        }
+        console.log('[room-client] reconnect_attempt', payload)
+        debugLog?.('[room-client] reconnect_attempt', payload)
       })
       socket.io.on('reconnect', (attempt: number) => {
-        console.log('[room-client] reconnect_success', {
+        const payload = {
           roomId: roomIdRef.current,
           socketId: socket.id ?? null,
           attempt,
           status,
-        })
+        }
+        console.log('[room-client] reconnect_success', payload)
+        debugLog?.('[room-client] reconnect_success', payload)
       })
 
       socket.on('peerJoined', (raw: unknown) => {
