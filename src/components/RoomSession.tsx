@@ -95,6 +95,7 @@ export function RoomSession({ roomId }: Props) {
   const chatToastNotificationsRef = useRef(chatToastNotifications)
   chatToastNotificationsRef.current = chatToastNotifications
   const autoResumeTriedRef = useRef(false)
+  const [leaveBusy, setLeaveBusy] = useState(false)
 
   const dismissChatIncomingPreview = useCallback(() => {
     if (chatPreviewTimerRef.current != null) {
@@ -243,6 +244,7 @@ export function RoomSession({ roomId }: Props) {
   }
 
   const handleLeaveRoom = async () => {
+    if (leaveBusy) return
     const rid = (connectedRoomId ?? roomId).trim()
     const canEndRoomForEveryone = isSessionHostFor(rid) || canAccessAdminPanel
     const leavePayload = {
@@ -254,21 +256,35 @@ export function RoomSession({ roomId }: Props) {
       routeRoomId: roomId,
     }
     console.log('[room-session] handleLeaveRoom', leavePayload)
-    if (user?.id && isSessionHostFor(rid)) {
-      void hostLeaveSpaceRoom(rid)
-      clearHostSessionIfMatches(rid)
-    }
-    clearRoomAutoResume(rid)
-    setChatOpen(false)
-    if (canEndRoomForEveryone) {
-      const res = await endRoomForAll()
-      if (!res.ok) {
-        console.error('[room-session] endRoomForAll failed', { roomId: rid, error: res.error })
+    setLeaveBusy(true)
+    try {
+      setChatOpen(false)
+      if (canEndRoomForEveryone) {
+        const res = await endRoomForAll()
+        if (!res.ok) {
+          console.error('[room-session] endRoomForAll failed', { roomId: rid, error: res.error })
+          window.alert(res.error ?? 'Не удалось завершить звонок для всех. Попробуйте ещё раз.')
+          return
+        }
+        if (user?.id && isSessionHostFor(rid)) {
+          void hostLeaveSpaceRoom(rid)
+          clearHostSessionIfMatches(rid)
+        }
+        clearRoomAutoResume(rid)
+        navigate('/', { replace: true })
+        return
       }
-    } else {
+
+      if (user?.id && isSessionHostFor(rid)) {
+        void hostLeaveSpaceRoom(rid)
+        clearHostSessionIfMatches(rid)
+      }
+      clearRoomAutoResume(rid)
       leave()
+      navigate('/', { replace: true })
+    } finally {
+      setLeaveBusy(false)
     }
-    navigate('/', { replace: true })
   }
 
   useEffect(() => {
