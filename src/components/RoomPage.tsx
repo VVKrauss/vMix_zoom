@@ -1594,7 +1594,6 @@ export function RoomPage({
           >
             {pipFloatTileId === localPeerId ? (
               <div className="pip-preview-shell">
-                <span className="pip-preview-badge">Preview</span>
                 {localTile(true)}
               </div>
             ) : renderConferenceTile(pipFloatTileId)}
