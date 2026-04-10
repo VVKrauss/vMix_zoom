@@ -2847,67 +2847,6 @@ button.admin-stat-card--interactive:disabled {
   word-break: break-word;
 }
 
-.room-debug-overlay {
-  position: fixed;
-  left: 16px;
-  bottom: 96px;
-  z-index: 10037;
-  width: min(420px, calc(100vw - 32px));
-  max-height: min(38vh, 280px);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(229, 57, 53, 0.28);
-  background: rgba(12, 12, 14, 0.9);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.42);
-}
-
-.room-debug-overlay__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.room-debug-overlay__title {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: rgba(255, 235, 238, 0.82);
-}
-
-.room-debug-overlay__clear {
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 235, 238, 0.82);
-  border-radius: 999px;
-  padding: 6px 10px;
-  font-size: 11px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.room-debug-overlay__body {
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-right: 4px;
-}
-
-.room-debug-overlay__line {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 11px;
-  line-height: 1.4;
-  color: rgba(255, 245, 245, 0.84);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
 .header-right {
   display: flex;
   align-items: center;
@@ -4525,16 +4464,6 @@ button.vio-row--peer:focus-visible {
 
   .room-page--viewport-mobile .room-chat-preview-toast {
     bottom: max(20px, env(safe-area-inset-bottom));
-  }
-
-  .room-debug-overlay {
-    left: 10px;
-    right: 10px;
-    width: auto;
-    bottom: calc(var(--room-mobile-bottom-bar-space) + 10px);
-    max-height: min(34vh, 220px);
-    padding: 10px;
-    border-radius: 12px;
   }
 
   .room-chat-preview-toast {

@@ -21,8 +21,6 @@ import {
 } from '../lib/spaceRoom'
 
 const CHAT_PREVIEW_TOAST_MS = 7000
-const ROOM_DEBUG_STORAGE_KEY = 'vmix_room_debug_overlay'
-const ROOM_DEBUG_CAP = 48
 
 interface Props {
   roomId: string
@@ -39,17 +37,6 @@ export function RoomSession({ roomId }: Props) {
     author: string
     text: string
   } | null>(null)
-  const [roomDebugLines, setRoomDebugLines] = useState<string[]>(() => {
-    if (typeof window === 'undefined') return []
-    try {
-      const raw = window.sessionStorage.getItem(ROOM_DEBUG_STORAGE_KEY)
-      if (!raw) return []
-      const parsed = JSON.parse(raw)
-      return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : []
-    } catch {
-      return []
-    }
-  })
   const chatOpenRef = useRef(false)
   const chatPreviewTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
   const [chatToastNotifications, setChatToastNotifications] = useLocalStorageBool(
@@ -84,41 +71,6 @@ export function RoomSession({ roomId }: Props) {
       }, CHAT_PREVIEW_TOAST_MS)
     },
   })
-
-  const appendRoomDebugLine = useCallback((message: string, payload?: unknown) => {
-    const time = new Date().toLocaleTimeString('ru-RU', {
-      hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    })
-    let line = `${time} ${message}`
-    if (payload !== undefined) {
-      try {
-        line += ` ${JSON.stringify(payload)}`
-      } catch {
-        line += ` ${String(payload)}`
-      }
-    }
-    setRoomDebugLines((prev) => {
-      const next = [...prev, line].slice(-ROOM_DEBUG_CAP)
-      try {
-        window.sessionStorage.setItem(ROOM_DEBUG_STORAGE_KEY, JSON.stringify(next))
-      } catch {
-        /* ignore */
-      }
-      return next
-    })
-  }, [])
-
-  const clearRoomDebugLines = useCallback(() => {
-    setRoomDebugLines([])
-    try {
-      window.sessionStorage.removeItem(ROOM_DEBUG_STORAGE_KEY)
-    } catch {
-      /* ignore */
-    }
-  }, [])
 
   useLayoutEffect(() => {
     chatOpenRef.current = chatOpen
@@ -158,7 +110,7 @@ export function RoomSession({ roomId }: Props) {
     studioBroadcastHealthDetail,
     studioServerLogLines,
     roomClosedReason,
-  } = useRoom(roomActivityNotifyRef, appendRoomDebugLine)
+  } = useRoom(roomActivityNotifyRef)
 
   useEffect(() => {
     if (status !== 'connected') return
@@ -177,11 +129,9 @@ export function RoomSession({ roomId }: Props) {
     void (async () => {
       const startPayload = { roomId, userId: user?.id ?? null }
       console.log('[room-session] joinable check:start', startPayload)
-      appendRoomDebugLine('[room-session] joinable check:start', startPayload)
       const ok = await isSpaceRoomJoinable(roomId)
       const resultPayload = { roomId, ok, userId: user?.id ?? null }
       console.log('[room-session] joinable check:result', resultPayload)
-      appendRoomDebugLine('[room-session] joinable check:result', resultPayload)
       if (!cancelled && !ok) {
         navigate('/room-closed', { replace: true, state: { roomId } })
       }
@@ -189,7 +139,7 @@ export function RoomSession({ roomId }: Props) {
     return () => {
       cancelled = true
     }
-  }, [appendRoomDebugLine, roomId, navigate, user?.id])
+  }, [roomId, navigate, user?.id])
 
   useEffect(() => {
     if (!roomClosedReason) return
@@ -213,7 +163,6 @@ export function RoomSession({ roomId }: Props) {
       canAccessAdminPanel,
     }
     console.log('[room-session] handleJoin:start', joinPayload)
-    appendRoomDebugLine('[room-session] handleJoin:start', joinPayload)
     if (user?.id && matchesPendingHostClaim(trimmedRid)) {
       clearPendingHostClaim()
       const ok = await registerSpaceRoomAsHost(trimmedRid, user.id)
@@ -223,7 +172,6 @@ export function RoomSession({ roomId }: Props) {
         ok,
       }
       console.log('[room-session] registerSpaceRoomAsHost', hostPayload)
-      appendRoomDebugLine('[room-session] registerSpaceRoomAsHost', hostPayload)
       if (ok) markSessionAsHostFor(trimmedRid)
     }
     setName(n)
@@ -246,7 +194,6 @@ export function RoomSession({ roomId }: Props) {
       routeRoomId: roomId,
     }
     console.log('[room-session] handleLeaveRoom', leavePayload)
-    appendRoomDebugLine('[room-session] handleLeaveRoom', leavePayload)
     if (user?.id && isSessionHostFor(rid)) {
       void hostLeaveSpaceRoom(rid)
       clearHostSessionIfMatches(rid)
@@ -264,17 +211,14 @@ export function RoomSession({ roomId }: Props) {
         status,
       }
       console.log('[room-session] visibilitychange', payload)
-      appendRoomDebugLine('[room-session] visibilitychange', payload)
     }
     const onPageHide = () => {
       const payload = { roomId, status }
       console.log('[room-session] pagehide', payload)
-      appendRoomDebugLine('[room-session] pagehide', payload)
     }
     const onPageShow = () => {
       const payload = { roomId, status }
       console.log('[room-session] pageshow', payload)
-      appendRoomDebugLine('[room-session] pageshow', payload)
     }
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('pagehide', onPageHide)
@@ -284,7 +228,7 @@ export function RoomSession({ roomId }: Props) {
       window.removeEventListener('pagehide', onPageHide)
       window.removeEventListener('pageshow', onPageShow)
     }
-  }, [appendRoomDebugLine, roomId, status])
+  }, [roomId, status])
 
   if (status === 'connecting') {
     return (
@@ -346,8 +290,6 @@ export function RoomSession({ roomId }: Props) {
         studioBroadcastHealth={studioBroadcastHealth}
         studioBroadcastHealthDetail={studioBroadcastHealthDetail}
         studioServerLogLines={studioServerLogLines}
-        roomDebugLines={roomDebugLines}
-        onClearRoomDebugLines={clearRoomDebugLines}
       />
     )
   }

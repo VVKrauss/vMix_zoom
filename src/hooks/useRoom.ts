@@ -302,9 +302,7 @@ export type RoomActivityNotifyRef = MutableRefObject<{
   flashChatPreview?: (author: string, text: string) => void
 }>
 
-type RoomDebugLogger = (message: string, payload?: unknown) => void
-
-export function useRoom(activityNotifyRef?: RoomActivityNotifyRef, debugLog?: RoomDebugLogger) {
+export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const [status, setStatus] = useState<RoomStatus>('idle')
   const [error, setError] = useState<string | null>(null)
   const [roomClosedReason, setRoomClosedReason] = useState<'room_closed' | 'manager_required' | null>(null)
@@ -808,7 +806,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef, debugLog?: Ro
         status: 'post-connect',
       }
       console.log('[room-client] socket connected', connectedPayload)
-      debugLog?.('[room-client] socket connected', connectedPayload)
       socket.on('disconnect', (reason: string) => {
         const payload = {
           roomId: roomIdRef.current,
@@ -817,7 +814,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef, debugLog?: Ro
           status: status,
         }
         console.log('[room-client] socket disconnect', payload)
-        debugLog?.('[room-client] socket disconnect', payload)
       })
       socket.on('connect', () => {
         const payload = {
@@ -826,7 +822,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef, debugLog?: Ro
           status,
         }
         console.log('[room-client] socket reconnect/connect', payload)
-        debugLog?.('[room-client] socket reconnect/connect', payload)
       })
       socket.io.on('reconnect_attempt', (attempt: number) => {
         const payload = {
@@ -835,7 +830,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef, debugLog?: Ro
           attempt,
         }
         console.log('[room-client] reconnect_attempt', payload)
-        debugLog?.('[room-client] reconnect_attempt', payload)
       })
       socket.io.on('reconnect', (attempt: number) => {
         const payload = {
@@ -845,7 +839,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef, debugLog?: Ro
           status,
         }
         console.log('[room-client] reconnect_success', payload)
-        debugLog?.('[room-client] reconnect_success', payload)
       })
 
       socket.on('peerJoined', (raw: unknown) => {

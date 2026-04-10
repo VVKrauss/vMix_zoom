@@ -318,8 +318,6 @@ interface Props {
   /** Пояснение с сервера (stderr FFmpeg и т.д.) при studioBroadcastHealth ≠ live. */
   studioBroadcastHealthDetail?: string | null
   studioServerLogLines?: readonly string[]
-  roomDebugLines?: readonly string[]
-  onClearRoomDebugLines?: () => void
 }
 
 export function RoomPage({
@@ -351,8 +349,6 @@ export function RoomPage({
   studioBroadcastHealth,
   studioBroadcastHealthDetail = null,
   studioServerLogLines = [],
-  roomDebugLines = [],
-  onClearRoomDebugLines,
 }: Props) {
   const isViewportMobile = useMediaQuery(mediaQueryMaxWidthMobile)
   const [immersiveAutoHide, setImmersiveAutoHide] = useLocalStorageBool(
@@ -1510,30 +1506,6 @@ export function RoomPage({
           </>
         ) : null}
       </div>
-
-      {roomDebugLines.length > 0 ? (
-        <div className="room-debug-overlay" role="log" aria-live="polite" aria-label="Отладка комнаты">
-          <div className="room-debug-overlay__header">
-            <span className="room-debug-overlay__title">Логи комнаты</span>
-            {onClearRoomDebugLines ? (
-              <button
-                type="button"
-                className="room-debug-overlay__clear"
-                onClick={onClearRoomDebugLines}
-              >
-                Очистить
-              </button>
-            ) : null}
-          </div>
-          <div className="room-debug-overlay__body">
-            {roomDebugLines.map((line, index) => (
-              <div key={`${index}-${line}`} className="room-debug-overlay__line">
-                {line}
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
 
       <div
         className={`room-body${chatEmbed && chatOpen ? ' room-body--with-embed-chat' : ''}`}
