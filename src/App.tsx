@@ -28,6 +28,16 @@ const DashboardPage = lazy(async () => {
   return { default: mod.DashboardPage }
 })
 
+const DashboardChatsPage = lazy(async () => {
+  const mod = await import('./components/DashboardChatsPage')
+  return { default: mod.DashboardChatsPage }
+})
+
+const DashboardChatViewPage = lazy(async () => {
+  const mod = await import('./components/DashboardChatViewPage')
+  return { default: mod.DashboardChatViewPage }
+})
+
 const AdminPage = lazy(async () => {
   const mod = await import('./components/AdminPage')
   return { default: mod.AdminPage }
@@ -101,6 +111,8 @@ export function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/auth/email-confirmed" element={<EmailConfirmedPage />} />
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+        <Route path="/dashboard/chats" element={<ProtectedRoute><DashboardChatsPage /></ProtectedRoute>} />
+        <Route path="/dashboard/chats/:conversationId" element={<ProtectedRoute><DashboardChatViewPage /></ProtectedRoute>} />
         <Route path="/admin" element={<AdminProtectedRoute><AdminPage /></AdminProtectedRoute>} />
         <Route path="/room-closed" element={<RoomClosedPage />} />
         <Route path="/r/:roomId" element={<RoomRoute />} />

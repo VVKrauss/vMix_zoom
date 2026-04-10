@@ -1,16 +1,14 @@
 import { FormEvent, useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useProfile } from '../hooks/useProfile'
 import { supabase } from '../lib/supabase'
 import type { StoredLayoutMode } from '../config/roomUiStorage'
 import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
-import { newRoomId } from '../utils/roomId'
-import { setPendingHostClaim } from '../lib/spaceRoom'
 import { DashboardProfileModal } from './DashboardProfileModal'
 import { DashboardLayoutPicker } from './DashboardLayoutPicker'
 import { PillToggle } from './PillToggle'
+import { DashboardTopbar } from './DashboardTopbar'
 
 const STATUS_LABEL: Record<string, string> = {
   active: 'Активен',
@@ -44,7 +42,6 @@ function globalRoleBadgeClass(code: string): string {
 }
 
 export function DashboardPage() {
-  const navigate = useNavigate()
   const { signOut, user } = useAuth()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const { profile, plan, loading, saving, uploadingAvatar, error, saveProfile, uploadAvatar, removeAvatar } =
@@ -102,12 +99,6 @@ export function DashboardPage() {
     if (err) setSaveErr(err)
   }
 
-  const goCreateRoom = () => {
-    const id = newRoomId()
-    setPendingHostClaim(id)
-    navigate(`/r/${encodeURIComponent(id)}`)
-  }
-
   const handleRemoveAvatar = async () => {
     setSaveErr(null)
     const { error: err } = await removeAvatar()
@@ -155,11 +146,7 @@ export function DashboardPage() {
   if (loading) {
     return (
       <div className="dashboard-page">
-        <div className="dashboard-topbar">
-          <Link to="/" className="dashboard-topbar__logo">
-            <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
-          </Link>
-        </div>
+        <DashboardTopbar canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()} active="cabinet" />
         <div className="dashboard-body">
           <div className="auth-loading" aria-label="Загрузка…" />
         </div>
@@ -170,11 +157,7 @@ export function DashboardPage() {
   if (error || !profile) {
     return (
       <div className="dashboard-page">
-        <div className="dashboard-topbar">
-          <Link to="/" className="dashboard-topbar__logo">
-            <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
-          </Link>
-        </div>
+        <DashboardTopbar canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()} active="cabinet" />
         <div className="dashboard-body">
           <p className="join-error">{error ?? 'Не удалось загрузить профиль'}</p>
         </div>
@@ -186,35 +169,7 @@ export function DashboardPage() {
 
   return (
     <div className="dashboard-page">
-      <header className="dashboard-topbar">
-        <Link to="/" className="dashboard-topbar__logo" title="На главную">
-          <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
-        </Link>
-        <nav className="dashboard-topbar__nav">
-          <Link to="/" className="dashboard-topbar__nav-link">
-            На главную
-          </Link>
-          <button
-            type="button"
-            className="dashboard-topbar__nav-link dashboard-topbar__nav-link--btn"
-            onClick={goCreateRoom}
-          >
-            Создать комнату
-          </button>
-          {canAccessAdmin ? (
-            <Link to="/admin" className="dashboard-topbar__nav-link">
-              Админка
-            </Link>
-          ) : null}
-          <button
-            type="button"
-            className="dashboard-topbar__nav-link dashboard-topbar__nav-link--btn"
-            onClick={() => signOut()}
-          >
-            Выйти
-          </button>
-        </nav>
-      </header>
+      <DashboardTopbar canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()} active="cabinet" />
 
       <div className="dashboard-body">
         <div className="dashboard-content dashboard-content--cabinet">
