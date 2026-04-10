@@ -1881,8 +1881,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           track: videoTrack,
           codec: studioVideoCodec,
           appData: {
-            source: 'studio_program',
-            previewOnly: true,
+            source: 'screen',
+            ownerPeerId: socketRef.current?.id,
+            studioPreview: true,
           },
         })
         studioPreviewVideoProducerRef.current = previewProducer

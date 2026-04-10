@@ -10,6 +10,7 @@ export function ownerPeerFromDescriptor(p: ProducerDescriptor): string | undefin
 export function descriptorVideoSource(
   p: ProducerDescriptor,
 ): 'camera' | 'screen' | 'vmix' | 'studio_program' | undefined {
+  if (p.appData?.studioPreview === true || p.appData?.source === 'studio_preview') return 'studio_program'
   if (p.videoSource) return p.videoSource
   const src = p.appData?.source
   if (src === 'screen' || src === 'camera' || src === 'vmix' || src === 'studio_program') return src
