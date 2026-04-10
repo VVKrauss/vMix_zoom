@@ -432,6 +432,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   /** Сырые строки событий студии с сервера (socket) — для лога в UI. */
   const [studioServerLogLines, setStudioServerLogLines] = useState<string[]>([])
   const appendStudioServerLogRef = useRef<(line: string) => void>(() => {})
+  const suppressRoomClosedReasonRef = useRef(false)
   appendStudioServerLogRef.current = (line: string) => {
     setStudioServerLogLines((prev) => {
       const next = [...prev, line]
@@ -1170,6 +1171,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
             : payload?.reason === 'manager_reconnecting'
               ? 'manager_reconnecting'
               : 'room_closed'
+        if (suppressRoomClosedReasonRef.current && reason === 'room_closed') {
+          return
+        }
         setRoomClosedReason(reason)
         leave()
       })
@@ -1951,6 +1955,35 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     [],
   )
 
+  const requestEndRoomForAll = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
+    const socket = socketRef.current
+    const roomId = roomIdRef.current
+    if (!socket?.connected || !roomId) {
+      return { ok: false, error: 'Нет соединения с сервером' }
+    }
+    return await new Promise<{ ok: boolean; error?: string }>((resolve) => {
+      socket.timeout(15_000).emit(
+        'endRoomForAll',
+        { roomId },
+        (err: Error | null, res?: Record<string, unknown>) => {
+          if (err) {
+            resolve({
+              ok: false,
+              error: 'Сервер не подтвердил завершение звонка для всех (таймаут или обрыв соединения).',
+            })
+            return
+          }
+          const data = res ?? {}
+          if (data.error) {
+            resolve({ ok: false, error: String(data.error) })
+            return
+          }
+          resolve({ ok: true })
+        },
+      )
+    })
+  }, [])
+
   const getPeerUplinkVideoQuality = useCallback(
     async (anchorPeerId: string): Promise<InboundVideoQuality | null> => {
       const localId = sessionMeta?.localPeerId
@@ -2311,9 +2344,22 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     setRemoteStudioRtmpByPeer({})
   }, [stopScreenShare, stopStudioPreview, stopStudioProgram])
 
+  const endRoomForAll = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
+    suppressRoomClosedReasonRef.current = true
+    const res = await requestEndRoomForAll()
+    if (!res.ok) {
+      suppressRoomClosedReasonRef.current = false
+      return res
+    }
+    leave()
+    suppressRoomClosedReasonRef.current = false
+    return { ok: true }
+  }, [leave, requestEndRoomForAll])
+
   return {
     join,
     leave,
+    endRoomForAll,
     toggleMute,
     requestPeerMicMute,
     toggleCam,

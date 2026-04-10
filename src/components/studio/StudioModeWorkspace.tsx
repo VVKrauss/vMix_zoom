@@ -528,6 +528,22 @@ export function StudioModeWorkspace({
     }
   }, [addLog, runCaptureLoop, startStudioPreview, stopStudioProgram])
 
+  const handleCloseStudio = useCallback(async () => {
+    if (liveBusy) return
+    setLiveBusy(true)
+    addLog('info', 'Закрытие студии пользователем')
+    try {
+      await stopStudioProgram()
+      await stopStudioPreview()
+      stopCaptureLoop()
+      setLiveActive(false)
+      setLiveError(null)
+      onClose()
+    } finally {
+      setLiveBusy(false)
+    }
+  }, [addLog, liveBusy, onClose, stopCaptureLoop, stopStudioPreview, stopStudioProgram])
+
   useEffect(() => {
     if (!open) {
       void stopStudioPreview()
@@ -540,9 +556,11 @@ export function StudioModeWorkspace({
 
   useEffect(() => {
     return () => {
+      void stopStudioPreview()
+      void stopStudioProgram()
       stopCaptureLoop()
     }
-  }, [stopCaptureLoop])
+  }, [stopCaptureLoop, stopStudioPreview, stopStudioProgram])
 
   useEffect(() => {
     if (logsOpen) logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -629,7 +647,7 @@ export function StudioModeWorkspace({
           <button type="button" className="studio-chrome__settings" onClick={() => setSettingsOpen(true)} aria-label="Настройки потока" title="Настройки потока">
             <GearIcon />
           </button>
-          <button type="button" className="studio-chrome__close" onClick={onClose}>
+          <button type="button" className="studio-chrome__close" onClick={() => void handleCloseStudio()} disabled={liveBusy}>
             Закрыть студию
           </button>
         </div>

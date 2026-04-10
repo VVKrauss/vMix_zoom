@@ -157,6 +157,7 @@ export function RoomSession({ roomId }: Props) {
     startStudioProgram,
     stopStudioProgram,
     replaceStudioProgramAudioTrack,
+    endRoomForAll,
     studioBroadcastHealth,
     studioBroadcastHealthDetail,
     studioServerLogLines,
@@ -241,12 +242,14 @@ export function RoomSession({ roomId }: Props) {
     })
   }
 
-  const handleLeaveRoom = () => {
+  const handleLeaveRoom = async () => {
     const rid = (connectedRoomId ?? roomId).trim()
+    const canEndRoomForEveryone = isSessionHostFor(rid) || canAccessAdminPanel
     const leavePayload = {
       roomId: rid,
       userId: user?.id ?? null,
       isSessionHost: isSessionHostFor(rid),
+      canEndRoomForEveryone,
       connectedRoomId,
       routeRoomId: roomId,
     }
@@ -257,7 +260,14 @@ export function RoomSession({ roomId }: Props) {
     }
     clearRoomAutoResume(rid)
     setChatOpen(false)
-    leave()
+    if (canEndRoomForEveryone) {
+      const res = await endRoomForAll()
+      if (!res.ok) {
+        console.error('[room-session] endRoomForAll failed', { roomId: rid, error: res.error })
+      }
+    } else {
+      leave()
+    }
     navigate('/', { replace: true })
   }
 
@@ -364,6 +374,7 @@ export function RoomSession({ roomId }: Props) {
         studioServerLogLines={studioServerLogLines}
         connectionState={connectionState}
         reconnectAttempt={reconnectAttempt}
+        leaveEndsRoomForAll={isSessionHostFor((connectedRoomId ?? roomId).trim()) || canAccessAdminPanel}
       />
     )
   }

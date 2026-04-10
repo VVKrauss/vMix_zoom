@@ -268,6 +268,7 @@ interface Props {
   onToggleMute: () => void
   onToggleCam: () => void
   onLeave: () => void
+  leaveEndsRoomForAll?: boolean
   onSwitchCamera: (id: string) => void
   onSwitchMic: (id: string) => void
   activePreset: VideoPreset
@@ -327,6 +328,7 @@ export function RoomPage({
   roomId, localPeerId, srtByPeer,
   isMuted, isCamOff,
   onToggleMute, onToggleCam, onLeave,
+  leaveEndsRoomForAll = false,
   onSwitchCamera, onSwitchMic,
   activePreset, onChangePreset,
   localScreenStream, localScreenPeerId, isScreenSharing, onToggleScreenShare, onStartScreenShare,
@@ -907,9 +909,13 @@ export function RoomPage({
   )
 
   const leaveMessage =
-    leaveDialog && leaveDialog.others > 0
-      ? `В комнате ещё ${leaveDialog.others} ${ruParticipantsWord(leaveDialog.others)}. Для них звонок продолжится.`
-      : 'Вы отключитесь от комнаты.'
+    leaveEndsRoomForAll
+      ? leaveDialog && leaveDialog.others > 0
+        ? `В комнате ещё ${leaveDialog.others} ${ruParticipantsWord(leaveDialog.others)}. Звонок завершится для всех участников.`
+        : 'Звонок будет завершён для всех участников.'
+      : leaveDialog && leaveDialog.others > 0
+        ? `В комнате ещё ${leaveDialog.others} ${ruParticipantsWord(leaveDialog.others)}. Для них звонок продолжится.`
+        : 'Вы отключитесь от комнаты.'
 
   const openLeaveDialog = (mode: 'home' | 'leave', others: number) => {
     setLeaveDialog({ mode, others })
@@ -1286,10 +1292,24 @@ export function RoomPage({
     >
       <ConfirmDialog
         open={leaveDialog !== null}
-        title={leaveDialog?.mode === 'home' ? 'Выйти на главную?' : 'Покинуть комнату?'}
+        title={
+          leaveEndsRoomForAll
+            ? leaveDialog?.mode === 'home'
+              ? 'Завершить звонок и выйти на главную?'
+              : 'Завершить звонок для всех?'
+            : leaveDialog?.mode === 'home'
+              ? 'Выйти на главную?'
+              : 'Покинуть комнату?'
+        }
         message={leaveMessage}
         cancelLabel="Отмена"
-        confirmLabel={leaveDialog?.mode === 'home' ? 'На главную' : 'Выйти'}
+        confirmLabel={
+          leaveEndsRoomForAll
+            ? 'Завершить для всех'
+            : leaveDialog?.mode === 'home'
+              ? 'На главную'
+              : 'Выйти'
+        }
         onCancel={closeLeaveDialog}
         onConfirm={confirmLeave}
       />
