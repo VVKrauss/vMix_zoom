@@ -1175,7 +1175,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           return
         }
         setRoomClosedReason(reason)
-        leave()
+        leave({ preserveRoomClosedReason: true })
       })
 
       socket.on('srtStarted', (data: SrtSessionInfo) => {
@@ -2303,7 +2303,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     [requestStartStudioBroadcast, stopStudioProgram],
   )
 
-  const leave = useCallback(() => {
+  const leave = useCallback((opts?: { preserveRoomClosedReason?: boolean }) => {
     joinGenerationRef.current += 1
     stopScreenShare()
     stopStudioPreview()
@@ -2328,7 +2328,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     setLocalStream(null)
     setParticipants(new Map())
     setStatus('idle')
-    setRoomClosedReason(null)
+    if (!opts?.preserveRoomClosedReason) {
+      setRoomClosedReason(null)
+    }
     setConnectionState('connected')
     setReconnectAttempt(null)
     setIsMuted(false)
