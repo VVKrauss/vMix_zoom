@@ -1985,6 +1985,42 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     [],
   )
 
+  const requestStudioProgramRoomNotify = useCallback(
+    async (open: boolean, reason?: string): Promise<{ ok: boolean; error?: string }> => {
+      const socket = socketRef.current
+      const roomId = roomIdRef.current
+      if (!socket?.connected || !roomId) {
+        return { ok: false, error: 'Нет соединения с сервером' }
+      }
+      return await new Promise<{ ok: boolean; error?: string }>((resolve) => {
+        socket.timeout(7_000).emit(
+          'studioProgramRoomNotify',
+          {
+            roomId,
+            open,
+            ...(reason ? { reason } : {}),
+          },
+          (err: Error | null, res?: Record<string, unknown>) => {
+            if (err) {
+              resolve({
+                ok: false,
+                error: 'Сервер не подтвердил обновление состояния студии (таймаут или обрыв соединения).',
+              })
+              return
+            }
+            const data = res ?? {}
+            if (data.error) {
+              resolve({ ok: false, error: String(data.error) })
+              return
+            }
+            resolve({ ok: true })
+          },
+        )
+      })
+    },
+    [],
+  )
+
   const requestEndRoomForAll = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
     const socket = socketRef.current
     const roomId = roomIdRef.current
@@ -2130,6 +2166,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const stopStudioPreview = useCallback(async () => {
     const preview = studioPreviewVideoProducerRef.current
     if (!preview) return
+    void requestStudioProgramRoomNotify(false, 'studio_closed')
     try {
       preview.pause()
     } catch {
@@ -2137,7 +2174,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     }
     preview.close()
     studioPreviewVideoProducerRef.current = null
-  }, [])
+  }, [requestStudioProgramRoomNotify])
 
   const startStudioPreview = useCallback(
     async (videoTrack: MediaStreamTrack): Promise<{ ok: boolean; error?: string }> => {
@@ -2189,12 +2226,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
             studioPreviewVideoProducerRef.current = null
           }
         })
+        void requestStudioProgramRoomNotify(true)
         return { ok: true }
       } catch (e) {
         return { ok: false, error: formatStudioProgramError(e) }
       }
     },
-    [],
+    [requestStudioProgramRoomNotify],
   )
 
   const startStudioProgram = useCallback(

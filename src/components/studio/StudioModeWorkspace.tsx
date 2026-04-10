@@ -530,18 +530,13 @@ export function StudioModeWorkspace({
 
   const handleCloseStudio = useCallback(async () => {
     if (liveBusy) return
-    setLiveBusy(true)
     addLog('info', 'Закрытие студии пользователем')
-    try {
-      await stopStudioProgram()
-      await stopStudioPreview()
-      stopCaptureLoop()
-      setLiveActive(false)
-      setLiveError(null)
-      onClose()
-    } finally {
-      setLiveBusy(false)
-    }
+    await stopStudioPreview()
+    stopCaptureLoop()
+    setLiveActive(false)
+    setLiveError(null)
+    onClose()
+    void stopStudioProgram()
   }, [addLog, liveBusy, onClose, stopCaptureLoop, stopStudioPreview, stopStudioProgram])
 
   useEffect(() => {
