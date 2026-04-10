@@ -8,6 +8,7 @@ import { RoomPage } from './RoomPage'
 import type { VideoPreset } from '../types'
 import { replaceRoomInBrowserUrl } from '../utils/soloViewerParams'
 import { useAuth } from '../context/AuthContext'
+import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import {
   clearHostSessionIfMatches,
   clearPendingHostClaim,
@@ -28,6 +29,7 @@ interface Props {
 export function RoomSession({ roomId }: Props) {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const { allowed: canAccessAdminPanel } = useCanAccessAdminPanel()
   const [name, setName] = useState('')
   const [chatOpen, setChatOpen] = useState(false)
   const [chatUnreadCount, setChatUnreadCount] = useState(0)
@@ -107,6 +109,7 @@ export function RoomSession({ roomId }: Props) {
     studioBroadcastHealth,
     studioBroadcastHealthDetail,
     studioServerLogLines,
+    roomClosedReason,
   } = useRoom(roomActivityNotifyRef)
 
   useEffect(() => {
@@ -134,6 +137,11 @@ export function RoomSession({ roomId }: Props) {
     }
   }, [roomId, navigate])
 
+  useEffect(() => {
+    if (!roomClosedReason) return
+    navigate('/room-closed', { replace: true, state: { roomId, reason: roomClosedReason } })
+  }, [roomClosedReason, navigate, roomId])
+
   // Только настоящий unmount: `leave` меняется при каждом обновлении localStream — если
   // поставить [leave], cleanup предыдущего эффекта вызовет leave() и сорвёт join.
   useEffect(() => () => {
@@ -154,6 +162,7 @@ export function RoomSession({ roomId }: Props) {
       ...media,
       avatarUrl: (user?.user_metadata?.avatar_url as string | undefined) ?? null,
       authUserId: user?.id ?? null,
+      canManageRoom: isSessionHostFor(trimmedRid) || canAccessAdminPanel,
     })
   }
 

@@ -283,6 +283,7 @@ export type JoinRoomMediaOptions = {
   enableCam: boolean
   avatarUrl?: string | null
   authUserId?: string | null
+  canManageRoom?: boolean
 }
 
 export type RoomActivityNotifyRef = MutableRefObject<{
@@ -295,6 +296,7 @@ export type RoomActivityNotifyRef = MutableRefObject<{
 export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const [status, setStatus] = useState<RoomStatus>('idle')
   const [error, setError] = useState<string | null>(null)
+  const [roomClosedReason, setRoomClosedReason] = useState<'room_closed' | 'manager_required' | null>(null)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [participants, setParticipants] = useState<Map<string, RemoteParticipant>>(new Map())
   const [isMuted, setIsMuted] = useState(false)
@@ -784,14 +786,27 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         existingProducers?: ProducerDescriptor[]
         chatHistory?: RoomChatMessage[]
         peers?: unknown[]
+        error?: string
       }>((res) => {
         socket.emit('joinRoom', {
           roomId,
           name: displayNameRef.current,
           avatarUrl: media?.avatarUrl ?? null,
           authUserId: media?.authUserId ?? null,
+          canManageRoom: media?.canManageRoom === true,
         }, res)
       })
+
+      if (joinData?.error === 'room_closed' || joinData?.error === 'manager_required') {
+        setRoomClosedReason(joinData.error)
+        setStatus('idle')
+        disposeSignalingSocket(socket)
+        if (socketRef.current === socket) socketRef.current = null
+        localStreamRef.current?.getTracks().forEach((t) => t.stop())
+        localStreamRef.current = null
+        setLocalStream(null)
+        return
+      }
 
       if (aborted()) {
         stopStreamTracks(stream)
@@ -976,6 +991,14 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           delete n[peerId]
           return n
         })
+      })
+
+      socket.on('roomClosed', (raw: unknown) => {
+        const payload = raw as { reason?: string } | null
+        const reason =
+          payload?.reason === 'manager_required' ? 'manager_required' : 'room_closed'
+        setRoomClosedReason(reason)
+        leave()
       })
 
       socket.on('srtStarted', (data: SrtSessionInfo) => {
@@ -2046,6 +2069,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     setLocalStream(null)
     setParticipants(new Map())
     setStatus('idle')
+    setRoomClosedReason(null)
     setIsMuted(false)
     setIsCamOff(false)
     setSessionMeta(null)
@@ -2069,6 +2093,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     activePreset,
     status,
     error,
+    roomClosedReason,
     localStream,
     localScreenStream,
     localScreenPeerId,

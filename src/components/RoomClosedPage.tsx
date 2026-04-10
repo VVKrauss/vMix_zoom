@@ -3,7 +3,9 @@ import { BrandLogoLoader } from './BrandLogoLoader'
 
 export function RoomClosedPage() {
   const location = useLocation()
-  const roomId = (location.state as { roomId?: string } | null)?.roomId
+  const state = (location.state as { roomId?: string; reason?: string } | null) ?? null
+  const roomId = state?.roomId
+  const reason = state?.reason === 'manager_required' ? 'manager_required' : 'room_closed'
 
   const openHomeNewWindow = () => {
     window.open('/', '_blank', 'noopener,noreferrer')
@@ -15,9 +17,13 @@ export function RoomClosedPage() {
         <div className="room-closed-loader-wrap">
           <BrandLogoLoader size={56} />
         </div>
-        <h1 className="room-closed-title">Комната закрыта</h1>
+        <h1 className="room-closed-title">
+          {reason === 'manager_required' ? 'Комната сейчас недоступна' : 'Комната закрыта'}
+        </h1>
         <p className="room-closed-text">
-          Хост покинул комнату, и она больше недоступна по этой ссылке.
+          {reason === 'manager_required'
+            ? 'Организатор сейчас не в комнате, поэтому вход временно закрыт. Извини 🙂'
+            : 'Внутри сейчас никого нет, и эта ссылка больше не активна. Извини 🙂'}
           {roomId ? (
             <>
               {' '}
