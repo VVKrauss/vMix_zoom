@@ -2529,7 +2529,7 @@ button.admin-stat-card--interactive:disabled {
 }
 
 .room-page--viewport-mobile {
-  --room-mobile-bottom-bar-space: max(82px, calc(env(safe-area-inset-bottom, 0px) + 68px));
+  --room-mobile-bottom-bar-space: max(72px, calc(env(safe-area-inset-bottom, 0px) + 58px));
 }
 
 .room-page--viewport-mobile .room-body {
@@ -4563,7 +4563,7 @@ button.vio-row--peer:focus-visible {
   /* Popovers — fixed to viewport so they don't overflow (над нижней панелью) */
   .room-page--viewport-mobile .device-popover,
   .room-page--viewport-mobile .settings-popover {
-      bottom: max(84px, calc(env(safe-area-inset-bottom) + 68px));
+      bottom: max(76px, calc(env(safe-area-inset-bottom) + 60px));
       z-index: 8310;
     }
 

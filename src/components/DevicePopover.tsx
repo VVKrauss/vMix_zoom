@@ -37,11 +37,19 @@ export function DevicePopover({
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    let active = false
+    const activateId = window.setTimeout(() => {
+      active = true
+    }, 0)
     const handler = (e: MouseEvent | PointerEvent) => {
+      if (!active) return
       if (shouldClosePopoverOnOutsidePointer(ref.current, e.target)) onClose()
     }
-    document.addEventListener('pointerup', handler)
-    return () => document.removeEventListener('pointerup', handler)
+    document.addEventListener('click', handler)
+    return () => {
+      window.clearTimeout(activateId)
+      document.removeEventListener('click', handler)
+    }
   }, [onClose])
 
   const selectDevice = (deviceId: string) => {
@@ -64,14 +72,10 @@ export function DevicePopover({
           key={d.deviceId}
           type="button"
           className={`device-popover__item ${d.deviceId === selectedId ? 'device-popover__item--active' : ''}`}
-          onPointerUp={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            selectDevice(d.deviceId)
-          }}
           onClick={(e) => {
             e.preventDefault()
             e.stopPropagation()
+            selectDevice(d.deviceId)
           }}
         >
           {d.deviceId === selectedId && <CheckIcon />}
@@ -87,14 +91,10 @@ export function DevicePopover({
                 key={tier}
                 type="button"
                 className={`device-popover__quality-tier${videoQualityTier === tier ? ' device-popover__quality-tier--active' : ''}`}
-                onPointerUp={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  onVideoQualityTierChange(tier)
-                }}
                 onClick={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
+                  onVideoQualityTierChange(tier)
                 }}
               >
                 {SIMPLE_VIDEO_QUALITY_LABELS[tier]}
