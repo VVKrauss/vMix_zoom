@@ -109,6 +109,7 @@ function remoteScreenTileId(p: RemoteParticipant): string | null {
 }
 
 function remoteStudioProgramTileId(p: RemoteParticipant): string | null {
+  if (p.virtualSourceType === 'studio_program') return null
   if (!p.studioProgramStream) return null
   return p.studioProgramPeerId ?? studioProgramTileKey(p.peerId)
 }
@@ -1124,66 +1125,11 @@ export function RoomPage({
         />
       )
     }
-    const studioPresenter = remoteList.find((p) => remoteStudioProgramTileId(p) === id)
-    if (studioPresenter?.studioProgramStream) {
-      const owner = studioPresenter.peerId
-      const phase =
-        remoteStudioRtmpByPeer[owner] ??
-        (remoteStudioProgramConsumePending ? 'connecting' : 'idle')
-      return (
-        <StudioProgramShareTile
-          stream={studioPresenter.studioProgramStream}
-          label={`ЭФИР · ${studioPresenter.name}`}
-          roomId={roomId}
-          linkPeerId={studioPresenter.studioProgramPeerId ?? undefined}
-          videoStyle={screenShareVideoStyle}
-          showInfo={showInfo}
-          srtConnectUrl={srtByPeer[owner]?.connectUrlPublic}
-          srtListenPort={srtByPeer[owner]?.listenPort}
-          reactionBurst={pickLatestBurstForPeer(reactionBursts, owner)}
-          showSoloViewerCopy={canUseElevatedRoomTools}
-          rtmpPhase={phase}
-          guestMute={
-            canUseElevatedRoomTools && requestPeerMicMute
-              ? { show: true, onMute: () => requestPeerMicMute(owner) }
-              : undefined
-          }
-        />
-      )
-    }
-    if (isStudioProgramTileId(id)) {
-      const owner = parseStudioProgramTilePeerId(id)
-      if (!owner || owner === localPeerId) return null
-      const sp = participants.get(owner)
-      if (!sp?.studioProgramStream) return null
-      const phase =
-        remoteStudioRtmpByPeer[owner] ??
-        (remoteStudioProgramConsumePending ? 'connecting' : 'idle')
-      return (
-        <StudioProgramShareTile
-          stream={sp.studioProgramStream}
-          label={`ЭФИР · ${sp.name}`}
-          roomId={roomId}
-          linkPeerId={sp.studioProgramPeerId ?? undefined}
-          videoStyle={screenShareVideoStyle}
-          showInfo={showInfo}
-          srtConnectUrl={srtByPeer[owner]?.connectUrlPublic}
-          srtListenPort={srtByPeer[owner]?.listenPort}
-          reactionBurst={pickLatestBurstForPeer(reactionBursts, owner)}
-          showSoloViewerCopy={canUseElevatedRoomTools}
-          rtmpPhase={phase}
-          guestMute={
-            canUseElevatedRoomTools && requestPeerMicMute
-              ? { show: true, onMute: () => requestPeerMicMute(owner) }
-              : undefined
-          }
-        />
-      )
-    }
     const p = participants.get(id)
     if (!p) return null
     if (p.virtualSourceType === 'studio_program' && p.videoStream) {
       const owner = p.sourceOwnerPeerId ?? p.peerId
+      const linkPeerId = p.studioProgramPeerId ?? owner
       const phase =
         remoteStudioRtmpByPeer[owner] ??
         (remoteStudioProgramConsumePending ? 'connecting' : 'idle')
@@ -1192,7 +1138,7 @@ export function RoomPage({
           stream={p.videoStream}
           label="ЭФИР"
           roomId={roomId}
-          linkPeerId={owner}
+          linkPeerId={linkPeerId}
           videoStyle={screenShareVideoStyle}
           showInfo={showInfo}
           srtConnectUrl={srtByPeer[owner]?.connectUrlPublic}
@@ -1262,16 +1208,6 @@ export function RoomPage({
                   peerId: remotePresenter.peerId,
                 }
               }
-              const remoteStudioPr = remoteList.find((p) => remoteStudioProgramTileId(p) === id)
-              if (remoteStudioPr?.studioProgramStream) {
-                const s = srtByPeer[remoteStudioPr.peerId]
-                return {
-                  ...base,
-                  connectUrl: s?.connectUrlPublic,
-                  listenPort: s?.listenPort,
-                  peerId: remoteStudioPr.studioProgramPeerId ?? remoteStudioPr.peerId,
-                }
-              }
               if (isScreenTileId(id)) {
                 const owner = parseScreenTilePeerId(id)
                 if (owner === localPeerId) {
@@ -1289,19 +1225,6 @@ export function RoomPage({
                     connectUrl: s?.connectUrlPublic,
                     listenPort: s?.listenPort,
                     peerId: owner,
-                  }
-                }
-              }
-              if (isStudioProgramTileId(id)) {
-                const owner = parseStudioProgramTilePeerId(id)
-                if (owner) {
-                  const s = srtByPeer[owner]
-                  const sp = participants.get(owner)
-                  return {
-                    ...base,
-                    connectUrl: s?.connectUrlPublic,
-                    listenPort: s?.listenPort,
-                    peerId: sp?.studioProgramPeerId ?? owner,
                   }
                 }
               }

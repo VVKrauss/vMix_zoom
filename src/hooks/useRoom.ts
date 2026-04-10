@@ -19,6 +19,7 @@ import {
   resolveConsumeVideoRole,
   videoAnchorPeerId,
 } from '../utils/producerVideoRole'
+import { studioProgramTileKey } from '../utils/studioProgramTileKey'
 import { readVmixIngressEmitExtras } from '../config/serverSettingsStorage'
 import {
   applyEma,
@@ -133,6 +134,14 @@ type ProducerMeta = {
   producerPeerId: string
   kind: 'audio' | 'video'
   videoSource?: 'camera' | 'screen' | 'vmix' | 'studio_program'
+}
+
+function isStudioPreviewDescriptor(p: ProducerDescriptor): boolean {
+  return p.appData?.studioPreview === true || p.appData?.source === 'studio_preview'
+}
+
+function isStudioLiveDescriptor(p: ProducerDescriptor): boolean {
+  return p.appData?.source === 'studio_program'
 }
 
 function registerProducerMeta(
@@ -310,7 +319,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const videoProducerRef = useRef<Producer | null>(null)
   const screenProducerRef = useRef<Producer | null>(null)
   const studioPreviewVideoProducerRef = useRef<Producer | null>(null)
-  const studioProgramVideoProducerRef = useRef<Producer | null>(null)
   const studioProgramAudioProducerRef = useRef<Producer | null>(null)
   const studioStopInFlightRef = useRef<Promise<void> | null>(null)
   const localScreenStreamRef = useRef<MediaStream | null>(null)
@@ -434,9 +442,21 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         const next = new Map(prev)
         const p = next.get(meta.anchorPeerId)
         if (!p) return next
-        if (meta.kind === 'video' && meta.videoSource === 'studio_program' && p.virtualSourceType === 'studio_program') {
-          next.delete(meta.anchorPeerId)
-          return next
+        if (meta.kind === 'video' && meta.videoSource === 'studio_program') {
+          const hasSiblingStudioVideo = [...producerMetaRef.current.values()].some(
+            (m) =>
+              m !== meta &&
+              m.kind === 'video' &&
+              m.videoSource === 'studio_program' &&
+              m.anchorPeerId === meta.anchorPeerId,
+          )
+          if (hasSiblingStudioVideo) {
+            return next
+          }
+          if (p.virtualSourceType === 'studio_program') {
+            next.delete(meta.anchorPeerId)
+            return next
+          }
         }
         const cleared: Partial<RemoteParticipant> =
           meta.kind === 'audio'
@@ -480,7 +500,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         const aid = videoAnchorPeerId(producer)
         const ex = participantsRef.current.get(aid)
         const role = resolveConsumeVideoRole(producer, !!ex?.videoStream)
-        if (role === 'screen' || role === 'studio_program') {
+        if (role === 'screen' || (role === 'studio_program' && isStudioPreviewDescriptor(producer))) {
           if (role === 'screen') {
             setRemoteScreenConsumePending(true)
             endRemoteScreenPending = () => setRemoteScreenConsumePending(false)
@@ -571,11 +591,16 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           const resolved = resolveConsumeVideoRole(producer, !!existing.videoStream)
 
           if (resolved === 'studio_program') {
+            if (isStudioLiveDescriptor(producer) && !isStudioPreviewDescriptor(producer)) {
+              return next
+            }
             const ownerPeerId = ownerPeerFromDescriptor(producer) ?? anchorId
-            const virtualPeerId = producer.peerId
+            const producerVirtualPeerId = producer.peerId
+            const holderPeerId = studioProgramTileKey(ownerPeerId)
             const owner = next.get(ownerPeerId)
-            const studioExisting: RemoteParticipant = next.get(virtualPeerId) ?? {
-              peerId: virtualPeerId,
+            const legacyStudioEntry = next.get(producerVirtualPeerId)
+            const studioExisting: RemoteParticipant = next.get(holderPeerId) ?? legacyStudioEntry ?? {
+              peerId: holderPeerId,
               name: 'ЭФИР',
               avatarUrl: owner?.avatarUrl ?? producer.avatarUrl ?? undefined,
               virtualSourceType: 'studio_program',
@@ -584,19 +609,25 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
             const videoMeta = {
               consumerId: consumer.id,
-              anchorPeerId: virtualPeerId,
-              producerPeerId: producer.peerId,
+              anchorPeerId: holderPeerId,
+              producerPeerId: producerVirtualPeerId,
               kind: 'video' as const,
               videoSource: resolved,
             }
             registerProducerMeta(producerMetaRef.current, producer.producerId, consumer.producerId, videoMeta)
 
-            next.set(virtualPeerId, {
+            if (producerVirtualPeerId !== holderPeerId) {
+              next.delete(producerVirtualPeerId)
+            }
+
+            next.set(holderPeerId, {
               ...studioExisting,
+              peerId: holderPeerId,
               name: 'ЭФИР',
               avatarUrl: owner?.avatarUrl ?? producer.avatarUrl ?? studioExisting.avatarUrl ?? null,
               virtualSourceType: 'studio_program',
               sourceOwnerPeerId: ownerPeerId,
+              studioProgramPeerId: producerVirtualPeerId,
               videoStream: stream,
             })
             return next
@@ -951,12 +982,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       socket.on('producerClosed', (payload: unknown) => {
         if (import.meta.env.DEV) console.log('[producerClosed] raw payload:', JSON.stringify(payload))
         const id = producerIdFromClosedPayload(payload)
-        if (id && studioProgramVideoProducerRef.current?.id === id) {
-          studioProgramVideoProducerRef.current = null
-          setStudioBroadcastHealth('warning')
-          setStudioBroadcastHealthDetail(null)
-          return
-        }
         if (id && studioProgramAudioProducerRef.current?.id === id) {
           studioProgramAudioProducerRef.current = null
           setStudioBroadcastHealth('warning')
@@ -1160,7 +1185,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           return
         }
 
-        if (studioProgramVideoProducerRef.current == null) return
+        if (anchor && anchor !== sid) return
 
         if (o.ok === true || st === 'live') {
           setStudioBroadcastHealth('live')
@@ -1178,7 +1203,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       socket.on('studioBroadcastLog', (raw: unknown) => {
         const o = raw as Record<string, unknown>
         if (typeof o.roomId === 'string' && o.roomId !== roomIdRef.current) return
-        if (studioProgramVideoProducerRef.current == null) return
         const msg =
           typeof o.message === 'string'
             ? o.message.trim()
@@ -1209,8 +1233,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       setRemoteScreenConsumePending(false)
       setRemoteStudioProgramConsumePending(false)
       setRemoteStudioRtmpByPeer({})
-      studioProgramVideoProducerRef.current?.close()
-      studioProgramVideoProducerRef.current = null
       studioProgramAudioProducerRef.current?.close()
       studioProgramAudioProducerRef.current = null
       setStudioBroadcastHealth('idle')
@@ -1735,6 +1757,50 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     })
   }, [])
 
+  const requestStartStudioBroadcast = useCallback(
+    async (
+      rtmpUrl: string,
+      rtmpKey: string,
+      output: StudioOutputPreset,
+    ): Promise<{ ok: boolean; error?: string }> => {
+      const socket = socketRef.current
+      const roomId = roomIdRef.current
+      if (!socket?.connected || !roomId) {
+        return { ok: false, error: 'Нет соединения с сервером' }
+      }
+      return await new Promise<{ ok: boolean; error?: string }>((resolve) => {
+        socket.timeout(15_000).emit(
+          'startStudioBroadcast',
+          {
+            roomId,
+            rtmpUrl,
+            rtmpKey,
+            outputWidth: output.width,
+            outputHeight: output.height,
+            maxBitrate: output.maxBitrate,
+            maxFramerate: output.maxFramerate,
+          },
+          (err: Error | null, res?: Record<string, unknown>) => {
+            if (err) {
+              resolve({
+                ok: false,
+                error: 'Сервер не подтвердил запуск эфира (таймаут или обрыв соединения).',
+              })
+              return
+            }
+            const data = res ?? {}
+            if (data.error) {
+              resolve({ ok: false, error: String(data.error) })
+              return
+            }
+            resolve({ ok: true })
+          },
+        )
+      })
+    },
+    [],
+  )
+
   const getPeerUplinkVideoQuality = useCallback(
     async (anchorPeerId: string): Promise<InboundVideoQuality | null> => {
       const localId = sessionMeta?.localPeerId
@@ -1795,9 +1861,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
     const stopPromise = (async () => {
       const audioP = studioProgramAudioProducerRef.current
-      const videoP = studioProgramVideoProducerRef.current
       const shouldRequestServerStop =
-        (videoP != null || audioP != null || studioBroadcastHealth !== 'idle') &&
+        (audioP != null || studioBroadcastHealth !== 'idle') &&
         socketRef.current?.connected &&
         !!roomIdRef.current
 
@@ -1811,16 +1876,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       } catch {
         /* ignore */
       }
-      try {
-        videoP?.pause()
-      } catch {
-        /* ignore */
-      }
 
       audioP?.close()
-      videoP?.close()
       studioProgramAudioProducerRef.current = null
-      studioProgramVideoProducerRef.current = null
       if (stopRes.ok) {
         setStudioBroadcastHealth('idle')
         setStudioBroadcastHealthDetail(null)
@@ -1871,6 +1929,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const startStudioPreview = useCallback(
     async (videoTrack: MediaStreamTrack): Promise<{ ok: boolean; error?: string }> => {
       const sendTransport = sendTransportRef.current
+      if (!socketRef.current?.connected || !roomIdRef.current) {
+        return { ok: false, error: 'Нет WebRTC-транспорта' }
+      }
       if (!sendTransport) {
         return { ok: false, error: 'Нет WebRTC-транспорта' }
       }
@@ -1931,7 +1992,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       streamKey: string,
       output: StudioOutputPreset,
     ): Promise<{ ok: boolean; error?: string; warning?: string }> => {
+      void videoTrack
       const sendTransport = sendTransportRef.current
+      if (!socketRef.current?.connected || !roomIdRef.current) {
+        setStudioBroadcastHealth('warning')
+        setStudioBroadcastHealthDetail(null)
+        return { ok: false, error: 'Нет WebRTC-транспорта' }
+      }
       if (!sendTransport) {
         setStudioBroadcastHealth('warning')
         setStudioBroadcastHealthDetail(null)
@@ -1944,13 +2011,14 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         setStudioBroadcastHealthDetail(null)
         return { ok: false, error: 'Укажите URL и ключ RTMP' }
       }
-      await stopStudioPreview()
       await stopStudioProgram()
       setStudioBroadcastHealth('connecting')
       setStudioBroadcastHealthDetail(null)
       await new Promise((resolve) => window.setTimeout(resolve, 180))
       try {
-        const fpsCap = capVideoFramerate(output.maxFramerate, videoTrack)
+        // LIVE больше не публикует отдельный video producer в комнату.
+        if (false) {
+          const fpsCap = capVideoFramerate(output.maxFramerate, videoTrack)
         const startBr = Math.max(
           400_000,
           Math.min(Math.round(output.maxBitrate * 0.28), 3_500_000),
@@ -1969,7 +2037,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           pickMime('video/vp9') ??
           pickMime('video/h264') ??
           undefined
-        const videoProducer = await sendTransport.produce({
+        const videoProducer = await sendTransport!.produce({
           track: videoTrack,
           codec: studioVideoCodec,
           appData: {
@@ -1988,12 +2056,12 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           },
           encodings: [{ maxBitrate: output.maxBitrate, maxFramerate: fpsCap }],
         })
-        studioProgramVideoProducerRef.current = videoProducer
         videoProducer.on('transportclose', () => {
-          studioProgramVideoProducerRef.current = null
+          void videoProducer
           setStudioBroadcastHealth('warning')
           setStudioBroadcastHealthDetail(null)
         })
+        }
 
         let audioWarning: string | undefined
 
@@ -2032,7 +2100,15 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           studioProgramAudioProducerRef.current = null
         }
 
-        setStudioBroadcastHealth('live')
+        const startRes = await requestStartStudioBroadcast(url, key, output)
+        if (!startRes.ok) {
+          studioProgramAudioProducerRef.current?.close()
+          studioProgramAudioProducerRef.current = null
+          setStudioBroadcastHealth('warning')
+          setStudioBroadcastHealthDetail(null)
+          return { ok: false, error: startRes.error ?? 'Не удалось запустить эфир' }
+        }
+
         setStudioBroadcastHealthDetail(audioWarning ?? null)
         return audioWarning ? { ok: true, warning: audioWarning } : { ok: true }
       } catch (e) {
@@ -2041,7 +2117,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         return { ok: false, error: formatStudioProgramError(e) }
       }
     },
-    [stopStudioPreview, stopStudioProgram],
+    [requestStartStudioBroadcast, stopStudioProgram],
   )
 
   const leave = useCallback(() => {

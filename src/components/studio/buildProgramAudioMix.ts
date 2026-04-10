@@ -1,6 +1,6 @@
 import type { StudioBoardState, StudioSourceOption } from '../../types/studio'
 
-export type StudioSourceMixMap = Record<string, { volume: number }>
+export type StudioSourceMixMap = Record<string, { volume: number; muted?: boolean }>
 
 function streamWithAudio(opt: StudioSourceOption): MediaStream | null {
   const m = opt.meterStream
@@ -52,9 +52,9 @@ export function connectStudioProgramAudioMix(
 
   const applyLevels = (mixMap: StudioSourceMixMap) => {
     for (const [key, gainNode] of gainBySourceKey) {
-      const m = mixMap[key] ?? { volume: 1 }
+      const m = mixMap[key] ?? { volume: 1, muted: false }
       const u = Math.max(0, Math.min(1, m.volume))
-      gainNode.gain.value = base * u
+      gainNode.gain.value = (m.muted ? 0 : 1) * base * u
     }
   }
 

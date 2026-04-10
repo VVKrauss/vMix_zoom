@@ -40,12 +40,14 @@ const StudioSourcesStrip = memo(function StudioSourcesStrip({
   sources,
   sourceMix,
   setSourceVolume,
+  toggleSourceMute,
   onAddToPreview,
   onSendToProgram,
 }: {
   sources: StudioSourceOption[]
   sourceMix: StudioSourceMixMap
   setSourceVolume: (key: string, volume: number) => void
+  toggleSourceMute: (key: string) => void
   onAddToPreview: (key: string) => void
   onSendToProgram: (key: string) => void
 }) {
@@ -57,7 +59,9 @@ const StudioSourcesStrip = memo(function StudioSourcesStrip({
           source={s}
           meterStream={sourceMeterStream(s)}
           volume={sourceMix[s.key]?.volume ?? 1}
+          muted={sourceMix[s.key]?.muted === true}
           setVolume={setSourceVolume}
+          onToggleMute={toggleSourceMute}
           onAddToPreview={onAddToPreview}
           onSendToProgram={onSendToProgram}
         />
@@ -193,7 +197,7 @@ export function StudioModeWorkspace({
     setSourceMix((prev) => {
       const next = { ...prev }
       for (const s of sources) {
-        if (!(s.key in next)) next[s.key] = { volume: 1 }
+        if (!(s.key in next)) next[s.key] = { volume: 1, muted: false }
       }
       return next
     })
@@ -218,8 +222,18 @@ export function StudioModeWorkspace({
   const setSourceVolume = useCallback((key: string, volume: number) => {
     setSourceMix((p) => ({
       ...p,
-      [key]: { ...(p[key] ?? { volume: 1 }), volume },
+      [key]: { ...(p[key] ?? { volume: 1, muted: false }), volume },
     }))
+  }, [])
+
+  const toggleSourceMute = useCallback((key: string) => {
+    setSourceMix((prev) => {
+      const current = prev[key] ?? { volume: 1, muted: false }
+      return {
+        ...prev,
+        [key]: { ...current, muted: !current.muted },
+      }
+    })
   }, [])
 
   const placeSourceOnBoard = useCallback((boardName: 'preview' | 'program', sourceKey: string, fullFrame = false) => {
@@ -404,7 +418,7 @@ export function StudioModeWorkspace({
     void (async () => {
       const track = await runCaptureLoop()
       if (!track || cancelled) return
-      const res = await startStudioPreview(track)
+      const res = await startStudioPreview(track.clone())
       if (!res.ok && !cancelled) {
         setLiveError(res.error ?? 'Не удалось показать эфир в комнате')
         addLog('warn', `Превью студии не опубликовано: ${res.error ?? 'неизвестная ошибка'}`)
@@ -444,6 +458,7 @@ export function StudioModeWorkspace({
     if (!track) {
       setLiveError('Не удалось захватить канвас')
       addLog('error', 'canvas.captureStream() вернул null — трек не получен')
+      setLiveBusy(false)
       return
     }
     const trackSettings = track.getSettings()
@@ -457,14 +472,14 @@ export function StudioModeWorkspace({
     addLog('info', audioTrack ? `Аудио: ${audioTrack.label || 'программный микс'}` : 'Аудио: без звука')
 
     addLog('info', 'produce() → signaling…')
-    const res = await startStudioProgram(track, audioTrack, url, key, preset)
+    const res = await startStudioProgram(track.clone(), audioTrack, url, key, preset)
     if (!res.ok) {
       const errMsg = res.error ?? 'Ошибка публикации'
       setLiveError(errMsg)
       setLiveActive(false)
       audioTrack?.stop()
       addLog('error', `startStudioProgram failed: ${errMsg}`)
-      const previewRes = await startStudioPreview(track)
+      const previewRes = await startStudioPreview(track.clone())
       if (!previewRes.ok) {
         addLog('warn', `Не удалось вернуть превью студии: ${previewRes.error ?? 'неизвестная ошибка'}`)
       }
@@ -503,7 +518,7 @@ export function StudioModeWorkspace({
       addLog('info', 'Эфир остановлен')
       const track = await runCaptureLoop()
       if (track) {
-        const res = await startStudioPreview(track)
+        const res = await startStudioPreview(track.clone())
         if (!res.ok) {
           addLog('warn', `Не удалось вернуть превью студии: ${res.error ?? 'неизвестная ошибка'}`)
         }
@@ -658,22 +673,24 @@ export function StudioModeWorkspace({
             </button>
           </div>
           <div className="studio-board-column studio-board-column--program">
-            <StudioBoardPanel
-              title="Эфир"
-              variant="program"
-              board={programBoard}
-              onBoardChange={onProgramBoardChange}
-              sources={sources}
-              registerProgramVideo={registerProgramVideo}
-              hideSlotPickers
-              readOnlyStage
-            />
-            <div className="studio-program-output-meter">
-              <div className="studio-program-output-meter__head">
-                <span className="studio-program-output-meter__label">Смесь эфира</span>
-              </div>
-              <div className="studio-program-output-meter__meter">
-                {programMixStream ? <AudioMeter stream={programMixStream} orientation="horizontal" /> : null}
+            <div className="studio-program-stage-row">
+              <StudioBoardPanel
+                title="Эфир"
+                variant="program"
+                board={programBoard}
+                onBoardChange={onProgramBoardChange}
+                sources={sources}
+                registerProgramVideo={registerProgramVideo}
+                hideSlotPickers
+                readOnlyStage
+              />
+              <div className="studio-program-output-meter studio-program-output-meter--vertical">
+                <div className="studio-program-output-meter__head">
+                  <span className="studio-program-output-meter__label">Master</span>
+                </div>
+                <div className="studio-program-output-meter__meter studio-program-output-meter__meter--vertical">
+                  {programMixStream ? <AudioMeter stream={programMixStream} fillParent /> : null}
+                </div>
               </div>
             </div>
           </div>
@@ -683,6 +700,7 @@ export function StudioModeWorkspace({
           sources={sources}
           sourceMix={sourceMix}
           setSourceVolume={setSourceVolume}
+          toggleSourceMute={toggleSourceMute}
           onAddToPreview={(key) => placeSourceOnBoard('preview', key)}
           onSendToProgram={(key) => placeSourceOnBoard('program', key, true)}
         />

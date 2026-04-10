@@ -8,7 +8,9 @@ interface Props {
   source: StudioSourceOption
   meterStream: MediaStream | null
   volume: number
+  muted: boolean
   setVolume: (sourceKey: string, v: number) => void
+  onToggleMute: (sourceKey: string) => void
   onAddToPreview: (sourceKey: string) => void
   onSendToProgram: (sourceKey: string) => void
 }
@@ -24,14 +26,16 @@ const StudioSourceStripItem = memo(function StudioSourceStripItem({
   source,
   meterStream,
   volume,
+  muted,
   setVolume,
+  onToggleMute,
   onAddToPreview,
   onSendToProgram,
 }: Props) {
   const thumbRef = useRef<HTMLVideoElement>(null)
   const primaryLabel = source.label.split(' - ')[0].split(' — ')[0]
   const volumePct = Math.round(volume * 100)
-  const isMuted = volumePct === 0
+  const isMuted = muted
   const hasLiveVideo = Boolean(source.stream)
 
   useEffect(() => {
@@ -69,6 +73,7 @@ const StudioSourceStripItem = memo(function StudioSourceStripItem({
                   stream={meterStream}
                   stereo
                   outputGain={volume}
+                  outputMuted={isMuted}
                   fillParent
                   className="studio-source-strip__audio-meter"
                 />
@@ -120,7 +125,7 @@ const StudioSourceStripItem = memo(function StudioSourceStripItem({
           <button
             type="button"
             className={`studio-source-strip__action studio-source-strip__action--mute${isMuted ? ' studio-source-strip__action--mute-active' : ''}`}
-            onClick={() => setVolume(source.key, isMuted ? 1 : 0)}
+            onClick={() => onToggleMute(source.key)}
             title={isMuted ? 'Включить звук' : 'Выключить звук'}
             aria-label={isMuted ? `Включить звук ${source.label}` : `Выключить звук ${source.label}`}
           >

@@ -8224,3 +8224,78 @@ button.vio-row--peer:focus-visible {
     width: 214px;
   }
 }
+
+/* Final studio audio / master overrides */
+.studio-program-stage-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 36px !important;
+  gap: 12px !important;
+  align-items: stretch !important;
+}
+
+.studio-program-stage-row > .studio-board-panel {
+  min-width: 0 !important;
+}
+
+.studio-program-output-meter--vertical {
+  margin-top: 0 !important;
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 8px !important;
+  width: 36px !important;
+  min-width: 36px !important;
+}
+
+.studio-program-output-meter--vertical .studio-program-output-meter__head {
+  display: flex !important;
+  justify-content: center !important;
+}
+
+.studio-program-output-meter--vertical .studio-program-output-meter__label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 0.64rem !important;
+  letter-spacing: 0.08em !important;
+  text-align: center;
+}
+
+.studio-program-output-meter__meter--vertical {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  min-height: 0 !important;
+  height: auto !important;
+  position: relative !important;
+  border-radius: 14px !important;
+  background: rgba(3, 6, 11, 0.76) !important;
+  overflow: hidden !important;
+}
+
+.studio-program-output-meter__meter--vertical .audio-meter-wrap {
+  position: absolute !important;
+  inset: 4px !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+.studio-program-output-meter__meter--vertical .audio-meter-wrap--strip-vertical {
+  background: transparent !important;
+}
+
+.studio-source-strip__action--mute-active {
+  background: rgba(229, 57, 53, 0.9) !important;
+  color: #fff !important;
+}
+
+@media (max-width: 1180px) {
+  .studio-program-stage-row {
+    grid-template-columns: minmax(0, 1fr) 30px !important;
+    gap: 8px !important;
+  }
+
+  .studio-program-output-meter--vertical {
+    width: 30px !important;
+    min-width: 30px !important;
+  }
+}
