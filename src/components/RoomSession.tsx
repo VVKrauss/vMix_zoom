@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLocalStorageBool } from '../hooks/useLocalStorage'
-import { useRoom, type JoinRoomMediaOptions, type RoomStatus } from '../hooks/useRoom'
+import { useRoom, type JoinRoomMediaOptions, type RoomStatus, type RoomClosedReason } from '../hooks/useRoom'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import { JoinPage } from './JoinPage'
 import { RoomPage } from './RoomPage'
@@ -21,6 +21,55 @@ import {
 } from '../lib/spaceRoom'
 
 const CHAT_PREVIEW_TOAST_MS = 7000
+const ROOM_AUTO_RESUME_KEY_PREFIX = 'vmix_room_auto_resume:'
+
+type StoredRoomAutoResume = {
+  roomId: string
+  name: string
+  preset: VideoPreset
+  media: JoinRoomMediaOptions
+}
+
+function roomAutoResumeKey(roomId: string): string {
+  return `${ROOM_AUTO_RESUME_KEY_PREFIX}${roomId.trim()}`
+}
+
+function readRoomAutoResume(roomId: string): StoredRoomAutoResume | null {
+  const trimmed = roomId.trim()
+  if (!trimmed) return null
+  try {
+    const raw = window.sessionStorage.getItem(roomAutoResumeKey(trimmed))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<StoredRoomAutoResume> | null
+    if (!parsed || parsed.roomId !== trimmed || !parsed.name || !parsed.preset || !parsed.media) return null
+    return {
+      roomId: trimmed,
+      name: String(parsed.name),
+      preset: parsed.preset as VideoPreset,
+      media: parsed.media as JoinRoomMediaOptions,
+    }
+  } catch {
+    return null
+  }
+}
+
+function writeRoomAutoResume(data: StoredRoomAutoResume): void {
+  try {
+    window.sessionStorage.setItem(roomAutoResumeKey(data.roomId), JSON.stringify(data))
+  } catch {
+    /* noop */
+  }
+}
+
+function clearRoomAutoResume(roomId: string): void {
+  const trimmed = roomId.trim()
+  if (!trimmed) return
+  try {
+    window.sessionStorage.removeItem(roomAutoResumeKey(trimmed))
+  } catch {
+    /* noop */
+  }
+}
 
 interface Props {
   roomId: string
@@ -45,6 +94,7 @@ export function RoomSession({ roomId }: Props) {
   )
   const chatToastNotificationsRef = useRef(chatToastNotifications)
   chatToastNotificationsRef.current = chatToastNotifications
+  const autoResumeTriedRef = useRef(false)
 
   const dismissChatIncomingPreview = useCallback(() => {
     if (chatPreviewTimerRef.current != null) {
@@ -90,6 +140,7 @@ export function RoomSession({ roomId }: Props) {
     join, leave, toggleMute, toggleCam,
     switchCamera, switchMic, changePreset, activePreset,
     status, error,
+    connectionState, reconnectAttempt,
     localStream, participants,
     isMuted, isCamOff,
     roomId: connectedRoomId, localPeerId, srtByPeer,
@@ -143,7 +194,7 @@ export function RoomSession({ roomId }: Props) {
 
   useEffect(() => {
     if (!roomClosedReason) return
-    navigate('/room-closed', { replace: true, state: { roomId, reason: roomClosedReason } })
+    navigate('/room-closed', { replace: true, state: { roomId, reason: roomClosedReason as RoomClosedReason } })
   }, [roomClosedReason, navigate, roomId])
 
   // Только настоящий unmount: `leave` меняется при каждом обновлении localStream — если
@@ -175,6 +226,12 @@ export function RoomSession({ roomId }: Props) {
       if (ok) markSessionAsHostFor(trimmedRid)
     }
     setName(n)
+    writeRoomAutoResume({
+      roomId: trimmedRid,
+      name: n.trim(),
+      preset,
+      media,
+    })
     replaceRoomInBrowserUrl(rid, { removePeer: true })
     join(n, rid, preset, {
       ...media,
@@ -198,10 +255,25 @@ export function RoomSession({ roomId }: Props) {
       void hostLeaveSpaceRoom(rid)
       clearHostSessionIfMatches(rid)
     }
+    clearRoomAutoResume(rid)
     setChatOpen(false)
     leave()
     navigate('/', { replace: true })
   }
+
+  useEffect(() => {
+    if (status !== 'idle' || error || roomClosedReason) return
+    if (autoResumeTriedRef.current) return
+    const stored = readRoomAutoResume(roomId)
+    if (!stored) return
+    autoResumeTriedRef.current = true
+    void handleJoin(stored.name, stored.roomId, stored.preset, stored.media)
+  }, [error, handleJoin, roomClosedReason, roomId, status])
+
+  useEffect(() => {
+    if (!roomClosedReason) return
+    clearRoomAutoResume(roomId)
+  }, [roomClosedReason, roomId])
 
   useEffect(() => {
     const onVisibility = () => {
@@ -290,6 +362,8 @@ export function RoomSession({ roomId }: Props) {
         studioBroadcastHealth={studioBroadcastHealth}
         studioBroadcastHealthDetail={studioBroadcastHealthDetail}
         studioServerLogLines={studioServerLogLines}
+        connectionState={connectionState}
+        reconnectAttempt={reconnectAttempt}
       />
     )
   }

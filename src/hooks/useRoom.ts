@@ -46,6 +46,64 @@ const SIGNALING_HTTP = signalingHttpBase()
 const DEFAULT_ROOM = import.meta.env.VITE_DEFAULT_ROOM as string ?? 'test'
 
 const ROOM_POLL_MS = 4000
+const PARTICIPANT_SESSION_KEY_PREFIX = 'vmix_participant_session:'
+const RESUME_RELOAD_KEY_PREFIX = 'vmix_resume_reload:'
+
+function participantSessionStorageKey(roomId: string): string {
+  return `${PARTICIPANT_SESSION_KEY_PREFIX}${roomId.trim()}`
+}
+
+function readStoredParticipantSessionId(roomId: string): string | null {
+  const trimmed = roomId.trim()
+  if (!trimmed) return null
+  try {
+    const value = window.sessionStorage.getItem(participantSessionStorageKey(trimmed))
+    return value?.trim() || null
+  } catch {
+    return null
+  }
+}
+
+function storeParticipantSessionId(roomId: string, participantSessionId: string | null | undefined): void {
+  const trimmed = roomId.trim()
+  if (!trimmed) return
+  try {
+    const key = participantSessionStorageKey(trimmed)
+    const next = participantSessionId?.trim()
+    if (next) window.sessionStorage.setItem(key, next)
+    else window.sessionStorage.removeItem(key)
+  } catch {
+    /* noop */
+  }
+}
+
+function shouldTriggerResumeReload(roomId: string): boolean {
+  const trimmed = roomId.trim()
+  if (!trimmed) return false
+  try {
+    const key = `${RESUME_RELOAD_KEY_PREFIX}${trimmed}`
+    const now = Date.now()
+    const prevRaw = window.sessionStorage.getItem(key)
+    const prev = prevRaw ? Number(prevRaw) : 0
+    if (Number.isFinite(prev) && prev > 0 && now - prev < 15_000) {
+      return false
+    }
+    window.sessionStorage.setItem(key, String(now))
+    return true
+  } catch {
+    return true
+  }
+}
+
+function clearResumeReloadMark(roomId: string): void {
+  const trimmed = roomId.trim()
+  if (!trimmed) return
+  try {
+    window.sessionStorage.removeItem(`${RESUME_RELOAD_KEY_PREFIX}${trimmed}`)
+  } catch {
+    /* noop */
+  }
+}
 
 /** Строки с сокета для панели отладки студии (RTMP); UI подтягивает их фиолетовым. */
 const STUDIO_SERVER_LOG_CAP = 80
@@ -283,6 +341,7 @@ function disposeSignalingSocket(s: Socket) {
 }
 
 export type RoomStatus = 'idle' | 'connecting' | 'connected' | 'error'
+export type RoomClosedReason = 'room_closed' | 'manager_required' | 'manager_reconnecting'
 
 /** Вход в комнату: какие дорожки запросить до подключения (остальное — кнопками в комнате). */
 export type { InboundVideoQuality } from '../utils/inboundVideoStats'
@@ -305,7 +364,9 @@ export type RoomActivityNotifyRef = MutableRefObject<{
 export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const [status, setStatus] = useState<RoomStatus>('idle')
   const [error, setError] = useState<string | null>(null)
-  const [roomClosedReason, setRoomClosedReason] = useState<'room_closed' | 'manager_required' | null>(null)
+  const [roomClosedReason, setRoomClosedReason] = useState<RoomClosedReason | null>(null)
+  const [connectionState, setConnectionState] = useState<'connected' | 'reconnecting'>('connected')
+  const [reconnectAttempt, setReconnectAttempt] = useState<number | null>(null)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [participants, setParticipants] = useState<Map<string, RemoteParticipant>>(new Map())
   const [isMuted, setIsMuted] = useState(false)
@@ -337,6 +398,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const peerUplinkVideoQualityRef = useRef<Record<string, InboundVideoQuality>>({})
   const [peerUplinkBroadcastTick, setPeerUplinkBroadcastTick] = useState(0)
   const roomIdRef = useRef<string>(DEFAULT_ROOM)
+  const lastJoinRequestRef = useRef<{
+    name: string
+    roomId: string
+    preset?: VideoPreset
+    media?: JoinRoomMediaOptions
+  } | null>(null)
+  const unexpectedDisconnectRef = useRef(false)
   const localStreamRef = useRef<MediaStream | null>(null)
   const [sessionMeta, setSessionMeta] = useState<{ roomId: string; localPeerId: string } | null>(null)
   const [srtByPeer, setSrtByPeer] = useState<Record<string, SrtSessionInfo>>({})
@@ -682,6 +750,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     preset?: VideoPreset,
     media?: JoinRoomMediaOptions,
   ) => {
+    lastJoinRequestRef.current = { name, roomId, preset, media }
     if (preset) {
       presetRef.current = preset
       setActivePreset(preset)
@@ -806,6 +875,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         status: 'post-connect',
       }
       console.log('[room-client] socket connected', connectedPayload)
+      setConnectionState('connected')
+      setReconnectAttempt(null)
+      unexpectedDisconnectRef.current = false
       socket.on('disconnect', (reason: string) => {
         const payload = {
           roomId: roomIdRef.current,
@@ -814,6 +886,10 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           status: status,
         }
         console.log('[room-client] socket disconnect', payload)
+        setConnectionState('reconnecting')
+        if (reason !== 'io client disconnect') {
+          unexpectedDisconnectRef.current = true
+        }
       })
       socket.on('connect', () => {
         const payload = {
@@ -822,6 +898,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           status,
         }
         console.log('[room-client] socket reconnect/connect', payload)
+        setConnectionState('connected')
       })
       socket.io.on('reconnect_attempt', (attempt: number) => {
         const payload = {
@@ -830,6 +907,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           attempt,
         }
         console.log('[room-client] reconnect_attempt', payload)
+        setConnectionState('reconnecting')
+        setReconnectAttempt(attempt)
       })
       socket.io.on('reconnect', (attempt: number) => {
         const payload = {
@@ -839,6 +918,17 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           status,
         }
         console.log('[room-client] reconnect_success', payload)
+        setConnectionState('connected')
+        setReconnectAttempt(attempt)
+        if (
+          unexpectedDisconnectRef.current &&
+          readStoredParticipantSessionId(roomIdRef.current) &&
+          shouldTriggerResumeReload(roomIdRef.current)
+        ) {
+          window.setTimeout(() => {
+            window.location.reload()
+          }, 150)
+        }
       })
 
       socket.on('peerJoined', (raw: unknown) => {
@@ -858,18 +948,31 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         existingProducers?: ProducerDescriptor[]
         chatHistory?: RoomChatMessage[]
         peers?: unknown[]
+        participantSessionId?: string
+        roomRuntimeState?: 'active' | 'grace' | 'ended'
         error?: string
       }>((res) => {
+        const resumeParticipantSessionId = readStoredParticipantSessionId(roomId)
         socket.emit('joinRoom', {
           roomId,
           name: displayNameRef.current,
           avatarUrl: media?.avatarUrl ?? null,
           authUserId: media?.authUserId ?? null,
           canManageRoom: media?.canManageRoom === true,
+          resumeParticipantSessionId,
         }, res)
       })
 
-      if (joinData?.error === 'room_closed' || joinData?.error === 'manager_required') {
+      storeParticipantSessionId(roomId, joinData?.participantSessionId)
+      if (joinData?.participantSessionId) {
+        clearResumeReloadMark(roomId)
+      }
+
+      if (
+        joinData?.error === 'room_closed' ||
+        joinData?.error === 'manager_required' ||
+        joinData?.error === 'manager_reconnecting'
+      ) {
         setRoomClosedReason(joinData.error)
         setStatus('idle')
         disposeSignalingSocket(socket)
@@ -1061,8 +1164,12 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
       socket.on('roomClosed', (raw: unknown) => {
         const payload = raw as { reason?: string } | null
-        const reason =
-          payload?.reason === 'manager_required' ? 'manager_required' : 'room_closed'
+        const reason: RoomClosedReason =
+          payload?.reason === 'manager_required'
+            ? 'manager_required'
+            : payload?.reason === 'manager_reconnecting'
+              ? 'manager_reconnecting'
+              : 'room_closed'
         setRoomClosedReason(reason)
         leave()
       })
@@ -1268,6 +1375,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       setError(formatMediaJoinError(err))
       setStatus('error')
       setSessionMeta(null)
+      setConnectionState('connected')
+      setReconnectAttempt(null)
       setSrtByPeer({})
       setChatMessages([])
       setReactionBursts([])
@@ -2187,9 +2296,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     setParticipants(new Map())
     setStatus('idle')
     setRoomClosedReason(null)
+    setConnectionState('connected')
+    setReconnectAttempt(null)
     setIsMuted(false)
     setIsCamOff(false)
     setSessionMeta(null)
+    storeParticipantSessionId(roomIdRef.current, null)
+    clearResumeReloadMark(roomIdRef.current)
     setSrtByPeer({})
     setChatMessages([])
     setReactionBursts([])
@@ -2211,6 +2324,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     status,
     error,
     roomClosedReason,
+    connectionState,
+    reconnectAttempt,
     localStream,
     localScreenStream,
     localScreenPeerId,

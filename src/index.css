@@ -5636,6 +5636,19 @@ button.vio-row--peer:focus-visible {
   color: rgba(255, 255, 255, 0.85);
 }
 
+.room-invite-toast--warning {
+  background: linear-gradient(160deg, rgba(109, 77, 20, 0.96), rgba(42, 28, 10, 0.94));
+  border: 1px solid rgba(255, 183, 77, 0.4);
+}
+
+.room-invite-toast--warning .room-invite-toast__title {
+  color: #fff3d0;
+}
+
+.room-invite-toast--warning .room-invite-toast__text {
+  color: rgba(255, 244, 220, 0.88);
+}
+
 .room-invite-toast__close {
   position: absolute;
   top: 6px;

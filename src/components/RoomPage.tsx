@@ -318,6 +318,8 @@ interface Props {
   /** Пояснение с сервера (stderr FFmpeg и т.д.) при studioBroadcastHealth ≠ live. */
   studioBroadcastHealthDetail?: string | null
   studioServerLogLines?: readonly string[]
+  connectionState?: 'connected' | 'reconnecting'
+  reconnectAttempt?: number | null
 }
 
 export function RoomPage({
@@ -349,6 +351,8 @@ export function RoomPage({
   studioBroadcastHealth,
   studioBroadcastHealthDetail = null,
   studioServerLogLines = [],
+  connectionState = 'connected',
+  reconnectAttempt = null,
 }: Props) {
   const isViewportMobile = useMediaQuery(mediaQueryMaxWidthMobile)
   const [immersiveAutoHide, setImmersiveAutoHide] = useLocalStorageBool(
@@ -1468,6 +1472,17 @@ export function RoomPage({
           <button type="button" className="room-invite-toast__close" onClick={() => setVmixError(null)}>✕</button>
         </div>
       )}
+
+      {connectionState === 'reconnecting' ? (
+        <div className="room-invite-toast room-invite-toast--visible room-invite-toast--warning" role="status" aria-live="polite">
+          <span className="room-invite-toast__title">Переподключаем комнату…</span>
+          <span className="room-invite-toast__text">
+            {reconnectAttempt != null
+              ? `Пытаемся восстановить соединение, попытка ${reconnectAttempt}.`
+              : 'Пытаемся восстановить соединение после обрыва сети или ухода приложения в фон.'}
+          </span>
+        </div>
+      ) : null}
 
       <div
         className={`room-invite-toast${inviteToast ? ' room-invite-toast--visible' : ''}`}
