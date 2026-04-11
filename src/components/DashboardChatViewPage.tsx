@@ -8,7 +8,7 @@ import {
   getRoomChatConversationForUser,
   listRoomChatMessagesForUser,
 } from '../lib/chatArchive'
-import { DashboardTopbar } from './DashboardTopbar'
+import { DashboardShell } from './DashboardShell'
 
 function formatDateTime(value: string): string {
   const dt = new Date(value)
@@ -79,64 +79,58 @@ export function DashboardChatViewPage() {
   }, [conversationId, user?.id])
 
   return (
-    <div className="dashboard-page">
-      <DashboardTopbar canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()} active="chats" />
-
-      <div className="dashboard-body">
-        <div className="dashboard-content dashboard-content--cabinet">
-          <section className="dashboard-section">
-            <div className="dashboard-chat-view__head">
-              <div>
-                <h2 className="dashboard-section__title">{conversation?.title ?? 'Архив чата'}</h2>
-                <p className="dashboard-section__hint">
-                  <Link to="/dashboard/chats" className="dashboard-chat-view__back">
-                    ← Назад к списку чатов
-                  </Link>
-                </p>
-              </div>
-              {conversation ? (
-                <div className="dashboard-chat-view__summary">
-                  <span>Комната: {conversation.roomSlug ?? '—'}</span>
-                  <span>{conversation.closedAt ? 'Завершён' : 'Активен'}</span>
-                  <span>Сообщений: {conversation.messageCount}</span>
-                </div>
-              ) : null}
+    <DashboardShell active="chats" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
+      <section className="dashboard-section">
+        <div className="dashboard-chat-view__head">
+          <div>
+            <h2 className="dashboard-section__title">{conversation?.title ?? 'Архив чата'}</h2>
+            <p className="dashboard-section__hint">
+              <Link to="/dashboard/chats" className="dashboard-chat-view__back">
+                ← Назад к списку чатов
+              </Link>
+            </p>
+          </div>
+          {conversation ? (
+            <div className="dashboard-chat-view__summary">
+              <span>Комната: {conversation.roomSlug ?? '—'}</span>
+              <span>{conversation.closedAt ? 'Завершён' : 'Активен'}</span>
+              <span>Сообщений: {conversation.messageCount}</span>
             </div>
-
-            {loading ? <div className="auth-loading" aria-label="Загрузка..." /> : null}
-            {!loading && error ? <p className="join-error">{error}</p> : null}
-
-            {!loading && !error ? (
-              <div className="dashboard-chat-thread">
-                {messages.length === 0 ? (
-                  <div className="dashboard-chats-empty">В этом архиве пока нет сообщений.</div>
-                ) : (
-                  messages.map((message) => (
-                    <article
-                      key={message.id}
-                      className={`dashboard-chat-message${
-                        message.kind === 'reaction'
-                          ? ' dashboard-chat-message--reaction'
-                          : message.kind === 'system'
-                            ? ' dashboard-chat-message--system'
-                            : ''
-                      }`}
-                    >
-                      <div className="dashboard-chat-message__meta">
-                        <span className="dashboard-chat-message__author">{message.senderNameSnapshot}</span>
-                        <time className="dashboard-chat-message__time" dateTime={message.createdAt}>
-                          {formatDateTime(message.createdAt)}
-                        </time>
-                      </div>
-                      <div className="dashboard-chat-message__body">{message.body}</div>
-                    </article>
-                  ))
-                )}
-              </div>
-            ) : null}
-          </section>
+          ) : null}
         </div>
-      </div>
-    </div>
+
+        {loading ? <div className="auth-loading" aria-label="Загрузка..." /> : null}
+        {!loading && error ? <p className="join-error">{error}</p> : null}
+
+        {!loading && !error ? (
+          <div className="dashboard-chat-thread">
+            {messages.length === 0 ? (
+              <div className="dashboard-chats-empty">В этом архиве пока нет сообщений.</div>
+            ) : (
+              messages.map((message: RoomChatArchiveMessage) => (
+                <article
+                  key={message.id}
+                  className={`dashboard-chat-message${
+                    message.kind === 'reaction'
+                      ? ' dashboard-chat-message--reaction'
+                      : message.kind === 'system'
+                        ? ' dashboard-chat-message--system'
+                        : ''
+                  }`}
+                >
+                  <div className="dashboard-chat-message__meta">
+                    <span className="dashboard-chat-message__author">{message.senderNameSnapshot}</span>
+                    <time className="dashboard-chat-message__time" dateTime={message.createdAt}>
+                      {formatDateTime(message.createdAt)}
+                    </time>
+                  </div>
+                  <div className="dashboard-chat-message__body">{message.body}</div>
+                </article>
+              ))
+            )}
+          </div>
+        ) : null}
+      </section>
+    </DashboardShell>
   )
 }

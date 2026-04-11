@@ -72,6 +72,7 @@ import { useProfile } from '../hooks/useProfile'
 import { useIsDbSpaceRoomHost } from '../hooks/useSpaceRoomHost'
 import { isSessionHostFor } from '../lib/spaceRoom'
 import type { StudioOutputPreset } from '../types/studio'
+import { getContactStatuses, setUserFavorite, type ContactStatus } from '../lib/socialGraph'
 
 const StudioModeWorkspace = lazy(async () => {
   const mod = await import('./studio/StudioModeWorkspace')
@@ -545,6 +546,7 @@ export function RoomPage({
   const { allowed: canAccessAdminPanel, isSuperadmin } = useCanAccessAdminPanel()
   const { plan, profile } = useProfile()
   const isDbSpaceRoomHost = useIsDbSpaceRoomHost(roomId, user?.id)
+  const [chatContactStatuses, setChatContactStatuses] = useState<Record<string, ContactStatus>>({})
 
   /** Staff/superadmin по RPC + роли из профиля (если RPC отличается от `user_global_roles`). */
   const isPlatformAdminish = useMemo(
@@ -670,6 +672,59 @@ export function RoomPage({
   }, [blockImmersiveChromeHide, immersiveAutoHide])
 
   const remoteList = useMemo(() => [...participants.values()], [participants])
+  const chatKnownUserIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          chatMessages
+            .map((m) => m.senderUserId?.trim() ?? '')
+            .filter((id) => id && id !== (user?.id ?? '')),
+        ),
+      ),
+    [chatMessages, user?.id],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    if (!user?.id || chatKnownUserIds.length === 0) {
+      setChatContactStatuses({})
+      return
+    }
+    void getContactStatuses(chatKnownUserIds).then((result) => {
+      if (cancelled) return
+      if (result.data) setChatContactStatuses(result.data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [chatKnownUserIds, user?.id])
+
+  const toggleFavoriteFromChat = useCallback(async (targetUserId: string, nextFavorite: boolean) => {
+    const current = chatContactStatuses[targetUserId]
+    setChatContactStatuses((prev) => ({
+      ...prev,
+      [targetUserId]: {
+        targetUserId,
+        isFavorite: nextFavorite,
+        favorsMe: current?.favorsMe ?? false,
+        isFriend: nextFavorite && (current?.favorsMe ?? false),
+      },
+    }))
+    const result = await setUserFavorite(targetUserId, nextFavorite)
+    if (result.error || !result.data) {
+      setChatContactStatuses((prev) => {
+        const next = { ...prev }
+        if (current) next[targetUserId] = current
+        else delete next[targetUserId]
+        return next
+      })
+      return
+    }
+    setChatContactStatuses((prev) => ({
+      ...prev,
+      [targetUserId]: result.data!,
+    }))
+  }, [chatContactStatuses])
 
   /** Участники-люди в счётчике шапки (без виртуального vMix/SRT). */
   const remoteHumanPeers = useMemo(
@@ -1651,6 +1706,11 @@ export function RoomPage({
               onClose={() => setChatOpen(false)}
               messages={chatMessages}
               localPeerId={localPeerId}
+              localUserId={user?.id ?? null}
+              contactStatuses={chatContactStatuses}
+              onToggleFavoriteUser={(targetUserId, nextFavorite) => {
+                void toggleFavoriteFromChat(targetUserId, nextFavorite)
+              }}
               onSend={onSendChatMessage}
             />
           </div>
@@ -1734,6 +1794,11 @@ export function RoomPage({
           onClose={() => setChatOpen(false)}
           messages={chatMessages}
           localPeerId={localPeerId}
+          localUserId={user?.id ?? null}
+          contactStatuses={chatContactStatuses}
+          onToggleFavoriteUser={(targetUserId, nextFavorite) => {
+            void toggleFavoriteFromChat(targetUserId, nextFavorite)
+          }}
           onSend={onSendChatMessage}
         />
       )}

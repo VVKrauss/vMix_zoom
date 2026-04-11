@@ -8,7 +8,7 @@ import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
 import { DashboardProfileModal } from './DashboardProfileModal'
 import { DashboardLayoutPicker } from './DashboardLayoutPicker'
 import { PillToggle } from './PillToggle'
-import { DashboardTopbar } from './DashboardTopbar'
+import { DashboardShell } from './DashboardShell'
 
 const STATUS_LABEL: Record<string, string> = {
   active: 'Активен',
@@ -61,10 +61,10 @@ export function DashboardPage() {
 
   useEffect(() => {
     if (!profile) return
-    const m = mergeRoomUiPrefs(profile.room_ui_preferences)
-    setRoomLayout(m.layout_mode)
-    setRoomShowLayoutToggle(m.show_layout_toggle)
-    setRoomHideVideoLetterboxing(m.hide_video_letterboxing)
+    const merged = mergeRoomUiPrefs(profile.room_ui_preferences)
+    setRoomLayout(merged.layout_mode)
+    setRoomShowLayoutToggle(merged.show_layout_toggle)
+    setRoomHideVideoLetterboxing(merged.hide_video_letterboxing)
   }, [profile])
 
   useEffect(() => {
@@ -77,15 +77,15 @@ export function DashboardPage() {
 
   const currentName = nameEdited ? displayName : (profile?.display_name ?? '')
 
-  const handleNameChange = (v: string) => {
-    setDisplayName(v)
+  const handleNameChange = (value: string) => {
+    setDisplayName(value)
     setNameEdited(true)
     setSaveMsg(null)
     setSaveErr(null)
   }
 
-  const handleSave = async (e: FormEvent) => {
-    e.preventDefault()
+  const handleSave = async (event: FormEvent) => {
+    event.preventDefault()
     setSaveMsg(null)
     setSaveErr(null)
     const { error: err } = await saveProfile(currentName)
@@ -111,33 +111,38 @@ export function DashboardPage() {
     setSaveErr(null)
   }
 
-  const handleSaveRoomPrefs = async (e: FormEvent) => {
-    e.preventDefault()
+  const handleSaveRoomPrefs = async (event: FormEvent) => {
+    event.preventDefault()
     if (!user) return
     setRoomSaving(true)
     setRoomSaveMsg(null)
     setRoomSaveErr(null)
+
     const { data, error: fetchErr } = await supabase
       .from('users')
       .select('room_ui_preferences')
       .eq('id', user.id)
       .single()
+
     if (fetchErr) {
       setRoomSaving(false)
       setRoomSaveErr(fetchErr.message)
       return
     }
-    const m = mergeRoomUiPrefs(data?.room_ui_preferences)
+
+    const merged = mergeRoomUiPrefs(data?.room_ui_preferences)
     const next = {
       layout_mode: roomLayout,
       show_layout_toggle: roomShowLayoutToggle,
       hide_video_letterboxing: roomHideVideoLetterboxing,
-      ...(m.pip ? { pip: { pos: m.pip.pos, size: m.pip.size } } : {}),
+      ...(merged.pip ? { pip: { pos: merged.pip.pos, size: merged.pip.size } } : {}),
     }
+
     const { error: upErr } = await supabase
       .from('users')
       .update({ room_ui_preferences: next, updated_at: new Date().toISOString() })
       .eq('id', user.id)
+
     setRoomSaving(false)
     if (upErr) setRoomSaveErr(upErr.message)
     else setRoomSaveMsg('Сохранено')
@@ -145,178 +150,166 @@ export function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="dashboard-page">
-        <DashboardTopbar canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()} active="cabinet" />
-        <div className="dashboard-body">
-          <div className="auth-loading" aria-label="Загрузка…" />
-        </div>
-      </div>
+      <DashboardShell active="cabinet" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
+        <div className="auth-loading" aria-label="Загрузка..." />
+      </DashboardShell>
     )
   }
 
   if (error || !profile) {
     return (
-      <div className="dashboard-page">
-        <DashboardTopbar canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()} active="cabinet" />
-        <div className="dashboard-body">
-          <p className="join-error">{error ?? 'Не удалось загрузить профиль'}</p>
-        </div>
-      </div>
+      <DashboardShell active="cabinet" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
+        <p className="join-error">{error ?? 'Не удалось загрузить профиль'}</p>
+      </DashboardShell>
     )
   }
 
   const initials = profile.display_name.charAt(0).toUpperCase()
 
   return (
-    <div className="dashboard-page">
-      <DashboardTopbar canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()} active="cabinet" />
+    <DashboardShell active="cabinet" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
+      <DashboardProfileModal
+        open={profileEditOpen}
+        onClose={closeProfileModal}
+        displayName={currentName}
+        onDisplayNameChange={handleNameChange}
+        currentName={currentName}
+        email={profile.email ?? ''}
+        avatarUrl={profile.avatar_url}
+        avatarAlt={profile.display_name}
+        initials={initials}
+        saving={saving}
+        uploadingAvatar={uploadingAvatar}
+        saveErr={saveErr}
+        saveMsg={saveMsg}
+        onSave={handleSave}
+        onRemoveAvatar={() => {
+          void handleRemoveAvatar()
+        }}
+        onUploadAvatar={(file) => {
+          void handleModalAvatarUpload(file)
+        }}
+      />
 
-      <div className="dashboard-body">
-        <div className="dashboard-content dashboard-content--cabinet">
-          <DashboardProfileModal
-            open={profileEditOpen}
-            onClose={closeProfileModal}
-            displayName={currentName}
-            onDisplayNameChange={handleNameChange}
-            currentName={currentName}
-            email={profile.email ?? ''}
-            avatarUrl={profile.avatar_url}
-            avatarAlt={profile.display_name}
-            initials={initials}
-            saving={saving}
-            uploadingAvatar={uploadingAvatar}
-            saveErr={saveErr}
-            saveMsg={saveMsg}
-            onSave={handleSave}
-            onRemoveAvatar={() => {
-              void handleRemoveAvatar()
-            }}
-            onUploadAvatar={(file) => {
-              void handleModalAvatarUpload(file)
-            }}
-          />
-
-          <div className="dashboard-profile-account-row">
-            <section className="dashboard-section">
-              <h2 className="dashboard-section__title">Профиль</h2>
-              <div className="dashboard-profile-summary">
-                <div className="dashboard-profile-summary__avatar">
-                  {profile.avatar_url ? (
-                    <img src={profile.avatar_url} alt={profile.display_name} />
-                  ) : (
-                    <span className="dashboard-profile-summary__initials">{initials}</span>
-                  )}
-                </div>
-                <div className="dashboard-profile-summary__text">
-                  <span className="dashboard-profile-summary__name">{profile.display_name}</span>
-                  <span className="dashboard-profile-summary__email" title={profile.email ?? undefined}>
-                    {profile.email ?? '—'}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className="dashboard-profile-summary__edit"
-                  onClick={() => setProfileEditOpen(true)}
-                >
-                  Изменить
-                </button>
-              </div>
-            </section>
-
-            <section className="dashboard-section">
-              <h2 className="dashboard-section__title">Аккаунт</h2>
-
-              <div className="dashboard-meta-grid">
-                <div className="dashboard-meta-item">
-                  <span className="dashboard-meta-item__label">Статус</span>
-                  <span className={`dashboard-badge ${STATUS_CLASS[profile.status] ?? ''}`}>
-                    {STATUS_LABEL[profile.status] ?? profile.status}
-                  </span>
-                </div>
-
-                <div className="dashboard-meta-item dashboard-meta-item--roles">
-                  <span className="dashboard-meta-item__label">Роли на платформе</span>
-                  {profile.global_roles.length > 0 ? (
-                    <div className="dashboard-role-badges">
-                      {profile.global_roles.map((r) => (
-                        <span
-                          key={r.code}
-                          className={globalRoleBadgeClass(r.code)}
-                          title={r.title ? `${r.title} (${r.code})` : r.code}
-                        >
-                          {GLOBAL_ROLE_LABEL[r.code] ?? r.title ?? r.code}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="dashboard-meta-item__empty">Стандартный доступ</span>
-                  )}
-                </div>
-
-                <div className="dashboard-meta-item">
-                  <span className="dashboard-meta-item__label">Тарифный план</span>
-                  <div className="dashboard-plan">
-                    <span className="dashboard-plan__name">{plan?.plan_name ?? 'Free'}</span>
-                    {plan?.sub_status && (
-                      <span className="dashboard-badge dashboard-badge--active">{plan.sub_status}</span>
-                    )}
-                    {plan?.trial_ends_at && (
-                      <span className="dashboard-plan__trial">
-                        Пробный до {new Date(plan.trial_ends_at).toLocaleDateString('ru-RU')}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </section>
+      <div className="dashboard-profile-account-row">
+        <section className="dashboard-section">
+          <h2 className="dashboard-section__title">Профиль</h2>
+          <div className="dashboard-profile-summary">
+            <div className="dashboard-profile-summary__avatar">
+              {profile.avatar_url ? (
+                <img src={profile.avatar_url} alt={profile.display_name} />
+              ) : (
+                <span className="dashboard-profile-summary__initials">{initials}</span>
+              )}
+            </div>
+            <div className="dashboard-profile-summary__text">
+              <span className="dashboard-profile-summary__name">{profile.display_name}</span>
+              <span className="dashboard-profile-summary__email" title={profile.email ?? undefined}>
+                {profile.email ?? '—'}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="dashboard-profile-summary__edit"
+              onClick={() => setProfileEditOpen(true)}
+            >
+              Изменить
+            </button>
           </div>
+        </section>
 
-          <section className="dashboard-section">
-            <h2 className="dashboard-section__title">Настройки комнаты</h2>
-            <p className="dashboard-section__hint">
-              Для входа с компьютера: вид по умолчанию, кнопка смены раскладки и отображение камеры в
-              плитках. На телефоне по-прежнему своя сетка и жесты.
-            </p>
-            <form onSubmit={handleSaveRoomPrefs} className="dashboard-form">
-              <div className="dashboard-field">
-                <div className="dashboard-field__inline dashboard-field__inline--stripe">
-                  <span className="dashboard-field__label">Вид по умолчанию</span>
-                  <DashboardLayoutPicker value={roomLayout} onChange={setRoomLayout} />
+        <section className="dashboard-section">
+          <h2 className="dashboard-section__title">Аккаунт</h2>
+
+          <div className="dashboard-meta-grid">
+            <div className="dashboard-meta-item">
+              <span className="dashboard-meta-item__label">Статус</span>
+              <span className={`dashboard-badge ${STATUS_CLASS[profile.status] ?? ''}`}>
+                {STATUS_LABEL[profile.status] ?? profile.status}
+              </span>
+            </div>
+
+            <div className="dashboard-meta-item dashboard-meta-item--roles">
+              <span className="dashboard-meta-item__label">Роли на платформе</span>
+              {profile.global_roles.length > 0 ? (
+                <div className="dashboard-role-badges">
+                  {profile.global_roles.map((role) => (
+                    <span
+                      key={role.code}
+                      className={globalRoleBadgeClass(role.code)}
+                      title={role.title ? `${role.title} (${role.code})` : role.code}
+                    >
+                      {GLOBAL_ROLE_LABEL[role.code] ?? role.title ?? role.code}
+                    </span>
+                  ))}
                 </div>
+              ) : (
+                <span className="dashboard-meta-item__empty">Стандартный доступ</span>
+              )}
+            </div>
+
+            <div className="dashboard-meta-item">
+              <span className="dashboard-meta-item__label">Тарифный план</span>
+              <div className="dashboard-plan">
+                <span className="dashboard-plan__name">{plan?.plan_name ?? 'Free'}</span>
+                {plan?.sub_status ? (
+                  <span className="dashboard-badge dashboard-badge--active">{plan.sub_status}</span>
+                ) : null}
+                {plan?.trial_ends_at ? (
+                  <span className="dashboard-plan__trial">
+                    Пробный до {new Date(plan.trial_ends_at).toLocaleDateString('ru-RU')}
+                  </span>
+                ) : null}
               </div>
-              <div className="dashboard-field">
-                <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-field__inline--stripe">
-                  <span className="dashboard-field__label">Кнопка смены вида в комнате</span>
-                  <PillToggle
-                    checked={roomShowLayoutToggle}
-                    onCheckedChange={setRoomShowLayoutToggle}
-                    offLabel="Скрыта"
-                    onLabel="Показана"
-                    ariaLabel="Показывать круглую кнопку смены вида в комнате"
-                  />
-                </div>
-              </div>
-              <div className="dashboard-field">
-                <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-field__inline--stripe">
-                  <span className="dashboard-field__label">Скрывать поля у камеры</span>
-                  <PillToggle
-                    checked={roomHideVideoLetterboxing}
-                    onCheckedChange={setRoomHideVideoLetterboxing}
-                    offLabel="Нет"
-                    onLabel="Да"
-                    ariaLabel="Обрезать видео камеры под плитку без чёрных полей; выкл — весь кадр вписан в плитку"
-                  />
-                </div>
-              </div>
-              {roomSaveErr && <p className="join-error">{roomSaveErr}</p>}
-              {roomSaveMsg && <p className="dashboard-save-ok">{roomSaveMsg}</p>}
-              <button type="submit" className="join-btn dashboard-form__save" disabled={roomSaving}>
-                {roomSaving ? 'Сохранение…' : 'Сохранить настройки комнаты'}
-              </button>
-            </form>
-          </section>
-        </div>
+            </div>
+          </div>
+        </section>
       </div>
-    </div>
+
+      <section className="dashboard-section">
+        <h2 className="dashboard-section__title">Настройки комнаты</h2>
+        <p className="dashboard-section__hint">
+          Для входа с компьютера: вид по умолчанию, кнопка смены раскладки и отображение камеры в плитках.
+          На телефоне по-прежнему действует отдельная мобильная логика.
+        </p>
+        <form onSubmit={handleSaveRoomPrefs} className="dashboard-form">
+          <div className="dashboard-field">
+            <div className="dashboard-field__inline dashboard-field__inline--stripe">
+              <span className="dashboard-field__label">Вид по умолчанию</span>
+              <DashboardLayoutPicker value={roomLayout} onChange={setRoomLayout} />
+            </div>
+          </div>
+          <div className="dashboard-field">
+            <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-field__inline--stripe">
+              <span className="dashboard-field__label">Кнопка смены вида в комнате</span>
+              <PillToggle
+                checked={roomShowLayoutToggle}
+                onCheckedChange={setRoomShowLayoutToggle}
+                offLabel="Скрыта"
+                onLabel="Показана"
+                ariaLabel="Показывать круглую кнопку смены вида в комнате"
+              />
+            </div>
+          </div>
+          <div className="dashboard-field">
+            <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-field__inline--stripe">
+              <span className="dashboard-field__label">Скрывать поля у камеры</span>
+              <PillToggle
+                checked={roomHideVideoLetterboxing}
+                onCheckedChange={setRoomHideVideoLetterboxing}
+                offLabel="Нет"
+                onLabel="Да"
+                ariaLabel="Обрезать видео камеры под плитку без чёрных полей; выключено — весь кадр вписан в плитку"
+              />
+            </div>
+          </div>
+          {roomSaveErr ? <p className="join-error">{roomSaveErr}</p> : null}
+          {roomSaveMsg ? <p className="dashboard-save-ok">{roomSaveMsg}</p> : null}
+          <button type="submit" className="join-btn dashboard-form__save" disabled={roomSaving}>
+            {roomSaving ? 'Сохранение…' : 'Сохранить настройки комнаты'}
+          </button>
+        </form>
+      </section>
+    </DashboardShell>
   )
 }

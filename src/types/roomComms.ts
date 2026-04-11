@@ -2,6 +2,7 @@
 export type RoomChatMessage = {
   roomId?: string
   peerId: string
+  senderUserId?: string | null
   name: string
   text: string
   ts: number

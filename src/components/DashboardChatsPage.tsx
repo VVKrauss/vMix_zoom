@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { type RoomChatConversationSummary, listRoomChatConversationsForUser } from '../lib/chatArchive'
-import { DashboardTopbar } from './DashboardTopbar'
+import { DashboardShell } from './DashboardShell'
 
 type ChatSortMode = 'recent_desc' | 'recent_asc' | 'messages_desc' | 'messages_asc'
 type ChatTimeFilter = 'all' | 'today' | '7d' | '30d'
@@ -107,103 +107,97 @@ export function DashboardChatsPage() {
   }, [items, query, sortMode, timeFilter])
 
   return (
-    <div className="dashboard-page">
-      <DashboardTopbar canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()} active="chats" />
+    <DashboardShell active="chats" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
+      <section className="dashboard-section">
+        <h2 className="dashboard-section__title">Чаты комнат</h2>
+        <p className="dashboard-section__hint">
+          Здесь хранятся архивы комнатных чатов. Видны только беседы тех комнат, в которых вы были участником под своим аккаунтом.
+        </p>
 
-      <div className="dashboard-body">
-        <div className="dashboard-content dashboard-content--cabinet">
-          <section className="dashboard-section">
-            <h2 className="dashboard-section__title">Чаты комнат</h2>
-            <p className="dashboard-section__hint">
-              Здесь сохраняются архивы комнатных чатов. Видны только беседы тех комнат, в которых вы были участником под своим аккаунтом.
-            </p>
+        {!loading && !error && items.length > 0 ? (
+          <div className="dashboard-chat-filters">
+            <label className="dashboard-chat-filters__search">
+              <span className="dashboard-chat-filters__label">Поиск</span>
+              <input
+                type="search"
+                className="dashboard-chat-filters__input"
+                placeholder="Название, комната или фрагмент сообщения"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
 
-            {!loading && !error && items.length > 0 ? (
-              <div className="dashboard-chat-filters">
-                <label className="dashboard-chat-filters__search">
-                  <span className="dashboard-chat-filters__label">Поиск</span>
-                  <input
-                    type="search"
-                    className="dashboard-chat-filters__input"
-                    placeholder="Название, комната или фрагмент сообщения"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                  />
-                </label>
+            <label className="dashboard-chat-filters__control">
+              <span className="dashboard-chat-filters__label">Сортировка</span>
+              <select
+                className="dashboard-chat-filters__select"
+                value={sortMode}
+                onChange={(e) => setSortMode(e.target.value as ChatSortMode)}
+              >
+                <option value="recent_desc">Сначала новые</option>
+                <option value="recent_asc">Сначала старые</option>
+                <option value="messages_desc">Больше сообщений</option>
+                <option value="messages_asc">Меньше сообщений</option>
+              </select>
+            </label>
 
-                <label className="dashboard-chat-filters__control">
-                  <span className="dashboard-chat-filters__label">Сортировка</span>
-                  <select
-                    className="dashboard-chat-filters__select"
-                    value={sortMode}
-                    onChange={(e) => setSortMode(e.target.value as ChatSortMode)}
-                  >
-                    <option value="recent_desc">Сначала новые</option>
-                    <option value="recent_asc">Сначала старые</option>
-                    <option value="messages_desc">Больше сообщений</option>
-                    <option value="messages_asc">Меньше сообщений</option>
-                  </select>
-                </label>
+            <label className="dashboard-chat-filters__control">
+              <span className="dashboard-chat-filters__label">Период</span>
+              <select
+                className="dashboard-chat-filters__select"
+                value={timeFilter}
+                onChange={(e) => setTimeFilter(e.target.value as ChatTimeFilter)}
+              >
+                <option value="all">За всё время</option>
+                <option value="today">Сегодня</option>
+                <option value="7d">За 7 дней</option>
+                <option value="30d">За 30 дней</option>
+              </select>
+            </label>
+          </div>
+        ) : null}
 
-                <label className="dashboard-chat-filters__control">
-                  <span className="dashboard-chat-filters__label">Период</span>
-                  <select
-                    className="dashboard-chat-filters__select"
-                    value={timeFilter}
-                    onChange={(e) => setTimeFilter(e.target.value as ChatTimeFilter)}
-                  >
-                    <option value="all">За всё время</option>
-                    <option value="today">Сегодня</option>
-                    <option value="7d">За 7 дней</option>
-                    <option value="30d">За 30 дней</option>
-                  </select>
-                </label>
-              </div>
-            ) : null}
+        {loading ? <div className="auth-loading" aria-label="Загрузка..." /> : null}
+        {!loading && error ? <p className="join-error">{error}</p> : null}
+        {!loading && !error && items.length === 0 ? (
+          <div className="dashboard-chats-empty">
+            После завершения вашей первой комнаты здесь появится архив переписки.
+          </div>
+        ) : null}
 
-            {loading ? <div className="auth-loading" aria-label="Загрузка..." /> : null}
-            {!loading && error ? <p className="join-error">{error}</p> : null}
-            {!loading && !error && items.length === 0 ? (
-              <div className="dashboard-chats-empty">
-                После завершения вашей первой комнаты здесь появится архив переписки.
-              </div>
-            ) : null}
-
-            {!loading && !error && items.length > 0 ? (
-              <div className="dashboard-chat-list">
-                {filteredItems.length === 0 ? (
-                  <div className="dashboard-chats-empty">По текущим фильтрам ничего не найдено.</div>
-                ) : (
-                  filteredItems.map((item) => (
-                    <Link
-                      key={item.id}
-                      to={`/dashboard/chats/${encodeURIComponent(item.id)}`}
-                      className="dashboard-chat-row"
-                    >
-                      <div className="dashboard-chat-row__main">
-                        <div className="dashboard-chat-row__titleline">
-                          <span className="dashboard-chat-row__title">{item.title}</span>
-                          <span className={`dashboard-badge ${item.closedAt ? 'dashboard-badge--pending' : 'dashboard-badge--active'}`}>
-                            {item.closedAt ? 'Завершён' : 'Активен'}
-                          </span>
-                        </div>
-                        <div className="dashboard-chat-row__meta">
-                          <span>Комната: {item.roomSlug ?? '—'}</span>
-                          <span>Сообщений: {item.messageCount}</span>
-                          <span>Последняя активность: {formatDateTime(item.lastMessageAt ?? item.createdAt)}</span>
-                        </div>
-                        <div className="dashboard-chat-row__preview">
-                          {item.lastMessagePreview?.trim() || 'Сообщений пока нет'}
-                        </div>
-                      </div>
-                    </Link>
-                  ))
-                )}
-              </div>
-            ) : null}
-          </section>
-        </div>
-      </div>
-    </div>
+        {!loading && !error && items.length > 0 ? (
+          <div className="dashboard-chat-list">
+            {filteredItems.length === 0 ? (
+              <div className="dashboard-chats-empty">По текущим фильтрам ничего не найдено.</div>
+            ) : (
+              filteredItems.map((item) => (
+                <Link
+                  key={item.id}
+                  to={`/dashboard/chats/${encodeURIComponent(item.id)}`}
+                  className="dashboard-chat-row"
+                >
+                  <div className="dashboard-chat-row__main">
+                    <div className="dashboard-chat-row__titleline">
+                      <span className="dashboard-chat-row__title">{item.title}</span>
+                      <span className={`dashboard-badge ${item.closedAt ? 'dashboard-badge--pending' : 'dashboard-badge--active'}`}>
+                        {item.closedAt ? 'Завершён' : 'Активен'}
+                      </span>
+                    </div>
+                    <div className="dashboard-chat-row__meta">
+                      <span>Комната: {item.roomSlug ?? '—'}</span>
+                      <span>Сообщений: {item.messageCount}</span>
+                      <span>Последняя активность: {formatDateTime(item.lastMessageAt ?? item.createdAt)}</span>
+                    </div>
+                    <div className="dashboard-chat-row__preview">
+                      {item.lastMessagePreview?.trim() || 'Сообщений пока нет'}
+                    </div>
+                  </div>
+                </Link>
+              ))
+            )}
+          </div>
+        ) : null}
+      </section>
+    </DashboardShell>
   )
 }

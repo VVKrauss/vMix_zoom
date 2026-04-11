@@ -57,6 +57,29 @@ export function InviteIcon() {
   )
 }
 
+export function ChatBubbleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M21 11.5a8.5 8.5 0 01-8.5 8.5 8.8 8.8 0 01-3.18-.58L3 21l1.73-5.08A8.5 8.5 0 1112.5 20" />
+    </svg>
+  )
+}
+
+export function StarIcon({ filled = false }: { filled?: boolean }) {
+  if (filled) {
+    return (
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+        <path d="M12 2.8l2.75 5.58 6.16.9-4.46 4.34 1.06 6.13L12 16.86 6.49 19.75l1.05-6.13L3.09 9.28l6.16-.9L12 2.8z" />
+      </svg>
+    )
+  }
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 2.8l2.75 5.58 6.16.9-4.46 4.34 1.06 6.13L12 16.86 6.49 19.75l1.05-6.13L3.09 9.28l6.16-.9L12 2.8z" />
+    </svg>
+  )
+}
+
 /** Завершить звонок: трубка в круге. */
 export function EndCallIcon() {
   return (

@@ -220,12 +220,14 @@ function mergeIncomingChatMessage(prev: RoomChatMessage[], msg: RoomChatMessage)
   if (msg.kind === 'reaction') {
     return [...prev, msg].slice(-CHAT_MESSAGES_CAP)
   }
+  const msgIdentity = (msg.senderUserId && msg.senderUserId.trim()) || msg.peerId
   const scan = Math.min(CHAT_ECHO_DEDUP_SCAN, prev.length)
   for (let k = 1; k <= scan; k++) {
     const i = prev.length - k
     const p = prev[i]!
+    const prevIdentity = (p.senderUserId && p.senderUserId.trim()) || p.peerId
     if (
-      p.peerId === msg.peerId &&
+      prevIdentity === msgIdentity &&
       p.text === msg.text &&
       Math.abs(p.ts - msg.ts) < CHAT_ECHO_DEDUP_MS
     ) {
@@ -441,6 +443,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   }
   const lastLocalReactionAtRef = useRef(0)
   const displayNameRef = useRef('')
+  const authUserIdRef = useRef<string | null>(null)
   /** Инкремент при leave или новом join — отмена незавершённого join без ложных ошибок в консоли. */
   const joinGenerationRef = useRef(0)
   const participantsRef = useRef(participants)
@@ -771,6 +774,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     setRemoteStudioProgramConsumePending(false)
     roomIdRef.current = roomId
     displayNameRef.current = name.trim() || 'Гость'
+    authUserIdRef.current = media?.authUserId ?? null
 
     const aborted = () => gen !== joinGenerationRef.current
 
@@ -1018,6 +1022,17 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
               typeof m.text === 'string' &&
               typeof m.ts === 'number',
           )
+          .map((m) => ({
+            ...m,
+            senderUserId:
+              typeof (m as Record<string, unknown>).senderUserId === 'string'
+                ? String((m as Record<string, unknown>).senderUserId).trim() || null
+                : typeof (m as Record<string, unknown>).sender_user_id === 'string'
+                  ? String((m as Record<string, unknown>).sender_user_id).trim() || null
+                  : typeof (m as Record<string, unknown>).authUserId === 'string'
+                    ? String((m as Record<string, unknown>).authUserId).trim() || null
+                    : null,
+          }))
           .slice(-CHAT_MESSAGES_CAP)
         setChatMessages(h)
       } else {
@@ -1249,7 +1264,17 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       socket.on('chat:message', (raw: unknown) => {
         const m = raw as Partial<RoomChatMessage>
         if (!m?.peerId || typeof m.name !== 'string' || typeof m.text !== 'string' || typeof m.ts !== 'number') return
-        appendChat(m as RoomChatMessage)
+        appendChat({
+          ...m,
+          senderUserId:
+            typeof (raw as Record<string, unknown>).senderUserId === 'string'
+              ? String((raw as Record<string, unknown>).senderUserId).trim() || null
+              : typeof (raw as Record<string, unknown>).sender_user_id === 'string'
+                ? String((raw as Record<string, unknown>).sender_user_id).trim() || null
+                : typeof (raw as Record<string, unknown>).authUserId === 'string'
+                  ? String((raw as Record<string, unknown>).authUserId).trim() || null
+                  : null,
+        } as RoomChatMessage)
       })
 
       /**
@@ -1296,6 +1321,16 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         const rts = typeof r.ts === 'number' ? r.ts : Date.now()
         const reactionLine: RoomChatMessage = {
           peerId: r.peerId,
+          senderUserId:
+            typeof (raw as Record<string, unknown>).senderUserId === 'string'
+              ? String((raw as Record<string, unknown>).senderUserId).trim() || null
+              : typeof (raw as Record<string, unknown>).sender_user_id === 'string'
+                ? String((raw as Record<string, unknown>).sender_user_id).trim() || null
+                : typeof (raw as Record<string, unknown>).authUserId === 'string'
+                  ? String((raw as Record<string, unknown>).authUserId).trim() || null
+                  : r.peerId === sid
+                    ? authUserIdRef.current
+                    : null,
           name: rname,
           text: r.emoji,
           ts: rts,
@@ -1791,6 +1826,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     if (!peerId) return
     const optimistic: RoomChatMessage = {
       peerId,
+      senderUserId: authUserIdRef.current,
       name: displayNameRef.current,
       text: trimmed,
       ts: Date.now(),
