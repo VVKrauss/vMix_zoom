@@ -45,6 +45,7 @@ export function DashboardMessengerPage() {
   const isMobileMessenger = useMediaQuery('(max-width: 900px)')
 
   const [loading, setLoading] = useState(true)
+  const [threadLoading, setThreadLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [items, setItems] = useState<DirectConversationSummary[]>([])
   const [activeConversation, setActiveConversation] = useState<DirectConversationSummary | null>(null)
@@ -126,6 +127,30 @@ export function DashboardMessengerPage() {
         return
       }
 
+      setLoading(false)
+    }
+
+    void run()
+    return () => {
+      active = false
+    }
+  }, [conversationId, navigate, searchConversationId, targetTitle, targetUserId, user?.id])
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      if (!user?.id || loading) return
+      const targetConversationId = conversationId || items[0]?.id || ''
+      if (!targetConversationId) {
+        if (active) {
+          setActiveConversation(null)
+          setMessages([])
+          setThreadLoading(false)
+        }
+        return
+      }
+
+      setThreadLoading(true)
       const [conversationRes, messagesRes] = await Promise.all([
         getDirectConversationForUser(targetConversationId),
         listDirectMessagesForUser(targetConversationId),
@@ -151,14 +176,14 @@ export function DashboardMessengerPage() {
         void markDirectConversationRead(targetConversationId)
       }
 
-      setLoading(false)
+      setThreadLoading(false)
     }
 
     void run()
     return () => {
       active = false
     }
-  }, [conversationId, navigate, searchConversationId, targetTitle, targetUserId, user?.id])
+  }, [conversationId, items, loading, user?.id])
 
   const activeConversationId = activeConversation?.id ?? conversationId
   const showListPane = !isMobileMessenger || !activeConversationId
@@ -255,6 +280,10 @@ export function DashboardMessengerPage() {
                       <Link
                         key={item.id}
                         to={buildMessengerUrl(item.id)}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          selectConversation(item.id)
+                        }}
                         className={`dashboard-messenger__row${
                           item.id === activeConversationId ? ' dashboard-messenger__row--active' : ''
                         }`}
@@ -328,7 +357,11 @@ export function DashboardMessengerPage() {
                     </div>
 
                     <div className="dashboard-messenger__messages">
-                      {messages.length === 0 ? (
+                      {threadLoading ? (
+                        <div className="dashboard-messenger__thread-loading">
+                          <div className="auth-loading" aria-label="Загрузка диалога..." />
+                        </div>
+                      ) : messages.length === 0 ? (
                         <div className="dashboard-chats-empty">Напиши первое сообщение в этот чат.</div>
                       ) : (
                         messages.map((message) => {

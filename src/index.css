@@ -1927,6 +1927,13 @@ button.admin-stat-card--interactive:disabled {
   padding: 12px;
 }
 
+.dashboard-messenger__thread-loading {
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .dashboard-messenger__message {
   max-width: min(76%, 640px);
   border: 1px solid rgba(255,255,255,.08);
