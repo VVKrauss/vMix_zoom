@@ -12,11 +12,20 @@ export function ReactionEmojiPopover({
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (shouldClosePopoverOnOutsidePointer(ref.current, e.target)) onClose()
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      const target =
+        'touches' in e && e.touches[0]
+          ? (e.touches[0]!.target as EventTarget)
+          : (e as MouseEvent).target
+      if (shouldClosePopoverOnOutsidePointer(ref.current, target)) onClose()
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    const touchOpts: AddEventListenerOptions = { capture: true, passive: true }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('touchstart', onDown, touchOpts)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown, touchOpts)
+    }
   }, [onClose])
 
   return (

@@ -8,11 +8,26 @@ import {
   listRoomChatConversationsForUser,
   listRoomChatLastSenders,
 } from '../lib/chatArchive'
+import { DashboardMenuPicker, type DashboardMenuOption } from './DashboardMenuPicker'
 import { DashboardShell } from './DashboardShell'
 import { ChatBubbleIcon } from './icons'
 
 type ChatSortMode = 'recent_desc' | 'recent_asc' | 'messages_desc' | 'messages_asc'
 type ChatTimeFilter = 'all' | 'today' | '7d' | '30d'
+
+const CHAT_SORT_OPTIONS: DashboardMenuOption<ChatSortMode>[] = [
+  { value: 'recent_desc', label: 'Сначала новые' },
+  { value: 'recent_asc', label: 'Сначала старые' },
+  { value: 'messages_desc', label: 'Больше сообщений' },
+  { value: 'messages_asc', label: 'Меньше сообщений' },
+]
+
+const CHAT_TIME_FILTER_OPTIONS: DashboardMenuOption<ChatTimeFilter>[] = [
+  { value: 'all', label: 'За всё время' },
+  { value: 'today', label: 'Сегодня' },
+  { value: '7d', label: 'За 7 дней' },
+  { value: '30d', label: 'За 30 дней' },
+]
 
 function formatDateTime(value: string | null): string {
   if (!value) return '—'
@@ -143,33 +158,27 @@ export function DashboardChatsPage() {
               />
             </label>
 
-            <label className="dashboard-chat-filters__control">
+            <div className="dashboard-chat-filters__control">
               <span className="dashboard-chat-filters__label">Сортировка</span>
-              <select
-                className="dashboard-chat-filters__select"
+              <DashboardMenuPicker
                 value={sortMode}
-                onChange={(e) => setSortMode(e.target.value as ChatSortMode)}
-              >
-                <option value="recent_desc">Сначала новые</option>
-                <option value="recent_asc">Сначала старые</option>
-                <option value="messages_desc">Больше сообщений</option>
-                <option value="messages_asc">Меньше сообщений</option>
-              </select>
-            </label>
+                onChange={setSortMode}
+                options={CHAT_SORT_OPTIONS}
+                ariaLabelPrefix="Сортировка"
+                modifierClass="admin-role-picker--dashboard-filters"
+              />
+            </div>
 
-            <label className="dashboard-chat-filters__control">
+            <div className="dashboard-chat-filters__control">
               <span className="dashboard-chat-filters__label">Период</span>
-              <select
-                className="dashboard-chat-filters__select"
+              <DashboardMenuPicker
                 value={timeFilter}
-                onChange={(e) => setTimeFilter(e.target.value as ChatTimeFilter)}
-              >
-                <option value="all">За всё время</option>
-                <option value="today">Сегодня</option>
-                <option value="7d">За 7 дней</option>
-                <option value="30d">За 30 дней</option>
-              </select>
-            </label>
+                onChange={setTimeFilter}
+                options={CHAT_TIME_FILTER_OPTIONS}
+                ariaLabelPrefix="Период"
+                modifierClass="admin-role-picker--dashboard-filters"
+              />
+            </div>
           </div>
         ) : null}
 

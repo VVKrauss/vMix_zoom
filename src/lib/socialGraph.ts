@@ -15,11 +15,22 @@ export type ContactCard = ContactStatus & {
 }
 
 function mapContactStatusRow(row: Record<string, unknown>): ContactStatus {
+  const targetUserId = String(row.target_user_id ?? '')
+  /** list_my_contacts отдаёт outbound_favorite / inbound_favorite; get_contact_statuses — is_favorite / favors_me */
+  const isFavorite =
+    row.is_favorite === true ||
+    row.outbound_favorite === true
+  const favorsMe =
+    row.favors_me === true ||
+    row.inbound_favorite === true
+  const isFriend =
+    row.is_friend === true ||
+    (isFavorite && favorsMe)
   return {
-    targetUserId: String(row.target_user_id),
-    isFavorite: row.is_favorite === true,
-    favorsMe: row.favors_me === true,
-    isFriend: row.is_friend === true,
+    targetUserId,
+    isFavorite,
+    favorsMe,
+    isFriend,
   }
 }
 

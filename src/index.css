@@ -156,12 +156,17 @@ html[data-theme="light"] .dashboard-chats-empty {
 }
 
 html[data-theme="light"] .dashboard-chat-filters__input,
-html[data-theme="light"] .dashboard-chat-filters__select {
+html[data-theme="light"] .dashboard-chat-filters__select,
+html[data-theme="light"] .admin-role-picker--dashboard-filters .admin-role-picker__trigger {
   background: var(--surface);
 }
 
 html[data-theme="light"] .dashboard-chat-filters__input:focus,
 html[data-theme="light"] .dashboard-chat-filters__select:focus {
+  outline-color: rgba(142, 82, 82, 0.35);
+}
+
+html[data-theme="light"] .admin-role-picker--dashboard-filters .admin-role-picker__trigger:focus-visible {
   outline-color: rgba(142, 82, 82, 0.35);
 }
 
@@ -2012,6 +2017,28 @@ button.admin-stat-card--interactive:disabled {
   padding: 8px 14px;
 }
 
+/* Кабинет: фильтры «Друзья» / «Чаты комнат» — как поле select в сетке фильтров */
+.admin-role-picker--dashboard-filters {
+  display: block;
+  width: 100%;
+}
+
+.admin-role-picker--dashboard-filters .admin-role-picker__trigger {
+  font-family: var(--font);
+  text-transform: none;
+  font-weight: 600;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 42px;
+  justify-content: flex-start;
+  border-radius: 14px;
+  padding: 10px 12px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Секции */
 .dashboard-section {
   background: var(--surface);
@@ -2554,6 +2581,8 @@ button.admin-stat-card--interactive:disabled {
   border-radius: 16px 16px 16px 9px;
   padding: 7px 9px;
   background: rgba(255,255,255,.03);
+  touch-action: pan-y;
+  -webkit-touch-callout: none;
 }
 
 .dashboard-messenger__message--own {
@@ -2588,6 +2617,7 @@ button.admin-stat-card--interactive:disabled {
 .dashboard-messenger__message-body .messenger-message-link {
   color: var(--red);
   text-decoration: none;
+  -webkit-touch-callout: none;
 }
 
 .dashboard-messenger__message-body .messenger-message-link:hover {
@@ -2645,6 +2675,7 @@ button.admin-stat-card--interactive:disabled {
 
 .dashboard-messenger__reaction-popover-wrap {
   pointer-events: auto;
+  z-index: 9300;
 }
 
 .dashboard-messenger__composer {
@@ -2678,6 +2709,8 @@ button.admin-stat-card--interactive:disabled {
 
 /* Мобильный мессенджер: без шапки кабинета, полная ширина, FAB-меню */
 .dashboard-page.dashboard-page--messenger-chromeless {
+  /* В Safari под панелью URL safe-area часто 0 — даём минимум под системную зону */
+  --messenger-mobile-top-inset: max(env(safe-area-inset-top, 0px), 44px);
   padding-top: 0 !important;
   min-height: 100dvh;
   height: 100dvh;
@@ -2711,9 +2744,11 @@ button.admin-stat-card--interactive:disabled {
 .dashboard-page.dashboard-page--messenger-chromeless .dashboard-shell > main.dashboard-body > .dashboard-content--cabinet {
   flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
   max-width: none;
   width: 100%;
   gap: 0;
+  overflow-x: hidden;
 }
 
 .dashboard-messenger--mobile-chromeless.dashboard-section {
@@ -2721,19 +2756,36 @@ button.admin-stat-card--interactive:disabled {
   border-radius: 0;
   padding: 0;
   gap: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__layout {
   gap: 4px;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__thread {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger--fill .dashboard-messenger__layout {
-  max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  max-height: calc(100dvh - var(--messenger-mobile-top-inset) - env(safe-area-inset-bottom, 0px));
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__list {
   gap: 4px;
-  padding-top: max(4px, env(safe-area-inset-top, 0px));
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  padding-top: calc(8px + var(--messenger-mobile-top-inset));
   padding-right: calc(10px + 52px + 10px + env(safe-area-inset-right, 0px));
 }
 
@@ -2747,29 +2799,34 @@ button.admin-stat-card--interactive:disabled {
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__messages {
-  padding: 6px;
+  box-sizing: border-box;
+  padding: 6px max(6px, env(safe-area-inset-left, 0px)) 6px max(6px, env(safe-area-inset-right, 0px));
 }
 
 /* Без отступа у всей сетки (иначе видна полоса фона --bg). Safe area и место под FAB — в шапке треда / у списка. */
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__thread-head {
-  padding-top: max(12px, calc(6px + env(safe-area-inset-top, 0px)));
+  padding-top: calc(10px + var(--messenger-mobile-top-inset));
   padding-right: calc(14px + 52px + 10px + env(safe-area-inset-right, 0px));
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__composer {
   gap: 6px;
   box-sizing: border-box;
-  width: 100vw;
-  max-width: 100vw;
-  margin-left: calc(50% - 50vw);
-  padding: 6px env(safe-area-inset-right, 0px) calc(6px + env(safe-area-inset-bottom, 0px))
-    env(safe-area-inset-left, 0px);
+  width: 100%;
+  max-width: 100%;
+  margin-left: 0;
+  padding: 6px max(6px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px))
+    max(6px, env(safe-area-inset-left, 0px));
   align-items: stretch;
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__input {
   min-height: 72px;
   padding: 8px 10px;
+}
+
+.dashboard-page.dashboard-page--messenger-chromeless .dashboard-messenger-fab {
+  top: max(8px, calc(6px + var(--messenger-mobile-top-inset)));
 }
 
 .dashboard-messenger-fab {
@@ -3267,11 +3324,11 @@ html[data-theme="light"] .dashboard-messenger-mobile-nav {
   .dashboard-messenger--mobile-chromeless .dashboard-messenger__composer {
     gap: 6px;
     box-sizing: border-box;
-    width: 100vw;
-    max-width: 100vw;
-    margin-left: calc(50% - 50vw);
-    padding: 6px env(safe-area-inset-right, 0px) calc(6px + env(safe-area-inset-bottom, 0px))
-      env(safe-area-inset-left, 0px);
+    width: 100%;
+    max-width: 100%;
+    margin-left: 0;
+    padding: 6px max(6px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px))
+      max(6px, env(safe-area-inset-left, 0px));
     align-items: stretch;
   }
 
@@ -3283,7 +3340,8 @@ html[data-theme="light"] .dashboard-messenger-mobile-nav {
   }
 
   .dashboard-messenger--mobile-chromeless .dashboard-messenger__messages {
-    padding: 6px;
+    box-sizing: border-box;
+    padding: 6px max(6px, env(safe-area-inset-left, 0px)) 6px max(6px, env(safe-area-inset-right, 0px));
   }
 
   .dashboard-messenger__input {
@@ -3309,7 +3367,7 @@ html[data-theme="light"] .dashboard-messenger-mobile-nav {
   }
 
   .dashboard-messenger--mobile-chromeless.dashboard-messenger--fill .dashboard-messenger__layout {
-    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    max-height: calc(100dvh - var(--messenger-mobile-top-inset) - env(safe-area-inset-bottom, 0px));
   }
 }
 

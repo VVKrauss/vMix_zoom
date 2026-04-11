@@ -1,5 +1,6 @@
 import type { MouseEvent } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
@@ -133,6 +134,7 @@ export function DashboardMessengerPage() {
   } | null>(null)
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const longPressStartRef = useRef<{ x: number; y: number; messageId: string } | null>(null)
+  const longPressDocCleanupRef = useRef<(() => void) | null>(null)
   /** Снятие реакции уже отразили в списке диалогов после RPC — пропускаем дубль из realtime DELETE. */
   const reactionDeleteSidebarSyncedRef = useRef(new Set<string>())
 
@@ -725,6 +727,8 @@ export function DashboardMessengerPage() {
   }, [messages])
 
   const clearLongPressTimer = useCallback(() => {
+    longPressDocCleanupRef.current?.()
+    longPressDocCleanupRef.current = null
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current)
       longPressTimerRef.current = null
@@ -1055,33 +1059,47 @@ export function DashboardMessengerPage() {
                                   }`}
                                   onDoubleClick={() => onMessageDoubleClick(message.id)}
                                   onContextMenu={(e) => onMessageContextMenu(e, message.id)}
-                                  onTouchStart={(e) => {
-                                    const t = e.touches[0]
-                                    if (!t) return
+                                  onPointerDown={(e) => {
+                                    if (e.pointerType === 'mouse') return
+                                    if (e.button !== 0) return
                                     clearLongPressTimer()
-                                    longPressStartRef.current = {
-                                      x: t.clientX,
-                                      y: t.clientY,
-                                      messageId: message.id,
+                                    const msgId = message.id
+                                    const startX = e.clientX
+                                    const startY = e.clientY
+                                    longPressStartRef.current = { x: startX, y: startY, messageId: msgId }
+                                    const pid = e.pointerId
+                                    const move = (ev: PointerEvent) => {
+                                      if (ev.pointerId !== pid) return
+                                      const dx = ev.clientX - startX
+                                      const dy = ev.clientY - startY
+                                      if (dx * dx + dy * dy > 400) clearLongPressTimer()
+                                    }
+                                    const upOrCancel = (ev: PointerEvent) => {
+                                      if (ev.pointerId !== pid) return
+                                      clearLongPressTimer()
+                                    }
+                                    const opts: AddEventListenerOptions = { capture: true }
+                                    document.addEventListener('pointermove', move, opts)
+                                    document.addEventListener('pointerup', upOrCancel, opts)
+                                    document.addEventListener('pointercancel', upOrCancel, opts)
+                                    longPressDocCleanupRef.current = () => {
+                                      document.removeEventListener('pointermove', move, opts)
+                                      document.removeEventListener('pointerup', upOrCancel, opts)
+                                      document.removeEventListener('pointercancel', upOrCancel, opts)
                                     }
                                     longPressTimerRef.current = window.setTimeout(() => {
                                       longPressTimerRef.current = null
+                                      longPressDocCleanupRef.current?.()
+                                      longPressDocCleanupRef.current = null
                                       const start = longPressStartRef.current
                                       longPressStartRef.current = null
-                                      if (!start || start.messageId !== message.id) return
-                                      openReactionPicker(start.x, start.y, message.id)
-                                    }, 550)
+                                      if (!start || start.messageId !== msgId) return
+                                      openReactionPicker(start.x, start.y, msgId)
+                                      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+                                        navigator.vibrate(12)
+                                      }
+                                    }, 480)
                                   }}
-                                  onTouchMove={(e) => {
-                                    const start = longPressStartRef.current
-                                    const t = e.touches[0]
-                                    if (!start || !t) return
-                                    const dx = t.clientX - start.x
-                                    const dy = t.clientY - start.y
-                                    if (dx * dx + dy * dy > 100) clearLongPressTimer()
-                                  }}
-                                  onTouchEnd={clearLongPressTimer}
-                                  onTouchCancel={clearLongPressTimer}
                                 >
                                   <div className="dashboard-messenger__message-meta">
                                     <span className="dashboard-messenger__message-author">
@@ -1142,28 +1160,30 @@ export function DashboardMessengerPage() {
                       </div>
                     </div>
 
-                    {reactionPick ? (
-                      <div
-                        className="dashboard-messenger__reaction-popover-wrap"
-                        style={{
-                          position: 'fixed',
-                          left: reactionPick.clientX,
-                          top: reactionPick.clientY,
-                          zIndex: 50,
-                          transform: 'translate(-50%, -100%) translateY(-10px)',
-                        }}
-                      >
-                        <ReactionEmojiPopover
-                          onClose={() => setReactionPick(null)}
-                          onPick={(emoji) => {
-                            const targetId = reactionPick.messageId
-                            setReactionPick(null)
-                            if (!isDirectReactionEmoji(emoji)) return
-                            void toggleMessengerReaction(targetId, emoji)
-                          }}
-                        />
-                      </div>
-                    ) : null}
+                    {reactionPick
+                      ? createPortal(
+                          <div
+                            className="dashboard-messenger__reaction-popover-wrap"
+                            style={{
+                              position: 'fixed',
+                              left: reactionPick.clientX,
+                              top: reactionPick.clientY,
+                              transform: 'translate(-50%, -100%) translateY(-10px)',
+                            }}
+                          >
+                            <ReactionEmojiPopover
+                              onClose={() => setReactionPick(null)}
+                              onPick={(emoji) => {
+                                const targetId = reactionPick.messageId
+                                setReactionPick(null)
+                                if (!isDirectReactionEmoji(emoji)) return
+                                void toggleMessengerReaction(targetId, emoji)
+                              }}
+                            />
+                          </div>,
+                          document.body,
+                        )
+                      : null}
                   </>
                 ) : (
                   <div className="dashboard-chats-empty">Выберите диалог слева.</div>

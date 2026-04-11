@@ -2,10 +2,18 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { type ContactCard, listMyContacts, setUserFavorite } from '../lib/socialGraph'
+import { DashboardMenuPicker, type DashboardMenuOption } from './DashboardMenuPicker'
 import { DashboardShell } from './DashboardShell'
 import { StarIcon } from './icons'
 
 type FriendFilter = 'all' | 'friends' | 'favorites' | 'incoming'
+
+const FRIEND_FILTER_OPTIONS: DashboardMenuOption<FriendFilter>[] = [
+  { value: 'all', label: 'Все' },
+  { value: 'friends', label: 'Друзья' },
+  { value: 'favorites', label: 'Моё избранное' },
+  { value: 'incoming', label: 'Добавили меня' },
+]
 
 function matchesFriendFilter(item: ContactCard, filter: FriendFilter): boolean {
   if (filter === 'friends') return item.isFriend
@@ -112,19 +120,16 @@ export function DashboardFriendsPage() {
             />
           </label>
 
-          <label className="dashboard-chat-filters__control">
+          <div className="dashboard-chat-filters__control">
             <span className="dashboard-chat-filters__label">Фильтр</span>
-            <select
-              className="dashboard-chat-filters__select"
+            <DashboardMenuPicker
               value={filter}
-              onChange={(e) => setFilter(e.target.value as FriendFilter)}
-            >
-              <option value="all">Все</option>
-              <option value="friends">Друзья</option>
-              <option value="favorites">Моё избранное</option>
-              <option value="incoming">Добавили меня</option>
-            </select>
-          </label>
+              onChange={setFilter}
+              options={FRIEND_FILTER_OPTIONS}
+              ariaLabelPrefix="Фильтр"
+              modifierClass="admin-role-picker--dashboard-filters"
+            />
+          </div>
         </div>
 
         {loading ? <div className="auth-loading" aria-label="Загрузка..." /> : null}
