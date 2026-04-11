@@ -1,6 +1,9 @@
 import type { ReactNode } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
+import { listMyContacts } from '../lib/socialGraph'
 import { setPendingHostClaim } from '../lib/spaceRoom'
 import { newRoomId } from '../utils/roomId'
 import { AdminPanelIcon, ChatBubbleIcon, DashboardIcon, ParticipantsBadgeIcon } from './icons'
@@ -25,6 +28,16 @@ const SIDEBAR_TAB_HINTS = {
   friends:
     'Если вы добавили пользователя в избранные и он сделал то же самое, вы становитесь друзьями.',
 } as const
+
+const INCOMING_FAVORITES_BANNER_DISMISS_PREFIX = 'vmix.dashboard.incomingFav.dismissSig:'
+
+function incomingFavDismissStorageKey(userId: string): string {
+  return `${INCOMING_FAVORITES_BANNER_DISMISS_PREFIX}${userId}`
+}
+
+function incomingFavoritesSignature(ids: string[]): string {
+  return [...ids].sort().join('|')
+}
 
 function DashboardSidebarLink({
   to,
@@ -59,7 +72,66 @@ function DashboardSidebarLink({
 
 export function DashboardShell({ active, canAccessAdmin, onSignOut, children }: DashboardShellProps) {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const unreadCount = useMessengerUnreadCount()
+  const [incomingFavSig, setIncomingFavSig] = useState<string | null>(null)
+  const [dismissedIncomingFavSig, setDismissedIncomingFavSig] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!user?.id) {
+      setDismissedIncomingFavSig(null)
+      return
+    }
+    try {
+      setDismissedIncomingFavSig(localStorage.getItem(incomingFavDismissStorageKey(user.id)))
+    } catch {
+      setDismissedIncomingFavSig(null)
+    }
+  }, [user?.id])
+
+  const refreshIncomingFavoritesSig = useCallback(() => {
+    if (!user?.id) {
+      setIncomingFavSig(null)
+      return
+    }
+    void listMyContacts().then((res) => {
+      if (res.error || !res.data) {
+        setIncomingFavSig('')
+        return
+      }
+      const ids = res.data.filter((c) => c.favorsMe && !c.isFavorite).map((c) => c.targetUserId)
+      setIncomingFavSig(incomingFavoritesSignature(ids))
+    })
+  }, [user?.id])
+
+  useEffect(() => {
+    refreshIncomingFavoritesSig()
+  }, [refreshIncomingFavoritesSig])
+
+  useEffect(() => {
+    if (!user?.id) return
+    const onFocus = () => {
+      refreshIncomingFavoritesSig()
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [user?.id, refreshIncomingFavoritesSig])
+
+  const showIncomingFavoritesBanner =
+    Boolean(user?.id) &&
+    incomingFavSig !== null &&
+    incomingFavSig !== '' &&
+    incomingFavSig !== dismissedIncomingFavSig
+
+  const dismissIncomingFavoritesBanner = () => {
+    if (!incomingFavSig || !user?.id) return
+    try {
+      localStorage.setItem(incomingFavDismissStorageKey(user.id), incomingFavSig)
+    } catch {
+      /* ignore quota / private mode */
+    }
+    setDismissedIncomingFavSig(incomingFavSig)
+  }
 
   const goCreateRoom = () => {
     const id = newRoomId()
@@ -109,6 +181,26 @@ export function DashboardShell({ active, canAccessAdmin, onSignOut, children }: 
       </header>
 
       <div className="dashboard-shell">
+        {showIncomingFavoritesBanner ? (
+          <div className="dashboard-incoming-fav-banner" role="status" aria-live="polite">
+            <p className="dashboard-incoming-fav-banner__text">
+              Вас добавили в избранное. Вы можете добавить этого человека в избранное у себя — тогда вы станете
+              друзьями.
+            </p>
+            <div className="dashboard-incoming-fav-banner__actions">
+              <Link to="/dashboard/friends" className="dashboard-incoming-fav-banner__link">
+                К разделу «Друзья»
+              </Link>
+              <button
+                type="button"
+                className="dashboard-incoming-fav-banner__dismiss"
+                onClick={dismissIncomingFavoritesBanner}
+              >
+                Скрыть
+              </button>
+            </div>
+          </div>
+        ) : null}
         <aside className="dashboard-sidebar" aria-label="Разделы кабинета">
           <nav className="dashboard-sidebar__nav">
             <DashboardSidebarLink
