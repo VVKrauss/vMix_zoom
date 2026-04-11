@@ -1,15 +1,17 @@
 import { FormEvent, useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
-import { newRoomId } from '../utils/roomId'
-import { setPendingHostClaim } from '../lib/spaceRoom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
-import { DashboardIcon } from './icons'
+import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
+import { setPendingHostClaim } from '../lib/spaceRoom'
+import { newRoomId } from '../utils/roomId'
+import { ChatBubbleIcon, DashboardIcon } from './icons'
 
 export function HomePage() {
   const navigate = useNavigate()
   const { user, loading, signOut } = useAuth()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
+  const messengerUnreadCount = useMessengerUnreadCount()
   const [joinId, setJoinId] = useState('')
 
   const handleCreate = () => {
@@ -25,23 +27,21 @@ export function HomePage() {
     navigate(`/r/${encodeURIComponent(id)}`)
   }
 
-  const displayName = user?.user_metadata?.display_name as string | undefined
-    ?? user?.email?.split('@')[0]
-    ?? 'Пользователь'
+  const displayName =
+    (user?.user_metadata?.display_name as string | undefined) ??
+    user?.email?.split('@')[0] ??
+    'Пользователь'
 
   const avatarUrl = user?.user_metadata?.avatar_url as string | undefined
 
   return (
     <div className="join-screen">
       <div className="join-card join-card--home">
-
-        {/* Логотип */}
         <div className="join-logo-static" aria-hidden>
           <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
         </div>
 
-        {/* Блок авторизации / приветствия */}
-        {!loading && (
+        {!loading ? (
           <div className="home-auth-block">
             {user ? (
               <div className="home-user-block">
@@ -59,16 +59,34 @@ export function HomePage() {
                     {displayName}
                   </p>
                 </div>
+
                 <nav className="home-user-nav" aria-label="Разделы аккаунта">
-                  <Link to="/dashboard" className="join-btn join-btn--secondary join-btn--block home-user-nav__btn">
-                    Личный кабинет
-                  </Link>
+                  <div className="home-user-nav__row">
+                    <Link to="/dashboard" className="join-btn join-btn--secondary join-btn--block home-user-nav__btn">
+                      Личный кабинет
+                    </Link>
+                    <Link
+                      to="/dashboard/messenger"
+                      className="home-user-nav__icon-btn"
+                      title="Мессенджер"
+                      aria-label="Мессенджер"
+                    >
+                      <ChatBubbleIcon />
+                      {messengerUnreadCount > 0 ? (
+                        <span className="home-user-nav__icon-badge">
+                          {messengerUnreadCount > 99 ? '99+' : messengerUnreadCount}
+                        </span>
+                      ) : null}
+                    </Link>
+                  </div>
+
                   {canAccessAdmin ? (
                     <Link to="/admin" className="join-btn join-btn--secondary join-btn--block home-user-nav__btn">
                       Войти в админку
                     </Link>
                   ) : null}
                 </nav>
+
                 <button type="button" className="home-user-signout" onClick={() => signOut()}>
                   Выйти
                 </button>
@@ -87,9 +105,8 @@ export function HomePage() {
               </div>
             )}
           </div>
-        )}
+        ) : null}
 
-        {/* Создать комнату */}
         <div className="home-create-block">
           <button
             type="button"
@@ -100,19 +117,13 @@ export function HomePage() {
           >
             Создать комнату
           </button>
-          {!user && !loading && (
-            <p className="home-create-hint">
-              🔒 Требуется аккаунт
-            </p>
-          )}
+          {!user && !loading ? <p className="home-create-hint">Требуется аккаунт</p> : null}
         </div>
 
-        {/* Разделитель */}
         <div className="home-divider">
           <span>или войдите в существующую</span>
         </div>
 
-        {/* Войти по ID */}
         <form onSubmit={handleJoinSubmit} className="join-form">
           <label className="join-label">ID комнаты</label>
           <input
@@ -124,15 +135,10 @@ export function HomePage() {
             autoComplete="off"
             maxLength={200}
           />
-          <button
-            className="join-btn join-btn--secondary join-btn--block"
-            type="submit"
-            disabled={!joinId.trim()}
-          >
+          <button className="join-btn join-btn--secondary join-btn--block" type="submit" disabled={!joinId.trim()}>
             Перейти в комнату
           </button>
         </form>
-
       </div>
     </div>
   )
