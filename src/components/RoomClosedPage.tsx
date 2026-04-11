@@ -15,9 +15,6 @@ export function RoomClosedPage() {
         <div className="room-closed-loader-wrap">
           <BrandLogoLoader size={56} />
         </div>
-        <div className="room-closed-badge" aria-hidden="true">
-          <span className="room-closed-badge__emoji">🙂</span>
-        </div>
         <h1 className="room-closed-title">
           {isManagerReconnecting
             ? 'Организатор переподключается'
@@ -27,10 +24,10 @@ export function RoomClosedPage() {
         </h1>
         <p className="room-closed-text">
           {isManagerReconnecting
-            ? 'Похоже, у организатора ненадолго пропало соединение. Попробуй зайти ещё раз через минуту, встреча может восстановиться сама 🙂'
+            ? 'Похоже, у организатора ненадолго пропало соединение. Попробуй зайти ещё раз через минуту, встреча может восстановиться сама.'
             : isManagerRequired
-              ? 'Организатор сейчас не в комнате, поэтому вход временно закрыт. Попробуй зайти чуть позже, извини 🙂'
-              : 'Внутри сейчас никого нет, и эта ссылка больше не активна. Извини, похоже встреча уже завершилась 🙂'}
+              ? 'Организатор сейчас не в комнате, поэтому вход временно закрыт. Попробуй зайти чуть позже.'
+              : 'Внутри сейчас никого нет, и эта ссылка больше не активна. Похоже, встреча уже завершилась.'}
           {roomId ? <span className="room-closed-id">ID: {roomId}</span> : null}
         </p>
         <div className="room-closed-actions">

@@ -11,6 +11,7 @@ interface Props {
   messages: RoomChatMessage[]
   localPeerId: string
   localUserId?: string | null
+  avatarByPeerId?: Record<string, string | null | undefined>
   contactStatuses?: Record<string, ContactStatus>
   onToggleFavoriteUser?: (targetUserId: string, nextFavorite: boolean) => void
   onSend: (text: string) => void
@@ -31,6 +32,7 @@ export function RoomChatPanel({
   messages,
   localPeerId,
   localUserId = null,
+  avatarByPeerId = {},
   contactStatuses = {},
   onToggleFavoriteUser,
   onSend,
@@ -77,6 +79,8 @@ export function RoomChatPanel({
               Boolean(onToggleFavoriteUser) &&
               (!localUserId || message.senderUserId !== localUserId)
             const statusLabel = status?.isFriend ? 'друг' : status?.isFavorite ? 'в избранном' : null
+            const authorAvatarUrl = avatarByPeerId[message.peerId] ?? null
+            const showBrandFallback = !authorAvatarUrl && Boolean(message.senderUserId)
 
             return (
               <div
@@ -84,20 +88,31 @@ export function RoomChatPanel({
                 className={`room-chat-msg${isOwn ? ' room-chat-msg--own' : ''}${message.kind === 'reaction' ? ' room-chat-msg--reaction' : ''}`}
               >
                 <div className="room-chat-msg__meta">
-                  <span className="room-chat-msg__name-wrap">
-                    <span className="room-chat-msg__name">{message.name}</span>
-                    {statusLabel ? <span className="room-chat-msg__tag">{statusLabel}</span> : null}
-                    {canToggleFavorite ? (
-                      <button
-                        type="button"
-                        className={`room-chat-msg__favorite-btn${status?.isFavorite ? ' room-chat-msg__favorite-btn--active' : ''}`}
-                        onClick={() => onToggleFavoriteUser?.(message.senderUserId!, !status?.isFavorite)}
-                        title={status?.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
-                        aria-label={status?.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
-                      >
-                        <StarIcon filled={status?.isFavorite === true} />
-                      </button>
-                    ) : null}
+                  <span className="room-chat-msg__author">
+                    <span className="room-chat-msg__avatar" aria-hidden>
+                      {authorAvatarUrl ? (
+                        <img src={authorAvatarUrl} alt="" className="room-chat-msg__avatar-img" />
+                      ) : showBrandFallback ? (
+                        <img src="/logo.png" alt="" className="room-chat-msg__avatar-img room-chat-msg__avatar-img--brand" />
+                      ) : (
+                        <span className="room-chat-msg__avatar-fallback" />
+                      )}
+                    </span>
+                    <span className="room-chat-msg__name-wrap">
+                      <span className="room-chat-msg__name">{message.name}</span>
+                      {statusLabel ? <span className="room-chat-msg__tag">{statusLabel}</span> : null}
+                      {canToggleFavorite ? (
+                        <button
+                          type="button"
+                          className={`room-chat-msg__favorite-btn${status?.isFavorite ? ' room-chat-msg__favorite-btn--active' : ''}`}
+                          onClick={() => onToggleFavoriteUser?.(message.senderUserId!, !status?.isFavorite)}
+                          title={status?.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
+                          aria-label={status?.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
+                        >
+                          <StarIcon filled={status?.isFavorite === true} />
+                        </button>
+                      ) : null}
+                    </span>
                   </span>
                   <span className="room-chat-msg__time">
                     {new Date(message.ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}

@@ -238,25 +238,6 @@ html.app-root--room #root {
   padding: 8px 0 4px;
 }
 
-.room-closed-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 30% 30%, rgba(255,255,255,.22), transparent 45%),
-    linear-gradient(180deg, rgba(210,0,0,.22), rgba(136,25,25,.28));
-  border: 1px solid rgba(255,255,255,.08);
-  box-shadow: 0 12px 28px rgba(0,0,0,.26);
-}
-
-.room-closed-badge__emoji {
-  font-size: 26px;
-  line-height: 1;
-}
-
 .room-closed-title {
   margin: 0;
   font-size: 24px;
@@ -5875,6 +5856,46 @@ button.vio-row--peer:focus-visible {
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 3px;
+}
+
+.room-chat-msg__author {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.room-chat-msg__avatar {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.08);
+}
+
+.room-chat-msg__avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.room-chat-msg__avatar-img--brand {
+  object-fit: contain;
+  padding: 2px;
+}
+
+.room-chat-msg__avatar-fallback {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(178,185,196,.72);
+  display: block;
 }
 
 .room-chat-msg__name-wrap {

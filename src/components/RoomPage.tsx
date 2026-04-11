@@ -672,6 +672,14 @@ export function RoomPage({
   }, [blockImmersiveChromeHide, immersiveAutoHide])
 
   const remoteList = useMemo(() => [...participants.values()], [participants])
+  const chatAvatarByPeerId = useMemo(() => {
+    const map: Record<string, string | null | undefined> = {}
+    if (localPeerId) map[localPeerId] = avatarUrl ?? null
+    participants.forEach((participant, peerId) => {
+      map[peerId] = participant.avatarUrl ?? null
+    })
+    return map
+  }, [participants, localPeerId, avatarUrl])
   const chatKnownUserIds = useMemo(
     () =>
       Array.from(
@@ -1707,6 +1715,7 @@ export function RoomPage({
               messages={chatMessages}
               localPeerId={localPeerId}
               localUserId={user?.id ?? null}
+              avatarByPeerId={chatAvatarByPeerId}
               contactStatuses={chatContactStatuses}
               onToggleFavoriteUser={(targetUserId, nextFavorite) => {
                 void toggleFavoriteFromChat(targetUserId, nextFavorite)
@@ -1795,6 +1804,7 @@ export function RoomPage({
           messages={chatMessages}
           localPeerId={localPeerId}
           localUserId={user?.id ?? null}
+          avatarByPeerId={chatAvatarByPeerId}
           contactStatuses={chatContactStatuses}
           onToggleFavoriteUser={(targetUserId, nextFavorite) => {
             void toggleFavoriteFromChat(targetUserId, nextFavorite)
