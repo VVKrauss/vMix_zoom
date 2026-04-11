@@ -32,8 +32,10 @@ function conversationInitial(title: string): string {
 
 export function DashboardMessengerPage() {
   const { conversationId: rawConversationId } = useParams<{ conversationId?: string }>()
-  const conversationId = rawConversationId?.trim() ?? ''
+  const routeConversationId = rawConversationId?.trim() ?? ''
   const [searchParams] = useSearchParams()
+  const searchConversationId = searchParams.get('chat')?.trim() ?? ''
+  const conversationId = searchConversationId || routeConversationId
   const targetUserId = searchParams.get('with')?.trim() ?? ''
   const targetTitle = searchParams.get('title')?.trim() ?? ''
   const navigate = useNavigate()
@@ -49,6 +51,26 @@ export function DashboardMessengerPage() {
   const [messages, setMessages] = useState<DirectMessage[]>([])
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+
+  const buildMessengerUrl = (chatId?: string, withUserId?: string, withTitle?: string) => {
+    const params = new URLSearchParams()
+    if (chatId) params.set('chat', chatId)
+    if (withUserId) params.set('with', withUserId)
+    if (withTitle) params.set('title', withTitle)
+    const qs = params.toString()
+    return qs ? `/dashboard/messenger?${qs}` : '/dashboard/messenger'
+  }
+
+  const selectConversation = (nextConversationId: string) => {
+    navigate(buildMessengerUrl(nextConversationId), { replace: false })
+  }
+
+  useEffect(() => {
+    if (!routeConversationId || searchConversationId) return
+    navigate(buildMessengerUrl(routeConversationId, targetUserId || undefined, targetTitle || undefined), {
+      replace: true,
+    })
+  }, [navigate, routeConversationId, searchConversationId, targetTitle, targetUserId])
 
   useEffect(() => {
     let active = true
@@ -91,8 +113,10 @@ export function DashboardMessengerPage() {
 
       const targetConversationId = conversationId || ensured.data || nextItems[0]?.id || ''
 
-      if (!conversationId && targetConversationId) {
-        navigate(`/dashboard/messenger/${encodeURIComponent(targetConversationId)}`, { replace: true })
+      if (!searchConversationId && targetConversationId) {
+        navigate(buildMessengerUrl(targetConversationId, targetUserId || undefined, targetTitle || undefined), {
+          replace: true,
+        })
       }
 
       if (!targetConversationId) {
@@ -134,7 +158,7 @@ export function DashboardMessengerPage() {
     return () => {
       active = false
     }
-  }, [conversationId, navigate, targetTitle, targetUserId, user?.id])
+  }, [conversationId, navigate, searchConversationId, targetTitle, targetUserId, user?.id])
 
   const activeConversationId = activeConversation?.id ?? conversationId
   const showListPane = !isMobileMessenger || !activeConversationId
@@ -230,7 +254,7 @@ export function DashboardMessengerPage() {
                     return (
                       <Link
                         key={item.id}
-                        to={`/dashboard/messenger/${encodeURIComponent(item.id)}`}
+                        to={buildMessengerUrl(item.id)}
                         className={`dashboard-messenger__row${
                           item.id === activeConversationId ? ' dashboard-messenger__row--active' : ''
                         }`}
