@@ -365,10 +365,17 @@ export function DashboardMessengerPage() {
     if (row && row.unreadCount === 0) return
 
     void markDirectConversationRead(cid)
-    setItems((prev) => prev.map((item) => (item.id === cid ? { ...item, unreadCount: 0 } : item)))
-    setActiveConversation((prev) =>
-      prev && prev.id === cid ? { ...prev, unreadCount: 0 } : prev,
-    )
+    setItems((prev) => {
+      const idx = prev.findIndex((item) => item.id === cid)
+      if (idx === -1) return prev
+      if (prev[idx]!.unreadCount === 0) return prev
+      return prev.map((item) => (item.id === cid ? { ...item, unreadCount: 0 } : item))
+    })
+    setActiveConversation((prev) => {
+      if (!prev || prev.id !== cid) return prev
+      if (prev.unreadCount === 0) return prev
+      return { ...prev, unreadCount: 0 }
+    })
   }, [conversationId, listOnlyMobile, user?.id, items])
 
   const showListPane = !isMobileMessenger || !activeConversationId

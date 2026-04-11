@@ -1309,6 +1309,45 @@ html.app-root--room #root {
     display: block;
   }
 
+  /*
+   * Мессенджер: на мобилке общий .dashboard-shell становится display:block — грид с
+   * minmax(0,1fr) перестаёт работать, main схлопывается по высоте. Для страницы с
+   * .dashboard-messenger--fill оставляем вертикальный flex и явную высоту viewport.
+   */
+  .dashboard-page:has(.dashboard-messenger--fill) {
+    height: 100dvh;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  .dashboard-page:has(.dashboard-messenger--fill) .dashboard-shell {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .dashboard-page:has(.dashboard-messenger--fill) .dashboard-shell > main.dashboard-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dashboard-page:has(.dashboard-messenger--fill) .dashboard-shell > main.dashboard-body > .dashboard-content--cabinet {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .dashboard-messenger--fill .dashboard-messenger__layout {
+    max-height: none;
+  }
+
   .dashboard-sidebar {
     position: fixed;
     top: var(--dashboard-topbar-height);
@@ -2255,6 +2294,13 @@ button.admin-stat-card--interactive:disabled {
   min-height: 0;
   max-height: calc(100dvh - 220px);
   grid-template-rows: minmax(0, 1fr);
+}
+
+/* Узкий экран: одна колонка, иначе единственная панель (тред без списка) садится в 260px дорожку. */
+@media (max-width: 900px) {
+  .dashboard-messenger--fill .dashboard-messenger__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .dashboard-messenger--fill .dashboard-messenger__list {
@@ -7031,31 +7077,39 @@ button.vio-row--peer:focus-visible {
 }
 
 .device-popover--reaction-pick {
-  min-width: min(100vw - 24px, 340px);
+  min-width: auto;
+  max-width: min(100vw - 24px, 220px);
+  font-size: 13px;
 }
 
 .device-popover--reaction-pick .reaction-emoji-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
-  padding: 4px 0 2px;
+  gap: 2px;
+  padding: 2px 6px 6px;
 }
 
 .reaction-emoji-btn {
   margin: 0;
-  padding: 8px 4px;
+  padding: 4px 2px;
   border: none;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
-  font-size: 52px;
-  line-height: 1;
+  font-size: 1em;
+  line-height: 1.2;
   cursor: pointer;
   transition: background .12s, transform .12s;
 }
 
 .reaction-emoji-btn:hover {
   background: rgba(255, 255, 255, .08);
-  transform: scale(1.08);
+  transform: scale(1.04);
+}
+
+@media (pointer: coarse) {
+  .reaction-emoji-btn {
+    padding: 8px 4px;
+  }
 }
 
 /* ─── Phase B: чат (ниже модалки демонстрации 12000) ─────────────────────── */

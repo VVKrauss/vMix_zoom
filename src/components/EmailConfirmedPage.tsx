@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
 import { AUTH_EMAIL_CONFIRMED_PATH } from '../config/authUrls'
 import { useAuth } from '../context/AuthContext'
 
@@ -39,9 +38,10 @@ function hasLikelyAuthPayload(): boolean {
  * Редирект ссылки из письма Supabase: клиент подхватывает сессию из URL (PKCE / hash).
  */
 export function EmailConfirmedPage() {
-  const { user } = useAuth()
+  const { user, loading } = useAuth()
   const [phase, setPhase] = useState<Phase>('checking')
   const [errorText, setErrorText] = useState<string | null>(null)
+  const noSessionTimeoutRef = useRef<number | null>(null)
 
   useEffect(() => {
     const urlError = parseAuthUrlErrors()
@@ -53,40 +53,33 @@ export function EmailConfirmedPage() {
     }
 
     let cancelled = false
-
-    const considerSession = (hasUser: boolean) => {
-      if (cancelled || !hasUser) return
-      setPhase('success')
-      window.history.replaceState({}, '', AUTH_EMAIL_CONFIRMED_PATH)
-    }
-
-    void supabase.auth.getSession().then(({ data: { session } }) => {
-      if (cancelled) return
-      considerSession(!!session?.user)
-    })
-
-    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
-      if (cancelled) return
-      if (
-        session?.user &&
-        (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED')
-      ) {
-        considerSession(true)
-      }
-    })
-
     const waitMs = hasLikelyAuthPayload() ? 4000 : 800
-    const timeoutId = window.setTimeout(() => {
+    noSessionTimeoutRef.current = window.setTimeout(() => {
+      noSessionTimeoutRef.current = null
       if (cancelled) return
       setPhase((p) => (p === 'checking' ? 'no_session' : p))
     }, waitMs)
 
     return () => {
       cancelled = true
-      window.clearTimeout(timeoutId)
-      sub.subscription.unsubscribe()
+      if (noSessionTimeoutRef.current != null) {
+        window.clearTimeout(noSessionTimeoutRef.current)
+        noSessionTimeoutRef.current = null
+      }
     }
   }, [])
+
+  useEffect(() => {
+    if (phase !== 'checking') return
+    if (loading) return
+    if (!user) return
+    if (noSessionTimeoutRef.current != null) {
+      window.clearTimeout(noSessionTimeoutRef.current)
+      noSessionTimeoutRef.current = null
+    }
+    setPhase('success')
+    window.history.replaceState({}, '', AUTH_EMAIL_CONFIRMED_PATH)
+  }, [phase, loading, user])
 
   return (
     <div className="join-screen">

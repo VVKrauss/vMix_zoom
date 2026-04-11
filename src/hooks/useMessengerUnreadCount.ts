@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { getDirectUnreadCount, MESSENGER_UNREAD_REFRESH_EVENT } from '../lib/messenger'
-import { supabase } from '../lib/supabase'
+import { subscribeMessengerUnreadRealtime } from '../lib/messengerUnreadRealtime'
 
 const REFRESH_DEBOUNCE_MS = 380
 const FALLBACK_POLL_MS = 60000
@@ -55,32 +55,7 @@ export function useMessengerUnreadCount() {
     window.addEventListener(MESSENGER_UNREAD_REFRESH_EVENT, onImmediateRefresh)
 
     const uid = user?.id
-    let channel: ReturnType<typeof supabase.channel> | null = null
-
-    if (uid) {
-      channel = supabase
-        .channel(`messenger-unread:${uid}`)
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'chat_messages' },
-          () => {
-            scheduleRefresh()
-          },
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'chat_conversation_members',
-            filter: `user_id=eq.${uid}`,
-          },
-          () => {
-            scheduleRefresh()
-          },
-        )
-        .subscribe()
-    }
+    const unsubscribeRealtime = uid ? subscribeMessengerUnreadRealtime(uid, scheduleRefresh) : null
 
     return () => {
       active = false
@@ -89,7 +64,7 @@ export function useMessengerUnreadCount() {
       if (pollTimer != null) window.clearInterval(pollTimer)
       window.removeEventListener('focus', onFocus)
       window.removeEventListener(MESSENGER_UNREAD_REFRESH_EVENT, onImmediateRefresh)
-      if (channel) void supabase.removeChannel(channel)
+      unsubscribeRealtime?.()
     }
   }, [user?.id])
 
