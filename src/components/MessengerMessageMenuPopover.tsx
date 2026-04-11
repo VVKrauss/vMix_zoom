@@ -1,19 +1,21 @@
 import { useEffect, useRef } from 'react'
 import { shouldClosePopoverOnOutsidePointer } from '../utils/popoverOutsideClick'
 import { REACTION_EMOJI_WHITELIST } from '../types/roomComms'
+import type { ReactionEmoji } from '../types/roomComms'
 
-export function ReactionEmojiPopover({
+export function MessengerMessageMenuPopover({
+  canEdit,
   onClose,
-  onPick,
-  title = 'Реакции',
-  emojis,
+  onEdit,
+  onReply,
+  onPickReaction,
 }: {
+  canEdit: boolean
   onClose: () => void
-  onPick: (emoji: string) => void
-  title?: string
-  emojis?: readonly string[]
+  onEdit: () => void
+  onReply: () => void
+  onPickReaction: (emoji: ReactionEmoji) => void
 }) {
-  const grid = emojis ?? REACTION_EMOJI_WHITELIST
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -34,20 +36,29 @@ export function ReactionEmojiPopover({
   }, [onClose])
 
   return (
-    <div className="device-popover device-popover--reaction-pick" ref={ref}>
-      <div className="device-popover__title">{title}</div>
-      <div className={`reaction-emoji-grid${grid.length > 16 ? ' reaction-emoji-grid--scroll' : ''}`}>
-        {grid.map((emoji) => (
+    <div className="messenger-msg-menu device-popover" ref={ref} role="menu">
+      {canEdit ? (
+        <button type="button" className="messenger-msg-menu__item" role="menuitem" onClick={onEdit}>
+          Редактировать
+        </button>
+      ) : null}
+      <div className="messenger-msg-menu__emoji-row" role="group" aria-label="Реакции">
+        {REACTION_EMOJI_WHITELIST.map((emoji) => (
           <button
             key={emoji}
             type="button"
-            className="reaction-emoji-btn"
-            onClick={() => onPick(emoji)}
+            className="messenger-msg-menu__emoji"
+            title={emoji}
+            aria-label={`Реакция ${emoji}`}
+            onClick={() => onPickReaction(emoji)}
           >
             {emoji}
           </button>
         ))}
       </div>
+      <button type="button" className="messenger-msg-menu__item" role="menuitem" onClick={onReply}>
+        Ответить
+      </button>
     </div>
   )
 }

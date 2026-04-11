@@ -22,26 +22,42 @@ export type DirectConversationSummary = {
   avatarUrl: string | null
 }
 
+export type DirectMessageKind = 'text' | 'system' | 'reaction' | 'image'
+
 export type DirectMessage = {
   id: string
   senderUserId: string | null
   senderNameSnapshot: string
-  kind: 'text' | 'system' | 'reaction'
+  kind: DirectMessageKind
   body: string
   createdAt: string
-  /** Для kind=reaction: id целевого сообщения (сервер: meta.react_to). */
-  meta?: { react_to?: string } | null
+  editedAt?: string | null
+  replyToMessageId?: string | null
+  /** Для kind=reaction: id целевого сообщения (сервер: meta.react_to). Для image: meta.image.path (storage). */
+  meta?: { react_to?: string; image?: { path: string } } | null
 }
 
 function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
   const reactTo = o.react_to
-  if (typeof reactTo === 'string' && reactTo.trim()) return { react_to: reactTo.trim() }
-  return null
+  const img = o.image
+  let image: { path: string } | undefined
+  if (img && typeof img === 'object') {
+    const p = (img as Record<string, unknown>).path
+    if (typeof p === 'string' && p.trim()) image = { path: p.trim() }
+  }
+  const react = typeof reactTo === 'string' && reactTo.trim() ? reactTo.trim() : undefined
+  if (!react && !image) return null
+  return { ...(react ? { react_to: react } : {}), ...(image ? { image } : {}) }
 }
 
 /** Строка из PostgREST / Realtime (snake_case). */
+function mapMessageKind(raw: unknown): DirectMessageKind {
+  if (raw === 'reaction' || raw === 'system' || raw === 'image') return raw
+  return 'text'
+}
+
 export function mapDirectMessageFromRow(row: Record<string, unknown>): DirectMessage {
   return {
     id: String(row.id),
@@ -50,9 +66,14 @@ export function mapDirectMessageFromRow(row: Record<string, unknown>): DirectMes
       typeof row.sender_name_snapshot === 'string' && row.sender_name_snapshot.trim()
         ? row.sender_name_snapshot.trim()
         : 'Вы',
-    kind: row.kind === 'reaction' || row.kind === 'system' ? row.kind : 'text',
+    kind: mapMessageKind(row.kind),
     body: typeof row.body === 'string' ? row.body : '',
     createdAt: typeof row.created_at === 'string' ? row.created_at : new Date(0).toISOString(),
+    editedAt: typeof row.edited_at === 'string' ? row.edited_at : null,
+    replyToMessageId:
+      typeof row.reply_to_message_id === 'string' && row.reply_to_message_id.trim()
+        ? row.reply_to_message_id.trim()
+        : null,
     meta: mapMetaFromRow(row.meta),
   }
 }
@@ -178,7 +199,7 @@ export async function listDirectMessagesPage(
 
   let query = supabase
     .from('chat_messages')
-    .select('id, sender_user_id, sender_name_snapshot, kind, body, meta, created_at')
+    .select('id, sender_user_id, sender_name_snapshot, kind, body, meta, created_at, edited_at, reply_to_message_id')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
@@ -248,13 +269,18 @@ function parseAppendDirectMessageRpcPayload(data: unknown): AppendDirectMessageR
 export async function appendDirectMessage(
   conversationId: string,
   body: string,
-  options?: { kind?: 'text' | 'system' | 'reaction'; meta?: Record<string, unknown> | null },
+  options?: {
+    kind?: DirectMessageKind
+    meta?: Record<string, unknown> | null
+    replyToMessageId?: string | null
+  },
 ): Promise<{ data: AppendDirectMessageResult | null; error: string | null }> {
   const { data, error } = await supabase.rpc('append_direct_message', {
     p_conversation_id: conversationId,
     p_body: body,
     p_kind: options?.kind ?? 'text',
     p_meta: options?.meta ?? null,
+    p_reply_to_message_id: options?.replyToMessageId?.trim() || null,
   })
 
   if (error) return { data: null, error: error.message }
@@ -300,4 +326,85 @@ export async function toggleDirectMessageReaction(
   })
   if (error) return { data: null, error: error.message }
   return { data: parseToggleDirectMessageReactionPayload(data), error: null }
+}
+
+export async function editDirectMessage(
+  conversationId: string,
+  messageId: string,
+  newBody: string,
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.rpc('edit_direct_message', {
+    p_conversation_id: conversationId.trim(),
+    p_message_id: messageId.trim(),
+    p_new_body: newBody,
+  })
+  return { error: error?.message ?? null }
+}
+
+const MESSENGER_IMAGE_MAX_EDGE = 1680
+const MESSENGER_IMAGE_JPEG_QUALITY = 0.86
+
+async function imageToJpegBlob(file: File): Promise<Blob> {
+  const bmp = await createImageBitmap(file)
+  try {
+    const scale = Math.min(1, MESSENGER_IMAGE_MAX_EDGE / Math.max(bmp.width, bmp.height))
+    const w = Math.max(1, Math.round(bmp.width * scale))
+    const h = Math.max(1, Math.round(bmp.height * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('no_canvas')
+    ctx.drawImage(bmp, 0, 0, w, h)
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), 'image/jpeg', MESSENGER_IMAGE_JPEG_QUALITY),
+    )
+    if (!blob) throw new Error('to_blob_failed')
+    return blob
+  } finally {
+    bmp.close()
+  }
+}
+
+/** Загрузка сжатого JPEG в bucket `messenger-media` (первый сегмент пути = conversation_id). */
+export async function uploadMessengerImage(
+  conversationId: string,
+  file: File,
+): Promise<{ path: string | null; error: string | null }> {
+  const cid = conversationId.trim()
+  if (!cid) return { path: null, error: 'Нет чата' }
+  if (!file.type.startsWith('image/')) return { path: null, error: 'Нужен файл изображения' }
+  if (file.size > 20 * 1024 * 1024) return { path: null, error: 'Файл слишком большой (макс. 20 МБ)' }
+
+  try {
+    const blob = await imageToJpegBlob(file)
+    const id =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const path = `${cid}/${id}.jpg`
+    const { error } = await supabase.storage.from('messenger-media').upload(path, blob, {
+      contentType: 'image/jpeg',
+      upsert: false,
+    })
+    if (error) return { path: null, error: error.message }
+    return { path, error: null }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'upload_failed'
+    return { path: null, error: msg }
+  }
+}
+
+/** Временная ссылка на вложение (bucket приватный; для <img src=…>). */
+export async function getMessengerImageSignedUrl(
+  storagePath: string,
+  expiresSec = 3600,
+): Promise<{ url: string | null; error: string | null }> {
+  const path = storagePath.trim()
+  if (!path) return { url: null, error: 'empty_path' }
+  const { data, error } = await supabase.storage
+    .from('messenger-media')
+    .createSignedUrl(path, expiresSec)
+  if (error) return { url: null, error: error.message }
+  return { url: data?.signedUrl ?? null, error: null }
 }

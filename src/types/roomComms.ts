@@ -37,7 +37,18 @@ export const CHAT_MESSAGE_MAX_LEN = 2000
 export const CHAT_MESSAGES_CAP = 200
 export const REACTION_TTL_DEFAULT_MS = 3500
 /** Как на сервере (services/server/src/chat.js) */
-export const REACTION_EMOJI_WHITELIST = ['👍', '👏', '❤️', '😂', '🔥', '✋', '🖖'] as const
+export const REACTION_EMOJI_WHITELIST = [
+  '👍',
+  '👏',
+  '❤️',
+  '😂',
+  '😭',
+  '🔥',
+  '✋',
+  '🖖',
+  '👎',
+  '💩',
+] as const
 export type ReactionEmoji = (typeof REACTION_EMOJI_WHITELIST)[number]
 
 export function pickLatestBurstForPeer(

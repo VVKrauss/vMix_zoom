@@ -3009,6 +3009,10 @@ button.admin-stat-card--interactive:disabled {
   opacity: .88;
   font-size: 12px;
   line-height: 1.25;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dashboard-messenger__thread {
@@ -3085,7 +3089,7 @@ button.admin-stat-card--interactive:disabled {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
-  align-items: center;
+  align-items: start;
 }
 
 .dashboard-messenger__thread-titleline {
@@ -3128,6 +3132,47 @@ button.admin-stat-card--interactive:disabled {
   color: var(--text-dim);
   font-size: 10px;
   margin-top: 4px;
+}
+
+.dashboard-messenger__thread-tail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  min-width: 0;
+}
+
+.dashboard-messenger__thread-tail-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.dashboard-messenger__thread-tail-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dashboard-messenger__thread-tail-preview {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dashboard-messenger__messages {
@@ -3439,19 +3484,19 @@ button.admin-stat-card--interactive:disabled {
   display: flex;
   flex-direction: column;
   gap: 0;
-  min-width: 200px;
-  max-width: min(280px, 92vw);
-  padding: 6px 0;
+  min-width: min-content;
+  max-width: min(268px, 94vw);
+  padding: 4px 0;
 }
 
 .messenger-msg-menu__item {
   width: 100%;
   text-align: left;
-  padding: 10px 14px;
+  padding: 7px 11px;
   border: none;
   background: transparent;
   color: var(--text);
-  font-size: 13px;
+  font-size: 12px;
   font-family: inherit;
   cursor: pointer;
   transition: background 0.12s;
@@ -3465,23 +3510,33 @@ button.admin-stat-card--interactive:disabled {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 4px 6px;
-  padding: 8px 10px 10px;
-  border-top: 1px solid var(--border);
+  align-items: center;
+  gap: 2px 3px;
+  padding: 4px 6px 5px;
   border-bottom: 1px solid var(--border);
+  max-width: 100%;
+}
+
+/* Разделитель над реакциями только если сверху есть «Редактировать» */
+.messenger-msg-menu__item + .messenger-msg-menu__emoji-row {
+  border-top: 1px solid var(--border);
 }
 
 .messenger-msg-menu__emoji {
-  width: 36px;
-  height: 36px;
+  width: 18px;
+  height: 18px;
   padding: 0;
   border: none;
-  border-radius: 10px;
+  border-radius: 4px;
   background: transparent;
-  font-size: 22px;
+  font-size: 11px;
   line-height: 1;
   cursor: pointer;
   transition: background 0.12s;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .messenger-msg-menu__emoji:hover {
@@ -3719,8 +3774,11 @@ html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__input {
-  min-height: 72px;
+  min-height: calc(1.35em + 20px);
+  max-height: min(34vh, 220px);
   padding: 8px 10px;
+  resize: none;
+  overflow-y: auto;
   /* iOS Safari: при font-size < 16px на фокусе включается зум и «уезжает» вёрстка вправо */
   font-size: 16px;
   line-height: 1.35;
@@ -4250,7 +4308,10 @@ html[data-theme="light"] .dashboard-messenger-mobile-nav {
   }
 
   .dashboard-messenger--mobile-chromeless .dashboard-messenger__input {
-    min-height: 72px;
+    min-height: calc(1.35em + 20px);
+    max-height: min(34vh, 220px);
+    resize: none;
+    overflow-y: auto;
     font-size: 16px;
     line-height: 1.35;
   }

@@ -97,6 +97,19 @@ function lastNonReactionBody(rows: DirectMessage[]): string | null {
   return null
 }
 
+/** Текст превью последнего сообщения в шапке треда (сервер или хвост загруженной ленты). */
+function threadHeadPreviewLine(
+  head: DirectConversationSummary,
+  loading: boolean,
+  timeline: DirectMessage[],
+): string {
+  const p = head.lastMessagePreview?.trim()
+  if (p) return p
+  if (loading) return head.messageCount > 0 ? '…' : 'Пока без сообщений'
+  const tail = lastNonReactionBody(timeline)
+  return tail ?? (head.messageCount > 0 ? '…' : 'Пока без сообщений')
+}
+
 /** URL пустой: последний открытый диалог из localStorage, иначе самый свежий по активности, иначе запасной id (напр. «с собой»). */
 function pickDefaultConversationId(
   list: DirectConversationSummary[],
@@ -1134,6 +1147,37 @@ export function DashboardMessengerPage() {
     threadHeadConversation?.avatarUrl ??
     (threadHeadConversation?.otherUserId ? null : profile?.avatar_url ?? null)
 
+  const threadHeadPreviewText = useMemo(
+    () =>
+      threadHeadConversation
+        ? threadHeadPreviewLine(threadHeadConversation, threadLoading, timelineMessages)
+        : '',
+    [threadHeadConversation, threadLoading, timelineMessages],
+  )
+
+  const adjustMobileComposerHeight = useCallback(() => {
+    const ta = composerTextareaRef.current
+    if (!ta || !isMobileMessenger) return
+    ta.style.height = 'auto'
+    ta.style.height = `${Math.min(ta.scrollHeight, Math.round(window.innerHeight * 0.34))}px`
+  }, [isMobileMessenger])
+
+  useLayoutEffect(() => {
+    if (!isMobileMessenger) {
+      const ta = composerTextareaRef.current
+      if (ta) ta.style.height = ''
+      return
+    }
+    adjustMobileComposerHeight()
+  }, [
+    draft,
+    activeConversationId,
+    editingMessageId,
+    isMobileMessenger,
+    adjustMobileComposerHeight,
+    threadLoading,
+  ])
+
   const closeMessengerMenu = useCallback(() => {
     setMessengerMenuOpen(false)
   }, [])
@@ -1310,6 +1354,18 @@ export function DashboardMessengerPage() {
                               )}
                             </span>
                           </div>
+                          <div className="dashboard-messenger__thread-tail" aria-label="Последнее сообщение">
+                            <div className="dashboard-messenger__thread-tail-avatar" aria-hidden>
+                              {activeAvatarUrl ? (
+                                <img src={activeAvatarUrl} alt="" />
+                              ) : (
+                                <span>{conversationInitial(threadHeadConversation.title)}</span>
+                              )}
+                            </div>
+                            <p className="dashboard-messenger__thread-tail-preview" title={threadHeadPreviewText}>
+                              {threadHeadPreviewText}
+                            </p>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1417,13 +1473,16 @@ export function DashboardMessengerPage() {
                           <textarea
                             ref={composerTextareaRef}
                             className="dashboard-messenger__input"
-                            rows={3}
+                            rows={isMobileMessenger ? 1 : 3}
                             placeholder={
                               editingMessageId ? 'Исправьте текст…' : 'Напиши сообщение…'
                             }
                             value={draft}
                             disabled={threadLoading || photoUploading}
-                            onChange={(e) => setDraft(e.target.value)}
+                            onChange={(e) => {
+                              setDraft(e.target.value)
+                              if (isMobileMessenger) queueMicrotask(() => adjustMobileComposerHeight())
+                            }}
                             onPointerDown={() => unlockAudioContext()}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' && !e.shiftKey) {

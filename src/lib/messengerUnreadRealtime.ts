@@ -29,11 +29,15 @@ export interface MessengerBgMessageDetail {
 function emitBgMessage(row: Record<string, unknown>): void {
   const conversationId = typeof row.conversation_id === 'string' ? row.conversation_id : null
   if (!conversationId) return
+  const kind = typeof row.kind === 'string' ? row.kind : 'text'
+  let body = typeof row.body === 'string' ? row.body : ''
+  if (kind === 'image' && !body.trim()) body = '📷 Фото'
+
   const detail: MessengerBgMessageDetail = {
     conversationId,
     senderUserId: typeof row.sender_user_id === 'string' ? row.sender_user_id : null,
-    kind: typeof row.kind === 'string' ? row.kind : 'text',
-    body: typeof row.body === 'string' ? row.body : '',
+    kind,
+    body,
     createdAt: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
   }
   window.dispatchEvent(new CustomEvent(MESSENGER_BG_MESSAGE_EVENT, { detail }))
