@@ -9,6 +9,7 @@ export type DirectConversationSummary = {
   messageCount: number
   unreadCount: number
   otherUserId: string | null
+  avatarUrl: string | null
 }
 
 export type DirectMessage = {
@@ -32,7 +33,41 @@ function mapDirectConversationRow(row: Record<string, unknown>): DirectConversat
     messageCount: typeof row.message_count === 'number' ? row.message_count : Number(row.message_count ?? 0) || 0,
     unreadCount: typeof row.unread_count === 'number' ? row.unread_count : Number(row.unread_count ?? 0) || 0,
     otherUserId: typeof row.other_user_id === 'string' ? row.other_user_id : null,
+    avatarUrl: null,
   }
+}
+
+async function attachConversationAvatars(
+  items: DirectConversationSummary[],
+): Promise<DirectConversationSummary[]> {
+  const userIds = Array.from(
+    new Set(
+      items
+        .map((item) => item.otherUserId?.trim() ?? '')
+        .filter(Boolean),
+    ),
+  )
+
+  if (userIds.length === 0) return items
+
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, avatar_url')
+    .in('id', userIds)
+
+  if (error) return items
+
+  const avatarMap = new Map<string, string | null>()
+  for (const row of data ?? []) {
+    const id = typeof row.id === 'string' ? row.id : ''
+    if (!id) continue
+    avatarMap.set(id, typeof row.avatar_url === 'string' && row.avatar_url.trim() ? row.avatar_url.trim() : null)
+  }
+
+  return items.map((item) => ({
+    ...item,
+    avatarUrl: item.otherUserId ? (avatarMap.get(item.otherUserId) ?? null) : null,
+  }))
 }
 
 export async function ensureSelfDirectConversation(): Promise<{ data: string | null; error: string | null }> {
@@ -45,8 +80,10 @@ export async function listDirectConversationsForUser(
 ): Promise<{ data: DirectConversationSummary[] | null; error: string | null }> {
   const { data, error } = await supabase.rpc('list_my_direct_conversations')
   if (error) return { data: null, error: error.message }
+  const mapped = (data ?? []).map((row: unknown) => mapDirectConversationRow(row as Record<string, unknown>))
+  const withAvatars = await attachConversationAvatars(mapped)
   return {
-    data: (data ?? []).map((row: unknown) => mapDirectConversationRow(row as Record<string, unknown>)),
+    data: withAvatars,
     error: null,
   }
 }

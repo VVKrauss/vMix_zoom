@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useMediaQuery } from '../hooks/useMediaQuery'
+import { useProfile } from '../hooks/useProfile'
 import {
   appendDirectMessage,
   type DirectConversationSummary,
@@ -25,6 +26,10 @@ function formatDateTime(value: string): string {
   })
 }
 
+function conversationInitial(title: string): string {
+  return (title.trim().charAt(0) || 'С').toUpperCase()
+}
+
 export function DashboardMessengerPage() {
   const { conversationId: rawConversationId } = useParams<{ conversationId?: string }>()
   const conversationId = rawConversationId?.trim() ?? ''
@@ -33,6 +38,7 @@ export function DashboardMessengerPage() {
   const targetTitle = searchParams.get('title')?.trim() ?? ''
   const navigate = useNavigate()
   const { signOut, user } = useAuth()
+  const { profile } = useProfile()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const isMobileMessenger = useMediaQuery('(max-width: 900px)')
 
@@ -83,11 +89,7 @@ export function DashboardMessengerPage() {
       const nextItems = listRes.data ?? []
       setItems(nextItems)
 
-      const targetConversationId =
-        conversationId ||
-        ensured.data ||
-        nextItems[0]?.id ||
-        ''
+      const targetConversationId = conversationId || ensured.data || nextItems[0]?.id || ''
 
       if (!conversationId && targetConversationId) {
         navigate(`/dashboard/messenger/${encodeURIComponent(targetConversationId)}`, { replace: true })
@@ -194,6 +196,9 @@ export function DashboardMessengerPage() {
     [items],
   )
 
+  const activeAvatarUrl =
+    activeConversation?.avatarUrl ?? (activeConversation?.otherUserId ? null : profile?.avatar_url ?? null)
+
   return (
     <DashboardShell active="messenger" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
       <section className="dashboard-section dashboard-messenger">
@@ -201,7 +206,8 @@ export function DashboardMessengerPage() {
           <div>
             <h2 className="dashboard-section__title">Мессенджер</h2>
             <p className="dashboard-section__hint">
-              Постоянные личные переписки. Для старта уже есть чат с самим собой, который можно использовать как заметки.
+              Постоянные личные переписки. Для старта уже есть чат с самим собой, который можно
+              использовать как заметки.
             </p>
           </div>
           <Link to="/dashboard/chats" className="dashboard-messenger__switch">
@@ -219,29 +225,45 @@ export function DashboardMessengerPage() {
                 {sortedItems.length === 0 ? (
                   <div className="dashboard-chats-empty">Диалогов пока нет.</div>
                 ) : (
-                  sortedItems.map((item) => (
-                    <Link
-                      key={item.id}
-                      to={`/dashboard/messenger/${encodeURIComponent(item.id)}`}
-                      className={`dashboard-messenger__row${item.id === activeConversationId ? ' dashboard-messenger__row--active' : ''}`}
-                    >
-                      <div className="dashboard-messenger__row-titleline">
-                        <div className="dashboard-messenger__row-title">{item.title}</div>
-                        {item.unreadCount > 0 ? (
-                          <span className="dashboard-messenger__row-badge">
-                            {item.unreadCount > 99 ? '99+' : item.unreadCount}
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="dashboard-messenger__row-meta">
-                        <span>{item.messageCount} сообщ.</span>
-                        <span>{formatDateTime(item.lastMessageAt ?? item.createdAt)}</span>
-                      </div>
-                      <div className="dashboard-messenger__row-preview">
-                        {item.lastMessagePreview?.trim() || 'Пока без сообщений'}
-                      </div>
-                    </Link>
-                  ))
+                  sortedItems.map((item) => {
+                    const avatarUrl = item.avatarUrl ?? (!item.otherUserId ? profile?.avatar_url ?? null : null)
+                    return (
+                      <Link
+                        key={item.id}
+                        to={`/dashboard/messenger/${encodeURIComponent(item.id)}`}
+                        className={`dashboard-messenger__row${
+                          item.id === activeConversationId ? ' dashboard-messenger__row--active' : ''
+                        }`}
+                      >
+                        <div className="dashboard-messenger__row-main">
+                          <div className="dashboard-messenger__row-avatar" aria-hidden>
+                            {avatarUrl ? (
+                              <img src={avatarUrl ?? undefined} alt="" />
+                            ) : (
+                              <span>{conversationInitial(item.title)}</span>
+                            )}
+                          </div>
+                          <div className="dashboard-messenger__row-content">
+                            <div className="dashboard-messenger__row-titleline">
+                              <div className="dashboard-messenger__row-title">{item.title}</div>
+                              {item.unreadCount > 0 ? (
+                                <span className="dashboard-messenger__row-badge">
+                                  {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="dashboard-messenger__row-meta">
+                              <span>{item.messageCount} сообщ.</span>
+                              <span>{formatDateTime(item.lastMessageAt ?? item.createdAt)}</span>
+                            </div>
+                            <div className="dashboard-messenger__row-preview">
+                              {item.lastMessagePreview?.trim() || 'Пока без сообщений'}
+                            </div>
+                          </div>
+                        </div>
+                      </Link>
+                    )
+                  })
                 )}
               </aside>
             ) : null}
@@ -260,11 +282,23 @@ export function DashboardMessengerPage() {
                           ← Назад к чатам
                         </button>
                       ) : null}
-                      <div>
-                        <h3 className="dashboard-section__subtitle">{activeConversation.title}</h3>
-                        <div className="dashboard-messenger__thread-meta">
-                          <span>Сообщений: {activeConversation.messageCount}</span>
-                          <span>Последняя активность: {formatDateTime(activeConversation.lastMessageAt ?? activeConversation.createdAt)}</span>
+                      <div className="dashboard-messenger__thread-head-main">
+                        <div className="dashboard-messenger__thread-avatar" aria-hidden>
+                          {activeAvatarUrl ? (
+                            <img src={activeAvatarUrl ?? undefined} alt="" />
+                          ) : (
+                            <span>{conversationInitial(activeConversation.title)}</span>
+                          )}
+                        </div>
+                        <div>
+                          <h3 className="dashboard-section__subtitle">{activeConversation.title}</h3>
+                          <div className="dashboard-messenger__thread-meta">
+                            <span>{activeConversation.messageCount} сообщ.</span>
+                            <span>
+                              Последняя активность:{' '}
+                              {formatDateTime(activeConversation.lastMessageAt ?? activeConversation.createdAt)}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -278,10 +312,14 @@ export function DashboardMessengerPage() {
                           return (
                             <article
                               key={message.id}
-                              className={`dashboard-messenger__message${isOwn ? ' dashboard-messenger__message--own' : ''}`}
+                              className={`dashboard-messenger__message${
+                                isOwn ? ' dashboard-messenger__message--own' : ''
+                              }`}
                             >
                               <div className="dashboard-messenger__message-meta">
-                                <span className="dashboard-messenger__message-author">{message.senderNameSnapshot}</span>
+                                <span className="dashboard-messenger__message-author">
+                                  {message.senderNameSnapshot}
+                                </span>
                                 <time dateTime={message.createdAt}>{formatDateTime(message.createdAt)}</time>
                               </div>
                               <div className="dashboard-messenger__message-body">{message.body}</div>
