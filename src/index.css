@@ -170,6 +170,30 @@ html[data-theme="light"] .admin-role-picker--dashboard-filters .admin-role-picke
   outline-color: rgba(142, 82, 82, 0.35);
 }
 
+/* Выпадающие admin-role-picker (кабинет: вид комнаты, фильтры друзей/чатов, админка) */
+html[data-theme="light"] .admin-role-picker--dashboard-layout .admin-role-picker__trigger {
+  background: var(--surface2);
+}
+
+html[data-theme="light"] .admin-role-picker__menu {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: 0 10px 36px rgba(45, 28, 26, 0.14), 0 2px 10px rgba(45, 28, 26, 0.08);
+}
+
+html[data-theme="light"] .admin-role-picker__trigger:hover:not(:disabled) {
+  color: var(--text);
+  background: rgba(142, 82, 82, 0.12);
+}
+
+html[data-theme="light"] .admin-role-picker__option:hover {
+  background: rgba(142, 82, 82, 0.1);
+}
+
+html[data-theme="light"] .admin-role-picker__option--active {
+  color: var(--red);
+}
+
 html[data-theme="light"] .dashboard-chat-row {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.45)),
@@ -1969,7 +1993,7 @@ button.admin-stat-card--interactive:disabled {
   margin: 0;
   padding: 4px 0;
   list-style: none;
-  background: #1e1e1e;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
@@ -2708,6 +2732,13 @@ button.admin-stat-card--interactive:disabled {
 }
 
 /* Мобильный мессенджер: без шапки кабинета, полная ширина, FAB-меню */
+html:has(.dashboard-page.dashboard-page--messenger-chromeless),
+html:has(.dashboard-page.dashboard-page--messenger-chromeless) body,
+html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 .dashboard-page.dashboard-page--messenger-chromeless {
   /* В Safari под панелью URL safe-area часто 0 — даём минимум под системную зону */
   --messenger-mobile-top-inset: max(env(safe-area-inset-top, 0px), 44px);
@@ -2717,6 +2748,7 @@ button.admin-stat-card--interactive:disabled {
   max-height: 100dvh;
   box-sizing: border-box;
   overflow: hidden;
+  max-width: 100%;
 }
 
 .dashboard-page.dashboard-page--messenger-chromeless .dashboard-topbar,
@@ -2823,6 +2855,9 @@ button.admin-stat-card--interactive:disabled {
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__input {
   min-height: 72px;
   padding: 8px 10px;
+  /* iOS Safari: при font-size < 16px на фокусе включается зум и «уезжает» вёрстка вправо */
+  font-size: 16px;
+  line-height: 1.35;
 }
 
 .dashboard-page.dashboard-page--messenger-chromeless .dashboard-messenger-fab {
@@ -3350,6 +3385,8 @@ html[data-theme="light"] .dashboard-messenger-mobile-nav {
 
   .dashboard-messenger--mobile-chromeless .dashboard-messenger__input {
     min-height: 72px;
+    font-size: 16px;
+    line-height: 1.35;
   }
 
   .dashboard-messenger__send-btn {
