@@ -1118,9 +1118,7 @@ export function DashboardMessengerPage() {
                       <div className="dashboard-messenger__composer">
                         <textarea
                           ref={composerTextareaRef}
-                          className={`dashboard-messenger__input${
-                            isMobileMessenger ? ' dashboard-messenger__input--mobile' : ''
-                          }`}
+                          className="dashboard-messenger__input"
                           rows={3}
                           placeholder="Напиши сообщение..."
                           value={draft}

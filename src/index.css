@@ -2665,7 +2665,9 @@ button.admin-stat-card--interactive:disabled {
   border: 1px solid var(--border);
   background: rgba(255,255,255,.04);
   color: var(--text);
-  font: inherit;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.28;
   padding: 12px 14px;
 }
 
@@ -2768,10 +2770,6 @@ button.admin-stat-card--interactive:disabled {
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__input {
   min-height: 72px;
   padding: 8px 10px;
-}
-
-.dashboard-messenger__input--mobile {
-  font-size: 60%;
 }
 
 .dashboard-messenger-fab {
