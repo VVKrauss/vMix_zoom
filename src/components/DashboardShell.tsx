@@ -6,7 +6,7 @@ import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import { listMyContacts } from '../lib/socialGraph'
 import { setPendingHostClaim } from '../lib/spaceRoom'
 import { newRoomId } from '../utils/roomId'
-import { AdminPanelIcon, ChatBubbleIcon, DashboardIcon, ParticipantsBadgeIcon } from './icons'
+import { AdminPanelIcon, ChatBubbleIcon, DashboardIcon, ParticipantsBadgeIcon, RoomsIcon } from './icons'
 import { ThemeToggle } from './ThemeToggle'
 
 type DashboardShellTab = 'cabinet' | 'chats' | 'messenger' | 'friends'
@@ -22,7 +22,7 @@ const SIDEBAR_TAB_HINTS = {
   cabinet:
     'Профиль и тариф. Настройки комнаты: вид по умолчанию, кнопка смены раскладки и отображение камеры в плитках на десктопе; на телефоне — отдельная мобильная логика.',
   chats:
-    'Здесь хранятся архивы комнатных чатов. Видны только беседы тех комнат, в которых вы были участником под своим аккаунтом.',
+    'Архивы чатов комнат: беседы тех комнат, в которых вы были участником под своим аккаунтом.',
   messenger:
     'Постоянные личные переписки. Для старта уже есть чат с самим собой, который можно использовать как заметки.',
   friends:
@@ -180,7 +180,9 @@ export function DashboardShell({ active, canAccessAdmin, onSignOut, children }: 
         </div>
       </header>
 
-      <div className="dashboard-shell">
+      <div
+        className={`dashboard-shell${showIncomingFavoritesBanner ? ' dashboard-shell--with-banner' : ''}`}
+      >
         {showIncomingFavoritesBanner ? (
           <div className="dashboard-incoming-fav-banner" role="status" aria-live="polite">
             <p className="dashboard-incoming-fav-banner__text">
@@ -215,11 +217,11 @@ export function DashboardShell({ active, canAccessAdmin, onSignOut, children }: 
             <DashboardSidebarLink
               to="/dashboard/chats"
               active={active === 'chats'}
-              label="Чаты"
-              shortLabel="ЧТ"
+              label="Комнаты"
+              shortLabel="КМ"
               hint={SIDEBAR_TAB_HINTS.chats}
             >
-              <ChatBubbleIcon />
+              <RoomsIcon />
             </DashboardSidebarLink>
             <DashboardSidebarLink
               to="/dashboard/messenger"

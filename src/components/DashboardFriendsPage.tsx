@@ -16,7 +16,6 @@ function matchesFriendFilter(item: ContactCard, filter: FriendFilter): boolean {
 
 function statusLabel(item: ContactCard): string {
   if (item.isFriend) return 'Друзья'
-  if (item.isFavorite && item.favorsMe) return 'Друзья'
   if (item.isFavorite) return 'В избранном'
   if (item.favorsMe) return 'Добавил вас'
   return 'Контакт'
@@ -121,7 +120,7 @@ export function DashboardFriendsPage() {
               onChange={(e) => setFilter(e.target.value as FriendFilter)}
             >
               <option value="all">Все</option>
-              <option value="friends">Только друзья</option>
+              <option value="friends">Друзья</option>
               <option value="favorites">Моё избранное</option>
               <option value="incoming">Добавили меня</option>
             </select>
@@ -131,7 +130,15 @@ export function DashboardFriendsPage() {
         {loading ? <div className="auth-loading" aria-label="Загрузка..." /> : null}
         {!loading && error ? <p className="join-error">{error}</p> : null}
         {!loading && !error && filtered.length === 0 ? (
-          <div className="dashboard-chats-empty">Пока здесь пусто. Добавляйте людей в избранное прямо из чата комнаты.</div>
+          <div className="dashboard-chats-empty">
+            {filter === 'friends'
+              ? 'Пока нет взаимных друзей. Добавьте человека в избранное из чата комнаты — когда он ответит взаимностью, вы появитесь друг у друга здесь.'
+              : filter === 'favorites'
+                ? 'В избранном пока никого. Добавляйте людей из чата комнаты кнопкой со звёздочкой у сообщения.'
+                : filter === 'incoming'
+                  ? 'Пока никто не добавил вас в избранное.'
+                  : 'Пока здесь пусто. Добавляйте людей в избранное прямо из чата комнаты.'}
+          </div>
         ) : null}
 
         {!loading && !error && filtered.length > 0 ? (
@@ -160,16 +167,28 @@ export function DashboardFriendsPage() {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  className={`dashboard-friend-card__fav-btn${item.isFavorite ? ' dashboard-friend-card__fav-btn--active' : ''}`}
-                  onClick={() => void toggleFavorite(item)}
-                  disabled={busyTarget === item.targetUserId}
-                  title={item.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
-                >
-                  <StarIcon filled={item.isFavorite} />
-                  <span>{item.isFavorite ? 'В избранном' : 'В избранное'}</span>
-                </button>
+                <div className="dashboard-friend-card__actions">
+                  {item.isFavorite ? (
+                    <button
+                      type="button"
+                      className="dashboard-friend-card__remove-fav"
+                      disabled={busyTarget === item.targetUserId}
+                      onClick={() => void toggleFavorite(item)}
+                    >
+                      Убрать из избранного
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className={`dashboard-friend-card__fav-btn${item.isFavorite ? ' dashboard-friend-card__fav-btn--active' : ''}`}
+                    onClick={() => void toggleFavorite(item)}
+                    disabled={busyTarget === item.targetUserId}
+                    title={item.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
+                  >
+                    <StarIcon filled={item.isFavorite} />
+                    <span>{item.isFavorite ? 'В избранном' : 'В избранное'}</span>
+                  </button>
+                </div>
               </article>
             ))}
           </div>

@@ -61,6 +61,7 @@ import { ParticipantTileIdle } from './ParticipantTileIdle'
 import { RoomChatPanel } from './RoomChatPanel'
 import { ReactionBurstOverlay } from './ReactionBurstOverlay'
 import { VmixIngressModal } from './VmixIngressModal'
+import { RoomInviteFriendsModal } from './RoomInviteFriendsModal'
 import { PillToggle } from './PillToggle'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useActiveSpeaker } from '../hooks/useActiveSpeaker'
@@ -434,6 +435,9 @@ export function RoomPage({
   const [vmixError, setVmixError] = useState<string | null>(null)
   const [inviteToast, setInviteToast] = useState<'url' | 'id' | null>(null)
   const inviteToastTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
+  const [friendsInviteToast, setFriendsInviteToast] = useState<string | null>(null)
+  const friendsInviteToastTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
+  const [inviteFriendsModalOpen, setInviteFriendsModalOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
   const inviteRef = useRef<HTMLDivElement>(null)
   const [fullscreenActive, setFullscreenActive] = useState(false)
@@ -487,6 +491,7 @@ export function RoomPage({
 
   useEffect(() => () => {
     if (inviteToastTimerRef.current != null) window.clearTimeout(inviteToastTimerRef.current)
+    if (friendsInviteToastTimerRef.current != null) window.clearTimeout(friendsInviteToastTimerRef.current)
   }, [])
 
   useEffect(() => {
@@ -754,6 +759,35 @@ export function RoomPage({
     () => remoteList.filter((p) => p.name !== 'vMix' && p.virtualSourceType !== 'studio_program'),
     [remoteList],
   )
+
+  const inviteExcludeUserIds = useMemo(() => {
+    const ids: string[] = []
+    if (user?.id) ids.push(user.id)
+    for (const p of remoteHumanPeers) {
+      if (p.authUserId) ids.push(p.authUserId)
+    }
+    return ids
+  }, [user?.id, remoteHumanPeers])
+
+  const handleFriendsInviteSent = useCallback((ok: number, fail: number) => {
+    if (friendsInviteToastTimerRef.current != null) window.clearTimeout(friendsInviteToastTimerRef.current)
+    let msg: string
+    if (fail === 0) {
+      msg =
+        ok === 1
+          ? 'Ссылка на комнату отправлена одному человеку в личный чат.'
+          : `Ссылка на комнату отправлена ${ok} людям в личный чат.`
+    } else if (ok === 0) {
+      msg = `Не удалось отправить приглашения (${fail}).`
+    } else {
+      msg = `Отправлено: ${ok}, с ошибками: ${fail}.`
+    }
+    setFriendsInviteToast(msg)
+    friendsInviteToastTimerRef.current = window.setTimeout(() => {
+      setFriendsInviteToast(null)
+      friendsInviteToastTimerRef.current = null
+    }, 5200)
+  }, [])
 
   const vmixPeer = useMemo(
     () => remoteList.find((p) => p.name === 'vMix'),
@@ -1405,6 +1439,17 @@ export function RoomPage({
         onClose={() => setVmixModalOpen(false)}
       />
 
+      {user ? (
+        <RoomInviteFriendsModal
+          open={inviteFriendsModalOpen}
+          onClose={() => setInviteFriendsModalOpen(false)}
+          roomInviteUrl={buildRoomInviteAbsoluteUrl(roomId)}
+          roomId={roomId}
+          excludeUserIds={inviteExcludeUserIds}
+          onSent={handleFriendsInviteSent}
+        />
+      ) : null}
+
       <ConfirmDialog
         open={vmixStopDialogOpen}
         title="Остановить vMix?"
@@ -1461,6 +1506,18 @@ export function RoomPage({
                       <button type="button" className="room-invite-dropdown__item" onClick={handleCopyInviteId}>
                         Скопировать ID комнаты
                       </button>
+                      {user ? (
+                        <button
+                          type="button"
+                          className="room-invite-dropdown__item"
+                          onClick={() => {
+                            setInviteOpen(false)
+                            setInviteFriendsModalOpen(true)
+                          }}
+                        >
+                          Добавить из контактов
+                        </button>
+                      ) : null}
                     </div>
                   )}
                 </div>
@@ -1618,6 +1675,28 @@ export function RoomPage({
             ? `ID комнаты: ${roomId}`
             : 'Отправьте её участникам — по ней можно войти в эту комнату.'}
         </span>
+      </div>
+
+      <div
+        className={`room-invite-toast room-invite-toast--friends${friendsInviteToast ? ' room-invite-toast--visible' : ''}`}
+        role="status"
+        aria-live="polite"
+        aria-hidden={!friendsInviteToast}
+      >
+        <span className="room-invite-toast__title">Приглашения</span>
+        <span className="room-invite-toast__text">{friendsInviteToast}</span>
+        <button
+          type="button"
+          className="room-invite-toast__close"
+          onClick={() => {
+            if (friendsInviteToastTimerRef.current != null) window.clearTimeout(friendsInviteToastTimerRef.current)
+            friendsInviteToastTimerRef.current = null
+            setFriendsInviteToast(null)
+          }}
+          aria-label="Закрыть"
+        >
+          ✕
+        </button>
       </div>
 
       <div
@@ -1822,6 +1901,7 @@ export function RoomPage({
         onToggleImmersiveAutoHide={() => setImmersiveAutoHide((v) => !v)}
         chromeHidden={immersiveAutoHide && chromeHidden}
         onInviteParticipants={handleCopyInviteUrl}
+        onInviteFromContacts={user ? () => setInviteFriendsModalOpen(true) : undefined}
         showAdminPanelLink={isPlatformAdminish}
         hideVideoLetterboxing={hideVideoLetterboxing}
         onHideVideoLetterboxingChange={setHideVideoLetterboxing}

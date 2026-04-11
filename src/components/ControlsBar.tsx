@@ -110,6 +110,8 @@ interface Props {
   chromeHidden: boolean
   /** Мобильный PiP: скопировать ссылку на комнату (кнопка «Добавить»). */
   onInviteParticipants?: () => void
+  /** Долгое нажатие на ту же кнопку: пригласить друзей из контактов (если задано). */
+  onInviteFromContacts?: () => void
   /** Ссылка «Админка» в мобильном листе (superadmin / platform_admin / support_admin). */
   showAdminPanelLink?: boolean
   /** Камера в плитках: true — без полей (cover), false — весь кадр (contain). */
@@ -129,6 +131,8 @@ interface Props {
 }
 
 const LONG_PRESS_MS = 550
+
+function controlsBarNoop() {}
 
 function useMobileDualAction(onShort: () => void, onLong: () => void) {
   const timer = useRef(0)
@@ -246,6 +250,7 @@ export function ControlsBar({
   onToggleImmersiveAutoHide,
   chromeHidden,
   onInviteParticipants,
+  onInviteFromContacts,
   showAdminPanelLink = false,
   hideVideoLetterboxing,
   onHideVideoLetterboxingChange,
@@ -293,6 +298,10 @@ export function ControlsBar({
   const camPress = useMobileDualAction(onToggleCam, () => setOpen('cam'))
   const micPress = useMobileDualAction(onToggleMute, () => setOpen('mic'))
   const hpPress = useMobileDualAction(togglePlayoutMute, () => setOpen('headphones'))
+  const invitePress = useMobileDualAction(
+    onInviteParticipants ?? controlsBarNoop,
+    onInviteFromContacts ?? controlsBarNoop,
+  )
 
   const showMainBar = !forceMobileFabMenu
 
@@ -769,8 +778,12 @@ export function ControlsBar({
                 <button
                   type="button"
                   className="ctrl-mobile-bottom-bar__btn ctrl-mobile-bottom-bar__btn--main"
-                  onClick={() => onInviteParticipants()}
-                  title="Пригласить участников"
+                  {...invitePress}
+                  title={
+                    onInviteFromContacts
+                      ? 'Коротко: скопировать ссылку. Долго: пригласить друзей из контактов'
+                      : 'Скопировать ссылку на комнату'
+                  }
                   aria-label="Пригласить участников"
                 >
                   <InviteIcon />

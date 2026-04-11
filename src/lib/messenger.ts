@@ -1,5 +1,13 @@
 import { supabase } from './supabase'
 
+/** Событие для мгновенного пересчёта бейджа непрочитанных (см. useMessengerUnreadCount). */
+export const MESSENGER_UNREAD_REFRESH_EVENT = 'vmix:messenger-unread-refresh'
+
+export function requestMessengerUnreadRefresh(): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(MESSENGER_UNREAD_REFRESH_EVENT))
+}
+
 export type DirectConversationSummary = {
   id: string
   title: string
@@ -19,6 +27,21 @@ export type DirectMessage = {
   kind: 'text' | 'system' | 'reaction'
   body: string
   createdAt: string
+}
+
+/** Строка из PostgREST / Realtime (snake_case). */
+export function mapDirectMessageFromRow(row: Record<string, unknown>): DirectMessage {
+  return {
+    id: String(row.id),
+    senderUserId: typeof row.sender_user_id === 'string' ? row.sender_user_id : null,
+    senderNameSnapshot:
+      typeof row.sender_name_snapshot === 'string' && row.sender_name_snapshot.trim()
+        ? row.sender_name_snapshot.trim()
+        : 'Вы',
+    kind: row.kind === 'reaction' || row.kind === 'system' ? row.kind : 'text',
+    body: typeof row.body === 'string' ? row.body : '',
+    createdAt: typeof row.created_at === 'string' ? row.created_at : new Date(0).toISOString(),
+  }
 }
 
 function mapDirectConversationRow(row: Record<string, unknown>): DirectConversationSummary {
@@ -127,17 +150,7 @@ export async function listDirectMessagesForUser(
 
   if (error) return { data: null, error: error.message }
   return {
-    data: (data ?? []).map((row) => ({
-      id: String(row.id),
-      senderUserId: typeof row.sender_user_id === 'string' ? row.sender_user_id : null,
-      senderNameSnapshot:
-        typeof row.sender_name_snapshot === 'string' && row.sender_name_snapshot.trim()
-          ? row.sender_name_snapshot.trim()
-          : 'Вы',
-      kind: row.kind === 'reaction' || row.kind === 'system' ? row.kind : 'text',
-      body: typeof row.body === 'string' ? row.body : '',
-      createdAt: typeof row.created_at === 'string' ? row.created_at : new Date(0).toISOString(),
-    })),
+    data: (data ?? []).map((row) => mapDirectMessageFromRow(row as Record<string, unknown>)),
     error: null,
   }
 }
@@ -160,6 +173,7 @@ export async function markDirectConversationRead(
   const { error } = await supabase.rpc('mark_direct_conversation_read', {
     p_conversation_id: conversationId,
   })
+  if (!error) requestMessengerUnreadRefresh()
   return { error: error?.message ?? null }
 }
 
@@ -172,10 +186,24 @@ export async function getDirectUnreadCount(): Promise<{ data: number | null; err
   return { data: count, error: null }
 }
 
+export type AppendDirectMessageResult = {
+  messageId: string | null
+  createdAt: string | null
+}
+
+function parseAppendDirectMessageRpcPayload(data: unknown): AppendDirectMessageResult {
+  if (!data || typeof data !== 'object') return { messageId: null, createdAt: null }
+  const r = data as Record<string, unknown>
+  return {
+    messageId: typeof r.message_id === 'string' && r.message_id ? r.message_id : null,
+    createdAt: typeof r.created_at === 'string' ? r.created_at : null,
+  }
+}
+
 export async function appendDirectMessage(
   conversationId: string,
   body: string,
-): Promise<{ data: { createdAt: string | null } | null; error: string | null }> {
+): Promise<{ data: AppendDirectMessageResult | null; error: string | null }> {
   const { data, error } = await supabase.rpc('append_direct_message', {
     p_conversation_id: conversationId,
     p_body: body,
@@ -184,15 +212,7 @@ export async function appendDirectMessage(
 
   if (error) return { data: null, error: error.message }
   return {
-    data:
-      data && typeof data === 'object'
-        ? {
-            createdAt:
-              typeof (data as Record<string, unknown>).created_at === 'string'
-                ? String((data as Record<string, unknown>).created_at)
-                : null,
-          }
-        : { createdAt: null },
+    data: parseAppendDirectMessageRpcPayload(data),
     error: null,
   }
 }

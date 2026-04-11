@@ -43,7 +43,7 @@ export function DashboardTopbar({ canAccessAdmin, onSignOut, active = 'cabinet' 
           to="/dashboard/chats"
           className={`dashboard-topbar__nav-link${active === 'chats' ? ' dashboard-topbar__nav-link--active' : ''}`}
         >
-          Чаты
+          Комнаты
         </Link>
         {canAccessAdmin ? (
           <Link to="/admin" className="dashboard-topbar__nav-link">

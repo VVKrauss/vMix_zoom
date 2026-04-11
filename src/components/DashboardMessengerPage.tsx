@@ -13,8 +13,10 @@ import {
   getDirectConversationForUser,
   listDirectConversationsForUser,
   listDirectMessagesForUser,
+  mapDirectMessageFromRow,
   markDirectConversationRead,
 } from '../lib/messenger'
+import { supabase } from '../lib/supabase'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import { DashboardShell } from './DashboardShell'
 
@@ -29,6 +31,32 @@ function formatDateTime(value: string): string {
 
 function conversationInitial(title: string): string {
   return (title.trim().charAt(0) || 'С').toUpperCase()
+}
+
+const MESSENGER_LAST_OPEN_KEY = 'vmix.messenger.lastOpenConversation'
+
+function sortConversationsByActivity(list: DirectConversationSummary[]): DirectConversationSummary[] {
+  return [...list].sort((a, b) => {
+    const aTs = new Date(a.lastMessageAt ?? a.createdAt).getTime()
+    const bTs = new Date(b.lastMessageAt ?? b.createdAt).getTime()
+    return bTs - aTs
+  })
+}
+
+/** URL пустой: последний открытый диалог из localStorage, иначе самый свежий по активности, иначе запасной id (напр. «с собой»). */
+function pickDefaultConversationId(
+  list: DirectConversationSummary[],
+  fallbackId: string | null,
+): string {
+  if (list.length === 0) return fallbackId?.trim() || ''
+  try {
+    const stored = localStorage.getItem(MESSENGER_LAST_OPEN_KEY)?.trim()
+    if (stored && list.some((i) => i.id === stored)) return stored
+  } catch {
+    /* ignore */
+  }
+  const sorted = sortConversationsByActivity(list)
+  return sorted[0]?.id || fallbackId?.trim() || ''
 }
 
 export function DashboardMessengerPage() {
@@ -135,7 +163,9 @@ export function DashboardMessengerPage() {
       listLoadedOnceRef.current = true
 
       const targetConversationId =
-        conversationIdRef.current || ensured.data || nextItems[0]?.id || ''
+        conversationIdRef.current.trim() ||
+        pickDefaultConversationId(nextItems, ensured.data) ||
+        ''
 
       if (
         !searchConversationId &&
@@ -175,7 +205,8 @@ export function DashboardMessengerPage() {
         }
         return
       }
-      const targetConversationId = conversationId || items[0]?.id || ''
+      const targetConversationId =
+        conversationId.trim() || pickDefaultConversationId(items, null) || ''
       if (!targetConversationId) {
         if (active) {
           setActiveConversation(null)
@@ -218,11 +249,66 @@ export function DashboardMessengerPage() {
     return () => {
       active = false
     }
-  }, [conversationId, listOnlyMobile, loading, user?.id])
+  }, [conversationId, listOnlyMobile, loading, user?.id, items])
 
   const activeConversationId = listOnlyMobile ? '' : conversationId || activeConversation?.id || ''
+
+  useEffect(() => {
+    if (listOnlyMobile || !activeConversationId) return
+    try {
+      localStorage.setItem(MESSENGER_LAST_OPEN_KEY, activeConversationId)
+    } catch {
+      /* ignore */
+    }
+  }, [activeConversationId, listOnlyMobile])
   const showListPane = !isMobileMessenger || !activeConversationId
   const showThreadPane = !isMobileMessenger || Boolean(activeConversationId)
+
+  /** Новые сообщения в открытом треде без полной перезагрузки списка */
+  useEffect(() => {
+    const uid = user?.id
+    const convId = activeConversationId
+    if (!uid || !convId || listOnlyMobile) return
+
+    const channel = supabase
+      .channel(`dm-thread:${convId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `conversation_id=eq.${convId}`,
+        },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>
+          if (!row?.id) return
+          const msg = mapDirectMessageFromRow(row)
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === msg.id)) return prev
+            let base = prev
+            if (msg.senderUserId === uid) {
+              const i = prev.findIndex(
+                (m) =>
+                  m.id.startsWith('local-') &&
+                  m.senderUserId === msg.senderUserId &&
+                  m.body === msg.body &&
+                  m.kind === msg.kind,
+              )
+              if (i !== -1) base = [...prev.slice(0, i), ...prev.slice(i + 1)]
+            }
+            const next = [...base, msg]
+            next.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+            return next
+          })
+        },
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [activeConversationId, listOnlyMobile, user?.id])
 
   const sendMessage = async () => {
     const trimmed = draft.trim()
@@ -249,10 +335,16 @@ export function DashboardMessengerPage() {
       return
     }
 
-    const refresh = await listDirectMessagesForUser(activeConversationId)
-    if (!refresh.error && refresh.data) {
-      setMessages(refresh.data)
-    }
+    const snap = profile?.display_name?.trim() || 'Вы'
+    const finalId = res.data?.messageId ?? optimistic.id
+    const finalAt = res.data?.createdAt ?? optimistic.createdAt
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === optimistic.id
+          ? { ...optimistic, id: finalId, createdAt: finalAt, senderNameSnapshot: snap }
+          : m,
+      ),
+    )
 
     setItems((prev) =>
       prev.map((item) =>
@@ -270,15 +362,7 @@ export function DashboardMessengerPage() {
     setSending(false)
   }
 
-  const sortedItems = useMemo(
-    () =>
-      [...items].sort((a, b) => {
-        const aTs = new Date(a.lastMessageAt ?? a.createdAt).getTime()
-        const bTs = new Date(b.lastMessageAt ?? b.createdAt).getTime()
-        return bTs - aTs
-      }),
-    [items],
-  )
+  const sortedItems = useMemo(() => sortConversationsByActivity(items), [items])
 
   /** Шапка треда: сразу из списка по URL, пока грузится полная карточка с сервера */
   const threadHeadConversation =
@@ -290,7 +374,7 @@ export function DashboardMessengerPage() {
 
   return (
     <DashboardShell active="messenger" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
-      <section className="dashboard-section dashboard-messenger">
+      <section className="dashboard-section dashboard-messenger dashboard-messenger--fill">
         <div className="dashboard-messenger__topbar">
           <h2 className="dashboard-section__title dashboard-messenger__page-title">Мессенджер</h2>
           <Link to="/dashboard/chats" className="dashboard-messenger__switch">
@@ -399,63 +483,67 @@ export function DashboardMessengerPage() {
                       </div>
                     </div>
 
-                    <div className="dashboard-messenger__messages">
-                      {threadLoading ? (
-                        <div
-                          className="dashboard-messenger__thread-loading"
-                          role="status"
-                          aria-label="Загрузка диалога…"
-                        >
-                          <BrandLogoLoader size={56} />
-                        </div>
-                      ) : messages.length === 0 ? (
-                        <div className="dashboard-chats-empty">Напиши первое сообщение в этот чат.</div>
-                      ) : (
-                        messages.map((message) => {
-                          const isOwn = user?.id && message.senderUserId === user.id
-                          return (
-                            <article
-                              key={message.id}
-                              className={`dashboard-messenger__message${
-                                isOwn ? ' dashboard-messenger__message--own' : ''
-                              }`}
+                    <div className="dashboard-messenger__thread-main">
+                      <div className="dashboard-messenger__messages-scroll">
+                        <div className="dashboard-messenger__messages">
+                          {threadLoading ? (
+                            <div
+                              className="dashboard-messenger__thread-loading"
+                              role="status"
+                              aria-label="Загрузка диалога…"
                             >
-                              <div className="dashboard-messenger__message-meta">
-                                <span className="dashboard-messenger__message-author">
-                                  {message.senderNameSnapshot}
-                                </span>
-                                <time dateTime={message.createdAt}>{formatDateTime(message.createdAt)}</time>
-                              </div>
-                              <div className="dashboard-messenger__message-body">{message.body}</div>
-                            </article>
-                          )
-                        })
-                      )}
-                    </div>
+                              <BrandLogoLoader size={56} />
+                            </div>
+                          ) : messages.length === 0 ? (
+                            <div className="dashboard-chats-empty">Напиши первое сообщение в этот чат.</div>
+                          ) : (
+                            messages.map((message) => {
+                              const isOwn = user?.id && message.senderUserId === user.id
+                              return (
+                                <article
+                                  key={message.id}
+                                  className={`dashboard-messenger__message${
+                                    isOwn ? ' dashboard-messenger__message--own' : ''
+                                  }`}
+                                >
+                                  <div className="dashboard-messenger__message-meta">
+                                    <span className="dashboard-messenger__message-author">
+                                      {message.senderNameSnapshot}
+                                    </span>
+                                    <time dateTime={message.createdAt}>{formatDateTime(message.createdAt)}</time>
+                                  </div>
+                                  <div className="dashboard-messenger__message-body">{message.body}</div>
+                                </article>
+                              )
+                            })
+                          )}
+                        </div>
+                      </div>
 
-                    <div className="dashboard-messenger__composer">
-                      <textarea
-                        className="dashboard-messenger__input"
-                        rows={3}
-                        placeholder="Напиши сообщение..."
-                        value={draft}
-                        disabled={threadLoading}
-                        onChange={(e) => setDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault()
-                            void sendMessage()
-                          }
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
-                        disabled={!draft.trim() || sending || threadLoading}
-                        onClick={() => void sendMessage()}
-                      >
-                        Отправить
-                      </button>
+                      <div className="dashboard-messenger__composer">
+                        <textarea
+                          className="dashboard-messenger__input"
+                          rows={3}
+                          placeholder="Напиши сообщение..."
+                          value={draft}
+                          disabled={threadLoading}
+                          onChange={(e) => setDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault()
+                              void sendMessage()
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
+                          disabled={!draft.trim() || sending || threadLoading}
+                          onClick={() => void sendMessage()}
+                        >
+                          Отправить
+                        </button>
+                      </div>
                     </div>
                   </>
                 ) : (
