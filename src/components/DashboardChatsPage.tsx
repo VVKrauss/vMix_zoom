@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { type RoomChatConversationSummary, listRoomChatConversationsForUser } from '../lib/chatArchive'
 import { DashboardShell } from './DashboardShell'
+import { ChatBubbleIcon } from './icons'
 
 type ChatSortMode = 'recent_desc' | 'recent_asc' | 'messages_desc' | 'messages_asc'
 type ChatTimeFilter = 'all' | 'today' | '7d' | '30d'
@@ -113,7 +114,8 @@ export function DashboardChatsPage() {
           <div>
             <h2 className="dashboard-section__title">Чаты комнат</h2>
             <p className="dashboard-section__hint">
-              Здесь хранятся архивы комнатных чатов. Видны только беседы тех комнат, в которых вы были участником под своим аккаунтом.
+              Здесь хранятся архивы комнатных чатов. Видны только беседы тех комнат, в которых вы были
+              участником под своим аккаунтом.
             </p>
           </div>
           <Link to="/dashboard/messenger" className="dashboard-messenger__switch">
@@ -185,14 +187,25 @@ export function DashboardChatsPage() {
                 >
                   <div className="dashboard-chat-row__main">
                     <div className="dashboard-chat-row__titleline">
-                      <span className="dashboard-chat-row__title">{item.title}</span>
-                      <span className={`dashboard-badge ${item.closedAt ? 'dashboard-badge--pending' : 'dashboard-badge--active'}`}>
+                      <div className="dashboard-chat-row__titlewrap">
+                        <span className="dashboard-chat-row__title">{item.title}</span>
+                        <span className="dashboard-chat-row__count" title={`Сообщений: ${item.messageCount}`}>
+                          <span className="dashboard-chat-row__count-icon" aria-hidden>
+                            <ChatBubbleIcon />
+                          </span>
+                          <span>{item.messageCount}</span>
+                        </span>
+                      </div>
+                      <span
+                        className={`dashboard-badge ${
+                          item.closedAt ? 'dashboard-badge--pending' : 'dashboard-badge--active'
+                        }`}
+                      >
                         {item.closedAt ? 'Завершён' : 'Активен'}
                       </span>
                     </div>
                     <div className="dashboard-chat-row__meta">
-                      <span>Комната: {item.roomSlug ?? '—'}</span>
-                      <span>Сообщений: {item.messageCount}</span>
+                      <span>{item.roomSlug ?? '—'}</span>
                       <span>Последняя активность: {formatDateTime(item.lastMessageAt ?? item.createdAt)}</span>
                     </div>
                     <div className="dashboard-chat-row__preview">
