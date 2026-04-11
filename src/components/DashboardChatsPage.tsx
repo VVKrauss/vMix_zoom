@@ -109,10 +109,17 @@ export function DashboardChatsPage() {
   return (
     <DashboardShell active="chats" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
       <section className="dashboard-section">
-        <h2 className="dashboard-section__title">Чаты комнат</h2>
-        <p className="dashboard-section__hint">
-          Здесь хранятся архивы комнатных чатов. Видны только беседы тех комнат, в которых вы были участником под своим аккаунтом.
-        </p>
+        <div className="dashboard-chat-page__head">
+          <div>
+            <h2 className="dashboard-section__title">Чаты комнат</h2>
+            <p className="dashboard-section__hint">
+              Здесь хранятся архивы комнатных чатов. Видны только беседы тех комнат, в которых вы были участником под своим аккаунтом.
+            </p>
+          </div>
+          <Link to="/dashboard/messenger" className="dashboard-messenger__switch">
+            Мессенджер
+          </Link>
+        </div>
 
         {!loading && !error && items.length > 0 ? (
           <div className="dashboard-chat-filters">

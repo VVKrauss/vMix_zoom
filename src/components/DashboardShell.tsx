@@ -4,7 +4,7 @@ import { setPendingHostClaim } from '../lib/spaceRoom'
 import { newRoomId } from '../utils/roomId'
 import { ChatBubbleIcon, DashboardIcon, ParticipantsBadgeIcon } from './icons'
 
-type DashboardShellTab = 'cabinet' | 'chats' | 'friends'
+type DashboardShellTab = 'cabinet' | 'chats' | 'messenger' | 'friends'
 
 type DashboardShellProps = {
   active: DashboardShellTab
@@ -88,6 +88,14 @@ export function DashboardShell({ active, canAccessAdmin, onSignOut, children }: 
               active={active === 'chats'}
               label="Чаты"
               shortLabel="ЧТ"
+            >
+              <ChatBubbleIcon />
+            </DashboardSidebarLink>
+            <DashboardSidebarLink
+              to="/dashboard/messenger"
+              active={active === 'messenger'}
+              label="Мессенджер"
+              shortLabel="МС"
             >
               <ChatBubbleIcon />
             </DashboardSidebarLink>
