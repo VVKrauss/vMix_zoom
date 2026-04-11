@@ -86,14 +86,7 @@ create policy chat_conversation_members_select_member
 on public.chat_conversation_members
 for select
 to authenticated
-using (
-  exists (
-    select 1
-    from public.chat_conversation_members self_m
-    where self_m.conversation_id = chat_conversation_members.conversation_id
-      and self_m.user_id = auth.uid()
-  )
-);
+using (user_id = auth.uid());
 
 drop policy if exists chat_messages_select_member on public.chat_messages;
 create policy chat_messages_select_member
