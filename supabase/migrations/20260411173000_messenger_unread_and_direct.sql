@@ -132,7 +132,7 @@ as $$
   counterpart as (
     select
       m.conversation_id,
-      max(case when m.user_id <> auth.uid() then m.user_id end) as other_user_id
+      (array_agg(m.user_id) filter (where m.user_id <> auth.uid()))[1] as other_user_id
     from public.chat_conversation_members m
     where m.conversation_id in (select id from direct_conversations)
     group by m.conversation_id
