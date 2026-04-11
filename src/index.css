@@ -625,8 +625,16 @@ html.app-root--room #root {
   font-family: var(--font);
   cursor: pointer;
   transition: filter .15s, opacity .15s;
+  text-decoration: none;
 }
-.join-btn:hover:not(:disabled) { filter: brightness(1.15); }
+.join-btn:hover:not(:disabled) {
+  text-decoration: none;
+  filter: brightness(1.15);
+}
+.join-btn:visited,
+.join-btn:active {
+  text-decoration: none;
+}
 .join-btn:disabled { opacity: .4; cursor: not-allowed; }
 
 .join-btn--block { width: 100%; box-sizing: border-box; }
@@ -3162,11 +3170,43 @@ button.admin-stat-card--interactive:disabled {
 
 .dashboard-messenger__message-meta {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 4px;
   color: var(--text-dim);
   font-size: 10px;
+}
+
+.dashboard-messenger__message-meta-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
+.dashboard-messenger__msg-more {
+  flex-shrink: 0;
+  width: 32px;
+  height: 28px;
+  margin: -4px -6px 0 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 18px;
+  line-height: 1;
+  letter-spacing: -2px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.dashboard-messenger__msg-more:hover,
+.dashboard-messenger__msg-more--open {
+  background: var(--surface2);
+  color: var(--text);
 }
 
 .dashboard-messenger__message-author {
@@ -3248,12 +3288,282 @@ button.admin-stat-card--interactive:disabled {
 
 .dashboard-messenger__composer {
   display: flex;
-  gap: 10px;
-  align-items: flex-end;
+  flex-direction: column;
+  gap: 8px;
   flex-shrink: 0;
   padding: 16px 18px calc(18px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border);
   background: inherit;
+}
+
+.dashboard-messenger__composer-main {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  width: 100%;
+}
+
+.dashboard-messenger__composer-side {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.dashboard-messenger__composer-tools {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.dashboard-messenger__composer-emoji-pop {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 9400;
+  pointer-events: auto;
+}
+
+/* Родитель схлопывается по ширине (только absolute-дети): left:0 у .device-popover
+   тянет сетку вправо за край — якорим правый край к колонке кнопок. */
+.dashboard-messenger__composer-emoji-pop .device-popover--reaction-pick {
+  left: auto;
+  right: 0;
+  max-width: min(320px, 92vw);
+}
+
+.dashboard-messenger__composer-icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.dashboard-messenger__composer-icon-btn:hover:not(:disabled) {
+  border-color: rgba(159, 214, 255, 0.35);
+  background: var(--surface);
+}
+
+.dashboard-messenger__composer-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.dashboard-messenger__composer-icon-btn svg {
+  width: 19px;
+  height: 19px;
+  flex-shrink: 0;
+  display: block;
+}
+
+.dashboard-messenger__photo-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dashboard-messenger__photo-status {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0;
+}
+
+.dashboard-messenger__composer-reply,
+.dashboard-messenger__composer-edit-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface2) 88%, var(--border));
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.dashboard-messenger__composer-reply-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-messenger__composer-reply-label {
+  color: var(--text-dim);
+}
+
+.dashboard-messenger__composer-reply-cancel,
+.dashboard-messenger__composer-edit-cancel {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.dashboard-messenger__composer-reply-cancel:hover,
+.dashboard-messenger__composer-edit-cancel:hover {
+  color: var(--text);
+  background: var(--surface2);
+}
+
+.dashboard-messenger__composer-edit-bar {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.messenger-msg-menu-wrap {
+  pointer-events: auto;
+}
+
+.messenger-msg-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 200px;
+  max-width: min(280px, 92vw);
+  padding: 6px 0;
+}
+
+.messenger-msg-menu__item {
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.messenger-msg-menu__item:hover {
+  background: var(--surface2);
+}
+
+.messenger-msg-menu__emoji-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 6px;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.messenger-msg-menu__emoji {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.messenger-msg-menu__emoji:hover {
+  background: var(--surface2);
+}
+
+.dashboard-messenger__edited {
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: lowercase;
+}
+
+.dashboard-messenger__reply-quote {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  align-items: baseline;
+  margin: 2px 0 4px;
+  padding: 4px 8px;
+  border-left: 2px solid rgba(159, 214, 255, 0.45);
+  border-radius: 0 6px 6px 0;
+  background: color-mix(in srgb, var(--surface2) 75%, transparent);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.dashboard-messenger__reply-quote-label {
+  font-weight: 700;
+  color: var(--text);
+  margin-right: 3px;
+}
+
+.dashboard-messenger__reply-quote-author {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dashboard-messenger__reply-quote-snippet {
+  flex: 1 1 100%;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.messenger-bubble-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.messenger-message-img-link {
+  display: block;
+  border-radius: 12px;
+  overflow: hidden;
+  max-width: min(100%, 320px);
+}
+
+.messenger-message-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 280px;
+  object-fit: contain;
+  background: var(--surface2);
+}
+
+.messenger-message-img-missing {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.messenger-message-caption {
+  font-size: 13px;
+}
+
+.reaction-emoji-grid--scroll {
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .dashboard-messenger__input {
@@ -3395,6 +3705,17 @@ html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
   padding: 6px max(6px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px))
     max(6px, env(safe-area-inset-left, 0px));
   align-items: stretch;
+}
+
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__composer-main {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__composer-side {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__input {
@@ -8247,6 +8568,8 @@ html[data-theme="light"] .card-name {
   cursor: pointer;
   border-radius: 10px;
   transition: opacity .15s, background .15s;
+  text-decoration: none;
+  color: inherit;
 }
 
 .join-logo-btn:hover,

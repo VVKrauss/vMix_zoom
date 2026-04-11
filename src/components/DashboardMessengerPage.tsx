@@ -1,4 +1,3 @@
-import type { MouseEvent } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -19,6 +18,7 @@ import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useProfile } from '../hooks/useProfile'
 import {
   appendDirectMessage,
+  editDirectMessage,
   type DirectConversationSummary,
   type DirectMessage,
   ensureDirectConversationWithUser,
@@ -31,13 +31,16 @@ import {
   markDirectConversationRead,
   requestMessengerUnreadRefresh,
   toggleDirectMessageReaction,
+  uploadMessengerImage,
 } from '../lib/messenger'
+import { MESSENGER_COMPOSER_EMOJIS } from '../lib/messengerComposerEmojis'
 import { setPendingHostClaim, stashSpaceRoomCreateOptions, type SpaceRoomCreateOptions } from '../lib/spaceRoom'
 import { supabase } from '../lib/supabase'
 import { newRoomId } from '../utils/roomId'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import {
   AdminPanelIcon,
+  AttachmentIcon,
   ChatBubbleIcon,
   DashboardIcon,
   MenuBurgerIcon,
@@ -47,7 +50,8 @@ import {
 import { CreateRoomOptionsModal } from './CreateRoomOptionsModal'
 import { DashboardShell } from './DashboardShell'
 import { ThemeToggle } from './ThemeToggle'
-import { MessengerMessageBody } from './MessengerMessageBody'
+import { MessengerBubbleBody } from './MessengerBubbleBody'
+import { MessengerMessageMenuPopover } from './MessengerMessageMenuPopover'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
 import type { ReactionEmoji } from '../types/roomComms'
 
@@ -66,8 +70,6 @@ function conversationInitial(title: string): string {
 
 const MESSENGER_LAST_OPEN_KEY = 'vmix.messenger.lastOpenConversation'
 const DM_PAGE_SIZE = 50
-
-const MESSENGER_LIKE_EMOJI: ReactionEmoji = '👍'
 
 function sortDirectMessagesChrono(a: DirectMessage, b: DirectMessage): number {
   const ta = new Date(a.createdAt).getTime()
@@ -90,6 +92,7 @@ function lastNonReactionBody(rows: DirectMessage[]): string | null {
   for (let i = sorted.length - 1; i >= 0; i--) {
     const m = sorted[i]!
     if (m.kind === 'text' || m.kind === 'system') return m.body
+    if (m.kind === 'image') return m.body.trim() || '📷 Фото'
   }
   return null
 }
@@ -108,6 +111,78 @@ function pickDefaultConversationId(
   }
   const sorted = sortConversationsByActivity(list)
   return sorted[0]?.id || fallbackId?.trim() || ''
+}
+
+type MessengerDmBubbleProps = {
+  message: DirectMessage
+  isOwn: boolean
+  reactions: DirectMessage[]
+  formatDt: (iso: string) => string
+  replyPreview: { author: string; snippet: string } | null
+  menuOpen: boolean
+  onMenuButtonClick: (e: React.MouseEvent<HTMLButtonElement>) => void
+}
+
+function MessengerDmBubble({
+  message,
+  isOwn,
+  reactions,
+  formatDt,
+  replyPreview,
+  menuOpen,
+  onMenuButtonClick,
+}: MessengerDmBubbleProps) {
+  const reactionCounts = new Map<string, number>()
+  for (const r of reactions) {
+    const key = r.body.trim() || r.body
+    reactionCounts.set(key, (reactionCounts.get(key) ?? 0) + 1)
+  }
+
+  return (
+    <article className={`dashboard-messenger__message${isOwn ? ' dashboard-messenger__message--own' : ''}`}>
+      <div className="dashboard-messenger__message-meta">
+        <div className="dashboard-messenger__message-meta-main">
+          <span className="dashboard-messenger__message-author">{message.senderNameSnapshot}</span>
+          <time dateTime={message.createdAt}>{formatDt(message.createdAt)}</time>
+          {message.editedAt ? <span className="dashboard-messenger__edited">изм.</span> : null}
+        </div>
+        <button
+          type="button"
+          className={`dashboard-messenger__msg-more${menuOpen ? ' dashboard-messenger__msg-more--open' : ''}`}
+          aria-label="Действия с сообщением"
+          aria-expanded={menuOpen}
+          aria-haspopup="menu"
+          onClick={onMenuButtonClick}
+        >
+          ⋯
+        </button>
+      </div>
+      {replyPreview ? (
+        <div className="dashboard-messenger__reply-quote" role="note">
+          <span className="dashboard-messenger__reply-quote-label">Ответ</span>
+          <span className="dashboard-messenger__reply-quote-author">{replyPreview.author}</span>
+          <span className="dashboard-messenger__reply-quote-snippet">{replyPreview.snippet}</span>
+        </div>
+      ) : null}
+      <div className="dashboard-messenger__message-body">
+        <MessengerBubbleBody message={message} />
+      </div>
+      {reactionCounts.size > 0 ? (
+        <div
+          className="dashboard-messenger__message-reactions"
+          aria-label="Реакции"
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          {[...reactionCounts.entries()].map(([emoji, count]) => (
+            <span key={emoji} className="dashboard-messenger__reaction-chip">
+              <span className="dashboard-messenger__reaction-emoji">{emoji}</span>
+              {count > 1 ? <span className="dashboard-messenger__reaction-count">{count}</span> : null}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </article>
+  )
 }
 
 export function DashboardMessengerPage() {
@@ -138,12 +213,19 @@ export function DashboardMessengerPage() {
   const [messages, setMessages] = useState<DirectMessage[]>([])
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  const [photoUploading, setPhotoUploading] = useState(false)
+  /** Ответ на сообщение (цитата над композером). */
+  const [replyTo, setReplyTo] = useState<DirectMessage | null>(null)
+  /** Редактирование своего сообщения: id сообщения. */
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
+  const [composerEmojiOpen, setComposerEmojiOpen] = useState(false)
   const [hasMoreOlder, setHasMoreOlder] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
-  const [reactionPick, setReactionPick] = useState<{
-    messageId: string
-    clientX: number
-    clientY: number
+  /** Меню «⋯» у сообщения: позиция и данные для поповера */
+  const [messageMenu, setMessageMenu] = useState<{
+    message: DirectMessage
+    left: number
+    top: number
   } | null>(null)
   /** Снятие реакции уже отразили в списке диалогов после RPC — пропускаем дубль из realtime DELETE. */
   const reactionDeleteSidebarSyncedRef = useRef(new Set<string>())
@@ -156,6 +238,8 @@ export function DashboardMessengerPage() {
   messagesRef.current = messages
   const messagesScrollRef = useRef<HTMLDivElement | null>(null)
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const composerEmojiWrapRef = useRef<HTMLDivElement | null>(null)
+  const photoInputRef = useRef<HTMLInputElement | null>(null)
   const olderFetchInFlightRef = useRef(false)
   const prevThreadIdForClearRef = useRef<string | null>(null)
   const prevMessagesLenForScrollRef = useRef(0)
@@ -281,6 +365,7 @@ export function DashboardMessengerPage() {
         setActiveConversation(null)
         setMessages([])
         setHasMoreOlder(false)
+        setMessageMenu(null)
         return
       }
       const startedTarget =
@@ -291,6 +376,7 @@ export function DashboardMessengerPage() {
         setMessages([])
         setHasMoreOlder(false)
         setThreadLoading(false)
+        setMessageMenu(null)
         return
       }
 
@@ -301,6 +387,10 @@ export function DashboardMessengerPage() {
         lastFetchedThreadIdRef.current = null
         setMessages([])
         setHasMoreOlder(false)
+        setReplyTo(null)
+        setEditingMessageId(null)
+        setComposerEmojiOpen(false)
+        setMessageMenu(null)
       }
 
       if (lastFetchedThreadIdRef.current === startedTarget) {
@@ -442,7 +532,7 @@ export function DashboardMessengerPage() {
         )
         return
       }
-      const preview = msg.body
+      const preview = msg.kind === 'image' ? (msg.body.trim() || '📷 Фото') : msg.body
       setItems((prev) =>
         prev.map((item) =>
           item.id === convId
@@ -484,7 +574,7 @@ export function DashboardMessengerPage() {
           if (!row?.id) return
           const msg = mapDirectMessageFromRow(row)
           const isOwn = msg.senderUserId === uid
-          const skipSidebarBump = isOwn && (msg.kind === 'text' || msg.kind === 'reaction')
+          const skipSidebarBump = isOwn && (msg.kind === 'text' || msg.kind === 'reaction' || msg.kind === 'image')
 
           setMessages((prev) => {
             if (prev.some((m) => m.id === msg.id)) return prev
@@ -496,7 +586,9 @@ export function DashboardMessengerPage() {
                   m.senderUserId === msg.senderUserId &&
                   m.body === msg.body &&
                   m.kind === msg.kind &&
-                  (m.meta?.react_to ?? '') === (msg.meta?.react_to ?? ''),
+                  (m.meta?.react_to ?? '') === (msg.meta?.react_to ?? '') &&
+                  (m.replyToMessageId ?? '') === (msg.replyToMessageId ?? '') &&
+                  JSON.stringify(m.meta ?? null) === JSON.stringify(msg.meta ?? null),
               )
               if (i !== -1) base = [...prev.slice(0, i), ...prev.slice(i + 1)]
             }
@@ -546,6 +638,21 @@ export function DashboardMessengerPage() {
               ? { ...prev, messageCount: Math.max(0, prev.messageCount - 1) }
               : prev,
           )
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `conversation_id=eq.${convId}`,
+        },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>
+          if (!row?.id) return
+          const msg = mapDirectMessageFromRow(row)
+          setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)))
         },
       )
       .subscribe()
@@ -684,11 +791,53 @@ export function DashboardMessengerPage() {
     if (nearBottom) el.scrollTop = el.scrollHeight
   }, [messages.length, threadLoading, loadingOlder])
 
+  const insertEmojiInDraft = useCallback(
+    (emoji: string) => {
+      const ta = composerTextareaRef.current
+      const start = ta?.selectionStart ?? draft.length
+      const end = ta?.selectionEnd ?? draft.length
+      const next = draft.slice(0, start) + emoji + draft.slice(end)
+      setDraft(next)
+      setComposerEmojiOpen(false)
+      queueMicrotask(() => {
+        ta?.focus()
+        const p = start + emoji.length
+        ta?.setSelectionRange(p, p)
+      })
+    },
+    [draft],
+  )
+
   const sendMessage = async () => {
     const trimmed = draft.trim()
-    if (!trimmed || !user?.id || !activeConversationId || sending) return
+    const convId = activeConversationId.trim()
+    if (!user?.id || !convId || sending) return
+
+    if (editingMessageId) {
+      if (!trimmed) return
+      setSending(true)
+      const { error: editErr } = await editDirectMessage(convId, editingMessageId, trimmed)
+      if (editErr) {
+        setError(editErr)
+        setSending(false)
+        return
+      }
+      const nowIso = new Date().toISOString()
+      setMessages((prev) =>
+        prev.map((m) => (m.id === editingMessageId ? { ...m, body: trimmed, editedAt: nowIso } : m)),
+      )
+      setEditingMessageId(null)
+      setDraft('')
+      setSending(false)
+      queueMicrotask(() => composerTextareaRef.current?.focus())
+      return
+    }
+
+    if (!trimmed) return
 
     setSending(true)
+    const replyTarget = replyTo
+    const replyId = replyTarget?.id ?? null
     const optimistic: DirectMessage = {
       id: `local-${Date.now()}`,
       senderUserId: user.id,
@@ -696,15 +845,18 @@ export function DashboardMessengerPage() {
       kind: 'text',
       body: trimmed,
       createdAt: new Date().toISOString(),
+      replyToMessageId: replyId,
     }
     setMessages((prev) => [...prev, optimistic])
     setDraft('')
+    setReplyTo(null)
 
-    const res = await appendDirectMessage(activeConversationId, trimmed)
+    const res = await appendDirectMessage(convId, trimmed, { replyToMessageId: replyId })
     if (res.error) {
       setError(res.error)
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id))
       setDraft(trimmed)
+      if (replyId && replyTarget) setReplyTo(replyTarget)
       setSending(false)
       queueMicrotask(() => composerTextareaRef.current?.focus())
       return
@@ -716,14 +868,20 @@ export function DashboardMessengerPage() {
     setMessages((prev) =>
       prev.map((m) =>
         m.id === optimistic.id
-          ? { ...optimistic, id: finalId, createdAt: finalAt, senderNameSnapshot: snap }
+          ? {
+              ...optimistic,
+              id: finalId,
+              createdAt: finalAt,
+              senderNameSnapshot: snap,
+              replyToMessageId: replyId,
+            }
           : m,
       ),
     )
 
     setItems((prev) =>
       prev.map((item) =>
-        item.id === activeConversationId
+        item.id === convId
           ? {
               ...item,
               lastMessageAt: res.data?.createdAt ?? optimistic.createdAt,
@@ -735,7 +893,7 @@ export function DashboardMessengerPage() {
       ),
     )
     setActiveConversation((prev) =>
-      prev && prev.id === activeConversationId
+      prev && prev.id === convId
         ? {
             ...prev,
             lastMessageAt: res.data?.createdAt ?? optimistic.createdAt,
@@ -750,6 +908,79 @@ export function DashboardMessengerPage() {
       const el = messagesScrollRef.current
       if (el) el.scrollTop = el.scrollHeight
       composerTextareaRef.current?.focus()
+    })
+  }
+
+  const sendPhotoFile = async (file: File) => {
+    const convId = activeConversationId.trim()
+    if (!user?.id || !convId || photoUploading || threadLoading) return
+    setPhotoUploading(true)
+    setError(null)
+    const up = await uploadMessengerImage(convId, file)
+    if (up.error) {
+      setError(up.error)
+      setPhotoUploading(false)
+      return
+    }
+    const caption = draft.trim()
+    const replyId = replyTo?.id ?? null
+    const res = await appendDirectMessage(convId, caption, {
+      kind: 'image',
+      meta: { image: { path: up.path! } },
+      replyToMessageId: replyId,
+    })
+    if (res.error) {
+      setError(res.error)
+      setPhotoUploading(false)
+      return
+    }
+    const preview = caption || '📷 Фото'
+    setDraft('')
+    setReplyTo(null)
+    setPhotoUploading(false)
+    const createdAt = res.data?.createdAt ?? new Date().toISOString()
+    const snap = profile?.display_name?.trim() || 'Вы'
+    const newMsg: DirectMessage = {
+      id: res.data?.messageId ?? `local-${Date.now()}`,
+      senderUserId: user.id,
+      senderNameSnapshot: snap,
+      kind: 'image',
+      body: caption,
+      createdAt,
+      replyToMessageId: replyId,
+      meta: { image: { path: up.path! } },
+    }
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === newMsg.id)) return prev
+      return [...prev, newMsg].sort(sortDirectMessagesChrono)
+    })
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === convId
+          ? {
+              ...item,
+              lastMessageAt: createdAt,
+              lastMessagePreview: preview,
+              messageCount: item.messageCount + 1,
+              unreadCount: 0,
+            }
+          : item,
+      ),
+    )
+    setActiveConversation((prev) =>
+      prev && prev.id === convId
+        ? {
+            ...prev,
+            lastMessageAt: createdAt,
+            lastMessagePreview: preview,
+            messageCount: prev.messageCount + 1,
+            unreadCount: 0,
+          }
+        : prev,
+    )
+    requestAnimationFrame(() => {
+      const el = messagesScrollRef.current
+      if (el) el.scrollTop = el.scrollHeight
     })
   }
 
@@ -884,27 +1115,16 @@ export function DashboardMessengerPage() {
     [activeConversationId, profile?.display_name, syncThreadListAfterReaction, threadLoading, user?.id],
   )
 
-  const openReactionPicker = useCallback((clientX: number, clientY: number, messageId: string) => {
-    const margin = 10
-    const x = Math.min(Math.max(margin, clientX), window.innerWidth - margin)
-    const y = Math.min(Math.max(margin, clientY), window.innerHeight - margin)
-    setReactionPick({ messageId, clientX: x, clientY: y })
-  }, [])
+  const closeMessageActionMenu = useCallback(() => setMessageMenu(null), [])
 
-  const onMessageDoubleClick = useCallback(
-    (messageId: string) => {
-      void toggleMessengerReaction(messageId, MESSENGER_LIKE_EMOJI)
-    },
-    [toggleMessengerReaction],
-  )
-
-  const onMessageContextMenu = useCallback(
-    (e: MouseEvent, messageId: string) => {
-      e.preventDefault()
-      openReactionPicker(e.clientX, e.clientY, messageId)
-    },
-    [openReactionPicker],
-  )
+  useEffect(() => {
+    if (!messageMenu) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeMessageActionMenu()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [messageMenu, closeMessageActionMenu])
 
   /** Шапка треда: сразу из списка по URL, пока грузится полная карточка с сервера */
   const threadHeadConversation =
@@ -1118,48 +1338,40 @@ export function DashboardMessengerPage() {
                             <div className="dashboard-chats-empty">Напиши первое сообщение в этот чат.</div>
                           ) : (
                             timelineMessages.map((message) => {
-                              const isOwn = user?.id && message.senderUserId === user.id
+                              const isOwn = Boolean(user?.id && message.senderUserId === user.id)
                               const reactions = reactionsByTargetId.get(message.id) ?? []
-                              const reactionCounts = new Map<string, number>()
-                              for (const r of reactions) {
-                                const key = r.body.trim() || r.body
-                                reactionCounts.set(key, (reactionCounts.get(key) ?? 0) + 1)
+                              const rid = message.replyToMessageId?.trim()
+                              let replyPreview: { author: string; snippet: string } | null = null
+                              if (rid) {
+                                const src = messages.find((m) => m.id === rid)
+                                if (src) {
+                                  const snippet =
+                                    src.kind === 'image'
+                                      ? src.body.trim() || '📷 Фото'
+                                      : src.body.trim().slice(0, 140) || '…'
+                                  replyPreview = { author: src.senderNameSnapshot, snippet }
+                                } else {
+                                  replyPreview = { author: '…', snippet: 'Нет в загруженной истории' }
+                                }
                               }
                               return (
-                                <article
+                                <MessengerDmBubble
                                   key={message.id}
-                                  className={`dashboard-messenger__message${
-                                    isOwn ? ' dashboard-messenger__message--own' : ''
-                                  }`}
-                                  onDoubleClick={() => onMessageDoubleClick(message.id)}
-                                  onContextMenu={(e) => onMessageContextMenu(e, message.id)}
-                                >
-                                  <div className="dashboard-messenger__message-meta">
-                                    <span className="dashboard-messenger__message-author">
-                                      {message.senderNameSnapshot}
-                                    </span>
-                                    <time dateTime={message.createdAt}>{formatDateTime(message.createdAt)}</time>
-                                  </div>
-                                  <div className="dashboard-messenger__message-body">
-                                    <MessengerMessageBody text={message.body} />
-                                  </div>
-                                  {reactionCounts.size > 0 ? (
-                                    <div
-                                      className="dashboard-messenger__message-reactions"
-                                      aria-label="Реакции"
-                                      onDoubleClick={(e) => e.stopPropagation()}
-                                    >
-                                      {[...reactionCounts.entries()].map(([emoji, count]) => (
-                                        <span key={emoji} className="dashboard-messenger__reaction-chip">
-                                          <span className="dashboard-messenger__reaction-emoji">{emoji}</span>
-                                          {count > 1 ? (
-                                            <span className="dashboard-messenger__reaction-count">{count}</span>
-                                          ) : null}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  ) : null}
-                                </article>
+                                  message={message}
+                                  isOwn={isOwn}
+                                  reactions={reactions}
+                                  formatDt={formatDateTime}
+                                  replyPreview={replyPreview}
+                                  menuOpen={messageMenu?.message.id === message.id}
+                                  onMenuButtonClick={(e) => {
+                                    e.stopPropagation()
+                                    const r = e.currentTarget.getBoundingClientRect()
+                                    setMessageMenu((cur) => {
+                                      if (cur?.message.id === message.id) return null
+                                      return { message, left: r.right, top: r.bottom }
+                                    })
+                                  }}
+                                />
                               )
                             })
                           )}
@@ -1167,51 +1379,160 @@ export function DashboardMessengerPage() {
                       </div>
 
                       <div className="dashboard-messenger__composer">
-                        <textarea
-                          ref={composerTextareaRef}
-                          className="dashboard-messenger__input"
-                          rows={3}
-                          placeholder="Напиши сообщение..."
-                          value={draft}
-                          disabled={threadLoading}
-                          onChange={(e) => setDraft(e.target.value)}
-                          onPointerDown={() => unlockAudioContext()}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault()
-                              void sendMessage()
+                        {replyTo && !editingMessageId ? (
+                          <div className="dashboard-messenger__composer-reply">
+                            <div className="dashboard-messenger__composer-reply-text">
+                              <span className="dashboard-messenger__composer-reply-label">Ответ</span>{' '}
+                              <strong>{replyTo.senderNameSnapshot}</strong>:{' '}
+                              {replyTo.kind === 'image'
+                                ? replyTo.body.trim() || '📷 Фото'
+                                : replyTo.body.trim().slice(0, 120)}
+                            </div>
+                            <button
+                              type="button"
+                              className="dashboard-messenger__composer-reply-cancel"
+                              aria-label="Отменить ответ"
+                              onClick={() => setReplyTo(null)}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : null}
+                        {editingMessageId ? (
+                          <div className="dashboard-messenger__composer-edit-bar">
+                            <span>Редактирование сообщения</span>
+                            <button
+                              type="button"
+                              className="dashboard-messenger__composer-edit-cancel"
+                              onClick={() => {
+                                setEditingMessageId(null)
+                                setDraft('')
+                              }}
+                            >
+                              Отмена
+                            </button>
+                          </div>
+                        ) : null}
+                        <div className="dashboard-messenger__composer-main">
+                          <textarea
+                            ref={composerTextareaRef}
+                            className="dashboard-messenger__input"
+                            rows={3}
+                            placeholder={
+                              editingMessageId ? 'Исправьте текст…' : 'Напиши сообщение…'
                             }
-                          }}
-                        />
-                        <button
-                          type="button"
-                          className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
-                          disabled={!draft.trim() || sending || threadLoading}
-                          onClick={() => void sendMessage()}
-                        >
-                          Отправить
-                        </button>
+                            value={draft}
+                            disabled={threadLoading || photoUploading}
+                            onChange={(e) => setDraft(e.target.value)}
+                            onPointerDown={() => unlockAudioContext()}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault()
+                                void sendMessage()
+                              }
+                            }}
+                          />
+                          <div className="dashboard-messenger__composer-side">
+                            <div className="dashboard-messenger__composer-tools" ref={composerEmojiWrapRef}>
+                              {composerEmojiOpen && !editingMessageId ? (
+                                <div className="dashboard-messenger__composer-emoji-pop">
+                                  <ReactionEmojiPopover
+                                    title="Эмодзи"
+                                    emojis={MESSENGER_COMPOSER_EMOJIS}
+                                    onClose={() => setComposerEmojiOpen(false)}
+                                    onPick={(em) => insertEmojiInDraft(em)}
+                                  />
+                                </div>
+                              ) : null}
+                              <button
+                                type="button"
+                                className="dashboard-messenger__composer-icon-btn"
+                                title="Эмодзи"
+                                aria-label="Вставить эмодзи"
+                                disabled={threadLoading || Boolean(editingMessageId)}
+                                onClick={() => setComposerEmojiOpen((v) => !v)}
+                              >
+                                😀
+                              </button>
+                              <button
+                                type="button"
+                                className="dashboard-messenger__composer-icon-btn"
+                                title="Фото"
+                                aria-label="Прикрепить фото"
+                                disabled={threadLoading || photoUploading || Boolean(editingMessageId)}
+                                onClick={() => photoInputRef.current?.click()}
+                              >
+                                <AttachmentIcon />
+                              </button>
+                              <input
+                                ref={photoInputRef}
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp,image/gif"
+                                className="dashboard-messenger__photo-input"
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0]
+                                  e.target.value = ''
+                                  if (f) void sendPhotoFile(f)
+                                }}
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
+                              disabled={
+                                !draft.trim() || sending || threadLoading || photoUploading
+                              }
+                              onClick={() => void sendMessage()}
+                            >
+                              {editingMessageId ? 'Сохранить' : 'Отправить'}
+                            </button>
+                          </div>
+                        </div>
+                        {photoUploading ? (
+                          <p className="dashboard-messenger__photo-status" role="status">
+                            Загрузка фото…
+                          </p>
+                        ) : null}
                       </div>
                     </div>
 
-                    {reactionPick
+                    {messageMenu
                       ? createPortal(
                           <div
-                            className="dashboard-messenger__reaction-popover-wrap"
+                            className="messenger-msg-menu-wrap"
                             style={{
                               position: 'fixed',
-                              left: reactionPick.clientX,
-                              top: reactionPick.clientY,
-                              transform: 'translate(-50%, -100%) translateY(-10px)',
+                              left: Math.max(8, Math.min(messageMenu.left - 216, window.innerWidth - 228)),
+                              top: messageMenu.top + 6,
+                              zIndex: 9400,
                             }}
                           >
-                            <ReactionEmojiPopover
-                              onClose={() => setReactionPick(null)}
-                              onPick={(emoji) => {
-                                const targetId = reactionPick.messageId
-                                setReactionPick(null)
+                            <MessengerMessageMenuPopover
+                              canEdit={Boolean(
+                                user?.id &&
+                                  messageMenu.message.senderUserId === user.id &&
+                                  !messageMenu.message.id.startsWith('local-') &&
+                                  (messageMenu.message.kind === 'text' ||
+                                    messageMenu.message.kind === 'image'),
+                              )}
+                              onClose={closeMessageActionMenu}
+                              onEdit={() => {
+                                const m = messageMenu.message
+                                setEditingMessageId(m.id)
+                                setReplyTo(null)
+                                setComposerEmojiOpen(false)
+                                setDraft(m.body)
+                                closeMessageActionMenu()
+                                queueMicrotask(() => composerTextareaRef.current?.focus())
+                              }}
+                              onReply={() => {
+                                setReplyTo(messageMenu.message)
+                                closeMessageActionMenu()
+                              }}
+                              onPickReaction={(emoji) => {
                                 if (!isDirectReactionEmoji(emoji)) return
-                                void toggleMessengerReaction(targetId, emoji)
+                                void toggleMessengerReaction(messageMenu.message.id, emoji)
+                                closeMessageActionMenu()
                               }}
                             />
                           </div>,
