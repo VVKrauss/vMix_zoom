@@ -11,6 +11,7 @@ import {
 import { ensureDirectConversationWithUser } from '../lib/messenger'
 import { getContactStatuses, setUserFavorite, type ContactStatus } from '../lib/socialGraph'
 import { DashboardShell } from './DashboardShell'
+import { MessengerMessageBody } from './MessengerMessageBody'
 import { ChatBubbleIcon, StarIcon } from './icons'
 
 function formatDateTime(value: string): string {
@@ -224,7 +225,9 @@ export function DashboardChatViewPage() {
                         {formatDateTime(message.createdAt)}
                       </time>
                     </div>
-                    <div className="dashboard-chat-message__body">{message.body}</div>
+                    <div className="dashboard-chat-message__body">
+                      <MessengerMessageBody text={message.body} />
+                    </div>
                   </article>
                 )
               })

@@ -1,3 +1,4 @@
+import type { MouseEvent } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
@@ -11,14 +12,19 @@ import {
   ensureDirectConversationWithUser,
   ensureSelfDirectConversation,
   getDirectConversationForUser,
+  isDirectReactionEmoji,
   listDirectConversationsForUser,
   listDirectMessagesPage,
   mapDirectMessageFromRow,
   markDirectConversationRead,
+  toggleDirectMessageReaction,
 } from '../lib/messenger'
 import { supabase } from '../lib/supabase'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import { DashboardShell } from './DashboardShell'
+import { MessengerMessageBody } from './MessengerMessageBody'
+import { ReactionEmojiPopover } from './ReactionEmojiPopover'
+import type { ReactionEmoji } from '../types/roomComms'
 
 function formatDateTime(value: string): string {
   const dt = new Date(value)
@@ -35,6 +41,15 @@ function conversationInitial(title: string): string {
 
 const MESSENGER_LAST_OPEN_KEY = 'vmix.messenger.lastOpenConversation'
 const DM_PAGE_SIZE = 50
+
+const MESSENGER_LIKE_EMOJI: ReactionEmoji = '👍'
+
+function sortDirectMessagesChrono(a: DirectMessage, b: DirectMessage): number {
+  const ta = new Date(a.createdAt).getTime()
+  const tb = new Date(b.createdAt).getTime()
+  if (ta !== tb) return ta - tb
+  return a.id.localeCompare(b.id)
+}
 
 function sortConversationsByActivity(list: DirectConversationSummary[]): DirectConversationSummary[] {
   return [...list].sort((a, b) => {
@@ -86,11 +101,22 @@ export function DashboardMessengerPage() {
   const [sending, setSending] = useState(false)
   const [hasMoreOlder, setHasMoreOlder] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
+  const [reactionPick, setReactionPick] = useState<{
+    messageId: string
+    clientX: number
+    clientY: number
+  } | null>(null)
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressStartRef = useRef<{ x: number; y: number; messageId: string } | null>(null)
+  /** Снятие реакции уже отразили в списке диалогов после RPC — пропускаем дубль из realtime DELETE. */
+  const reactionDeleteSidebarSyncedRef = useRef(new Set<string>())
 
   const conversationIdRef = useRef(conversationId)
   conversationIdRef.current = conversationId
   const itemsRef = useRef(items)
   itemsRef.current = items
+  const messagesRef = useRef(messages)
+  messagesRef.current = messages
   const messagesScrollRef = useRef<HTMLDivElement | null>(null)
   const olderFetchInFlightRef = useRef(false)
   const prevThreadIdForClearRef = useRef<string | null>(null)
@@ -246,6 +272,15 @@ export function DashboardMessengerPage() {
       }
 
       if (lastFetchedThreadIdRef.current === targetConversationId) {
+        void markDirectConversationRead(targetConversationId)
+        setItems((prev) =>
+          prev.map((item) =>
+            item.id === targetConversationId ? { ...item, unreadCount: 0 } : item,
+          ),
+        )
+        setActiveConversation((prev) =>
+          prev && prev.id === targetConversationId ? { ...prev, unreadCount: 0 } : prev,
+        )
         if (active) setThreadLoading(false)
         return
       }
@@ -278,16 +313,22 @@ export function DashboardMessengerPage() {
           lastFetchedThreadIdRef.current = null
         } else if (messagesRes.error) {
           setError(messagesRes.error)
-          setActiveConversation(conversationRes.data)
+          setActiveConversation(
+            conversationRes.data ? { ...conversationRes.data, unreadCount: 0 } : null,
+          )
           setMessages([])
           setHasMoreOlder(false)
           lastFetchedThreadIdRef.current = null
         } else {
-          setActiveConversation(conversationRes.data)
+          setActiveConversation({ ...conversationRes.data, unreadCount: 0 })
           setMessages(messagesRes.data ?? [])
           setHasMoreOlder(messagesRes.hasMoreOlder)
           lastFetchedThreadIdRef.current = targetConversationId
-          void markDirectConversationRead(targetConversationId)
+          setItems((prev) =>
+            prev.map((item) =>
+              item.id === targetConversationId ? { ...item, unreadCount: 0 } : item,
+            ),
+          )
         }
       } finally {
         threadFetchInFlightRef.current = null
@@ -311,6 +352,25 @@ export function DashboardMessengerPage() {
       /* ignore */
     }
   }, [activeConversationId, listOnlyMobile])
+
+  /**
+   * Сразу при открытии треда: сервер «прочитано» + нулим бейдж в списке и шапке.
+   * Зависит от `items`, чтобы сработать, когда список диалогов только подгрузился; если непрочитанных уже 0 — не дёргаем RPC.
+   */
+  useEffect(() => {
+    if (!user?.id || listOnlyMobile) return
+    const cid = conversationId.trim()
+    if (!cid) return
+    const row = items.find((i) => i.id === cid)
+    if (row && row.unreadCount === 0) return
+
+    void markDirectConversationRead(cid)
+    setItems((prev) => prev.map((item) => (item.id === cid ? { ...item, unreadCount: 0 } : item)))
+    setActiveConversation((prev) =>
+      prev && prev.id === cid ? { ...prev, unreadCount: 0 } : prev,
+    )
+  }, [conversationId, listOnlyMobile, user?.id, items])
+
   const showListPane = !isMobileMessenger || !activeConversationId
   const showThreadPane = !isMobileMessenger || Boolean(activeConversationId)
 
@@ -319,6 +379,34 @@ export function DashboardMessengerPage() {
     const uid = user?.id
     const convId = activeConversationId
     if (!uid || !convId || listOnlyMobile) return
+
+    const bumpSidebarForInsert = (msg: DirectMessage) => {
+      const preview = msg.kind === 'reaction' ? msg.body.trim() || 'Реакция' : msg.body
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === convId
+            ? {
+                ...item,
+                lastMessageAt: msg.createdAt,
+                lastMessagePreview: preview,
+                messageCount: item.messageCount + 1,
+                unreadCount: 0,
+              }
+            : item,
+        ),
+      )
+      setActiveConversation((prev) =>
+        prev && prev.id === convId
+          ? {
+              ...prev,
+              lastMessageAt: msg.createdAt,
+              lastMessagePreview: preview,
+              messageCount: prev.messageCount + 1,
+              unreadCount: 0,
+            }
+          : prev,
+      )
+    }
 
     const channel = supabase
       .channel(`dm-thread:${convId}`)
@@ -335,8 +423,7 @@ export function DashboardMessengerPage() {
           if (!row?.id) return
           const msg = mapDirectMessageFromRow(row)
           const isOwn = msg.senderUserId === uid
-          const preview =
-            msg.kind === 'reaction' ? (msg.body.trim() || 'Реакция') : msg.body
+          const skipSidebarBump = isOwn && (msg.kind === 'text' || msg.kind === 'reaction')
 
           setMessages((prev) => {
             if (prev.some((m) => m.id === msg.id)) return prev
@@ -347,41 +434,51 @@ export function DashboardMessengerPage() {
                   m.id.startsWith('local-') &&
                   m.senderUserId === msg.senderUserId &&
                   m.body === msg.body &&
-                  m.kind === msg.kind,
+                  m.kind === msg.kind &&
+                  (m.meta?.react_to ?? '') === (msg.meta?.react_to ?? ''),
               )
               if (i !== -1) base = [...prev.slice(0, i), ...prev.slice(i + 1)]
             }
             const next = [...base, msg]
-            next.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+            next.sort(sortDirectMessagesChrono)
             return next
           })
 
-          if (!isOwn) {
-            setItems((prev) =>
-              prev.map((item) =>
-                item.id === convId
-                  ? {
-                      ...item,
-                      lastMessageAt: msg.createdAt,
-                      lastMessagePreview: preview,
-                      messageCount: item.messageCount + 1,
-                      unreadCount: item.unreadCount + 1,
-                    }
-                  : item,
-              ),
-            )
-            setActiveConversation((prev) =>
-              prev && prev.id === convId
-                ? {
-                    ...prev,
-                    lastMessageAt: msg.createdAt,
-                    lastMessagePreview: preview,
-                    messageCount: prev.messageCount + 1,
-                    unreadCount: prev.unreadCount + 1,
-                  }
-                : prev,
-            )
+          if (!skipSidebarBump) bumpSidebarForInsert(msg)
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `conversation_id=eq.${convId}`,
+        },
+        (payload) => {
+          const oldRow = payload.old as Record<string, unknown>
+          const id = typeof oldRow?.id === 'string' ? oldRow.id : ''
+          if (!id) return
+
+          setMessages((prev) => prev.filter((m) => m.id !== id))
+
+          if (reactionDeleteSidebarSyncedRef.current.has(id)) {
+            reactionDeleteSidebarSyncedRef.current.delete(id)
+            return
           }
+
+          setItems((prev) =>
+            prev.map((item) =>
+              item.id === convId
+                ? { ...item, messageCount: Math.max(0, item.messageCount - 1) }
+                : item,
+            ),
+          )
+          setActiveConversation((prev) =>
+            prev && prev.id === convId
+              ? { ...prev, messageCount: Math.max(0, prev.messageCount - 1) }
+              : prev,
+          )
         },
       )
       .subscribe()
@@ -551,6 +648,158 @@ export function DashboardMessengerPage() {
 
   const sortedItems = useMemo(() => sortConversationsByActivity(items), [items])
 
+  const timelineMessages = useMemo(
+    () => messages.filter((m) => m.kind !== 'reaction'),
+    [messages],
+  )
+
+  const reactionsByTargetId = useMemo(() => {
+    const map = new Map<string, DirectMessage[]>()
+    for (const m of messages) {
+      if (m.kind !== 'reaction') continue
+      const tid = m.meta?.react_to?.trim()
+      if (!tid) continue
+      const arr = map.get(tid) ?? []
+      arr.push(m)
+      map.set(tid, arr)
+    }
+    for (const [, arr] of map) {
+      arr.sort(sortDirectMessagesChrono)
+    }
+    return map
+  }, [messages])
+
+  const clearLongPressTimer = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+    longPressStartRef.current = null
+  }, [])
+
+  useEffect(() => {
+    return () => clearLongPressTimer()
+  }, [clearLongPressTimer])
+
+  const syncThreadListAfterReaction = useCallback(
+    (convId: string, patch: { messageCountDelta: number; touchTail: boolean; tailAt?: string | null; tailPreview?: string | null }) => {
+      setItems((prev) =>
+        prev.map((item) => {
+          if (item.id !== convId) return item
+          const messageCount = Math.max(0, item.messageCount + patch.messageCountDelta)
+          if (!patch.touchTail) return { ...item, messageCount }
+          return {
+            ...item,
+            messageCount,
+            lastMessageAt: patch.tailAt ?? item.lastMessageAt,
+            lastMessagePreview: patch.tailPreview ?? item.lastMessagePreview,
+          }
+        }),
+      )
+      setActiveConversation((prev) => {
+        if (!prev || prev.id !== convId) return prev
+        const messageCount = Math.max(0, prev.messageCount + patch.messageCountDelta)
+        if (!patch.touchTail) return { ...prev, messageCount }
+        return {
+          ...prev,
+          messageCount,
+          lastMessageAt: patch.tailAt ?? prev.lastMessageAt,
+          lastMessagePreview: patch.tailPreview ?? prev.lastMessagePreview,
+        }
+      })
+    },
+    [],
+  )
+
+  const toggleMessengerReaction = useCallback(
+    async (targetMessageId: string, emoji: ReactionEmoji) => {
+      const convId = activeConversationId.trim()
+      if (!user?.id || !convId || threadLoading) return
+
+      const snapshot = messagesRef.current
+      const sortedBefore = [...snapshot].sort(sortDirectMessagesChrono)
+      const tailIdBefore = sortedBefore[sortedBefore.length - 1]?.id ?? null
+
+      const res = await toggleDirectMessageReaction(convId, targetMessageId, emoji)
+      if (conversationIdRef.current.trim() !== convId) return
+
+      if (res.error) {
+        setError(res.error)
+        return
+      }
+      const payload = res.data
+      if (!payload) return
+
+      if (payload.action === 'removed') {
+        const removedId = payload.messageId
+        reactionDeleteSidebarSyncedRef.current.add(removedId)
+        setMessages((prev) => prev.filter((m) => m.id !== removedId))
+        const touchedLatest = removedId === tailIdBefore
+        if (touchedLatest) {
+          const next = snapshot.filter((m) => m.id !== removedId)
+          const tail = [...next].sort(sortDirectMessagesChrono)[next.length - 1]
+          const tailPreview = !tail ? null : tail.kind === 'reaction' ? tail.body.trim() || 'Реакция' : tail.body
+          const tailAt = tail?.createdAt ?? null
+          syncThreadListAfterReaction(convId, {
+            messageCountDelta: -1,
+            touchTail: true,
+            tailAt,
+            tailPreview,
+          })
+        } else {
+          syncThreadListAfterReaction(convId, { messageCountDelta: -1, touchTail: false })
+        }
+        return
+      }
+
+      const createdAt = payload.createdAt ?? new Date().toISOString()
+      const snap = profile?.display_name?.trim() || 'Вы'
+      const newRow: DirectMessage = {
+        id: payload.messageId,
+        senderUserId: user.id,
+        senderNameSnapshot: snap,
+        kind: 'reaction',
+        body: emoji,
+        createdAt,
+        meta: { react_to: targetMessageId },
+      }
+
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === newRow.id)) return prev
+        return [...prev, newRow].sort(sortDirectMessagesChrono)
+      })
+      syncThreadListAfterReaction(convId, {
+        messageCountDelta: 1,
+        touchTail: true,
+        tailAt: createdAt,
+        tailPreview: emoji.trim() || 'Реакция',
+      })
+    },
+    [activeConversationId, profile?.display_name, syncThreadListAfterReaction, threadLoading, user?.id],
+  )
+
+  const openReactionPicker = useCallback((clientX: number, clientY: number, messageId: string) => {
+    const margin = 10
+    const x = Math.min(Math.max(margin, clientX), window.innerWidth - margin)
+    const y = Math.min(Math.max(margin, clientY), window.innerHeight - margin)
+    setReactionPick({ messageId, clientX: x, clientY: y })
+  }, [])
+
+  const onMessageDoubleClick = useCallback(
+    (messageId: string) => {
+      void toggleMessengerReaction(messageId, MESSENGER_LIKE_EMOJI)
+    },
+    [toggleMessengerReaction],
+  )
+
+  const onMessageContextMenu = useCallback(
+    (e: MouseEvent, messageId: string) => {
+      e.preventDefault()
+      openReactionPicker(e.clientX, e.clientY, messageId)
+    },
+    [openReactionPicker],
+  )
+
   /** Шапка треда: сразу из списка по URL, пока грузится полная карточка с сервера */
   const threadHeadConversation =
     sortedItems.find((i) => i.id === activeConversationId) ?? activeConversation
@@ -699,17 +948,52 @@ export function DashboardMessengerPage() {
                             >
                               <BrandLogoLoader size={56} />
                             </div>
-                          ) : messages.length === 0 ? (
+                          ) : timelineMessages.length === 0 ? (
                             <div className="dashboard-chats-empty">Напиши первое сообщение в этот чат.</div>
                           ) : (
-                            messages.map((message) => {
+                            timelineMessages.map((message) => {
                               const isOwn = user?.id && message.senderUserId === user.id
+                              const reactions = reactionsByTargetId.get(message.id) ?? []
+                              const reactionCounts = new Map<string, number>()
+                              for (const r of reactions) {
+                                const key = r.body.trim() || r.body
+                                reactionCounts.set(key, (reactionCounts.get(key) ?? 0) + 1)
+                              }
                               return (
                                 <article
                                   key={message.id}
                                   className={`dashboard-messenger__message${
                                     isOwn ? ' dashboard-messenger__message--own' : ''
                                   }`}
+                                  onDoubleClick={() => onMessageDoubleClick(message.id)}
+                                  onContextMenu={(e) => onMessageContextMenu(e, message.id)}
+                                  onTouchStart={(e) => {
+                                    const t = e.touches[0]
+                                    if (!t) return
+                                    clearLongPressTimer()
+                                    longPressStartRef.current = {
+                                      x: t.clientX,
+                                      y: t.clientY,
+                                      messageId: message.id,
+                                    }
+                                    longPressTimerRef.current = window.setTimeout(() => {
+                                      longPressTimerRef.current = null
+                                      const start = longPressStartRef.current
+                                      longPressStartRef.current = null
+                                      if (!start || start.messageId !== message.id) return
+                                      openReactionPicker(start.x, start.y, message.id)
+                                    }, 550)
+                                  }}
+                                  onTouchMove={(e) => {
+                                    const start = longPressStartRef.current
+                                    const t = e.touches[0]
+                                    if (!start || !t) return
+                                    const dx = t.clientX - start.x
+                                    const dy = t.clientY - start.y
+                                    if (dx * dx + dy * dy > 100) clearLongPressTimer()
+                                  }}
+                                  onTouchEnd={clearLongPressTimer}
+                                  onTouchCancel={clearLongPressTimer}
                                 >
                                   <div className="dashboard-messenger__message-meta">
                                     <span className="dashboard-messenger__message-author">
@@ -717,7 +1001,25 @@ export function DashboardMessengerPage() {
                                     </span>
                                     <time dateTime={message.createdAt}>{formatDateTime(message.createdAt)}</time>
                                   </div>
-                                  <div className="dashboard-messenger__message-body">{message.body}</div>
+                                  <div className="dashboard-messenger__message-body">
+                                    <MessengerMessageBody text={message.body} />
+                                  </div>
+                                  {reactionCounts.size > 0 ? (
+                                    <div
+                                      className="dashboard-messenger__message-reactions"
+                                      aria-label="Реакции"
+                                      onDoubleClick={(e) => e.stopPropagation()}
+                                    >
+                                      {[...reactionCounts.entries()].map(([emoji, count]) => (
+                                        <span key={emoji} className="dashboard-messenger__reaction-chip">
+                                          <span className="dashboard-messenger__reaction-emoji">{emoji}</span>
+                                          {count > 1 ? (
+                                            <span className="dashboard-messenger__reaction-count">{count}</span>
+                                          ) : null}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : null}
                                 </article>
                               )
                             })
@@ -750,6 +1052,29 @@ export function DashboardMessengerPage() {
                         </button>
                       </div>
                     </div>
+
+                    {reactionPick ? (
+                      <div
+                        className="dashboard-messenger__reaction-popover-wrap"
+                        style={{
+                          position: 'fixed',
+                          left: reactionPick.clientX,
+                          top: reactionPick.clientY,
+                          zIndex: 50,
+                          transform: 'translate(-50%, -100%) translateY(-10px)',
+                        }}
+                      >
+                        <ReactionEmojiPopover
+                          onClose={() => setReactionPick(null)}
+                          onPick={(emoji) => {
+                            const targetId = reactionPick.messageId
+                            setReactionPick(null)
+                            if (!isDirectReactionEmoji(emoji)) return
+                            void toggleMessengerReaction(targetId, emoji)
+                          }}
+                        />
+                      </div>
+                    ) : null}
                   </>
                 ) : (
                   <div className="dashboard-chats-empty">Выберите диалог слева.</div>

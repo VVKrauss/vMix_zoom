@@ -1,3 +1,5 @@
+import type { ReactionEmoji } from '../types/roomComms'
+import { REACTION_EMOJI_WHITELIST } from '../types/roomComms'
 import { supabase } from './supabase'
 
 /** Событие для мгновенного пересчёта бейджа непрочитанных (см. useMessengerUnreadCount). */
@@ -27,6 +29,16 @@ export type DirectMessage = {
   kind: 'text' | 'system' | 'reaction'
   body: string
   createdAt: string
+  /** Для kind=reaction: id целевого сообщения (сервер: meta.react_to). */
+  meta?: { react_to?: string } | null
+}
+
+function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  const reactTo = o.react_to
+  if (typeof reactTo === 'string' && reactTo.trim()) return { react_to: reactTo.trim() }
+  return null
 }
 
 /** Строка из PostgREST / Realtime (snake_case). */
@@ -41,6 +53,7 @@ export function mapDirectMessageFromRow(row: Record<string, unknown>): DirectMes
     kind: row.kind === 'reaction' || row.kind === 'system' ? row.kind : 'text',
     body: typeof row.body === 'string' ? row.body : '',
     createdAt: typeof row.created_at === 'string' ? row.created_at : new Date(0).toISOString(),
+    meta: mapMetaFromRow(row.meta),
   }
 }
 
@@ -165,7 +178,7 @@ export async function listDirectMessagesPage(
 
   let query = supabase
     .from('chat_messages')
-    .select('id, sender_user_id, sender_name_snapshot, kind, body, created_at')
+    .select('id, sender_user_id, sender_name_snapshot, kind, body, meta, created_at')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
@@ -235,11 +248,13 @@ function parseAppendDirectMessageRpcPayload(data: unknown): AppendDirectMessageR
 export async function appendDirectMessage(
   conversationId: string,
   body: string,
+  options?: { kind?: 'text' | 'system' | 'reaction'; meta?: Record<string, unknown> | null },
 ): Promise<{ data: AppendDirectMessageResult | null; error: string | null }> {
   const { data, error } = await supabase.rpc('append_direct_message', {
     p_conversation_id: conversationId,
     p_body: body,
-    p_kind: 'text',
+    p_kind: options?.kind ?? 'text',
+    p_meta: options?.meta ?? null,
   })
 
   if (error) return { data: null, error: error.message }
@@ -247,4 +262,42 @@ export async function appendDirectMessage(
     data: parseAppendDirectMessageRpcPayload(data),
     error: null,
   }
+}
+
+export type ToggleDirectMessageReactionResult = {
+  action: 'added' | 'removed'
+  messageId: string
+  createdAt: string | null
+}
+
+function parseToggleDirectMessageReactionPayload(data: unknown): ToggleDirectMessageReactionResult | null {
+  if (!data || typeof data !== 'object') return null
+  const r = data as Record<string, unknown>
+  const action = r.action === 'removed' ? 'removed' : r.action === 'added' ? 'added' : null
+  const messageId =
+    typeof r.message_id === 'string' && r.message_id.trim() ? r.message_id.trim() : null
+  if (!action || !messageId) return null
+  return {
+    action,
+    messageId,
+    createdAt: typeof r.created_at === 'string' ? r.created_at : null,
+  }
+}
+
+export function isDirectReactionEmoji(value: string): value is ReactionEmoji {
+  return (REACTION_EMOJI_WHITELIST as readonly string[]).includes(value)
+}
+
+export async function toggleDirectMessageReaction(
+  conversationId: string,
+  targetMessageId: string,
+  emoji: ReactionEmoji,
+): Promise<{ data: ToggleDirectMessageReactionResult | null; error: string | null }> {
+  const { data, error } = await supabase.rpc('toggle_direct_message_reaction', {
+    p_conversation_id: conversationId,
+    p_target_message_id: targetMessageId,
+    p_emoji: emoji,
+  })
+  if (error) return { data: null, error: error.message }
+  return { data: parseToggleDirectMessageReactionPayload(data), error: null }
 }

@@ -15,14 +15,14 @@ type Props = {
   onSent?: (ok: number, fail: number) => void
 }
 
-function buildInviteMessage(url: string, roomId: string): string {
-  return `Приглашаю в комнату «${roomId}». Перейти: ${url}`
+function buildInviteMessage(roomId: string): string {
+  return `Приглашаю в комнату: [${roomId.trim()}]`
 }
 
 export function RoomInviteFriendsModal({
   open,
   onClose,
-  roomInviteUrl,
+  roomInviteUrl: _roomInviteUrl,
   roomId,
   excludeUserIds,
   onSent,
@@ -68,7 +68,7 @@ export function RoomInviteFriendsModal({
   const handleSend = async () => {
     if (selected.size === 0 || sending) return
     const ids = Array.from(selected)
-    const body = buildInviteMessage(roomInviteUrl, roomId.trim())
+    const body = buildInviteMessage(roomId.trim())
     setSending(true)
     setError(null)
     let ok = 0

@@ -235,6 +235,14 @@ html[data-theme="light"] .dashboard-chat-message__action:hover:not(:disabled) {
   background: rgba(142, 82, 82, 0.08);
 }
 
+html[data-theme="light"] .dashboard-chat-message__body .messenger-message-link {
+  color: var(--red);
+}
+
+html[data-theme="light"] .dashboard-chat-message__body .messenger-message-link:hover {
+  color: var(--red-hover);
+}
+
 html[data-theme="light"] .dashboard-friend-card {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.45)),
@@ -280,6 +288,50 @@ html[data-theme="light"] .dashboard-messenger__message {
 html[data-theme="light"] .dashboard-messenger__message--own {
   border-color: rgba(158, 92, 92, 0.35);
   background: linear-gradient(180deg, rgba(200, 150, 148, 0.35), rgba(180, 125, 122, 0.22));
+}
+
+html[data-theme="light"] .dashboard-messenger__message-body .messenger-message-link {
+  color: var(--red);
+}
+
+html[data-theme="light"] .dashboard-messenger__message-body .messenger-message-link:hover {
+  color: var(--red-hover);
+}
+
+html[data-theme="light"] .dashboard-messenger__message--own .dashboard-messenger__message-body .messenger-message-link {
+  color: var(--red-dk);
+}
+
+html[data-theme="light"] .dashboard-messenger__message--own .dashboard-messenger__message-body .messenger-message-link:hover {
+  color: var(--red);
+}
+
+html[data-theme="light"] .dashboard-messenger__reaction-chip {
+  border-color: var(--border);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+html[data-theme="light"] .dashboard-messenger__message--own .dashboard-messenger__reaction-chip {
+  border-color: rgba(158, 92, 92, 0.28);
+  background: rgba(255, 255, 255, 0.45);
+}
+
+html[data-theme="light"] .dashboard-messenger__messages-scroll,
+html[data-theme="light"] .dashboard-messenger__list {
+  scrollbar-color: rgba(158, 92, 92, 0.45) transparent;
+  scrollbar-color: color-mix(in srgb, var(--red) 48%, var(--surface2)) transparent;
+}
+
+html[data-theme="light"] .dashboard-messenger__messages-scroll::-webkit-scrollbar-thumb,
+html[data-theme="light"] .dashboard-messenger__list::-webkit-scrollbar-thumb {
+  background: rgba(158, 92, 92, 0.42);
+  background: color-mix(in srgb, var(--red) 44%, var(--surface2));
+}
+
+html[data-theme="light"] .dashboard-messenger__messages-scroll::-webkit-scrollbar-thumb:hover,
+html[data-theme="light"] .dashboard-messenger__list::-webkit-scrollbar-thumb:hover {
+  background: rgba(138, 80, 80, 0.55);
+  background: color-mix(in srgb, var(--red-hover) 55%, var(--surface2));
 }
 
 html[data-theme="light"] .dashboard-topbar__messenger,
@@ -2337,6 +2389,38 @@ button.admin-stat-card--interactive:disabled {
   overscroll-behavior: contain;
 }
 
+/* Скролл в цветах проекта (акцент --red, тёмная/светлая тема) */
+.dashboard-messenger__messages-scroll,
+.dashboard-messenger__list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(210, 0, 0, 0.35) transparent;
+  scrollbar-color: color-mix(in srgb, var(--red) 42%, var(--surface2)) transparent;
+}
+
+.dashboard-messenger__messages-scroll::-webkit-scrollbar,
+.dashboard-messenger__list::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.dashboard-messenger__messages-scroll::-webkit-scrollbar-track,
+.dashboard-messenger__list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dashboard-messenger__messages-scroll::-webkit-scrollbar-thumb,
+.dashboard-messenger__list::-webkit-scrollbar-thumb {
+  background: rgba(210, 0, 0, 0.32);
+  background: color-mix(in srgb, var(--red) 38%, var(--surface2));
+  border-radius: 10px;
+}
+
+.dashboard-messenger__messages-scroll::-webkit-scrollbar-thumb:hover,
+.dashboard-messenger__list::-webkit-scrollbar-thumb:hover {
+  background: rgba(210, 0, 0, 0.5);
+  background: color-mix(in srgb, var(--red) 58%, var(--surface2));
+}
+
 .dashboard-messenger__load-older {
   padding: 8px 12px 4px;
   text-align: center;
@@ -2451,6 +2535,68 @@ button.admin-stat-card--interactive:disabled {
   line-height: 1.28;
 }
 
+.dashboard-messenger__message-body .messenger-message-link {
+  color: var(--red);
+  text-decoration: none;
+}
+
+.dashboard-messenger__message-body .messenger-message-link:hover {
+  color: var(--red-hover);
+  text-decoration: none;
+}
+
+.dashboard-messenger__message-body .messenger-message-link:visited {
+  color: var(--red);
+  text-decoration: none;
+}
+
+.dashboard-messenger__message--own .dashboard-messenger__message-body .messenger-message-link {
+  color: #ffc8c8;
+}
+
+.dashboard-messenger__message--own .dashboard-messenger__message-body .messenger-message-link:hover {
+  color: #ffe0e0;
+}
+
+.dashboard-messenger__message-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 7px;
+  margin-top: 6px;
+}
+
+.dashboard-messenger__reaction-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px 2px 5px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.2;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.dashboard-messenger__message--own .dashboard-messenger__reaction-chip {
+  border-color: rgba(122, 198, 255, 0.22);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.dashboard-messenger__reaction-emoji {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.dashboard-messenger__reaction-count {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.dashboard-messenger__reaction-popover-wrap {
+  pointer-events: auto;
+}
+
 .dashboard-messenger__composer {
   display: flex;
   gap: 10px;
@@ -2530,6 +2676,22 @@ button.admin-stat-card--interactive:disabled {
   font-size: 13px;
   line-height: 1.28;
 }
+
+.dashboard-chat-message__body .messenger-message-link {
+  color: var(--red);
+  text-decoration: none;
+}
+
+.dashboard-chat-message__body .messenger-message-link:hover {
+  color: var(--red-hover);
+  text-decoration: none;
+}
+
+.dashboard-chat-message__body .messenger-message-link:visited {
+  color: var(--red);
+  text-decoration: none;
+}
+
 .dashboard-chat-message__actions {
   display: inline-flex;
   align-items: center;
