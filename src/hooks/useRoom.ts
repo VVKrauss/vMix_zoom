@@ -40,6 +40,7 @@ import {
   readPreferredMicId,
 } from '../config/roomUiStorage'
 import { formatMediaJoinError, formatStudioProgramError } from '../utils/formatMediaJoinError'
+import { isIosLikeDevice } from '../utils/iosLikeDevice'
 import type { StudioOutputPreset } from '../types/studio'
 
 const SIGNALING_HTTP = signalingHttpBase()
@@ -807,11 +808,12 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
               frameRate: { ideal: p.frameRate },
             }
           : false
-        const audioPart = wantMic
-          ? micPref
+        const audioPart =
+          wantMic && !isIosLikeDevice() && micPref
             ? { deviceId: { exact: micPref } as const }
-            : true
-          : false
+            : wantMic
+              ? true
+              : false
         try {
           stream = await navigator.mediaDevices.getUserMedia({
             audio: audioPart,

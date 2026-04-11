@@ -861,6 +861,76 @@ export function DashboardMessengerPage() {
     [openReactionPicker],
   )
 
+  /**
+   * Долгое нажатие: на iOS надёжнее Touch-события; pointer «touch» не используем — иначе двойной таймер.
+   * Для стилуса оставляем pointer (pen).
+   */
+  const beginMessageLongPress = useCallback(
+    (clientX: number, clientY: number, msgId: string, source: 'touch' | 'pointer', pointerId?: number) => {
+      clearLongPressTimer()
+      const startX = clientX
+      const startY = clientY
+      longPressStartRef.current = { x: startX, y: startY, messageId: msgId }
+
+      if (source === 'touch') {
+        const move = (ev: TouchEvent) => {
+          const t = ev.touches[0]
+          if (!t) return
+          const dx = t.clientX - startX
+          const dy = t.clientY - startY
+          if (dx * dx + dy * dy > 900) clearLongPressTimer()
+        }
+        const end = () => {
+          clearLongPressTimer()
+        }
+        const opts: AddEventListenerOptions = { capture: true, passive: true }
+        document.addEventListener('touchmove', move, opts)
+        document.addEventListener('touchend', end, opts)
+        document.addEventListener('touchcancel', end, opts)
+        longPressDocCleanupRef.current = () => {
+          document.removeEventListener('touchmove', move, opts)
+          document.removeEventListener('touchend', end, opts)
+          document.removeEventListener('touchcancel', end, opts)
+        }
+      } else {
+        const pid = pointerId ?? -1
+        const move = (ev: PointerEvent) => {
+          if (ev.pointerId !== pid) return
+          const dx = ev.clientX - startX
+          const dy = ev.clientY - startY
+          if (dx * dx + dy * dy > 900) clearLongPressTimer()
+        }
+        const upOrCancel = (ev: PointerEvent) => {
+          if (ev.pointerId !== pid) return
+          clearLongPressTimer()
+        }
+        const opts: AddEventListenerOptions = { capture: true }
+        document.addEventListener('pointermove', move, opts)
+        document.addEventListener('pointerup', upOrCancel, opts)
+        document.addEventListener('pointercancel', upOrCancel, opts)
+        longPressDocCleanupRef.current = () => {
+          document.removeEventListener('pointermove', move, opts)
+          document.removeEventListener('pointerup', upOrCancel, opts)
+          document.removeEventListener('pointercancel', upOrCancel, opts)
+        }
+      }
+
+      longPressTimerRef.current = window.setTimeout(() => {
+        longPressTimerRef.current = null
+        longPressDocCleanupRef.current?.()
+        longPressDocCleanupRef.current = null
+        const start = longPressStartRef.current
+        longPressStartRef.current = null
+        if (!start || start.messageId !== msgId) return
+        openReactionPicker(start.x, start.y, msgId)
+        if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+          navigator.vibrate(12)
+        }
+      }, 520)
+    },
+    [clearLongPressTimer, openReactionPicker],
+  )
+
   /** Шапка треда: сразу из списка по URL, пока грузится полная карточка с сервера */
   const threadHeadConversation =
     sortedItems.find((i) => i.id === activeConversationId) ?? activeConversation
@@ -1060,45 +1130,16 @@ export function DashboardMessengerPage() {
                                   onDoubleClick={() => onMessageDoubleClick(message.id)}
                                   onContextMenu={(e) => onMessageContextMenu(e, message.id)}
                                   onPointerDown={(e) => {
+                                    if (e.pointerType === 'touch') return
                                     if (e.pointerType === 'mouse') return
                                     if (e.button !== 0) return
-                                    clearLongPressTimer()
-                                    const msgId = message.id
-                                    const startX = e.clientX
-                                    const startY = e.clientY
-                                    longPressStartRef.current = { x: startX, y: startY, messageId: msgId }
-                                    const pid = e.pointerId
-                                    const move = (ev: PointerEvent) => {
-                                      if (ev.pointerId !== pid) return
-                                      const dx = ev.clientX - startX
-                                      const dy = ev.clientY - startY
-                                      if (dx * dx + dy * dy > 400) clearLongPressTimer()
-                                    }
-                                    const upOrCancel = (ev: PointerEvent) => {
-                                      if (ev.pointerId !== pid) return
-                                      clearLongPressTimer()
-                                    }
-                                    const opts: AddEventListenerOptions = { capture: true }
-                                    document.addEventListener('pointermove', move, opts)
-                                    document.addEventListener('pointerup', upOrCancel, opts)
-                                    document.addEventListener('pointercancel', upOrCancel, opts)
-                                    longPressDocCleanupRef.current = () => {
-                                      document.removeEventListener('pointermove', move, opts)
-                                      document.removeEventListener('pointerup', upOrCancel, opts)
-                                      document.removeEventListener('pointercancel', upOrCancel, opts)
-                                    }
-                                    longPressTimerRef.current = window.setTimeout(() => {
-                                      longPressTimerRef.current = null
-                                      longPressDocCleanupRef.current?.()
-                                      longPressDocCleanupRef.current = null
-                                      const start = longPressStartRef.current
-                                      longPressStartRef.current = null
-                                      if (!start || start.messageId !== msgId) return
-                                      openReactionPicker(start.x, start.y, msgId)
-                                      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-                                        navigator.vibrate(12)
-                                      }
-                                    }, 480)
+                                    beginMessageLongPress(e.clientX, e.clientY, message.id, 'pointer', e.pointerId)
+                                  }}
+                                  onTouchStart={(e) => {
+                                    if (e.touches.length !== 1) return
+                                    const t = e.touches[0]
+                                    if (!t) return
+                                    beginMessageLongPress(t.clientX, t.clientY, message.id, 'touch')
                                   }}
                                 >
                                   <div className="dashboard-messenger__message-meta">

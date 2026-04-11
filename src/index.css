@@ -2605,7 +2605,6 @@ button.admin-stat-card--interactive:disabled {
   border-radius: 16px 16px 16px 9px;
   padding: 7px 9px;
   background: rgba(255,255,255,.03);
-  touch-action: pan-y;
   -webkit-touch-callout: none;
 }
 
