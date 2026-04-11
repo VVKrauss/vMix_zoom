@@ -99,10 +99,7 @@ export function DashboardFriendsPage() {
   return (
     <DashboardShell active="friends" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
       <section className="dashboard-section">
-        <h2 className="dashboard-section__title">Друзья и избранные</h2>
-        <p className="dashboard-section__hint">
-          Если вы добавили пользователя в избранные и он сделал то же самое, вы становитесь друзьями.
-        </p>
+        <h2 className="dashboard-section__title dashboard-friends__page-title">Друзья и избранные</h2>
 
         <div className="dashboard-chat-filters">
           <label className="dashboard-chat-filters__search">

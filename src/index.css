@@ -19,8 +19,269 @@
   --btn-red-grad-hover: linear-gradient(180deg, #b80000 0%, #6e1313 100%);
   /* Solo: «Назад» — средний серый между основным текстом и приглушённым */
   --solo-back-muted: #a3a3a3;
+  --join-screen-radial: radial-gradient(ellipse at 50% 40%, #1a0000 0%, var(--bg) 70%);
+  --card-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
   --font:      'Montserrat', system-ui, sans-serif;
   --radius:    10px;
+}
+
+/* Светлая тема: тёплый фон, спокойные приглушённые красные акценты */
+html[data-theme="light"] {
+  --bg:        #f6f1ef;
+  --surface:   #fffdfb;
+  --surface2:  #efe6e3;
+  --border:    #e0d4d0;
+  --text:      #2a2220;
+  --text-dim:  #6b5e5a;
+  --red:       #9e5c5c;
+  --red-dk:    #6d4343;
+  --red-hover: #8a5050;
+  --logo-red:    #8f4f4f;
+  --logo-red-dk: #5c3838;
+  --btn-red-grad: linear-gradient(180deg, #a86565 0%, #6d4343 100%);
+  --btn-red-grad-hover: linear-gradient(180deg, #985a5a 0%, #5a3636 100%);
+  --solo-back-muted: #7a6c68;
+  --join-screen-radial: radial-gradient(ellipse at 50% 36%, rgba(160, 90, 88, 0.14) 0%, var(--bg) 72%);
+  --card-shadow: 0 20px 56px rgba(80, 40, 40, 0.08);
+}
+
+.join-screen--themed {
+  position: relative;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.theme-toggle:hover {
+  border-color: rgba(158, 92, 92, 0.45);
+  color: var(--red);
+  background: var(--surface);
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.theme-toggle--join-corner {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+}
+
+.theme-toggle--fab {
+  position: fixed;
+  bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  left: max(16px, env(safe-area-inset-left, 0px));
+  z-index: 6000;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+html[data-theme="light"] .theme-toggle--fab {
+  box-shadow: 0 4px 20px rgba(80, 45, 45, 0.12);
+}
+
+.theme-toggle--dashboard {
+  width: 38px;
+  height: 38px;
+}
+
+html[data-theme="light"] .join-media-toggle:hover {
+  border-color: rgba(142, 82, 82, 0.35);
+}
+
+html[data-theme="light"] .join-media-toggle--on {
+  border-color: rgba(142, 82, 82, 0.5);
+  color: #4d3131;
+  background: rgba(160, 90, 88, 0.12);
+}
+
+html[data-theme="light"] .join-media-toggle--off {
+  color: rgba(42, 34, 32, 0.38);
+}
+
+html[data-theme="light"] .header-user-dropdown {
+  background: var(--surface);
+  box-shadow: 0 10px 36px rgba(60, 30, 30, 0.12);
+}
+
+html[data-theme="light"] .header-user-dropdown__item:hover {
+  background: rgba(142, 82, 82, 0.08);
+}
+
+html[data-theme="light"] .header-dashboard-btn:hover,
+html[data-theme="light"] .header-dashboard-btn--open {
+  background: rgba(142, 82, 82, 0.1);
+}
+
+html[data-theme="light"] .device-popover {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: 0 12px 40px rgba(60, 30, 30, 0.1);
+}
+
+html[data-theme="light"] .device-popover__item:hover {
+  background: rgba(142, 82, 82, 0.07);
+}
+
+/* Горизонтальный логотип: белая надпись на светлом фоне — контурная тень */
+html[data-theme="light"] .brand-logo--join-h,
+html[data-theme="light"] .brand-logo--header-h {
+  filter:
+    drop-shadow(0 0 1px rgba(45, 28, 26, 0.95))
+    drop-shadow(0 1px 2px rgba(55, 32, 30, 0.55))
+    drop-shadow(0 2px 10px rgba(100, 55, 52, 0.22));
+}
+
+/* Светлая тема: архив чатов, друзья, мессенджер в кабинете (раньше «тёмные» карточки) */
+html[data-theme="light"] .dashboard-chats-empty {
+  background: rgba(142, 82, 82, 0.06);
+}
+
+html[data-theme="light"] .dashboard-chat-filters__input,
+html[data-theme="light"] .dashboard-chat-filters__select {
+  background: var(--surface);
+}
+
+html[data-theme="light"] .dashboard-chat-filters__input:focus,
+html[data-theme="light"] .dashboard-chat-filters__select:focus {
+  outline-color: rgba(142, 82, 82, 0.35);
+}
+
+html[data-theme="light"] .dashboard-chat-row {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.45)),
+    var(--surface2);
+  border-color: var(--border);
+}
+
+html[data-theme="light"] .dashboard-chat-row:hover {
+  border-color: rgba(142, 82, 82, 0.32);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.65)),
+    var(--surface);
+}
+
+html[data-theme="light"] .dashboard-chat-row__count {
+  background: rgba(142, 82, 82, 0.1);
+}
+
+html[data-theme="light"] .dashboard-chat-row__last-author-avatar--placeholder {
+  background: rgba(142, 82, 82, 0.15);
+}
+
+html[data-theme="light"] .dashboard-chat-view__back {
+  color: #6d4c4c;
+}
+
+html[data-theme="light"] .dashboard-messenger__switch {
+  border-color: var(--border);
+  background: var(--surface2);
+}
+
+html[data-theme="light"] .dashboard-messenger__switch:hover {
+  background: var(--surface);
+  border-color: rgba(142, 82, 82, 0.3);
+}
+
+html[data-theme="light"] .dashboard-messenger__row {
+  background: var(--surface2);
+}
+
+html[data-theme="light"] .dashboard-messenger__row:hover {
+  background: var(--surface);
+}
+
+html[data-theme="light"] .dashboard-messenger__input {
+  background: var(--surface);
+}
+
+html[data-theme="light"] .dashboard-messenger__input:focus {
+  outline-color: rgba(142, 82, 82, 0.35);
+}
+
+html[data-theme="light"] .dashboard-chat-message {
+  border-color: var(--border);
+  background: var(--surface2);
+}
+
+html[data-theme="light"] .dashboard-chat-message__action {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+html[data-theme="light"] .dashboard-chat-message__action:hover:not(:disabled) {
+  background: rgba(142, 82, 82, 0.08);
+}
+
+html[data-theme="light"] .dashboard-friend-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.45)),
+    var(--surface2);
+  border-color: var(--border);
+}
+
+html[data-theme="light"] .dashboard-friend-card__avatar {
+  background: rgba(142, 82, 82, 0.1);
+}
+
+html[data-theme="light"] .dashboard-friend-card__fav-btn {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+html[data-theme="light"] .dashboard-friend-card__fav-btn--active {
+  border-color: rgba(160, 100, 90, 0.45);
+  background: rgba(200, 140, 120, 0.18);
+}
+
+html[data-theme="light"] .dashboard-messenger__thread {
+  background: var(--surface2);
+}
+
+html[data-theme="light"] .dashboard-messenger__thread-avatar {
+  background: rgba(142, 82, 82, 0.12);
+}
+
+html[data-theme="light"] .dashboard-messenger__message {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+html[data-theme="light"] .dashboard-messenger__message--own {
+  border-color: rgba(158, 92, 92, 0.35);
+  background: linear-gradient(180deg, rgba(200, 150, 148, 0.35), rgba(180, 125, 122, 0.22));
+}
+
+html[data-theme="light"] .dashboard-topbar__messenger,
+html[data-theme="light"] .dashboard-topbar__admin,
+html[data-theme="light"] .dashboard-topbar__action {
+  border-color: var(--border);
+  background: var(--surface2);
+}
+
+html[data-theme="light"] .dashboard-topbar__messenger:hover,
+html[data-theme="light"] .dashboard-topbar__admin:hover,
+html[data-theme="light"] .dashboard-topbar__action:hover {
+  background: rgba(142, 82, 82, 0.08);
+}
+
+html[data-theme="light"] .dashboard-topbar__action--primary {
+  background: rgba(158, 92, 92, 0.14);
+  border-color: rgba(158, 92, 92, 0.32);
 }
 
 /* Ширина мобильного блока — то же число, что MOBILE_MAX_WIDTH_PX в src/config/uiBreakpoints.ts */
@@ -75,7 +336,7 @@ html.app-root--room #root {
   justify-content: center;
   min-height: 100dvh;
   height: 100%;
-  background: radial-gradient(ellipse at 50% 40%, #1a0000 0%, var(--bg) 70%);
+  background: var(--join-screen-radial);
   background-color: var(--bg);
 }
 
@@ -88,7 +349,7 @@ html.app-root--room #root {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  box-shadow: 0 24px 64px rgba(0,0,0,.6);
+  box-shadow: var(--card-shadow);
 }
 
 .join-logo {
@@ -622,11 +883,43 @@ html.app-root--room #root {
   flex-shrink: 0;
 }
 
+.dashboard-topbar__start {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
 .dashboard-topbar__logo {
   display: flex;
   align-items: center;
   text-decoration: none;
   min-width: 0;
+}
+
+.dashboard-topbar__admin {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.dashboard-topbar__admin:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--red);
+}
+
+.dashboard-topbar__admin svg {
+  width: 20px;
+  height: 20px;
 }
 
 .dashboard-topbar__nav {
@@ -1742,9 +2035,32 @@ button.admin-stat-card--interactive:disabled {
 .dashboard-chat-page__head,
 .dashboard-messenger__topbar {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 18px;
+}
+
+.dashboard-messenger__page-title,
+.dashboard-chat-page__page-title {
+  margin: 0;
+}
+
+.dashboard-friends__page-title {
+  margin: 0 0 10px;
+}
+
+.dashboard-chat-view__titleline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 14px;
+  min-width: 0;
+}
+
+.dashboard-chat-view__titleline .dashboard-section__title {
+  margin-bottom: 0;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .dashboard-messenger__switch {
@@ -1929,6 +2245,14 @@ button.admin-stat-card--interactive:disabled {
 
 .dashboard-messenger__thread-loading {
   min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dashboard-messenger__pane-loader {
+  flex: 1;
+  min-height: 200px;
   display: flex;
   align-items: center;
   justify-content: center;

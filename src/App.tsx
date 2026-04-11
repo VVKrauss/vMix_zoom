@@ -1,5 +1,6 @@
 import { Suspense, lazy, useMemo } from 'react'
-import { Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { ThemeToggle } from './components/ThemeToggle'
 import { AdminProtectedRoute } from './components/AdminProtectedRoute'
 import { ProtectedRoute } from './components/ProtectedRoute'
 
@@ -113,9 +114,17 @@ function RoomRoute() {
   return <RoomSession key={roomId} roomId={roomId} />
 }
 
+function RoomThemeFab() {
+  const { pathname } = useLocation()
+  if (!pathname.startsWith('/r/')) return null
+  return <ThemeToggle variant="fab" />
+}
+
 export function App() {
   return (
-    <Suspense fallback={<RouteLoadingFallback />}>
+    <>
+      <RoomThemeFab />
+      <Suspense fallback={<RouteLoadingFallback />}>
       <Routes>
         <Route path="/" element={<HomeRoute />} />
         <Route path="/login" element={<LoginPage />} />
@@ -132,5 +141,6 @@ export function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
+    </>
   )
 }

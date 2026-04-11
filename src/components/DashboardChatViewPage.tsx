@@ -153,13 +153,11 @@ export function DashboardChatViewPage() {
     <DashboardShell active="chats" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
       <section className="dashboard-section">
         <div className="dashboard-chat-view__head">
-          <div>
+          <div className="dashboard-chat-view__titleline">
             <h2 className="dashboard-section__title">{conversation?.title ?? 'Архив чата'}</h2>
-            <p className="dashboard-section__hint">
-              <Link to="/dashboard/chats" className="dashboard-chat-view__back">
-                ← Назад к списку чатов
-              </Link>
-            </p>
+            <Link to="/dashboard/chats" className="dashboard-chat-view__back">
+              ← Назад к списку чатов
+            </Link>
           </div>
           {conversation ? (
             <div className="dashboard-chat-view__summary">

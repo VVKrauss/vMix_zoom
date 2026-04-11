@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
@@ -15,6 +15,7 @@ import {
   listDirectMessagesForUser,
   markDirectConversationRead,
 } from '../lib/messenger'
+import { BrandLogoLoader } from './BrandLogoLoader'
 import { DashboardShell } from './DashboardShell'
 
 function formatDateTime(value: string): string {
@@ -43,6 +44,8 @@ export function DashboardMessengerPage() {
   const { profile } = useProfile()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const isMobileMessenger = useMediaQuery('(max-width: 900px)')
+  /** Мобильный режим «только дерево чатов» — не подставлять chat в URL и не грузить тред */
+  const listOnlyMobile = isMobileMessenger && searchParams.get('view') === 'list'
 
   const [loading, setLoading] = useState(true)
   const [threadLoading, setThreadLoading] = useState(false)
@@ -52,6 +55,11 @@ export function DashboardMessengerPage() {
   const [messages, setMessages] = useState<DirectMessage[]>([])
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+
+  const conversationIdRef = useRef(conversationId)
+  conversationIdRef.current = conversationId
+  /** После первой успешной загрузки списка — повторный bootstrap при «Назад к чатам» не нужен */
+  const listLoadedOnceRef = useRef(false)
 
   const buildMessengerUrl = (chatId?: string, withUserId?: string, withTitle?: string) => {
     const params = new URLSearchParams()
@@ -77,6 +85,7 @@ export function DashboardMessengerPage() {
     let active = true
     const run = async () => {
       if (!user?.id) {
+        listLoadedOnceRef.current = false
         if (active) {
           setItems([])
           setActiveConversation(null)
@@ -86,7 +95,19 @@ export function DashboardMessengerPage() {
         return
       }
 
-      setLoading(true)
+      const treeOnlyReturn =
+        isMobileMessenger && searchParams.get('view') === 'list' && listLoadedOnceRef.current
+      if (treeOnlyReturn) {
+        if (active) {
+          setLoading(false)
+          setError(null)
+        }
+        return
+      }
+
+      if (!listLoadedOnceRef.current || Boolean(targetUserId?.trim())) {
+        setLoading(true)
+      }
       setError(null)
 
       const ensured = targetUserId
@@ -111,10 +132,16 @@ export function DashboardMessengerPage() {
 
       const nextItems = listRes.data ?? []
       setItems(nextItems)
+      listLoadedOnceRef.current = true
 
-      const targetConversationId = conversationId || ensured.data || nextItems[0]?.id || ''
+      const targetConversationId =
+        conversationIdRef.current || ensured.data || nextItems[0]?.id || ''
 
-      if (!searchConversationId && targetConversationId) {
+      if (
+        !searchConversationId &&
+        targetConversationId &&
+        !(isMobileMessenger && searchParams.get('view') === 'list')
+      ) {
         navigate(buildMessengerUrl(targetConversationId, targetUserId || undefined, targetTitle || undefined), {
           replace: true,
         })
@@ -134,12 +161,20 @@ export function DashboardMessengerPage() {
     return () => {
       active = false
     }
-  }, [conversationId, navigate, searchConversationId, targetTitle, targetUserId, user?.id])
+  }, [isMobileMessenger, navigate, searchConversationId, searchParams, targetTitle, targetUserId, user?.id])
 
   useEffect(() => {
     let active = true
     const run = async () => {
       if (!user?.id || loading) return
+      if (listOnlyMobile) {
+        if (active) {
+          setThreadLoading(false)
+          setActiveConversation(null)
+          setMessages([])
+        }
+        return
+      }
       const targetConversationId = conversationId || items[0]?.id || ''
       if (!targetConversationId) {
         if (active) {
@@ -183,9 +218,9 @@ export function DashboardMessengerPage() {
     return () => {
       active = false
     }
-  }, [conversationId, items, loading, user?.id])
+  }, [conversationId, listOnlyMobile, loading, user?.id])
 
-  const activeConversationId = activeConversation?.id ?? conversationId
+  const activeConversationId = listOnlyMobile ? '' : conversationId || activeConversation?.id || ''
   const showListPane = !isMobileMessenger || !activeConversationId
   const showThreadPane = !isMobileMessenger || Boolean(activeConversationId)
 
@@ -245,33 +280,35 @@ export function DashboardMessengerPage() {
     [items],
   )
 
+  /** Шапка треда: сразу из списка по URL, пока грузится полная карточка с сервера */
+  const threadHeadConversation =
+    sortedItems.find((i) => i.id === activeConversationId) ?? activeConversation
+
   const activeAvatarUrl =
-    activeConversation?.avatarUrl ?? (activeConversation?.otherUserId ? null : profile?.avatar_url ?? null)
+    threadHeadConversation?.avatarUrl ??
+    (threadHeadConversation?.otherUserId ? null : profile?.avatar_url ?? null)
 
   return (
     <DashboardShell active="messenger" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
       <section className="dashboard-section dashboard-messenger">
         <div className="dashboard-messenger__topbar">
-          <div>
-            <h2 className="dashboard-section__title">Мессенджер</h2>
-            <p className="dashboard-section__hint">
-              Постоянные личные переписки. Для старта уже есть чат с самим собой, который можно
-              использовать как заметки.
-            </p>
-          </div>
+          <h2 className="dashboard-section__title dashboard-messenger__page-title">Мессенджер</h2>
           <Link to="/dashboard/chats" className="dashboard-messenger__switch">
             Архивы комнат
           </Link>
         </div>
 
-        {loading ? <div className="auth-loading" aria-label="Загрузка..." /> : null}
-        {!loading && error ? <p className="join-error">{error}</p> : null}
+        {error ? <p className="join-error">{error}</p> : null}
 
-        {!loading && !error ? (
+        {!error ? (
           <div className="dashboard-messenger__layout">
             {showListPane ? (
               <aside className="dashboard-messenger__list" aria-label="Список диалогов">
-                {sortedItems.length === 0 ? (
+                {loading && sortedItems.length === 0 ? (
+                  <div className="dashboard-messenger__pane-loader" aria-label="Загрузка списка…">
+                    <BrandLogoLoader size={56} />
+                  </div>
+                ) : sortedItems.length === 0 ? (
                   <div className="dashboard-chats-empty">Диалогов пока нет.</div>
                 ) : (
                   sortedItems.map((item) => {
@@ -323,14 +360,18 @@ export function DashboardMessengerPage() {
 
             {showThreadPane ? (
               <div className="dashboard-messenger__thread">
-                {activeConversation ? (
+                {loading && !threadHeadConversation ? (
+                  <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…">
+                    <BrandLogoLoader size={56} />
+                  </div>
+                ) : threadHeadConversation ? (
                   <>
                     <div className="dashboard-messenger__thread-head">
                       {isMobileMessenger ? (
                         <button
                           type="button"
                           className="dashboard-messenger__back-btn"
-                          onClick={() => navigate('/dashboard/messenger')}
+                          onClick={() => navigate('/dashboard/messenger?view=list', { replace: true })}
                         >
                           ← Назад к чатам
                         </button>
@@ -340,16 +381,18 @@ export function DashboardMessengerPage() {
                           {activeAvatarUrl ? (
                             <img src={activeAvatarUrl ?? undefined} alt="" />
                           ) : (
-                            <span>{conversationInitial(activeConversation.title)}</span>
+                            <span>{conversationInitial(threadHeadConversation.title)}</span>
                           )}
                         </div>
                         <div>
-                          <h3 className="dashboard-section__subtitle">{activeConversation.title}</h3>
+                          <h3 className="dashboard-section__subtitle">{threadHeadConversation.title}</h3>
                           <div className="dashboard-messenger__thread-meta">
-                            <span>{activeConversation.messageCount} сообщ.</span>
+                            <span>{threadHeadConversation.messageCount} сообщ.</span>
                             <span>
                               Последняя активность:{' '}
-                              {formatDateTime(activeConversation.lastMessageAt ?? activeConversation.createdAt)}
+                              {formatDateTime(
+                                threadHeadConversation.lastMessageAt ?? threadHeadConversation.createdAt,
+                              )}
                             </span>
                           </div>
                         </div>
@@ -358,8 +401,12 @@ export function DashboardMessengerPage() {
 
                     <div className="dashboard-messenger__messages">
                       {threadLoading ? (
-                        <div className="dashboard-messenger__thread-loading">
-                          <div className="auth-loading" aria-label="Загрузка диалога..." />
+                        <div
+                          className="dashboard-messenger__thread-loading"
+                          role="status"
+                          aria-label="Загрузка диалога…"
+                        >
+                          <BrandLogoLoader size={56} />
                         </div>
                       ) : messages.length === 0 ? (
                         <div className="dashboard-chats-empty">Напиши первое сообщение в этот чат.</div>
@@ -392,6 +439,7 @@ export function DashboardMessengerPage() {
                         rows={3}
                         placeholder="Напиши сообщение..."
                         value={draft}
+                        disabled={threadLoading}
                         onChange={(e) => setDraft(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && !e.shiftKey) {
@@ -403,7 +451,7 @@ export function DashboardMessengerPage() {
                       <button
                         type="button"
                         className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
-                        disabled={!draft.trim() || sending}
+                        disabled={!draft.trim() || sending || threadLoading}
                         onClick={() => void sendMessage()}
                       >
                         Отправить

@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import { setPendingHostClaim } from '../lib/spaceRoom'
 import { newRoomId } from '../utils/roomId'
-import { ChatBubbleIcon, DashboardIcon, ParticipantsBadgeIcon } from './icons'
+import { AdminPanelIcon, ChatBubbleIcon, DashboardIcon, ParticipantsBadgeIcon } from './icons'
+import { ThemeToggle } from './ThemeToggle'
 
 type DashboardShellTab = 'cabinet' | 'chats' | 'messenger' | 'friends'
 
@@ -14,17 +15,30 @@ type DashboardShellProps = {
   children: ReactNode
 }
 
+const SIDEBAR_TAB_HINTS = {
+  cabinet:
+    'Профиль и тариф. Настройки комнаты: вид по умолчанию, кнопка смены раскладки и отображение камеры в плитках на десктопе; на телефоне — отдельная мобильная логика.',
+  chats:
+    'Здесь хранятся архивы комнатных чатов. Видны только беседы тех комнат, в которых вы были участником под своим аккаунтом.',
+  messenger:
+    'Постоянные личные переписки. Для старта уже есть чат с самим собой, который можно использовать как заметки.',
+  friends:
+    'Если вы добавили пользователя в избранные и он сделал то же самое, вы становитесь друзьями.',
+} as const
+
 function DashboardSidebarLink({
   to,
   active,
   label,
   shortLabel,
+  hint,
   children,
 }: {
   to: string
   active: boolean
   label: string
   shortLabel: string
+  hint: string
   children: React.ReactNode
 }) {
   return (
@@ -32,7 +46,7 @@ function DashboardSidebarLink({
       to={to}
       className={`dashboard-sidebar__link${active ? ' dashboard-sidebar__link--active' : ''}`}
       aria-current={active ? 'page' : undefined}
-      title={label}
+      title={hint}
     >
       <span className="dashboard-sidebar__icon" aria-hidden>
         {children}
@@ -56,12 +70,24 @@ export function DashboardShell({ active, canAccessAdmin, onSignOut, children }: 
   return (
     <div className="dashboard-page">
       <header className="dashboard-topbar">
-        <Link to="/" className="dashboard-topbar__logo" title="На главную">
-          <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
-        </Link>
+        <div className="dashboard-topbar__start">
+          <Link to="/" className="dashboard-topbar__logo" title="На главную">
+            <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
+          </Link>
+          {canAccessAdmin ? (
+            <Link to="/admin" className="dashboard-topbar__admin" title="Админка" aria-label="Админка">
+              <AdminPanelIcon />
+            </Link>
+          ) : null}
+        </div>
 
         <div className="dashboard-topbar__actions">
-          <Link to="/dashboard/messenger" className="dashboard-topbar__messenger" title="Мессенджер">
+          <ThemeToggle variant="inline" className="theme-toggle--dashboard" />
+          <Link
+            to="/dashboard/messenger"
+            className="dashboard-topbar__messenger"
+            title={SIDEBAR_TAB_HINTS.messenger}
+          >
             <ChatBubbleIcon />
             {unreadCount > 0 ? (
               <span className="dashboard-topbar__messenger-badge">
@@ -90,6 +116,7 @@ export function DashboardShell({ active, canAccessAdmin, onSignOut, children }: 
               active={active === 'cabinet'}
               label="Кабинет"
               shortLabel="КБ"
+              hint={SIDEBAR_TAB_HINTS.cabinet}
             >
               <DashboardIcon />
             </DashboardSidebarLink>
@@ -98,6 +125,7 @@ export function DashboardShell({ active, canAccessAdmin, onSignOut, children }: 
               active={active === 'chats'}
               label="Чаты"
               shortLabel="ЧТ"
+              hint={SIDEBAR_TAB_HINTS.chats}
             >
               <ChatBubbleIcon />
             </DashboardSidebarLink>
@@ -106,6 +134,7 @@ export function DashboardShell({ active, canAccessAdmin, onSignOut, children }: 
               active={active === 'messenger'}
               label="Мессенджер"
               shortLabel="МС"
+              hint={SIDEBAR_TAB_HINTS.messenger}
             >
               <span className="dashboard-sidebar__icon-badge-wrap">
                 <ChatBubbleIcon />
@@ -117,18 +146,10 @@ export function DashboardShell({ active, canAccessAdmin, onSignOut, children }: 
               active={active === 'friends'}
               label="Друзья"
               shortLabel="ДР"
+              hint={SIDEBAR_TAB_HINTS.friends}
             >
               <ParticipantsBadgeIcon />
             </DashboardSidebarLink>
-            {canAccessAdmin ? (
-              <Link to="/admin" className="dashboard-sidebar__link" title="Админка">
-                <span className="dashboard-sidebar__icon" aria-hidden>
-                  <DashboardIcon />
-                </span>
-                <span className="dashboard-sidebar__label">Админка</span>
-                <span className="dashboard-sidebar__label-short">АД</span>
-              </Link>
-            ) : null}
           </nav>
         </aside>
 

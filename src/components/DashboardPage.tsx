@@ -268,10 +268,6 @@ export function DashboardPage() {
 
       <section className="dashboard-section">
         <h2 className="dashboard-section__title">Настройки комнаты</h2>
-        <p className="dashboard-section__hint">
-          Для входа с компьютера: вид по умолчанию, кнопка смены раскладки и отображение камеры в плитках.
-          На телефоне по-прежнему действует отдельная мобильная логика.
-        </p>
         <form onSubmit={handleSaveRoomPrefs} className="dashboard-form">
           <div className="dashboard-field">
             <div className="dashboard-field__inline dashboard-field__inline--stripe">

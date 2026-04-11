@@ -22,18 +22,31 @@ export type DirectMessage = {
 }
 
 function mapDirectConversationRow(row: Record<string, unknown>): DirectConversationSummary {
+  const storedTitle = typeof row.title === 'string' ? row.title.trim() : ''
+  const otherUserId = typeof row.other_user_id === 'string' ? row.other_user_id : null
+  const otherDisplayName =
+    typeof row.other_display_name === 'string' && row.other_display_name.trim()
+      ? row.other_display_name.trim()
+      : ''
+  const otherAvatarFromRpc =
+    typeof row.other_avatar_url === 'string' && row.other_avatar_url.trim()
+      ? row.other_avatar_url.trim()
+      : null
+
+  const displayTitle = otherUserId
+    ? otherDisplayName || storedTitle || 'Личный чат'
+    : storedTitle || 'Сохраненное'
+
   return {
     id: String(row.id),
-    title:
-      (typeof row.title === 'string' && row.title.trim()) ||
-      'Сохраненное',
+    title: displayTitle,
     createdAt: typeof row.created_at === 'string' ? row.created_at : new Date(0).toISOString(),
     lastMessageAt: typeof row.last_message_at === 'string' ? row.last_message_at : null,
     lastMessagePreview: typeof row.last_message_preview === 'string' ? row.last_message_preview : null,
     messageCount: typeof row.message_count === 'number' ? row.message_count : Number(row.message_count ?? 0) || 0,
     unreadCount: typeof row.unread_count === 'number' ? row.unread_count : Number(row.unread_count ?? 0) || 0,
-    otherUserId: typeof row.other_user_id === 'string' ? row.other_user_id : null,
-    avatarUrl: null,
+    otherUserId,
+    avatarUrl: otherUserId ? otherAvatarFromRpc : null,
   }
 }
 
@@ -66,7 +79,9 @@ async function attachConversationAvatars(
 
   return items.map((item) => ({
     ...item,
-    avatarUrl: item.otherUserId ? (avatarMap.get(item.otherUserId) ?? null) : null,
+    avatarUrl: item.otherUserId
+      ? item.avatarUrl ?? avatarMap.get(item.otherUserId) ?? null
+      : null,
   }))
 }
 
