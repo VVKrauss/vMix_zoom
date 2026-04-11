@@ -77,13 +77,26 @@ import { useIsDbSpaceRoomHost } from '../hooks/useSpaceRoomHost'
 import { useSpaceRoomSettings } from '../hooks/useSpaceRoomSettings'
 import {
   isSessionHostFor,
+  clearHostSessionIfMatches,
   participantCanPostRoomChat,
   participantCanSeeRoomChat,
   updateSpaceRoomChatVisibility,
+  approveSpaceRoomJoiner,
+  removeSpaceRoomApprovedJoiner,
+  banUserFromSpaceRoom,
   type SpaceRoomChatVisibility,
 } from '../lib/spaceRoom'
+import { supabase } from '../lib/supabase'
 import type { StudioOutputPreset } from '../types/studio'
 import { getContactStatuses, setUserFavorite, type ContactStatus } from '../lib/socialGraph'
+
+/** Входящий запрос на вход в комнату (access_mode=approval). */
+interface JoinRequest {
+  requestId: string
+  userId: string | null
+  displayName: string
+  receivedAt: number
+}
 
 const StudioModeWorkspace = lazy(async () => {
   const mod = await import('./studio/StudioModeWorkspace')
@@ -315,6 +328,8 @@ interface Props {
   getPeerUplinkVideoQuality?: (peerId: string) => Promise<InboundVideoQuality | null>
   /** Удалённое выключение микрофона гостя (сигналинг). */
   requestPeerMicMute?: (targetPeerId: string) => void
+  /** Выгнать участника из комнаты (сигналинг). */
+  requestKickPeer?: (targetPeerId: string) => void
   startStudioPreview: (videoTrack: MediaStreamTrack) => Promise<{ ok: boolean; error?: string }>
   stopStudioPreview: () => Promise<void>
   /** RTMP-эфир из режима «Студия». */
@@ -357,6 +372,7 @@ export function RoomPage({
   onStopVmixIngress,
   getPeerUplinkVideoQuality,
   requestPeerMicMute,
+  requestKickPeer,
   startStudioPreview,
   stopStudioPreview,
   startStudioProgram,
@@ -565,6 +581,11 @@ export function RoomPage({
   const { plan, profile } = useProfile()
   const isDbSpaceRoomHost = useIsDbSpaceRoomHost(roomId, user?.id)
   const [chatContactStatuses, setChatContactStatuses] = useState<Record<string, ContactStatus>>({})
+  /** Запросы на вход (access_mode=approval) */
+  const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([])
+  /** Тост «управление передано на другое устройство» */
+  const [hostTransferredToast, setHostTransferredToast] = useState(false)
+  const hostTransferToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   /** Staff/superadmin по RPC + роли из профиля (если RPC отличается от `user_global_roles`). */
   const isPlatformAdminish = useMemo(
@@ -630,6 +651,89 @@ export function RoomPage({
       if (!ok) console.warn('room chat policy: update failed')
     },
     [user?.id, isDbSpaceRoomHost, roomId],
+  )
+
+  // Supabase Realtime broadcast-канал комнаты: join-requests и host-transfer
+  useEffect(() => {
+    const slug = roomId.trim()
+    if (!slug) return
+
+    const ch = supabase
+      .channel(`room-mod:${slug}`)
+      .on('broadcast', { event: 'join-request' }, (msg) => {
+        if (!isDbSpaceRoomHost) return
+        const payload = msg.payload as { requestId?: string; userId?: string | null; displayName?: string } | null
+        const requestId = typeof payload?.requestId === 'string' ? payload.requestId : `${Date.now()}`
+        const userId = typeof payload?.userId === 'string' ? payload.userId : null
+        const displayName = typeof payload?.displayName === 'string' && payload.displayName
+          ? payload.displayName
+          : userId ?? 'Участник'
+        setJoinRequests((prev) => {
+          if (prev.some((r) => r.requestId === requestId)) return prev
+          return [...prev, { requestId, userId, displayName, receivedAt: Date.now() }]
+        })
+      })
+      .on('broadcast', { event: 'host-transfer-claimed' }, () => {
+        // Управление перехвачено другим устройством — очищаем session host
+        clearHostSessionIfMatches(slug)
+        setHostTransferredToast(true)
+        if (hostTransferToastTimerRef.current) clearTimeout(hostTransferToastTimerRef.current)
+        hostTransferToastTimerRef.current = setTimeout(() => {
+          setHostTransferredToast(false)
+        }, 6000)
+      })
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(ch)
+      if (hostTransferToastTimerRef.current) clearTimeout(hostTransferToastTimerRef.current)
+    }
+  }, [roomId, isDbSpaceRoomHost])
+
+  const handleApproveJoinRequest = useCallback(
+    async (req: JoinRequest) => {
+      if (!user?.id || !req.userId) return
+      const ok = await approveSpaceRoomJoiner(roomId.trim(), user.id, req.userId)
+      if (ok) {
+        setJoinRequests((prev) => prev.filter((r) => r.requestId !== req.requestId))
+      }
+    },
+    [roomId, user?.id],
+  )
+
+  const handleDenyJoinRequest = useCallback(
+    async (req: JoinRequest) => {
+      const slug = roomId.trim()
+      if (!slug) return
+      // Убираем из approved_joiners если случайно попал
+      if (req.userId && user?.id) {
+        void removeSpaceRoomApprovedJoiner(slug, user.id, req.userId)
+      }
+      // Уведомляем гостя через broadcast
+      const ch = supabase.channel(`room-mod:${slug}`)
+      ch.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          void ch
+            .send({
+              type: 'broadcast',
+              event: 'join-request-denied',
+              payload: { requestId: req.requestId, userId: req.userId },
+            })
+            .then(() => void supabase.removeChannel(ch))
+        }
+      })
+      setJoinRequests((prev) => prev.filter((r) => r.requestId !== req.requestId))
+    },
+    [roomId, user?.id],
+  )
+
+  const handleBanPeer = useCallback(
+    async (targetPeerId: string, targetAuthUserId: string) => {
+      if (!user?.id || !isDbSpaceRoomHost) return
+      await banUserFromSpaceRoom(roomId.trim(), user.id, targetAuthUserId)
+      if (requestKickPeer) requestKickPeer(targetPeerId)
+    },
+    [roomId, user?.id, isDbSpaceRoomHost, requestKickPeer],
   )
 
   const sendChatGuarded = useCallback(
@@ -1371,6 +1475,15 @@ export function RoomPage({
             ? { show: true, onMute: () => requestPeerMicMute(p.peerId) }
             : undefined
         }
+        guestKick={
+          !isVmixTile && isDbSpaceRoomHost && p.authUserId && p.authUserId !== user?.id
+            ? {
+                show: true,
+                onKick: () => requestKickPeer?.(p.peerId),
+                onBan: () => void handleBanPeer(p.peerId, p.authUserId!),
+              }
+            : undefined
+        }
         onOpenDirectChat={
           p.authUserId && user?.id && p.authUserId !== user.id
             ? (participant) => openDirectChat(participant.authUserId!, participant.name)
@@ -2076,6 +2189,54 @@ export function RoomPage({
             studioServerLogLines={studioServerLogLines}
           />
         </Suspense>
+      ) : null}
+
+      {/* Запросы на вход (access_mode=approval) */}
+      {isDbSpaceRoomHost && joinRequests.length > 0 ? (
+        <div className="room-join-requests">
+          <div className="room-join-requests__header">
+            Запросы на вход
+            <span className="room-join-requests__count">{joinRequests.length}</span>
+          </div>
+          {joinRequests.map((req) => (
+            <div key={req.requestId} className="room-join-requests__item">
+              <span className="room-join-requests__name">{req.displayName}</span>
+              <div className="room-join-requests__actions">
+                <button
+                  type="button"
+                  className="room-join-requests__approve"
+                  onClick={() => void handleApproveJoinRequest(req)}
+                  title="Одобрить вход"
+                >
+                  ✓ Впустить
+                </button>
+                <button
+                  type="button"
+                  className="room-join-requests__deny"
+                  onClick={() => void handleDenyJoinRequest(req)}
+                  title="Отклонить запрос"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {/* Тост: управление перехвачено другим устройством */}
+      {hostTransferredToast ? (
+        <div className="room-host-transfer-toast" role="status">
+          Управление комнатой перенято на другом устройстве
+          <button
+            type="button"
+            className="room-host-transfer-toast__close"
+            onClick={() => setHostTransferredToast(false)}
+            aria-label="Закрыть"
+          >
+            ✕
+          </button>
+        </div>
       ) : null}
     </div>
   )

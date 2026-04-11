@@ -5,6 +5,8 @@ import { useRoom, type JoinRoomMediaOptions, type RoomStatus, type RoomClosedRea
 import { BrandLogoLoader } from './BrandLogoLoader'
 import { JoinPage } from './JoinPage'
 import { RoomPage } from './RoomPage'
+import { RoomHostClaimModal } from './RoomHostClaimModal'
+import { RoomJoinApprovalWaiting } from './RoomJoinApprovalWaiting'
 import type { VideoPreset } from '../types'
 import { replaceRoomInBrowserUrl } from '../utils/soloViewerParams'
 import { useAuth } from '../context/AuthContext'
@@ -97,6 +99,10 @@ export function RoomSession({ roomId }: Props) {
   chatToastNotificationsRef.current = chatToastNotifications
   const autoResumeTriedRef = useRef(false)
   const [leaveBusy, setLeaveBusy] = useState(false)
+  /** Хост открыл комнату с нового устройства: предлагаем перехватить управление. */
+  const [hostClaimMode, setHostClaimMode] = useState(false)
+  /** Пользователь ждёт одобрения хоста (access_mode=approval). */
+  const [waitingApproval, setWaitingApproval] = useState(false)
 
   const dismissChatIncomingPreview = useCallback(() => {
     if (chatPreviewTimerRef.current != null) {
@@ -154,6 +160,7 @@ export function RoomSession({ roomId }: Props) {
     startVmixIngress, stopVmixIngress, vmixIngressInfo, vmixIngressLoading,
     getPeerUplinkVideoQuality,
     requestPeerMicMute,
+    requestKickPeer,
     startStudioPreview,
     stopStudioPreview,
     startStudioProgram,
@@ -183,14 +190,41 @@ export function RoomSession({ roomId }: Props) {
     void (async () => {
       const startPayload = { roomId, userId: user?.id ?? null }
       console.log('[room-session] joinable check:start', startPayload)
-      const { joinable, denial } = await getSpaceRoomJoinStatus(roomId, user?.id ?? null)
-      const resultPayload = { roomId, ok: joinable, denial, userId: user?.id ?? null }
+      const { joinable, denial, isDbHost } = await getSpaceRoomJoinStatus(roomId, user?.id ?? null)
+      const resultPayload = { roomId, ok: joinable, denial, isDbHost, userId: user?.id ?? null }
       console.log('[room-session] joinable check:result', resultPayload)
-      if (!cancelled && !joinable) {
-        navigate('/room-closed', {
-          replace: true,
-          state: { roomId, reason: denial === 'invite_expired' ? 'invite_expired' : undefined },
-        })
+
+      if (cancelled) return
+
+      if (!joinable) {
+        if (denial === 'approval_required') {
+          setWaitingApproval(true)
+        } else {
+          navigate('/room-closed', {
+            replace: true,
+            state: {
+              roomId,
+              reason:
+                denial === 'invite_expired'
+                  ? 'invite_expired'
+                  : denial === 'banned'
+                    ? 'banned'
+                    : undefined,
+            },
+          })
+        }
+        return
+      }
+
+      // Хост открыл комнату с другого устройства/вкладки — показываем диалог перехвата управления
+      const slug = roomId.trim()
+      if (
+        isDbHost &&
+        user?.id &&
+        !isSessionHostFor(slug) &&
+        !matchesPendingHostClaim(slug)
+      ) {
+        setHostClaimMode(true)
       }
     })()
     return () => {
@@ -385,6 +419,7 @@ export function RoomSession({ roomId }: Props) {
         onStopVmixIngress={stopVmixIngress}
         getPeerUplinkVideoQuality={getPeerUplinkVideoQuality}
         requestPeerMicMute={requestPeerMicMute}
+        requestKickPeer={requestKickPeer}
         startStudioPreview={startStudioPreview}
         stopStudioPreview={stopStudioPreview}
         startStudioProgram={startStudioProgram}
@@ -396,6 +431,34 @@ export function RoomSession({ roomId }: Props) {
         connectionState={connectionState}
         reconnectAttempt={reconnectAttempt}
         leaveEndsRoomForAll={isSessionHostFor((connectedRoomId ?? roomId).trim()) || canAccessAdminPanel}
+      />
+    )
+  }
+
+  if (hostClaimMode) {
+    return (
+      <RoomHostClaimModal
+        roomId={roomId}
+        onTakeover={() => {
+          markSessionAsHostFor(roomId.trim())
+          setHostClaimMode(false)
+        }}
+        onJoinAsParticipant={() => {
+          setHostClaimMode(false)
+        }}
+      />
+    )
+  }
+
+  if (waitingApproval) {
+    return (
+      <RoomJoinApprovalWaiting
+        roomId={roomId}
+        userId={user?.id ?? null}
+        onApproved={() => {
+          setWaitingApproval(false)
+        }}
+        onBack={() => navigate('/')}
       />
     )
   }

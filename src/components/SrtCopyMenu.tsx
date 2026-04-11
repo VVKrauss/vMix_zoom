@@ -12,6 +12,8 @@ type MenuOptions = {
   showSoloViewerCopy?: boolean
   /** ПКМ: выключить микрофон этому участнику (шлётся на сигналинг). */
   guestMute?: { show: boolean; onMute: () => void }
+  /** ПКМ: выгнать участника (только хост). */
+  guestKick?: { show: boolean; onKick: () => void; onBan: () => void }
 }
 
 const LONG_MS = 550
@@ -32,7 +34,7 @@ export function useSrtCopyMenu(
   listenPort?: number,
   options: MenuOptions = { enableLongPress: true },
 ) {
-  const { enableLongPress, roomId, tilePeerId, showSoloViewerCopy = true, guestMute } = options
+  const { enableLongPress, roomId, tilePeerId, showSoloViewerCopy = true, guestMute, guestKick } = options
 
   const port = useMemo(() => {
     if (listenPort != null && listenPort > 0) return listenPort
@@ -46,9 +48,10 @@ export function useSrtCopyMenu(
   const canCopySoloPage =
     showSoloViewerCopy && Boolean(roomId?.trim()) && Boolean(tilePeerId?.trim())
   const canGuestMute = Boolean(guestMute?.show)
+  const canGuestKick = Boolean(guestKick?.show)
   /** Иначе на плитке экрана без SRT и до прихода screenPeerId меню не открывалось вовсе. */
   const canOpen =
-    canCopyPort || canCopyUrl || canCopySoloPage || Boolean(roomId?.trim()) || canGuestMute
+    canCopyPort || canCopyUrl || canCopySoloPage || Boolean(roomId?.trim()) || canGuestMute || canGuestKick
 
   const soloPageFullUrl = useMemo(() => {
     if (!canCopySoloPage) return ''
@@ -170,6 +173,23 @@ export function useSrtCopyMenu(
               }
             : undefined
         }
+        canGuestKick={canGuestKick}
+        onGuestKick={
+          guestKick?.show
+            ? () => {
+                guestKick.onKick()
+                close()
+              }
+            : undefined
+        }
+        onGuestBan={
+          guestKick?.show
+            ? () => {
+                guestKick.onBan()
+                close()
+              }
+            : undefined
+        }
         onClose={close}
       />,
       document.body,
@@ -198,6 +218,9 @@ function SrtCopyMenuPanel({
   onCopySoloPageUrl,
   canGuestMute,
   onGuestMute,
+  canGuestKick,
+  onGuestKick,
+  onGuestBan,
   onClose,
 }: {
   x: number
@@ -210,6 +233,9 @@ function SrtCopyMenuPanel({
   onCopySoloPageUrl: () => void
   canGuestMute: boolean
   onGuestMute?: () => void
+  canGuestKick: boolean
+  onGuestKick?: () => void
+  onGuestBan?: () => void
   onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -255,6 +281,16 @@ function SrtCopyMenuPanel({
           Выключить звук гостю
         </button>
       ) : null}
+      {canGuestKick && onGuestKick ? (
+        <button type="button" className="srt-copy-menu__btn srt-copy-menu__btn--warn" role="menuitem" onClick={onGuestKick}>
+          Выгнать из комнаты
+        </button>
+      ) : null}
+      {canGuestKick && onGuestBan ? (
+        <button type="button" className="srt-copy-menu__btn srt-copy-menu__btn--danger" role="menuitem" onClick={onGuestBan}>
+          Выгнать и заблокировать
+        </button>
+      ) : null}
       <button type="button" className="srt-copy-menu__btn srt-copy-menu__btn--muted" onClick={onClose}>
         Отмена
       </button>
@@ -271,6 +307,7 @@ export function SrtCopySurface({
   enableLongPress = true,
   showSoloViewerCopy = true,
   guestMute,
+  guestKick,
   className = '',
   children,
 }: {
@@ -282,6 +319,7 @@ export function SrtCopySurface({
   enableLongPress?: boolean
   showSoloViewerCopy?: boolean
   guestMute?: { show: boolean; onMute: () => void }
+  guestKick?: { show: boolean; onKick: () => void; onBan: () => void }
   className?: string
   children: ReactNode
 }) {
@@ -291,6 +329,7 @@ export function SrtCopySurface({
     tilePeerId,
     showSoloViewerCopy,
     guestMute,
+    guestKick,
   })
 
   if (!canOpen) return <>{children}</>

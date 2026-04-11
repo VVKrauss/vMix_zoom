@@ -349,7 +349,7 @@ function disposeSignalingSocket(s: Socket) {
 }
 
 export type RoomStatus = 'idle' | 'connecting' | 'connected' | 'error'
-export type RoomClosedReason = 'room_closed' | 'manager_required' | 'manager_reconnecting'
+export type RoomClosedReason = 'room_closed' | 'manager_required' | 'manager_reconnecting' | 'kicked'
 
 /** Вход в комнату: какие дорожки запросить до подключения (остальное — кнопками в комнате). */
 export type { InboundVideoQuality } from '../utils/inboundVideoStats'
@@ -1222,11 +1222,18 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
             ? 'manager_required'
             : payload?.reason === 'manager_reconnecting'
               ? 'manager_reconnecting'
-              : 'room_closed'
+              : payload?.reason === 'kicked'
+                ? 'kicked'
+                : 'room_closed'
         if (suppressRoomClosedReasonRef.current && reason === 'room_closed') {
           return
         }
         setRoomClosedReason(reason)
+        leave({ preserveRoomClosedReason: true })
+      })
+
+      socket.on('kicked', () => {
+        setRoomClosedReason('kicked')
         leave({ preserveRoomClosedReason: true })
       })
 
@@ -1583,6 +1590,18 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     const tid = targetPeerId.trim()
     if (!sock?.connected || !rid || !tid) return
     sock.emit('hostRequestPeerMicMute', { roomId: rid, targetPeerId: tid })
+  }, [])
+
+  /**
+   * Выгнать участника из комнаты (только хост / canManageRoom).
+   * Сервер должен обработать `hostKickPeer`: найти сокет цели и отправить ей `kicked`.
+   */
+  const requestKickPeer = useCallback((targetPeerId: string) => {
+    const sock = socketRef.current
+    const rid = roomIdRef.current?.trim()
+    const tid = targetPeerId.trim()
+    if (!sock?.connected || !rid || !tid) return
+    sock.emit('hostKickPeer', { roomId: rid, targetPeerId: tid })
   }, [])
 
   const toggleMute = useCallback(async () => {
@@ -2475,6 +2494,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     endRoomForAll,
     toggleMute,
     requestPeerMicMute,
+    requestKickPeer,
     toggleCam,
     switchCamera,
     switchMic,

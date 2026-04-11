@@ -728,6 +728,265 @@ html.app-root--room #root {
   word-break: break-all;
 }
 
+/* ── Host Claim Modal ─────────────────────────────────────────────────────── */
+
+.room-host-claim-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.room-host-claim-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 36px 32px;
+  max-width: 400px;
+  width: 100%;
+  text-align: center;
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.room-host-claim-modal__icon {
+  font-size: 40px;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.room-host-claim-modal__title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.room-host-claim-modal__body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.room-host-claim-modal__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.room-host-claim-modal__btn-primary {
+  background: var(--red);
+  color: #fff;
+  border-color: transparent;
+}
+
+.room-host-claim-modal__btn-primary:hover {
+  background: var(--red-hover, color-mix(in srgb, var(--red) 80%, #000));
+}
+
+.room-host-claim-modal__hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  opacity: 0.6;
+}
+
+.room-host-claim-modal__room-id {
+  font-family: ui-monospace, monospace;
+}
+
+/* ── Join Approval Waiting ────────────────────────────────────────────────── */
+
+.room-approval-waiting {
+  text-align: center;
+  align-items: center;
+  gap: 16px;
+}
+
+.room-approval-waiting__loader {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 4px;
+}
+
+.room-approval-waiting__title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.room-approval-waiting__body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  max-width: 30ch;
+}
+
+.room-approval-waiting__hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  opacity: 0.6;
+  font-family: ui-monospace, monospace;
+}
+
+.room-approval-waiting__back {
+  margin-top: 4px;
+}
+
+/* ── Join Requests panel (host, inside room) ──────────────────────────────── */
+
+.room-join-requests {
+  position: fixed;
+  top: max(env(safe-area-inset-top, 0px), 16px);
+  right: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  min-width: 240px;
+  max-width: 300px;
+  z-index: 500;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.room-join-requests__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.room-join-requests__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.room-join-requests__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+.room-join-requests__name {
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.room-join-requests__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.room-join-requests__approve {
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--red) 15%, transparent);
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.room-join-requests__approve:hover {
+  background: color-mix(in srgb, var(--red) 25%, transparent);
+}
+
+.room-join-requests__deny {
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.room-join-requests__deny:hover {
+  background: var(--surface2);
+}
+
+/* ── Host Transfer Toast ──────────────────────────────────────────────────── */
+
+.room-host-transfer-toast {
+  position: fixed;
+  bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 16px 10px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text);
+  z-index: 600;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+  border-left: 3px solid var(--red);
+}
+
+.room-host-transfer-toast__close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* ── SRT menu: kick/ban buttons ───────────────────────────────────────────── */
+
+.srt-copy-menu__btn--warn {
+  color: #e6a817;
+}
+
+.srt-copy-menu__btn--danger {
+  color: var(--red);
+}
+
 .room-closed-actions {
   display: flex;
   flex-direction: column;

@@ -150,36 +150,61 @@ export function participantCanPostRoomChat(
   }
 }
 
-export type SpaceRoomJoinDenial = 'none' | 'invite_expired' | 'closed_or_missing'
+export type SpaceRoomJoinDenial =
+  | 'none'
+  | 'invite_expired'
+  | 'closed_or_missing'
+  | 'banned'
+  | 'approval_required'
 
 export async function getSpaceRoomJoinStatus(
   slug: string,
   authUserId?: string | null,
-): Promise<{ joinable: boolean; denial: SpaceRoomJoinDenial }> {
+): Promise<{ joinable: boolean; denial: SpaceRoomJoinDenial; isDbHost: boolean }> {
   const trimmed = slug.trim()
-  if (!trimmed) return { joinable: false, denial: 'closed_or_missing' }
+  if (!trimmed) return { joinable: false, denial: 'closed_or_missing', isDbHost: false }
   if (matchesPendingHostClaim(trimmed) || isSessionHostFor(trimmed)) {
-    return { joinable: true, denial: 'none' }
+    return { joinable: true, denial: 'none', isDbHost: false }
   }
   const { data, error } = await supabase
     .from('space_rooms')
-    .select('status, host_user_id, retain_instance, access_mode, created_at')
+    .select('status, host_user_id, retain_instance, access_mode, created_at, banned_user_ids, approved_joiners')
     .eq('slug', trimmed)
     .maybeSingle()
   if (error) {
     console.warn('getSpaceRoomJoinStatus:', error.message)
-    return { joinable: false, denial: 'closed_or_missing' }
+    return { joinable: false, denial: 'closed_or_missing', isDbHost: false }
   }
-  if (!data || data.status !== 'open') return { joinable: false, denial: 'closed_or_missing' }
+  if (!data || data.status !== 'open') {
+    return { joinable: false, denial: 'closed_or_missing', isDbHost: false }
+  }
 
   const hostId = typeof data.host_user_id === 'string' ? data.host_user_id : null
-  if (authUserId && hostId && authUserId === hostId) {
-    return { joinable: true, denial: 'none' }
+  const isDbHost = Boolean(authUserId && hostId && authUserId === hostId)
+
+  // Проверка бана раньше всего остального
+  const bannedIds: string[] = Array.isArray(data.banned_user_ids) ? data.banned_user_ids : []
+  if (authUserId && bannedIds.includes(authUserId)) {
+    return { joinable: false, denial: 'banned', isDbHost: false }
+  }
+
+  // Хост всегда входит
+  if (isDbHost) {
+    return { joinable: true, denial: 'none', isDbHost: true }
   }
 
   const accessMode = typeof data.access_mode === 'string' ? data.access_mode : 'link'
-  if (accessMode === 'approval' || accessMode === 'invite_only') {
-    return { joinable: false, denial: 'invite_expired' }
+
+  if (accessMode === 'approval') {
+    const approvedIds: string[] = Array.isArray(data.approved_joiners) ? data.approved_joiners : []
+    if (authUserId && approvedIds.includes(authUserId)) {
+      return { joinable: true, denial: 'none', isDbHost: false }
+    }
+    return { joinable: false, denial: 'approval_required', isDbHost: false }
+  }
+
+  if (accessMode === 'invite_only') {
+    return { joinable: false, denial: 'invite_expired', isDbHost: false }
   }
 
   const retain = Boolean(data.retain_instance)
@@ -189,11 +214,11 @@ export async function getSpaceRoomJoinStatus(
       !Number.isNaN(createdMs) &&
       Date.now() - createdMs > SPACE_ROOM_TEMPORARY_INVITE_MINUTES * 60_000
     ) {
-      return { joinable: false, denial: 'invite_expired' }
+      return { joinable: false, denial: 'invite_expired', isDbHost: false }
     }
   }
 
-  return { joinable: true, denial: 'none' }
+  return { joinable: true, denial: 'none', isDbHost: false }
 }
 
 /** @deprecated Используйте getSpaceRoomJoinStatus для различения причин отказа. */
@@ -257,4 +282,109 @@ export async function hostLeaveSpaceRoom(slug: string): Promise<void> {
   const trimmed = slug.trim()
   if (!trimmed) return
   await supabase.rpc('host_leave_space_room', { p_slug: trimmed })
+}
+
+/** Заблокировать пользователя в комнате (только хост). Read-modify-write. */
+export async function banUserFromSpaceRoom(
+  slug: string,
+  hostUserId: string,
+  targetUserId: string,
+): Promise<boolean> {
+  const trimmed = slug.trim()
+  if (!trimmed || !hostUserId || !targetUserId) return false
+  const { data: row } = await supabase
+    .from('space_rooms')
+    .select('banned_user_ids')
+    .eq('slug', trimmed)
+    .eq('host_user_id', hostUserId)
+    .maybeSingle()
+  if (!row) return false
+  const current: string[] = Array.isArray(row.banned_user_ids) ? row.banned_user_ids : []
+  if (current.includes(targetUserId)) return true
+  const { error } = await supabase
+    .from('space_rooms')
+    .update({ banned_user_ids: [...current, targetUserId], updated_at: new Date().toISOString() })
+    .eq('slug', trimmed)
+    .eq('host_user_id', hostUserId)
+  if (error) {
+    console.warn('banUserFromSpaceRoom:', error.message)
+    return false
+  }
+  return true
+}
+
+/** Одобрить вход пользователя (только хост, access_mode=approval). */
+export async function approveSpaceRoomJoiner(
+  slug: string,
+  hostUserId: string,
+  targetUserId: string,
+): Promise<boolean> {
+  const trimmed = slug.trim()
+  if (!trimmed || !hostUserId || !targetUserId) return false
+  const { data: row } = await supabase
+    .from('space_rooms')
+    .select('approved_joiners')
+    .eq('slug', trimmed)
+    .eq('host_user_id', hostUserId)
+    .maybeSingle()
+  if (!row) return false
+  const current: string[] = Array.isArray(row.approved_joiners) ? row.approved_joiners : []
+  if (current.includes(targetUserId)) return true
+  const { error } = await supabase
+    .from('space_rooms')
+    .update({ approved_joiners: [...current, targetUserId], updated_at: new Date().toISOString() })
+    .eq('slug', trimmed)
+    .eq('host_user_id', hostUserId)
+  if (error) {
+    console.warn('approveSpaceRoomJoiner:', error.message)
+    return false
+  }
+  return true
+}
+
+/** Убрать пользователя из списка ожидающих (отклонить или очистить после входа). */
+export async function removeSpaceRoomApprovedJoiner(
+  slug: string,
+  hostUserId: string,
+  targetUserId: string,
+): Promise<void> {
+  const trimmed = slug.trim()
+  if (!trimmed || !hostUserId || !targetUserId) return
+  const { data: row } = await supabase
+    .from('space_rooms')
+    .select('approved_joiners')
+    .eq('slug', trimmed)
+    .eq('host_user_id', hostUserId)
+    .maybeSingle()
+  if (!row) return
+  const current: string[] = Array.isArray(row.approved_joiners) ? row.approved_joiners : []
+  const next = current.filter((id) => id !== targetUserId)
+  if (next.length === current.length) return
+  await supabase
+    .from('space_rooms')
+    .update({ approved_joiners: next, updated_at: new Date().toISOString() })
+    .eq('slug', trimmed)
+    .eq('host_user_id', hostUserId)
+}
+
+/** Добавить комнату в режим approval (хост устанавливает). */
+export async function updateSpaceRoomAccessMode(
+  slug: string,
+  hostUserId: string,
+  mode: 'link' | 'approval' | 'invite_only',
+): Promise<boolean> {
+  const trimmed = slug.trim()
+  if (!trimmed || !hostUserId) return false
+  const { error, data } = await supabase
+    .from('space_rooms')
+    .update({ access_mode: mode, updated_at: new Date().toISOString() })
+    .eq('slug', trimmed)
+    .eq('host_user_id', hostUserId)
+    .select('slug')
+    .maybeSingle()
+  if (error) {
+    console.warn('updateSpaceRoomAccessMode:', error.message)
+    return false
+  }
+  return Boolean(data?.slug)
 }

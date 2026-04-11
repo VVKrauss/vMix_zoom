@@ -29,6 +29,7 @@ interface Props {
   getPeerUplinkVideoQuality?: (peerId: string) => Promise<InboundVideoQuality | null>
   showSoloViewerCopy?: boolean
   guestMute?: { show: boolean; onMute: () => void }
+  guestKick?: { show: boolean; onKick: () => void; onBan: () => void }
   onOpenDirectChat?: (participant: RemoteParticipant) => void
 }
 
@@ -42,6 +43,7 @@ export function ParticipantCard({
   getPeerUplinkVideoQuality,
   showSoloViewerCopy = true,
   guestMute,
+  guestKick,
   onOpenDirectChat,
 }: Props) {
   const mainVideoRef = useRef<HTMLVideoElement>(null)
@@ -98,6 +100,7 @@ export function ParticipantCard({
           tilePeerId={participant.peerId}
           showSoloViewerCopy={showSoloViewerCopy}
           guestMute={guestMute}
+          guestKick={guestKick}
         >
           <video
             ref={mainVideoRef}
