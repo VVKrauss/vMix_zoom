@@ -2,10 +2,13 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import type { SpaceRoomChatVisibility } from '../lib/spaceRoom'
 
+export type SpaceRoomAccessMode = 'link' | 'approval' | 'invite_only'
+
 export type SpaceRoomSettingsRow = {
   slug: string
   hostUserId: string | null
   chatVisibility: SpaceRoomChatVisibility
+  accessMode: SpaceRoomAccessMode
   status: string
 }
 
@@ -21,15 +24,19 @@ function parseRow(raw: Record<string, unknown> | null): SpaceRoomSettingsRow | n
     cv === 'closed'
       ? cv
       : 'everyone'
+  const am = raw.access_mode
+  const accessMode: SpaceRoomAccessMode =
+    am === 'approval' || am === 'invite_only' ? am : 'link'
   return {
     slug,
     hostUserId: typeof raw.host_user_id === 'string' ? raw.host_user_id : null,
     chatVisibility,
+    accessMode,
     status: typeof raw.status === 'string' ? raw.status : '',
   }
 }
 
-/** Подписка на строку space_rooms по slug (политика чата и статус). */
+/** Подписка на строку space_rooms по slug (политика чата, режим доступа и статус). */
 export function useSpaceRoomSettings(roomSlug: string | undefined): {
   row: SpaceRoomSettingsRow | null
   loading: boolean
@@ -48,7 +55,7 @@ export function useSpaceRoomSettings(roomSlug: string | undefined): {
     }
     void supabase
       .from('space_rooms')
-      .select('slug, host_user_id, chat_visibility, status')
+      .select('slug, host_user_id, chat_visibility, access_mode, status')
       .eq('slug', slug)
       .maybeSingle()
       .then(({ data, error }) => {

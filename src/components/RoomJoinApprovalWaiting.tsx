@@ -6,24 +6,41 @@ import { BrandLogoLoader } from './BrandLogoLoader'
 interface Props {
   roomId: string
   userId: string | null
-  /** Вызывается когда хост одобрил вход — переходим к JoinPage. */
+  /** Имя, введённое пользователем на JoinPage — показывается хосту в запросе. */
+  displayName: string
+  /** Вызывается когда хост одобрил вход — авто-подключение. */
   onApproved: () => void
   onBack: () => void
 }
 
 /**
  * Экран ожидания одобрения для комнат с access_mode = 'approval'.
- * Пользователь видит спиннер и статус. Хост получает запрос через
- * Supabase Realtime Broadcast на канале `room-mod:{roomId}`.
- * Одобрение хоста записывается в space_rooms.approved_joiners →
- * postgres_changes срабатывает → этот компонент видит себя в списке → даёт войти.
+ *
+ * Поток:
+ * 1. Подписываемся на канал room-mod:{slug}.
+ * 2. Отправляем broadcast join-request с реальным именем пользователя.
+ * 3. Хост видит имя в панели запросов и жмёт «Впустить».
+ * 4. Хост отправляет broadcast join-approved с requestId.
+ * 5. Мы получаем join-approved → вызываем onApproved() → авто-вход.
+ *
+ * Для авторизованных пользователей также слушается postgres_changes
+ * (обновление approved_joiners в space_rooms) как дополнительный триггер.
  */
-export function RoomJoinApprovalWaiting({ roomId, userId, onApproved, onBack }: Props) {
+export function RoomJoinApprovalWaiting({ roomId, userId, displayName, onApproved, onBack }: Props) {
   const [status, setStatus] = useState<'pending' | 'denied' | 'checking'>('pending')
   const requestIdRef = useRef(`req-${Math.random().toString(36).slice(2)}`)
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const approvedRef = useRef(false)
+  // Всегда актуальная версия колбэка — без stale closure в useEffect
+  const onApprovedRef = useRef(onApproved)
+  onApprovedRef.current = onApproved
 
-  // Отправляем запрос хосту через Broadcast + слушаем ответ
+  const triggerApproved = useRef(() => {
+    if (approvedRef.current) return
+    approvedRef.current = true
+    onApprovedRef.current()
+  }).current
+
+  // Основной канал: send join-request и слушаем join-approved / join-request-denied
   useEffect(() => {
     const slug = roomId.trim()
     if (!slug) return
@@ -31,12 +48,20 @@ export function RoomJoinApprovalWaiting({ roomId, userId, onApproved, onBack }: 
     const requestId = requestIdRef.current
     const ch = supabase.channel(`room-mod:${slug}`)
 
+    ch.on('broadcast', { event: 'join-approved' }, (msg) => {
+      const payload = msg.payload as { requestId?: string; userId?: string } | null
+      const matchById = userId && payload?.userId === userId
+      const matchByReq = payload?.requestId === requestId
+      if (matchById || matchByReq) {
+        triggerApproved()
+      }
+    })
+
     ch.on('broadcast', { event: 'join-request-denied' }, (msg) => {
       const payload = msg.payload as { requestId?: string; userId?: string } | null
-      if (
-        payload?.requestId === requestId ||
-        (userId && payload?.userId === userId)
-      ) {
+      const matchById = userId && payload?.userId === userId
+      const matchByReq = payload?.requestId === requestId
+      if (matchById || matchByReq) {
         setStatus('denied')
       }
     })
@@ -49,19 +74,18 @@ export function RoomJoinApprovalWaiting({ roomId, userId, onApproved, onBack }: 
         payload: {
           requestId,
           userId: userId ?? null,
-          displayName: document.title,
+          displayName: displayName.trim() || 'Гость',
         },
       })
     })
 
-    channelRef.current = ch
     return () => {
       void supabase.removeChannel(ch)
-      channelRef.current = null
     }
-  }, [roomId, userId])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, userId, displayName])
 
-  // Слушаем изменения space_rooms.approved_joiners через postgres_changes
+  // Дополнительно для авторизованных: postgres_changes на approved_joiners
   useEffect(() => {
     if (!userId) return
     const slug = roomId.trim()
@@ -81,7 +105,7 @@ export function RoomJoinApprovalWaiting({ roomId, userId, onApproved, onBack }: 
           setStatus('checking')
           const { joinable } = await getSpaceRoomJoinStatus(slug, userId)
           if (joinable) {
-            onApproved()
+            triggerApproved()
           } else {
             setStatus('pending')
           }
@@ -92,9 +116,10 @@ export function RoomJoinApprovalWaiting({ roomId, userId, onApproved, onBack }: 
     return () => {
       void supabase.removeChannel(ch)
     }
-  }, [roomId, userId, onApproved])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, userId])
 
-  // Повторный опрос каждые 15 секунд как fallback
+  // Fallback-опрос каждые 20 с (только для авторизованных)
   useEffect(() => {
     if (!userId || status !== 'pending') return
     const slug = roomId.trim()
@@ -102,11 +127,12 @@ export function RoomJoinApprovalWaiting({ roomId, userId, onApproved, onBack }: 
 
     const poll = setInterval(async () => {
       const { joinable } = await getSpaceRoomJoinStatus(slug, userId)
-      if (joinable) onApproved()
-    }, 15_000)
+      if (joinable) triggerApproved()
+    }, 20_000)
 
     return () => clearInterval(poll)
-  }, [roomId, userId, status, onApproved])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, userId, status])
 
   if (status === 'denied') {
     return (

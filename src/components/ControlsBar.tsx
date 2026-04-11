@@ -14,6 +14,7 @@ import type { VideoPreset } from '../types'
 import { presetToSimpleTier, simpleTierToPreset } from '../utils/simpleVideoQuality'
 import type { LayoutMode, VmixIngressPhase } from './RoomPage'
 import type { SpaceRoomChatVisibility } from '../lib/spaceRoom'
+import type { SpaceRoomAccessMode } from '../hooks/useSpaceRoomSettings'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
 import { MicIcon, MicOffIcon, CamIcon, CamOffIcon, InviteIcon, EndCallIcon } from './icons'
 import { useOnOutsideClick } from '../hooks/useOnOutsideClick'
@@ -121,6 +122,9 @@ interface Props {
   roomChatVisibility?: SpaceRoomChatVisibility
   onRoomChatVisibilityChange?: (v: SpaceRoomChatVisibility) => void
   showRoomChatPolicySettings?: boolean
+  /** Режим доступа в комнату (для хоста). */
+  roomAccessMode?: SpaceRoomAccessMode
+  onRoomAccessModeChange?: (v: SpaceRoomAccessMode) => void
   /** Ссылка «Админка» в мобильном листе (superadmin / platform_admin / support_admin). */
   showAdminPanelLink?: boolean
   /** Камера в плитках: true — без полей (cover), false — весь кадр (contain). */
@@ -265,6 +269,8 @@ export function ControlsBar({
   roomChatVisibility,
   onRoomChatVisibilityChange,
   showRoomChatPolicySettings = false,
+  roomAccessMode,
+  onRoomAccessModeChange,
   showAdminPanelLink = false,
   hideVideoLetterboxing,
   onHideVideoLetterboxingChange,
@@ -393,6 +399,8 @@ export function ControlsBar({
           roomChatVisibility={roomChatVisibility}
           onRoomChatVisibilityChange={onRoomChatVisibilityChange}
           showRoomChatPolicySettings={showRoomChatPolicySettings}
+          roomAccessMode={roomAccessMode}
+          onRoomAccessModeChange={onRoomAccessModeChange}
         />
       )}
     </div>
@@ -755,20 +763,19 @@ export function ControlsBar({
       {forceMobileFabMenu ? (
         <>
           <div className="ctrl-mobile-bottom-bar" role="toolbar" aria-label="Управление комнатой">
-            <div className="ctrl-mobile-bottom-bar__edge ctrl-mobile-bottom-bar__edge--left" />
-              {false ? (
+            <div className="ctrl-mobile-bottom-bar__edge ctrl-mobile-bottom-bar__edge--left">
               <button
                 type="button"
                 className={`ctrl-mobile-bottom-bar__btn ctrl-mobile-bottom-bar__btn--compact${
                   playoutVolume < 0.02 ? ' ctrl-mobile-bottom-bar__btn--off' : ''
                 }`}
                 {...hpPress}
-                title="Коротко: звук участников. Долго: громкость и устройство вывода"
-                aria-label="Звук участников; долгое нажатие — настройки вывода"
+                title="Коротко: звук участников. Долго: устройство вывода"
+                aria-label="Звук участников; долгое нажатие — выбор устройства вывода"
               >
                 {playoutVolume < 0.02 ? <HeadphonesMutedIcon /> : <HeadphonesIcon />}
               </button>
-              ) : null}
+            </div>
             <div className="ctrl-mobile-bottom-bar__center">
               <button
                 type="button"
@@ -864,7 +871,7 @@ export function ControlsBar({
               onToggleAudioMeter={onToggleMeter}
             />
           ) : null}
-          {false && open === 'headphones' && forceMobileFabMenu ? (
+          {open === 'headphones' && forceMobileFabMenu ? (
             <PlayoutPopover
               onClose={() => setOpen(null)}
               playoutVolume={playoutVolume}
@@ -1070,7 +1077,7 @@ function PlayoutPopover({
           onChange={(e) => onPlayoutVolumeChange(Number(e.target.value) / 100)}
         />
       </div>
-      {audioOutputs.length > 0 && (
+      {audioOutputs.length > 0 ? (
         <div className="device-popover__section">
           <span className="device-popover__label">Выход звука</span>
           <select
@@ -1082,6 +1089,10 @@ function PlayoutPopover({
               <option key={d.deviceId} value={d.deviceId}>{d.label || d.deviceId}</option>
             ))}
           </select>
+        </div>
+      ) : (
+        <div className="device-popover__section device-popover__section--hint">
+          Переключение устройства вывода недоступно в этом браузере
         </div>
       )}
     </div>
@@ -1104,6 +1115,8 @@ function ChatOptionsPopover({
   roomChatVisibility,
   onRoomChatVisibilityChange,
   showRoomChatPolicySettings = false,
+  roomAccessMode,
+  onRoomAccessModeChange,
 }: {
   chatEmbed: boolean
   onToggleChatEmbed: () => void
@@ -1113,6 +1126,8 @@ function ChatOptionsPopover({
   roomChatVisibility?: SpaceRoomChatVisibility
   onRoomChatVisibilityChange?: (v: SpaceRoomChatVisibility) => void
   showRoomChatPolicySettings?: boolean
+  roomAccessMode?: SpaceRoomAccessMode
+  onRoomAccessModeChange?: (v: SpaceRoomAccessMode) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   useOnOutsideClick(ref, onClose)
@@ -1157,6 +1172,29 @@ function ChatOptionsPopover({
               </option>
             ))}
           </select>
+        </div>
+      ) : null}
+      {onRoomAccessModeChange ? (
+        <div className="settings-popover__section settings-popover__section--bordered">
+          <div className="settings-popover__subtitle">Вход в комнату</div>
+          <div className="settings-row settings-row--pill">
+            <span className="settings-label">
+              Одобрять вход вручную
+            </span>
+            <PillToggle
+              compact
+              checked={roomAccessMode === 'approval'}
+              onCheckedChange={(checked) =>
+                onRoomAccessModeChange(checked ? 'approval' : 'link')
+              }
+              ariaLabel="Требовать одобрения хоста для входа в комнату"
+            />
+          </div>
+          {roomAccessMode === 'approval' ? (
+            <p className="settings-popover__hint">
+              Гости будут видеть экран ожидания, а вы — запросы на вход
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>

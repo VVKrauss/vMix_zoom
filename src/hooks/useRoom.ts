@@ -952,6 +952,18 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           applyRosterRow(next, row, sid)
           return next
         })
+        // Системное сообщение в чат: не для своего peerJoined (он уже в комнате)
+        if (row.peerId && row.peerId !== sid && row.name) {
+          const joinNotice: RoomChatMessage = {
+            peerId: row.peerId,
+            senderUserId: (row as Record<string, unknown>).authUserId as string | null ?? null,
+            name: row.name,
+            text: `${row.name} вошёл в комнату`,
+            ts: Date.now(),
+            kind: 'system',
+          }
+          setChatMessages((prev) => mergeIncomingChatMessage(prev, joinNotice))
+        }
       })
 
       // 3. Join room

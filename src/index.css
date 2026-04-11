@@ -849,30 +849,77 @@ html.app-root--room #root {
 
 /* ── Join Requests panel (host, inside room) ──────────────────────────────── */
 
-.room-join-requests {
+/* ── Кнопка запросов на вход (в шапке комнаты) ───────────────────────────── */
+
+.room-join-requests-btn-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.room-requests-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* ── Модалка запросов на вход ─────────────────────────────────────────────── */
+
+.room-join-requests-backdrop {
   position: fixed;
-  top: max(env(safe-area-inset-top, 0px), 16px);
-  right: 16px;
+  inset: 0;
+  z-index: 800;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.room-join-requests {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 12px 14px;
-  min-width: 240px;
-  max-width: 300px;
-  z-index: 500;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  border-radius: 16px;
+  padding: 0;
+  width: 100%;
+  max-width: 360px;
+  max-height: 70vh;
+  overflow-y: auto;
+  z-index: 801;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
 .room-join-requests__header {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  padding: 14px 16px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  border-radius: 16px 16px 0 0;
+}
+
+.room-join-requests__header > span:first-child {
+  flex: 1;
 }
 
 .room-join-requests__count {
@@ -889,13 +936,39 @@ html.app-root--room #root {
   font-weight: 700;
 }
 
+.room-join-requests__close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  line-height: 1;
+  border-radius: 6px;
+  transition: color 0.15s;
+  margin-left: 4px;
+}
+.room-join-requests__close:hover {
+  color: var(--text);
+}
+
+.room-join-requests__empty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
 .room-join-requests__item {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 0;
-  border-top: 1px solid var(--border);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.room-join-requests__item:last-child {
+  border-bottom: none;
 }
 
 .room-join-requests__name {
@@ -914,11 +987,11 @@ html.app-root--room #root {
 }
 
 .room-join-requests__approve {
-  padding: 4px 10px;
+  padding: 5px 12px;
   border-radius: 8px;
   border: 1px solid transparent;
-  background: color-mix(in srgb, var(--red) 15%, transparent);
-  color: var(--red);
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -926,11 +999,11 @@ html.app-root--room #root {
 }
 
 .room-join-requests__approve:hover {
-  background: color-mix(in srgb, var(--red) 25%, transparent);
+  background: rgba(34, 197, 94, 0.28);
 }
 
 .room-join-requests__deny {
-  padding: 4px 8px;
+  padding: 5px 10px;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: transparent;
@@ -942,6 +1015,84 @@ html.app-root--room #root {
 
 .room-join-requests__deny:hover {
   background: var(--surface2);
+}
+
+/* ── Тост: новый запрос на вход ───────────────────────────────────────────── */
+
+.room-join-request-toast {
+  position: fixed;
+  top: max(env(safe-area-inset-top, 0px), 16px);
+  right: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid #22c55e;
+  border-radius: 12px;
+  padding: 10px 10px 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text);
+  z-index: 600;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  max-width: 320px;
+  animation: toast-in 0.25s ease;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.room-join-request-toast__icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  color: #22c55e;
+}
+.room-join-request-toast__icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.room-join-request-toast__text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-join-request-toast__action {
+  flex-shrink: 0;
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #22c55e;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.room-join-request-toast__action:hover {
+  background: rgba(34, 197, 94, 0.28);
+}
+
+.room-join-request-toast__close {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  line-height: 1;
+  border-radius: 6px;
+  transition: color 0.15s;
+}
+.room-join-request-toast__close:hover {
+  color: var(--text);
 }
 
 /* ── Host Transfer Toast ──────────────────────────────────────────────────── */
@@ -6186,6 +6337,23 @@ button.vio-row--peer:focus-visible {
   border-top: 1px solid var(--border);
 }
 
+.settings-popover__subtitle {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.settings-popover__hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin: 6px 0 0;
+  opacity: 0.8;
+}
+
 .settings-row {
   display: flex;
   align-items: center;
@@ -7190,6 +7358,14 @@ html[data-theme="light"] .card-name {
 .device-popover__section--quality {
   padding-top: 10px;
   border-top: 1px solid var(--border);
+}
+
+.device-popover__section--hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  opacity: 0.7;
+  text-align: center;
+  padding-bottom: 4px;
 }
 
 .device-popover__quality-tiers {
@@ -8333,6 +8509,16 @@ html[data-theme="light"] .room-chat-msg {
 html[data-theme="light"] .room-chat-msg--own {
   border-color: rgba(158, 92, 92, 0.35);
   background: linear-gradient(180deg, rgba(200, 150, 148, 0.35), rgba(180, 125, 122, 0.22));
+}
+
+.room-chat-system {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 4px 12px;
+  opacity: 0.75;
+  user-select: none;
+  pointer-events: none;
 }
 
 .room-chat-msg--reaction {

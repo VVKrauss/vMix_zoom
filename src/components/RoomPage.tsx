@@ -11,6 +11,7 @@ import { AudioMeter } from './AudioMeter'
     MicOffIcon,
     DashboardIcon,
     InviteIcon,
+    JoinRequestsIcon,
     ParticipantsBadgeIcon,
     ChatBubbleIcon,
     FullscreenEnterIcon,
@@ -74,7 +75,7 @@ import { useRoomUiSync } from '../hooks/useRoomUiSync'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useProfile } from '../hooks/useProfile'
 import { useIsDbSpaceRoomHost } from '../hooks/useSpaceRoomHost'
-import { useSpaceRoomSettings } from '../hooks/useSpaceRoomSettings'
+import { useSpaceRoomSettings, type SpaceRoomAccessMode } from '../hooks/useSpaceRoomSettings'
 import {
   isSessionHostFor,
   clearHostSessionIfMatches,
@@ -84,9 +85,11 @@ import {
   approveSpaceRoomJoiner,
   removeSpaceRoomApprovedJoiner,
   banUserFromSpaceRoom,
+  updateSpaceRoomAccessMode,
   type SpaceRoomChatVisibility,
 } from '../lib/spaceRoom'
 import { supabase } from '../lib/supabase'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 import type { StudioOutputPreset } from '../types/studio'
 import { getContactStatuses, setUserFavorite, type ContactStatus } from '../lib/socialGraph'
 
@@ -581,8 +584,15 @@ export function RoomPage({
   const { plan, profile } = useProfile()
   const isDbSpaceRoomHost = useIsDbSpaceRoomHost(roomId, user?.id)
   const [chatContactStatuses, setChatContactStatuses] = useState<Record<string, ContactStatus>>({})
+  /** Ref на Realtime-канал модерации (room-mod:slug) для отправки broadcast без создания дубля */
+  const modChannelRef = useRef<RealtimeChannel | null>(null)
   /** Запросы на вход (access_mode=approval) */
   const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([])
+  /** Открыта ли модалка запросов */
+  const [joinRequestsOpen, setJoinRequestsOpen] = useState(false)
+  /** Тост о новом запросе на вход */
+  const [joinRequestToast, setJoinRequestToast] = useState<string | null>(null)
+  const joinRequestToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** Тост «управление передано на другое устройство» */
   const [hostTransferredToast, setHostTransferredToast] = useState(false)
   const hostTransferToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -620,6 +630,7 @@ export function RoomPage({
 
   const { row: spaceRoomRow } = useSpaceRoomSettings(roomId)
   const roomChatVisibility: SpaceRoomChatVisibility = spaceRoomRow?.chatVisibility ?? 'everyone'
+  const roomAccessMode = spaceRoomRow?.accessMode ?? 'link'
 
   const chatParticipantCtx = useMemo(
     () => ({
@@ -653,13 +664,22 @@ export function RoomPage({
     [user?.id, isDbSpaceRoomHost, roomId],
   )
 
+  const handleRoomAccessModeChange = useCallback(
+    async (v: SpaceRoomAccessMode) => {
+      if (!user?.id || !isDbSpaceRoomHost) return
+      const ok = await updateSpaceRoomAccessMode(roomId.trim(), user.id, v)
+      if (!ok) console.warn('room access mode: update failed')
+    },
+    [user?.id, isDbSpaceRoomHost, roomId],
+  )
+
   // Supabase Realtime broadcast-канал комнаты: join-requests и host-transfer
   useEffect(() => {
     const slug = roomId.trim()
     if (!slug) return
 
     const ch = supabase
-      .channel(`room-mod:${slug}`)
+      .channel(`room-mod:${slug}`, { config: { broadcast: { ack: false } } })
       .on('broadcast', { event: 'join-request' }, (msg) => {
         if (!isDbSpaceRoomHost) return
         const payload = msg.payload as { requestId?: string; userId?: string | null; displayName?: string } | null
@@ -670,6 +690,10 @@ export function RoomPage({
           : userId ?? 'Участник'
         setJoinRequests((prev) => {
           if (prev.some((r) => r.requestId === requestId)) return prev
+          // Показываем тост о новом запросе
+          setJoinRequestToast(displayName)
+          if (joinRequestToastTimerRef.current) clearTimeout(joinRequestToastTimerRef.current)
+          joinRequestToastTimerRef.current = setTimeout(() => setJoinRequestToast(null), 5000)
           return [...prev, { requestId, userId, displayName, receivedAt: Date.now() }]
         })
       })
@@ -684,7 +708,10 @@ export function RoomPage({
       })
       .subscribe()
 
+    modChannelRef.current = ch
+
     return () => {
+      modChannelRef.current = null
       void supabase.removeChannel(ch)
       if (hostTransferToastTimerRef.current) clearTimeout(hostTransferToastTimerRef.current)
     }
@@ -692,11 +719,25 @@ export function RoomPage({
 
   const handleApproveJoinRequest = useCallback(
     async (req: JoinRequest) => {
-      if (!user?.id || !req.userId) return
-      const ok = await approveSpaceRoomJoiner(roomId.trim(), user.id, req.userId)
-      if (ok) {
-        setJoinRequests((prev) => prev.filter((r) => r.requestId !== req.requestId))
+      const slug = roomId.trim()
+      if (!slug || !user?.id) return
+
+      // Используем уже подписанный канал — создание нового дубля ломает Realtime
+      const ch = modChannelRef.current
+      if (ch) {
+        void ch.send({
+          type: 'broadcast',
+          event: 'join-approved',
+          payload: { requestId: req.requestId, userId: req.userId },
+        })
       }
+
+      // Для авторизованных — дополнительно пишем в approved_joiners (для fallback и re-entry)
+      if (req.userId) {
+        void approveSpaceRoomJoiner(slug, user.id, req.userId)
+      }
+
+      setJoinRequests((prev) => prev.filter((r) => r.requestId !== req.requestId))
     },
     [roomId, user?.id],
   )
@@ -709,19 +750,15 @@ export function RoomPage({
       if (req.userId && user?.id) {
         void removeSpaceRoomApprovedJoiner(slug, user.id, req.userId)
       }
-      // Уведомляем гостя через broadcast
-      const ch = supabase.channel(`room-mod:${slug}`)
-      ch.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          void ch
-            .send({
-              type: 'broadcast',
-              event: 'join-request-denied',
-              payload: { requestId: req.requestId, userId: req.userId },
-            })
-            .then(() => void supabase.removeChannel(ch))
-        }
-      })
+      // Уведомляем гостя через уже подписанный канал
+      const ch = modChannelRef.current
+      if (ch) {
+        void ch.send({
+          type: 'broadcast',
+          event: 'join-request-denied',
+          payload: { requestId: req.requestId, userId: req.userId },
+        })
+      }
       setJoinRequests((prev) => prev.filter((r) => r.requestId !== req.requestId))
     },
     [roomId, user?.id],
@@ -1747,6 +1784,23 @@ export function RoomPage({
                     </div>
                   )}
                 </div>
+
+                {isDbSpaceRoomHost && (
+                  <div className="room-join-requests-btn-wrap">
+                    <button
+                      type="button"
+                      className={`room-invite-btn${joinRequestsOpen ? ' room-invite-btn--open' : ''}`}
+                      onClick={() => { setJoinRequestsOpen((v) => !v); setJoinRequestToast(null) }}
+                      title="Запросы на вход"
+                      aria-label="Запросы на вход"
+                    >
+                      <JoinRequestsIcon />
+                    </button>
+                    {joinRequests.length > 0 && (
+                      <span className="room-requests-badge">{joinRequests.length}</span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1842,21 +1896,13 @@ export function RoomPage({
         </div>
       ) : null}
 
-      {isViewportMobile ? (
+      {!isViewportMobile && fullscreenSupported ? (
         <button
           type="button"
           className="room-mobile-fullscreen-btn"
           onClick={() => { void toggleMobilePresentationMode() }}
-          title={
-            fullscreenSupported
-              ? (fullscreenActive ? 'Выйти из полноэкранного режима' : 'Во весь экран')
-              : (mobilePresentationActive ? 'Показать панели' : 'Скрыть панели')
-          }
-          aria-label={
-            fullscreenSupported
-              ? (fullscreenActive ? 'Выйти из полноэкранного режима' : 'Во весь экран (как F11)')
-              : (mobilePresentationActive ? 'Показать панели управления' : 'Скрыть панели управления')
-          }
+          title={fullscreenActive ? 'Выйти из полноэкранного режима' : 'Во весь экран'}
+          aria-label={fullscreenActive ? 'Выйти из полноэкранного режима' : 'Во весь экран (как F11)'}
         >
           {mobilePresentationActive ? <FullscreenExitIcon /> : <FullscreenEnterIcon />}
         </button>
@@ -2138,6 +2184,8 @@ export function RoomPage({
         roomChatVisibility={roomChatVisibility}
         onRoomChatVisibilityChange={isDbSpaceRoomHost ? handleRoomChatVisibilityChange : undefined}
         showRoomChatPolicySettings={isDbSpaceRoomHost}
+        roomAccessMode={isDbSpaceRoomHost ? roomAccessMode : undefined}
+        onRoomAccessModeChange={isDbSpaceRoomHost ? handleRoomAccessModeChange : undefined}
         showAdminPanelLink={isPlatformAdminish}
         hideVideoLetterboxing={hideVideoLetterboxing}
         onHideVideoLetterboxingChange={setHideVideoLetterboxing}
@@ -2191,36 +2239,87 @@ export function RoomPage({
         </Suspense>
       ) : null}
 
-      {/* Запросы на вход (access_mode=approval) */}
-      {isDbSpaceRoomHost && joinRequests.length > 0 ? (
-        <div className="room-join-requests">
-          <div className="room-join-requests__header">
-            Запросы на вход
-            <span className="room-join-requests__count">{joinRequests.length}</span>
-          </div>
-          {joinRequests.map((req) => (
-            <div key={req.requestId} className="room-join-requests__item">
-              <span className="room-join-requests__name">{req.displayName}</span>
-              <div className="room-join-requests__actions">
-                <button
-                  type="button"
-                  className="room-join-requests__approve"
-                  onClick={() => void handleApproveJoinRequest(req)}
-                  title="Одобрить вход"
-                >
-                  ✓ Впустить
-                </button>
-                <button
-                  type="button"
-                  className="room-join-requests__deny"
-                  onClick={() => void handleDenyJoinRequest(req)}
-                  title="Отклонить запрос"
-                >
-                  ✕
-                </button>
-              </div>
+      {/* Тост: новый запрос на вход */}
+      {isDbSpaceRoomHost && joinRequestToast ? (
+        <div
+          className="room-join-request-toast"
+          role="status"
+          onClick={() => { setJoinRequestsOpen(true); setJoinRequestToast(null) }}
+        >
+          <span className="room-join-request-toast__icon"><JoinRequestsIcon /></span>
+          <span className="room-join-request-toast__text">
+            Запрос на вход: <strong>{joinRequestToast}</strong>
+          </span>
+          <button
+            type="button"
+            className="room-join-request-toast__action"
+            onClick={(e) => { e.stopPropagation(); setJoinRequestsOpen(true); setJoinRequestToast(null) }}
+          >
+            Посмотреть
+          </button>
+          <button
+            type="button"
+            className="room-join-request-toast__close"
+            aria-label="Закрыть"
+            onClick={(e) => { e.stopPropagation(); setJoinRequestToast(null) }}
+          >
+            ✕
+          </button>
+        </div>
+      ) : null}
+
+      {/* Модалка запросов на вход */}
+      {isDbSpaceRoomHost && joinRequestsOpen ? (
+        <div
+          className="room-join-requests-backdrop"
+          onClick={() => setJoinRequestsOpen(false)}
+        >
+          <div
+            className="room-join-requests"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="room-join-requests__header">
+              <span>Запросы на вход</span>
+              {joinRequests.length > 0 && (
+                <span className="room-join-requests__count">{joinRequests.length}</span>
+              )}
+              <button
+                type="button"
+                className="room-join-requests__close"
+                aria-label="Закрыть"
+                onClick={() => setJoinRequestsOpen(false)}
+              >
+                ✕
+              </button>
             </div>
-          ))}
+            {joinRequests.length === 0 ? (
+              <p className="room-join-requests__empty">Нет активных запросов</p>
+            ) : (
+              joinRequests.map((req) => (
+                <div key={req.requestId} className="room-join-requests__item">
+                  <span className="room-join-requests__name">{req.displayName}</span>
+                  <div className="room-join-requests__actions">
+                    <button
+                      type="button"
+                      className="room-join-requests__approve"
+                      onClick={() => void handleApproveJoinRequest(req)}
+                      title="Одобрить вход"
+                    >
+                      ✓ Впустить
+                    </button>
+                    <button
+                      type="button"
+                      className="room-join-requests__deny"
+                      onClick={() => void handleDenyJoinRequest(req)}
+                      title="Отклонить запрос"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       ) : null}
 

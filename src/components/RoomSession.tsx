@@ -101,8 +101,17 @@ export function RoomSession({ roomId }: Props) {
   const [leaveBusy, setLeaveBusy] = useState(false)
   /** Хост открыл комнату с нового устройства: предлагаем перехватить управление. */
   const [hostClaimMode, setHostClaimMode] = useState(false)
+  /** Комната требует одобрения хоста (access_mode=approval). Показываем JoinPage первой. */
+  const needsApprovalRef = useRef(false)
   /** Пользователь ждёт одобрения хоста (access_mode=approval). */
   const [waitingApproval, setWaitingApproval] = useState(false)
+  /** Параметры, введённые на JoinPage, — ждут авто-подключения после одобрения. */
+  const [pendingJoin, setPendingJoin] = useState<{
+    name: string
+    rid: string
+    preset: VideoPreset
+    media: JoinRoomMediaOptions
+  } | null>(null)
 
   const dismissChatIncomingPreview = useCallback(() => {
     if (chatPreviewTimerRef.current != null) {
@@ -198,7 +207,8 @@ export function RoomSession({ roomId }: Props) {
 
       if (!joinable) {
         if (denial === 'approval_required') {
-          setWaitingApproval(true)
+          // Показываем JoinPage первой — пользователь введёт имя, потом увидит ожидание
+          needsApprovalRef.current = true
         } else {
           navigate('/room-closed', {
             replace: true,
@@ -244,35 +254,19 @@ export function RoomSession({ roomId }: Props) {
     leaveRef.current()
   }, [])
 
-  const handleJoin = async (n: string, rid: string, preset: VideoPreset, media: JoinRoomMediaOptions) => {
+  /** Реальное подключение к комнате (вызывается после всех проверок). */
+  const executeJoin = useCallback(async (n: string, rid: string, preset: VideoPreset, media: JoinRoomMediaOptions) => {
     const trimmedRid = rid.trim()
-    const joinPayload = {
-      roomId: trimmedRid,
-      userId: user?.id ?? null,
-      pendingHostClaim: matchesPendingHostClaim(trimmedRid),
-      isSessionHost: isSessionHostFor(trimmedRid),
-      canAccessAdminPanel,
-    }
-    console.log('[room-session] handleJoin:start', joinPayload)
+    console.log('[room-session] executeJoin:start', { roomId: trimmedRid, userId: user?.id ?? null })
     if (user?.id && matchesPendingHostClaim(trimmedRid)) {
       clearPendingHostClaim()
       const createOpts = takeSpaceRoomCreateOptions(trimmedRid)
       const ok = await registerSpaceRoomAsHost(trimmedRid, user.id, createOpts ?? undefined)
-      const hostPayload = {
-        roomId: trimmedRid,
-        userId: user.id,
-        ok,
-      }
-      console.log('[room-session] registerSpaceRoomAsHost', hostPayload)
+      console.log('[room-session] registerSpaceRoomAsHost', { roomId: trimmedRid, userId: user.id, ok })
       if (ok) markSessionAsHostFor(trimmedRid)
     }
     setName(n)
-    writeRoomAutoResume({
-      roomId: trimmedRid,
-      name: n.trim(),
-      preset,
-      media,
-    })
+    writeRoomAutoResume({ roomId: trimmedRid, name: n.trim(), preset, media })
     replaceRoomInBrowserUrl(rid, { removePeer: true })
     join(n, rid, preset, {
       ...media,
@@ -280,7 +274,19 @@ export function RoomSession({ roomId }: Props) {
       authUserId: user?.id ?? null,
       canManageRoom: isSessionHostFor(trimmedRid) || canAccessAdminPanel,
     })
-  }
+  }, [user, canAccessAdminPanel, join])
+
+  /** Обработчик кнопки «Войти» на JoinPage. */
+  const handleJoin = useCallback(async (n: string, rid: string, preset: VideoPreset, media: JoinRoomMediaOptions) => {
+    // Если комната требует одобрения — сохраняем параметры и показываем экран ожидания
+    if (needsApprovalRef.current) {
+      const trimmedRid = rid.trim()
+      setPendingJoin({ name: n, rid: trimmedRid, preset, media })
+      setWaitingApproval(true)
+      return
+    }
+    await executeJoin(n, rid, preset, media)
+  }, [executeJoin])
 
   const handleLeaveRoom = async () => {
     if (leaveBusy) return
@@ -450,15 +456,24 @@ export function RoomSession({ roomId }: Props) {
     )
   }
 
-  if (waitingApproval) {
+  if (waitingApproval && pendingJoin) {
     return (
       <RoomJoinApprovalWaiting
         roomId={roomId}
         userId={user?.id ?? null}
+        displayName={pendingJoin.name}
         onApproved={() => {
+          needsApprovalRef.current = false
           setWaitingApproval(false)
+          const p = pendingJoin
+          setPendingJoin(null)
+          void executeJoin(p.name, p.rid, p.preset, p.media)
         }}
-        onBack={() => navigate('/')}
+        onBack={() => {
+          setWaitingApproval(false)
+          setPendingJoin(null)
+          navigate('/')
+        }}
       />
     )
   }

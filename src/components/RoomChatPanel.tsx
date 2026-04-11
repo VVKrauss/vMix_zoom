@@ -78,6 +78,19 @@ export function RoomChatPanel({
           <p className="room-chat-panel__empty">Пока нет сообщений</p>
         ) : (
           messages.map((message, index) => {
+            if (message.kind === 'system') {
+              return (
+                <div
+                  key={`sys-${message.peerId}-${message.ts}-${index}`}
+                  className="room-chat-system"
+                  role="status"
+                  aria-live="polite"
+                >
+                  {message.text}
+                </div>
+              )
+            }
+
             const isOwn =
               (localUserId && message.senderUserId && message.senderUserId === localUserId) ||
               message.peerId === localPeerId

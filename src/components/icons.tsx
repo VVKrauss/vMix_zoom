@@ -144,6 +144,19 @@ export function AdminPanelIcon() {
   )
 }
 
+/** Человек со знаком вопроса — запросы на вход в комнату. */
+export function JoinRequestsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="8" cy="7" r="3.5" />
+      <path d="M2 19v-1.5a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5V19" />
+      <path d="M18 9a2 2 0 1 1 0-4 2 2 0 0 1 1.95 2.45" />
+      <line x1="20" y1="11" x2="20" y2="12.5" />
+      <circle cx="20" cy="14.5" r="0.6" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
 /** Три полоски — меню (мобильный мессенджер и др.). */
 export function MenuBurgerIcon() {
   return (

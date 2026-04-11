@@ -214,7 +214,8 @@ export async function getSpaceRoomJoinStatus(
       !Number.isNaN(createdMs) &&
       Date.now() - createdMs > SPACE_ROOM_TEMPORARY_INVITE_MINUTES * 60_000
     ) {
-      return { joinable: false, denial: 'invite_expired', isDbHost: false }
+      // Окно прямой ссылки истекло, но комната ещё открыта — переводим на ручное одобрение
+      return { joinable: false, denial: 'approval_required', isDbHost: false }
     }
   }
 

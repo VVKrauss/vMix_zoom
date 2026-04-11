@@ -7,7 +7,7 @@ export type RoomChatMessage = {
   text: string
   ts: number
   /** Локальная строка из события reaction (не приходит с сервера как отдельный тип сообщения) */
-  kind?: 'reaction'
+  kind?: 'reaction' | 'system'
 }
 
 /** Входящая реакция (broadcast) */
