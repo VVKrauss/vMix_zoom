@@ -680,6 +680,11 @@ export function RoomPage({
     })
     return map
   }, [participants, localPeerId, avatarUrl])
+  const chatAvatarByUserId = useMemo(() => {
+    const map: Record<string, string | null | undefined> = {}
+    if (user?.id) map[user.id] = avatarUrl ?? null
+    return map
+  }, [user?.id, avatarUrl])
   const chatKnownUserIds = useMemo(
     () =>
       Array.from(
@@ -1716,6 +1721,7 @@ export function RoomPage({
               localPeerId={localPeerId}
               localUserId={user?.id ?? null}
               avatarByPeerId={chatAvatarByPeerId}
+              avatarByUserId={chatAvatarByUserId}
               contactStatuses={chatContactStatuses}
               onToggleFavoriteUser={(targetUserId, nextFavorite) => {
                 void toggleFavoriteFromChat(targetUserId, nextFavorite)
@@ -1802,13 +1808,14 @@ export function RoomPage({
           open
           onClose={() => setChatOpen(false)}
           messages={chatMessages}
-          localPeerId={localPeerId}
-          localUserId={user?.id ?? null}
-          avatarByPeerId={chatAvatarByPeerId}
-          contactStatuses={chatContactStatuses}
-          onToggleFavoriteUser={(targetUserId, nextFavorite) => {
-            void toggleFavoriteFromChat(targetUserId, nextFavorite)
-          }}
+            localPeerId={localPeerId}
+            localUserId={user?.id ?? null}
+            avatarByPeerId={chatAvatarByPeerId}
+            avatarByUserId={chatAvatarByUserId}
+            contactStatuses={chatContactStatuses}
+            onToggleFavoriteUser={(targetUserId, nextFavorite) => {
+              void toggleFavoriteFromChat(targetUserId, nextFavorite)
+            }}
           onSend={onSendChatMessage}
         />
       )}

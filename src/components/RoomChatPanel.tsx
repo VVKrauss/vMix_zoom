@@ -12,6 +12,7 @@ interface Props {
   localPeerId: string
   localUserId?: string | null
   avatarByPeerId?: Record<string, string | null | undefined>
+  avatarByUserId?: Record<string, string | null | undefined>
   contactStatuses?: Record<string, ContactStatus>
   onToggleFavoriteUser?: (targetUserId: string, nextFavorite: boolean) => void
   onSend: (text: string) => void
@@ -33,6 +34,7 @@ export function RoomChatPanel({
   localPeerId,
   localUserId = null,
   avatarByPeerId = {},
+  avatarByUserId = {},
   contactStatuses = {},
   onToggleFavoriteUser,
   onSend,
@@ -79,7 +81,9 @@ export function RoomChatPanel({
               Boolean(onToggleFavoriteUser) &&
               (!localUserId || message.senderUserId !== localUserId)
             const statusLabel = status?.isFriend ? 'друг' : status?.isFavorite ? 'в избранном' : null
-            const authorAvatarUrl = avatarByPeerId[message.peerId] ?? null
+            const authorAvatarUrl =
+              avatarByPeerId[message.peerId] ??
+              (message.senderUserId ? avatarByUserId[message.senderUserId] ?? null : null)
             const showBrandFallback = !authorAvatarUrl && Boolean(message.senderUserId)
 
             return (
