@@ -1621,12 +1621,44 @@ button.admin-stat-card--interactive:disabled {
   width: 100%;
   height: 100%;
 }
+.dashboard-chat-row__statusline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dashboard-chat-row__activity {
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
 .dashboard-chat-row__meta {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
   color: var(--text-dim);
   font-size: 11px;
+}
+.dashboard-chat-row__last-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.dashboard-chat-row__last-author-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.dashboard-chat-row__last-author-avatar--placeholder {
+  background: rgba(255,255,255,.16);
+}
+.dashboard-chat-row__last-author-name {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.1;
 }
 .dashboard-chat-row__preview {
   color: var(--text);

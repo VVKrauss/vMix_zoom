@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
-import { type RoomChatConversationSummary, listRoomChatConversationsForUser } from '../lib/chatArchive'
+import {
+  type RoomChatConversationSummary,
+  type RoomChatLastSender,
+  listRoomChatConversationsForUser,
+  listRoomChatLastSenders,
+} from '../lib/chatArchive'
 import { DashboardShell } from './DashboardShell'
 import { ChatBubbleIcon } from './icons'
 
@@ -60,6 +65,7 @@ export function DashboardChatsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [items, setItems] = useState<RoomChatConversationSummary[]>([])
+  const [lastSenders, setLastSenders] = useState<Record<string, RoomChatLastSender>>({})
   const [query, setQuery] = useState('')
   const [sortMode, setSortMode] = useState<ChatSortMode>('recent_desc')
   const [timeFilter, setTimeFilter] = useState<ChatTimeFilter>('all')
@@ -81,8 +87,15 @@ export function DashboardChatsPage() {
       if (result.error) {
         setError(result.error)
         setItems([])
+        setLastSenders({})
       } else {
-        setItems(result.data ?? [])
+        const nextItems = result.data ?? []
+        setItems(nextItems)
+        const senders = await listRoomChatLastSenders(nextItems.map((item) => item.id))
+        if (!active) return
+        if (!senders.error) {
+          setLastSenders(senders.data ?? {})
+        }
       }
       setLoading(false)
     }
@@ -180,11 +193,7 @@ export function DashboardChatsPage() {
               <div className="dashboard-chats-empty">По текущим фильтрам ничего не найдено.</div>
             ) : (
               filteredItems.map((item) => (
-                <Link
-                  key={item.id}
-                  to={`/dashboard/chats/${encodeURIComponent(item.id)}`}
-                  className="dashboard-chat-row"
-                >
+                <Link key={item.id} to={`/dashboard/chats/${encodeURIComponent(item.id)}`} className="dashboard-chat-row">
                   <div className="dashboard-chat-row__main">
                     <div className="dashboard-chat-row__titleline">
                       <div className="dashboard-chat-row__titlewrap">
@@ -196,18 +205,35 @@ export function DashboardChatsPage() {
                           <span>{item.messageCount}</span>
                         </span>
                       </div>
-                      <span
-                        className={`dashboard-badge ${
-                          item.closedAt ? 'dashboard-badge--pending' : 'dashboard-badge--active'
-                        }`}
-                      >
-                        {item.closedAt ? 'Завершён' : 'Активен'}
-                      </span>
+                      <div className="dashboard-chat-row__statusline">
+                        <span className="dashboard-chat-row__activity">
+                          {formatDateTime(item.lastMessageAt ?? item.createdAt)}
+                        </span>
+                        <span
+                          className={`dashboard-badge ${
+                            item.closedAt ? 'dashboard-badge--pending' : 'dashboard-badge--active'
+                          }`}
+                        >
+                          {item.closedAt ? 'Завершён' : 'Активен'}
+                        </span>
+                      </div>
                     </div>
-                    <div className="dashboard-chat-row__meta">
-                      <span>{item.roomSlug ?? '—'}</span>
-                      <span>Последняя активность: {formatDateTime(item.lastMessageAt ?? item.createdAt)}</span>
-                    </div>
+                    {lastSenders[item.id] ? (
+                      <div className="dashboard-chat-row__last-author">
+                        {lastSenders[item.id].avatarUrl ? (
+                          <img
+                            className="dashboard-chat-row__last-author-avatar"
+                            src={lastSenders[item.id].avatarUrl ?? undefined}
+                            alt=""
+                          />
+                        ) : (
+                          <span className="dashboard-chat-row__last-author-avatar dashboard-chat-row__last-author-avatar--placeholder" aria-hidden />
+                        )}
+                        <span className="dashboard-chat-row__last-author-name">
+                          {lastSenders[item.id].senderNameSnapshot}
+                        </span>
+                      </div>
+                    ) : null}
                     <div className="dashboard-chat-row__preview">
                       {item.lastMessagePreview?.trim() || 'Сообщений пока нет'}
                     </div>
