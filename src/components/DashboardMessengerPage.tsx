@@ -17,6 +17,7 @@ import {
   listDirectMessagesPage,
   mapDirectMessageFromRow,
   markDirectConversationRead,
+  requestMessengerUnreadRefresh,
   toggleDirectMessageReaction,
 } from '../lib/messenger'
 import { supabase } from '../lib/supabase'
@@ -57,6 +58,16 @@ function sortConversationsByActivity(list: DirectConversationSummary[]): DirectC
     const bTs = new Date(b.lastMessageAt ?? b.createdAt).getTime()
     return bTs - aTs
   })
+}
+
+/** Последнее text/system в треде — для превью в списке (реакции не считаются «последним сообщением»). */
+function lastNonReactionBody(rows: DirectMessage[]): string | null {
+  const sorted = [...rows].sort(sortDirectMessagesChrono)
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const m = sorted[i]!
+    if (m.kind === 'text' || m.kind === 'system') return m.body
+  }
+  return null
 }
 
 /** URL пустой: последний открытый диалог из localStorage, иначе самый свежий по активности, иначе запасной id (напр. «с собой»). */
@@ -118,12 +129,12 @@ export function DashboardMessengerPage() {
   const messagesRef = useRef(messages)
   messagesRef.current = messages
   const messagesScrollRef = useRef<HTMLDivElement | null>(null)
+  const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const olderFetchInFlightRef = useRef(false)
   const prevThreadIdForClearRef = useRef<string | null>(null)
   const prevMessagesLenForScrollRef = useRef(0)
   /** Уже загруженные сообщения для этого id — не дергать API при повторном срабатывании эффекта (напр. loading). */
   const lastFetchedThreadIdRef = useRef<string | null>(null)
-  const threadFetchInFlightRef = useRef<string | null>(null)
   /** После первой успешной загрузки списка — повторный bootstrap при «Назад к чатам» не нужен */
   const listLoadedOnceRef = useRef(false)
 
@@ -153,7 +164,6 @@ export function DashboardMessengerPage() {
       if (!user?.id) {
         listLoadedOnceRef.current = false
         lastFetchedThreadIdRef.current = null
-        threadFetchInFlightRef.current = null
         prevThreadIdForClearRef.current = null
         if (active) {
           setItems([])
@@ -203,16 +213,18 @@ export function DashboardMessengerPage() {
       setItems(nextItems)
       listLoadedOnceRef.current = true
 
+      const fromUrl = conversationIdRef.current.trim()
+      const forTargetUser =
+        targetUserId.trim() && typeof ensured.data === 'string' && ensured.data.trim() ? ensured.data.trim() : ''
       const targetConversationId =
-        conversationIdRef.current.trim() ||
+        fromUrl ||
+        forTargetUser ||
         pickDefaultConversationId(nextItems, ensured.data) ||
         ''
 
-      if (
-        !searchConversationId &&
-        targetConversationId &&
-        !(isMobileMessenger && searchParams.get('view') === 'list')
-      ) {
+      const viewAtNavigate = new URLSearchParams(window.location.search).get('view')
+      const viewListOnly = isMobileMessenger && viewAtNavigate === 'list'
+      if (!conversationIdRef.current.trim() && targetConversationId && !viewListOnly) {
         navigate(buildMessengerUrl(targetConversationId, targetUserId || undefined, targetTitle || undefined), {
           replace: true,
         })
@@ -235,69 +247,62 @@ export function DashboardMessengerPage() {
   }, [isMobileMessenger, navigate, searchConversationId, searchParams, targetTitle, targetUserId, user?.id])
 
   useEffect(() => {
-    let active = true
     const run = async () => {
       if (!user?.id || loading) return
       if (listOnlyMobile) {
         lastFetchedThreadIdRef.current = null
-        threadFetchInFlightRef.current = null
-        if (active) {
-          setThreadLoading(false)
-          setActiveConversation(null)
-          setMessages([])
-          setHasMoreOlder(false)
-        }
+        setThreadLoading(false)
+        setActiveConversation(null)
+        setMessages([])
+        setHasMoreOlder(false)
         return
       }
-      const targetConversationId =
+      const startedTarget =
         conversationId.trim() || pickDefaultConversationId(itemsRef.current, null) || ''
-      if (!targetConversationId) {
+      if (!startedTarget) {
         lastFetchedThreadIdRef.current = null
-        if (active) {
-          setActiveConversation(null)
-          setMessages([])
-          setHasMoreOlder(false)
-          setThreadLoading(false)
-        }
+        setActiveConversation(null)
+        setMessages([])
+        setHasMoreOlder(false)
+        setThreadLoading(false)
         return
       }
 
       const prevOpenedId = prevThreadIdForClearRef.current
-      const conversationSwitched = prevOpenedId !== targetConversationId
+      const conversationSwitched = prevOpenedId !== startedTarget
       if (conversationSwitched) {
-        prevThreadIdForClearRef.current = targetConversationId
+        prevThreadIdForClearRef.current = startedTarget
         lastFetchedThreadIdRef.current = null
         setMessages([])
         setHasMoreOlder(false)
       }
 
-      if (lastFetchedThreadIdRef.current === targetConversationId) {
-        void markDirectConversationRead(targetConversationId)
+      if (lastFetchedThreadIdRef.current === startedTarget) {
+        void markDirectConversationRead(startedTarget)
         setItems((prev) =>
           prev.map((item) =>
-            item.id === targetConversationId ? { ...item, unreadCount: 0 } : item,
+            item.id === startedTarget ? { ...item, unreadCount: 0 } : item,
           ),
         )
         setActiveConversation((prev) =>
-          prev && prev.id === targetConversationId ? { ...prev, unreadCount: 0 } : prev,
+          prev && prev.id === startedTarget ? { ...prev, unreadCount: 0 } : prev,
         )
-        if (active) setThreadLoading(false)
+        requestMessengerUnreadRefresh()
+        setThreadLoading(false)
         return
       }
 
-      if (threadFetchInFlightRef.current === targetConversationId) {
-        return
-      }
-      threadFetchInFlightRef.current = targetConversationId
       setThreadLoading(true)
 
       try {
         const [conversationRes, messagesRes] = await Promise.all([
-          getDirectConversationForUser(targetConversationId),
-          listDirectMessagesPage(targetConversationId, { limit: DM_PAGE_SIZE }),
+          getDirectConversationForUser(startedTarget),
+          listDirectMessagesPage(startedTarget, { limit: DM_PAGE_SIZE }),
         ])
 
-        if (!active) return
+        const wantNow =
+          conversationIdRef.current.trim() || pickDefaultConversationId(itemsRef.current, null) || ''
+        if (wantNow !== startedTarget) return
 
         if (conversationRes.error) {
           setError(conversationRes.error)
@@ -323,23 +328,20 @@ export function DashboardMessengerPage() {
           setActiveConversation({ ...conversationRes.data, unreadCount: 0 })
           setMessages(messagesRes.data ?? [])
           setHasMoreOlder(messagesRes.hasMoreOlder)
-          lastFetchedThreadIdRef.current = targetConversationId
+          lastFetchedThreadIdRef.current = startedTarget
           setItems((prev) =>
             prev.map((item) =>
-              item.id === targetConversationId ? { ...item, unreadCount: 0 } : item,
+              item.id === startedTarget ? { ...item, unreadCount: 0 } : item,
             ),
           )
+          requestMessengerUnreadRefresh()
         }
       } finally {
-        threadFetchInFlightRef.current = null
-        if (active) setThreadLoading(false)
+        setThreadLoading(false)
       }
     }
 
     void run()
-    return () => {
-      active = false
-    }
   }, [conversationId, listOnlyMobile, loading, user?.id])
 
   const activeConversationId = listOnlyMobile ? '' : conversationId || activeConversation?.id || ''
@@ -376,6 +378,7 @@ export function DashboardMessengerPage() {
       if (prev.unreadCount === 0) return prev
       return { ...prev, unreadCount: 0 }
     })
+    if (!row || row.unreadCount > 0) requestMessengerUnreadRefresh()
   }, [conversationId, listOnlyMobile, user?.id, items])
 
   const showListPane = !isMobileMessenger || !activeConversationId
@@ -388,7 +391,32 @@ export function DashboardMessengerPage() {
     if (!uid || !convId || listOnlyMobile) return
 
     const bumpSidebarForInsert = (msg: DirectMessage) => {
-      const preview = msg.kind === 'reaction' ? msg.body.trim() || 'Реакция' : msg.body
+      if (msg.kind === 'reaction') {
+        setItems((prev) =>
+          prev.map((item) =>
+            item.id === convId
+              ? {
+                  ...item,
+                  lastMessageAt: msg.createdAt,
+                  messageCount: item.messageCount + 1,
+                  unreadCount: 0,
+                }
+              : item,
+          ),
+        )
+        setActiveConversation((prev) =>
+          prev && prev.id === convId
+            ? {
+                ...prev,
+                lastMessageAt: msg.createdAt,
+                messageCount: prev.messageCount + 1,
+                unreadCount: 0,
+              }
+            : prev,
+        )
+        return
+      }
+      const preview = msg.body
       setItems((prev) =>
         prev.map((item) =>
           item.id === convId
@@ -452,6 +480,10 @@ export function DashboardMessengerPage() {
           })
 
           if (!skipSidebarBump) bumpSidebarForInsert(msg)
+          /* Пока тред открыт: входящие от других не должны увеличивать непрочитанные (сервер + бейдж в шапке). */
+          if (!isOwn) {
+            void markDirectConversationRead(convId)
+          }
         },
       )
       .on(
@@ -608,6 +640,7 @@ export function DashboardMessengerPage() {
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id))
       setDraft(trimmed)
       setSending(false)
+      queueMicrotask(() => composerTextareaRef.current?.focus())
       return
     }
 
@@ -650,6 +683,7 @@ export function DashboardMessengerPage() {
     requestAnimationFrame(() => {
       const el = messagesScrollRef.current
       if (el) el.scrollTop = el.scrollHeight
+      composerTextareaRef.current?.focus()
     })
   }
 
@@ -744,13 +778,13 @@ export function DashboardMessengerPage() {
         const touchedLatest = removedId === tailIdBefore
         if (touchedLatest) {
           const next = snapshot.filter((m) => m.id !== removedId)
-          const tail = [...next].sort(sortDirectMessagesChrono)[next.length - 1]
-          const tailPreview = !tail ? null : tail.kind === 'reaction' ? tail.body.trim() || 'Реакция' : tail.body
-          const tailAt = tail?.createdAt ?? null
+          const sorted = [...next].sort(sortDirectMessagesChrono)
+          const tailAny = sorted[sorted.length - 1] ?? null
+          const tailPreview = lastNonReactionBody(next)
           syncThreadListAfterReaction(convId, {
             messageCountDelta: -1,
             touchTail: true,
-            tailAt,
+            tailAt: tailAny?.createdAt ?? null,
             tailPreview,
           })
         } else {
@@ -775,11 +809,13 @@ export function DashboardMessengerPage() {
         if (prev.some((m) => m.id === newRow.id)) return prev
         return [...prev, newRow].sort(sortDirectMessagesChrono)
       })
+      const mergedForPreview = [...snapshot, newRow]
+      const textPreview = lastNonReactionBody(mergedForPreview)
       syncThreadListAfterReaction(convId, {
         messageCountDelta: 1,
         touchTail: true,
         tailAt: createdAt,
-        tailPreview: emoji.trim() || 'Реакция',
+        tailPreview: textPreview ?? null,
       })
     },
     [activeConversationId, profile?.display_name, syncThreadListAfterReaction, threadLoading, user?.id],
@@ -1036,6 +1072,7 @@ export function DashboardMessengerPage() {
 
                       <div className="dashboard-messenger__composer">
                         <textarea
+                          ref={composerTextareaRef}
                           className="dashboard-messenger__input"
                           rows={3}
                           placeholder="Напиши сообщение..."
