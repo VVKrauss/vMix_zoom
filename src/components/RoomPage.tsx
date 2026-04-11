@@ -74,7 +74,14 @@ import { useRoomUiSync } from '../hooks/useRoomUiSync'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useProfile } from '../hooks/useProfile'
 import { useIsDbSpaceRoomHost } from '../hooks/useSpaceRoomHost'
-import { isSessionHostFor } from '../lib/spaceRoom'
+import { useSpaceRoomSettings } from '../hooks/useSpaceRoomSettings'
+import {
+  isSessionHostFor,
+  participantCanPostRoomChat,
+  participantCanSeeRoomChat,
+  updateSpaceRoomChatVisibility,
+  type SpaceRoomChatVisibility,
+} from '../lib/spaceRoom'
 import type { StudioOutputPreset } from '../types/studio'
 import { getContactStatuses, setUserFavorite, type ContactStatus } from '../lib/socialGraph'
 
@@ -439,6 +446,7 @@ export function RoomPage({
   const [friendsInviteToast, setFriendsInviteToast] = useState<string | null>(null)
   const friendsInviteToastTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
   const [inviteFriendsModalOpen, setInviteFriendsModalOpen] = useState(false)
+  const [mobileInviteSheetOpen, setMobileInviteSheetOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
   const inviteRef = useRef<HTMLDivElement>(null)
   const [fullscreenActive, setFullscreenActive] = useState(false)
@@ -462,6 +470,7 @@ export function RoomPage({
     void navigator.clipboard.writeText(url).then(
       () => {
         setInviteOpen(false)
+        setMobileInviteSheetOpen(false)
         if (inviteToastTimerRef.current != null) window.clearTimeout(inviteToastTimerRef.current)
         setInviteToast('url')
         inviteToastTimerRef.current = window.setTimeout(() => {
@@ -479,6 +488,7 @@ export function RoomPage({
     void navigator.clipboard.writeText(id).then(
       () => {
         setInviteOpen(false)
+        setMobileInviteSheetOpen(false)
         if (inviteToastTimerRef.current != null) window.clearTimeout(inviteToastTimerRef.current)
         setInviteToast('id')
         inviteToastTimerRef.current = window.setTimeout(() => {
@@ -586,6 +596,57 @@ export function RoomPage({
     () => isPlatformAdminish || (isStreamerPlan && isRoomHost),
     [isPlatformAdminish, isStreamerPlan, isRoomHost],
   )
+
+  const { row: spaceRoomRow } = useSpaceRoomSettings(roomId)
+  const roomChatVisibility: SpaceRoomChatVisibility = spaceRoomRow?.chatVisibility ?? 'everyone'
+
+  const chatParticipantCtx = useMemo(
+    () => ({
+      isAuthed: Boolean(user?.id),
+      isDbHost: isDbSpaceRoomHost,
+      isElevatedStaff: isPlatformAdminish,
+    }),
+    [user?.id, isDbSpaceRoomHost, isPlatformAdminish],
+  )
+
+  const canSeeRoomChat = useMemo(
+    () => participantCanSeeRoomChat(roomChatVisibility, chatParticipantCtx),
+    [roomChatVisibility, chatParticipantCtx],
+  )
+
+  const canPostRoomChat = useMemo(
+    () => participantCanPostRoomChat(roomChatVisibility, chatParticipantCtx),
+    [roomChatVisibility, chatParticipantCtx],
+  )
+
+  useEffect(() => {
+    if (!canSeeRoomChat && chatOpen) setChatOpen(false)
+  }, [canSeeRoomChat, chatOpen, setChatOpen])
+
+  const handleRoomChatVisibilityChange = useCallback(
+    async (v: SpaceRoomChatVisibility) => {
+      if (!user?.id || !isDbSpaceRoomHost) return
+      const ok = await updateSpaceRoomChatVisibility(roomId.trim(), user.id, v)
+      if (!ok) console.warn('room chat policy: update failed')
+    },
+    [user?.id, isDbSpaceRoomHost, roomId],
+  )
+
+  const sendChatGuarded = useCallback(
+    (text: string) => {
+      if (!canPostRoomChat) return
+      onSendChatMessage(text)
+    },
+    [canPostRoomChat, onSendChatMessage],
+  )
+
+  const chatComposerLocked = canSeeRoomChat && !canPostRoomChat
+  const chatComposerHint = chatComposerLocked
+    ? roomChatVisibility === 'closed'
+      ? 'Хост отключил отправку сообщений для всех.'
+      : 'Отправка сообщений недоступна в текущем режиме чата.'
+    : null
+
   const avatarUrl = user?.user_metadata?.avatar_url as string | undefined
   const messengerUnreadCount = useMessengerUnreadCount()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
@@ -1406,8 +1467,8 @@ export function RoomPage({
       className={`room-page${streamerMode ? ' room-page--streamer-mode' : ''}${
         immersiveAutoHide && chromeHidden ? ' room-page--chrome-hidden' : ''
       }${isViewportMobile ? ' room-page--viewport-mobile' : ''}${
-        leaveDialog !== null ? ' room-page--leave-dialog' : ''
-      }`}
+        chatOpen && canSeeRoomChat ? ' room-page--chat-open' : ''
+      }${leaveDialog !== null ? ' room-page--leave-dialog' : ''}`}
     >
       <ConfirmDialog
         open={leaveDialog !== null}
@@ -1449,6 +1510,57 @@ export function RoomPage({
           excludeUserIds={inviteExcludeUserIds}
           onSent={handleFriendsInviteSent}
         />
+      ) : null}
+
+      {mobileInviteSheetOpen ? (
+        <>
+          <button
+            type="button"
+            className="room-mobile-invite-sheet-backdrop"
+            aria-label="Закрыть"
+            onClick={() => setMobileInviteSheetOpen(false)}
+          />
+          <div
+            className="room-mobile-invite-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="room-mobile-invite-sheet-title"
+          >
+            <h2 id="room-mobile-invite-sheet-title" className="room-mobile-invite-sheet__title">
+              Пригласить
+            </h2>
+            <button
+              type="button"
+              className="room-invite-dropdown__item"
+              onClick={() => {
+                handleCopyInviteUrl()
+              }}
+            >
+              Скопировать ссылку
+            </button>
+            <button
+              type="button"
+              className="room-invite-dropdown__item"
+              onClick={() => {
+                handleCopyInviteId()
+              }}
+            >
+              Скопировать ID комнаты
+            </button>
+            {user ? (
+              <button
+                type="button"
+                className="room-invite-dropdown__item"
+                onClick={() => {
+                  setMobileInviteSheetOpen(false)
+                  setInviteFriendsModalOpen(true)
+                }}
+              >
+                Добавить из контактов
+              </button>
+            ) : null}
+          </div>
+        </>
       ) : null}
 
       <ConfirmDialog
@@ -1838,7 +1950,9 @@ export function RoomPage({
               onToggleFavoriteUser={(targetUserId, nextFavorite) => {
                 void toggleFavoriteFromChat(targetUserId, nextFavorite)
               }}
-              onSend={onSendChatMessage}
+              onSend={sendChatGuarded}
+              composerLocked={chatComposerLocked}
+              composerLockedHint={chatComposerHint}
             />
           </div>
         )}
@@ -1903,7 +2017,14 @@ export function RoomPage({
         onToggleImmersiveAutoHide={() => setImmersiveAutoHide((v) => !v)}
         chromeHidden={immersiveAutoHide && chromeHidden}
         onInviteParticipants={handleCopyInviteUrl}
-        onInviteFromContacts={user ? () => setInviteFriendsModalOpen(true) : undefined}
+        onInviteFromContacts={undefined}
+        onOpenMobileInviteSheet={
+          isViewportMobile ? () => setMobileInviteSheetOpen(true) : undefined
+        }
+        chatFeatureHidden={!canSeeRoomChat}
+        roomChatVisibility={roomChatVisibility}
+        onRoomChatVisibilityChange={isDbSpaceRoomHost ? handleRoomChatVisibilityChange : undefined}
+        showRoomChatPolicySettings={isDbSpaceRoomHost}
         showAdminPanelLink={isPlatformAdminish}
         hideVideoLetterboxing={hideVideoLetterboxing}
         onHideVideoLetterboxingChange={setHideVideoLetterboxing}
@@ -1929,7 +2050,9 @@ export function RoomPage({
             onToggleFavoriteUser={(targetUserId, nextFavorite) => {
               void toggleFavoriteFromChat(targetUserId, nextFavorite)
             }}
-          onSend={onSendChatMessage}
+          onSend={sendChatGuarded}
+          composerLocked={chatComposerLocked}
+          composerLockedHint={chatComposerHint}
         />
       )}
 

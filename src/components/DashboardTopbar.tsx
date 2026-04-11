@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { newRoomId } from '../utils/roomId'
-import { setPendingHostClaim } from '../lib/spaceRoom'
+import { setPendingHostClaim, stashSpaceRoomCreateOptions, type SpaceRoomCreateOptions } from '../lib/spaceRoom'
+import { CreateRoomOptionsModal } from './CreateRoomOptionsModal'
 
 type DashboardTopbarProps = {
   canAccessAdmin: boolean
@@ -10,14 +12,21 @@ type DashboardTopbarProps = {
 
 export function DashboardTopbar({ canAccessAdmin, onSignOut, active = 'cabinet' }: DashboardTopbarProps) {
   const navigate = useNavigate()
+  const [createRoomOpen, setCreateRoomOpen] = useState(false)
 
   const goCreateRoom = () => {
+    setCreateRoomOpen(true)
+  }
+
+  const confirmCreateRoom = (opts: SpaceRoomCreateOptions) => {
     const id = newRoomId()
+    stashSpaceRoomCreateOptions(id, opts)
     setPendingHostClaim(id)
     navigate(`/r/${encodeURIComponent(id)}`)
   }
 
   return (
+    <>
     <header className="dashboard-topbar">
       <Link to="/" className="dashboard-topbar__logo" title="На главную">
         <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
@@ -59,5 +68,11 @@ export function DashboardTopbar({ canAccessAdmin, onSignOut, active = 'cabinet' 
         </button>
       </nav>
     </header>
+    <CreateRoomOptionsModal
+      open={createRoomOpen}
+      onClose={() => setCreateRoomOpen(false)}
+      onConfirm={confirmCreateRoom}
+    />
+    </>
   )
 }

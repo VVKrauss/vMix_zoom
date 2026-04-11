@@ -13,6 +13,7 @@ import { ScreenSharePickerModal } from './ScreenSharePickerModal'
 import type { VideoPreset } from '../types'
 import { presetToSimpleTier, simpleTierToPreset } from '../utils/simpleVideoQuality'
 import type { LayoutMode, VmixIngressPhase } from './RoomPage'
+import type { SpaceRoomChatVisibility } from '../lib/spaceRoom'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
 import { MicIcon, MicOffIcon, CamIcon, CamOffIcon, InviteIcon, EndCallIcon } from './icons'
 import { useOnOutsideClick } from '../hooks/useOnOutsideClick'
@@ -112,6 +113,14 @@ interface Props {
   onInviteParticipants?: () => void
   /** Долгое нажатие на ту же кнопку: пригласить друзей из контактов (если задано). */
   onInviteFromContacts?: () => void
+  /** Мобильная нижняя панель: открыть лист «пригласить» (ссылка, ID, контакты) вместо долгого тапа. */
+  onOpenMobileInviteSheet?: () => void
+  /** Скрыть чат целиком (политика комнаты). */
+  chatFeatureHidden?: boolean
+  /** Текущая политика чата в space_rooms (для хоста). */
+  roomChatVisibility?: SpaceRoomChatVisibility
+  onRoomChatVisibilityChange?: (v: SpaceRoomChatVisibility) => void
+  showRoomChatPolicySettings?: boolean
   /** Ссылка «Админка» в мобильном листе (superadmin / platform_admin / support_admin). */
   showAdminPanelLink?: boolean
   /** Камера в плитках: true — без полей (cover), false — весь кадр (contain). */
@@ -251,6 +260,11 @@ export function ControlsBar({
   chromeHidden,
   onInviteParticipants,
   onInviteFromContacts,
+  onOpenMobileInviteSheet,
+  chatFeatureHidden = false,
+  roomChatVisibility,
+  onRoomChatVisibilityChange,
+  showRoomChatPolicySettings = false,
   showAdminPanelLink = false,
   hideVideoLetterboxing,
   onHideVideoLetterboxingChange,
@@ -339,7 +353,8 @@ export function ControlsBar({
     </div>
   )
 
-  const chatGroup = (sheet?: boolean) => (
+  const chatGroup = (sheet?: boolean) =>
+    chatFeatureHidden ? null : (
     <div className={sh('ctrl-group ctrl-group--chat', sheet)}>
       <button
         type="button"
@@ -375,6 +390,9 @@ export function ControlsBar({
           chatToastNotifications={chatToastNotifications}
           onToggleChatToastNotifications={onToggleChatToastNotifications}
           onClose={() => setOpen(null)}
+          roomChatVisibility={roomChatVisibility}
+          onRoomChatVisibilityChange={onRoomChatVisibilityChange}
+          showRoomChatPolicySettings={showRoomChatPolicySettings}
         />
       )}
     </div>
@@ -778,11 +796,20 @@ export function ControlsBar({
                 <button
                   type="button"
                   className="ctrl-mobile-bottom-bar__btn ctrl-mobile-bottom-bar__btn--main"
-                  {...invitePress}
+                  {...(forceMobileFabMenu && onOpenMobileInviteSheet
+                    ? {
+                        onClick: () => {
+                          setOpen(null)
+                          onOpenMobileInviteSheet()
+                        },
+                      }
+                    : invitePress)}
                   title={
-                    onInviteFromContacts
-                      ? 'Коротко: скопировать ссылку. Долго: пригласить друзей из контактов'
-                      : 'Скопировать ссылку на комнату'
+                    forceMobileFabMenu && onOpenMobileInviteSheet
+                      ? 'Пригласить: ссылка, ID комнаты или контакты'
+                      : onInviteFromContacts
+                        ? 'Коротко: скопировать ссылку. Долго: пригласить друзей из контактов'
+                        : 'Скопировать ссылку на комнату'
                   }
                   aria-label="Пригласить участников"
                 >
@@ -1061,18 +1088,31 @@ function PlayoutPopover({
   )
 }
 
+const ROOM_CHAT_POLICY_OPTIONS: { value: SpaceRoomChatVisibility; label: string }[] = [
+  { value: 'everyone', label: 'Все участники' },
+  { value: 'authenticated_only', label: 'Только с аккаунтом' },
+  { value: 'staff_only', label: 'Хост и админы' },
+  { value: 'closed', label: 'Закрыт (только чтение)' },
+]
+
 function ChatOptionsPopover({
   chatEmbed,
   onToggleChatEmbed,
   chatToastNotifications,
   onToggleChatToastNotifications,
   onClose,
+  roomChatVisibility,
+  onRoomChatVisibilityChange,
+  showRoomChatPolicySettings = false,
 }: {
   chatEmbed: boolean
   onToggleChatEmbed: () => void
   chatToastNotifications: boolean
   onToggleChatToastNotifications: () => void
   onClose: () => void
+  roomChatVisibility?: SpaceRoomChatVisibility
+  onRoomChatVisibilityChange?: (v: SpaceRoomChatVisibility) => void
+  showRoomChatPolicySettings?: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null)
   useOnOutsideClick(ref, onClose)
@@ -1098,6 +1138,27 @@ function ChatOptionsPopover({
           ariaLabel="Всплывающие уведомления о новых сообщениях в чате"
         />
       </div>
+      {showRoomChatPolicySettings &&
+      roomChatVisibility &&
+      onRoomChatVisibilityChange ? (
+        <div className="settings-popover__section settings-popover__section--bordered">
+          <span className="device-popover__label">Кто может пользоваться чатом</span>
+          <select
+            className="settings-select device-popover__select-full"
+            value={roomChatVisibility}
+            onChange={(e) => {
+              onRoomChatVisibilityChange(e.target.value as SpaceRoomChatVisibility)
+            }}
+            aria-label="Политика чата для всех участников"
+          >
+            {ROOM_CHAT_POLICY_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
     </div>
   )
 }

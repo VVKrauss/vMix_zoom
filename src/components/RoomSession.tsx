@@ -15,9 +15,10 @@ import {
   matchesPendingHostClaim,
   hostLeaveSpaceRoom,
   isSessionHostFor,
-  isSpaceRoomJoinable,
+  getSpaceRoomJoinStatus,
   markSessionAsHostFor,
   registerSpaceRoomAsHost,
+  takeSpaceRoomCreateOptions,
 } from '../lib/spaceRoom'
 
 const CHAT_PREVIEW_TOAST_MS = 7000
@@ -182,11 +183,14 @@ export function RoomSession({ roomId }: Props) {
     void (async () => {
       const startPayload = { roomId, userId: user?.id ?? null }
       console.log('[room-session] joinable check:start', startPayload)
-      const ok = await isSpaceRoomJoinable(roomId)
-      const resultPayload = { roomId, ok, userId: user?.id ?? null }
+      const { joinable, denial } = await getSpaceRoomJoinStatus(roomId, user?.id ?? null)
+      const resultPayload = { roomId, ok: joinable, denial, userId: user?.id ?? null }
       console.log('[room-session] joinable check:result', resultPayload)
-      if (!cancelled && !ok) {
-        navigate('/room-closed', { replace: true, state: { roomId } })
+      if (!cancelled && !joinable) {
+        navigate('/room-closed', {
+          replace: true,
+          state: { roomId, reason: denial === 'invite_expired' ? 'invite_expired' : undefined },
+        })
       }
     })()
     return () => {
@@ -218,7 +222,8 @@ export function RoomSession({ roomId }: Props) {
     console.log('[room-session] handleJoin:start', joinPayload)
     if (user?.id && matchesPendingHostClaim(trimmedRid)) {
       clearPendingHostClaim()
-      const ok = await registerSpaceRoomAsHost(trimmedRid, user.id)
+      const createOpts = takeSpaceRoomCreateOptions(trimmedRid)
+      const ok = await registerSpaceRoomAsHost(trimmedRid, user.id, createOpts ?? undefined)
       const hostPayload = {
         roomId: trimmedRid,
         userId: user.id,

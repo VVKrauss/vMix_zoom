@@ -1,0 +1,5 @@
+# Для CLI: `supabase link` / `supabase db push` (ref из Supabase Dashboard).
+project_id = "dbhrmaabotdaagmiuzum"
+
+[db]
+major_version = 17

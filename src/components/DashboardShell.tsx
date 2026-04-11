@@ -4,9 +4,10 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import { listMyContacts } from '../lib/socialGraph'
-import { setPendingHostClaim } from '../lib/spaceRoom'
+import { setPendingHostClaim, stashSpaceRoomCreateOptions, type SpaceRoomCreateOptions } from '../lib/spaceRoom'
 import { newRoomId } from '../utils/roomId'
 import { AdminPanelIcon, ChatBubbleIcon, DashboardIcon, ParticipantsBadgeIcon, RoomsIcon } from './icons'
+import { CreateRoomOptionsModal } from './CreateRoomOptionsModal'
 import { ThemeToggle } from './ThemeToggle'
 
 type DashboardShellTab = 'cabinet' | 'chats' | 'messenger' | 'friends'
@@ -78,6 +79,7 @@ export function DashboardShell({ active, canAccessAdmin, onSignOut, children, ch
   const unreadCount = useMessengerUnreadCount()
   const [incomingFavSig, setIncomingFavSig] = useState<string | null>(null)
   const [dismissedIncomingFavSig, setDismissedIncomingFavSig] = useState<string | null>(null)
+  const [createRoomOpen, setCreateRoomOpen] = useState(false)
 
   useEffect(() => {
     if (!user?.id) {
@@ -136,7 +138,12 @@ export function DashboardShell({ active, canAccessAdmin, onSignOut, children, ch
   }
 
   const goCreateRoom = () => {
+    setCreateRoomOpen(true)
+  }
+
+  const confirmCreateRoom = (opts: SpaceRoomCreateOptions) => {
     const id = newRoomId()
+    stashSpaceRoomCreateOptions(id, opts)
     setPendingHostClaim(id)
     navigate(`/r/${encodeURIComponent(id)}`)
   }
@@ -253,6 +260,12 @@ export function DashboardShell({ active, canAccessAdmin, onSignOut, children, ch
           <div className="dashboard-content dashboard-content--cabinet">{children}</div>
         </main>
       </div>
+
+      <CreateRoomOptionsModal
+        open={createRoomOpen}
+        onClose={() => setCreateRoomOpen(false)}
+        onConfirm={confirmCreateRoom}
+      />
     </div>
   )
 }

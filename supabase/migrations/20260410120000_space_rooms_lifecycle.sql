@@ -1,7 +1,4 @@
 alter table if exists public.space_rooms
-  add column if not exists is_persistent boolean not null default false;
-
-alter table if exists public.space_rooms
   add column if not exists access_mode text not null default 'link';
 
 do $$

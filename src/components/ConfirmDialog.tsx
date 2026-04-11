@@ -1,9 +1,9 @@
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 
 export interface ConfirmDialogProps {
   open: boolean
   title: string
-  message: string
+  message: ReactNode
   confirmLabel?: string
   cancelLabel?: string
   /** Блокирует кнопку подтверждения (например, во время запроса). */
@@ -55,7 +55,7 @@ export function ConfirmDialog({
         <h2 id="confirm-dialog-title" className="confirm-dialog__title">
           {title}
         </h2>
-        <p className="confirm-dialog__msg">{message}</p>
+        <div className="confirm-dialog__msg">{message}</div>
         <div className="confirm-dialog__actions">
           <button
             type="button"

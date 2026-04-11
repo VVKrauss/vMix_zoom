@@ -3,9 +3,10 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
-import { setPendingHostClaim } from '../lib/spaceRoom'
+import { setPendingHostClaim, stashSpaceRoomCreateOptions, type SpaceRoomCreateOptions } from '../lib/spaceRoom'
 import { newRoomId } from '../utils/roomId'
 import { ChatBubbleIcon, DashboardIcon } from './icons'
+import { CreateRoomOptionsModal } from './CreateRoomOptionsModal'
 import { ThemeToggle } from './ThemeToggle'
 
 export function HomePage() {
@@ -14,9 +15,15 @@ export function HomePage() {
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const messengerUnreadCount = useMessengerUnreadCount()
   const [joinId, setJoinId] = useState('')
+  const [createRoomOpen, setCreateRoomOpen] = useState(false)
 
-  const handleCreate = () => {
+  const handleCreateClick = () => {
+    setCreateRoomOpen(true)
+  }
+
+  const handleCreateConfirm = (opts: SpaceRoomCreateOptions) => {
     const id = newRoomId()
+    stashSpaceRoomCreateOptions(id, opts)
     setPendingHostClaim(id)
     navigate(`/r/${encodeURIComponent(id)}`)
   }
@@ -113,7 +120,7 @@ export function HomePage() {
           <button
             type="button"
             className="join-btn join-btn--block"
-            onClick={handleCreate}
+            onClick={handleCreateClick}
             disabled={!user}
             title={!user ? 'Войдите, чтобы создать комнату' : undefined}
           >
@@ -121,6 +128,12 @@ export function HomePage() {
           </button>
           {!user && !loading ? <p className="home-create-hint">Требуется аккаунт</p> : null}
         </div>
+
+        <CreateRoomOptionsModal
+          open={createRoomOpen}
+          onClose={() => setCreateRoomOpen(false)}
+          onConfirm={handleCreateConfirm}
+        />
 
         <div className="home-divider">
           <span>или войдите в существующую</span>

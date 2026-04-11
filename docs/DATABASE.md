@@ -19,6 +19,8 @@
 | 9 | `seed_roles_and_permissions` | 18 ролей, 50 пермишенов, 170 связей |
 | 10 | `room_ui_prefs_and_space_rooms` | `users.room_ui_preferences`, таблица `space_rooms`, RLS, `host_leave_space_room()` |
 
+Дополнительно в репозитории: `supabase/migrations/20260410120000_space_rooms_lifecycle.sql` (`access_mode`, `retain_instance`), `20260416120000_space_room_chat_invite.sql` (`chat_visibility`), `20260417110000_space_rooms_consolidate_columns.sql` (удалены дубли `is_persistent`, `invite_valid_until`).
+
 ---
 
 ## Таблицы
@@ -53,7 +55,9 @@
 | `slug` | text PK | Id комнаты в ссылке |
 | `host_user_id` | uuid FK → users | Создатель (хост) |
 | `status` | text | `open` / `closed` |
-| `retain_instance` | boolean | Заготовка под платный тариф: не удалять строку при выходе хоста (пока везде `false`) |
+| `retain_instance` | boolean | `true` — постоянная комната: при выходе хоста строка остаётся (`status = closed`); `false` — временная, строка удаляется при выходе хоста (free) |
+| `access_mode` | text | `link` — вход по ссылке (для временных — только первые ~2 мин после `created_at`, дальше клиент/миграции переводят в `approval`); `approval` / `invite_only` — холодный вход по ссылке без хоста закрыт |
+| `chat_visibility` | text | `everyone` / `authenticated_only` / `staff_only` / `closed` — политика чата комнаты |
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
 

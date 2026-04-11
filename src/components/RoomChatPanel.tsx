@@ -16,6 +16,9 @@ interface Props {
   contactStatuses?: Record<string, ContactStatus>
   onToggleFavoriteUser?: (targetUserId: string, nextFavorite: boolean) => void
   onSend: (text: string) => void
+  /** Запретить ввод (например, режим «чат закрыт»). */
+  composerLocked?: boolean
+  composerLockedHint?: string | null
 }
 
 function ChatSendArrowIcon() {
@@ -38,6 +41,8 @@ export function RoomChatPanel({
   contactStatuses = {},
   onToggleFavoriteUser,
   onSend,
+  composerLocked = false,
+  composerLockedHint = null,
 }: Props) {
   const [draft, setDraft] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
@@ -51,6 +56,7 @@ export function RoomChatPanel({
   }, [open, messages.length])
 
   const submit = () => {
+    if (composerLocked) return
     const trimmed = draft.trim()
     if (!trimmed) return
     onSend(trimmed)
@@ -134,13 +140,21 @@ export function RoomChatPanel({
           })
         )}
       </div>
-      <div className="room-chat-panel__composer">
+      <div
+        className={`room-chat-panel__composer${composerLocked ? ' room-chat-panel__composer--locked' : ''}`}
+      >
+        {composerLocked && composerLockedHint ? (
+          <p className="room-chat-panel__composer-hint" role="status">
+            {composerLockedHint}
+          </p>
+        ) : null}
         <textarea
           className="room-chat-panel__input"
           rows={2}
           maxLength={CHAT_MESSAGE_MAX_LEN}
-          placeholder="Сообщение…"
+          placeholder={composerLocked ? 'Отправка недоступна' : 'Сообщение…'}
           value={draft}
+          disabled={composerLocked}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -153,7 +167,7 @@ export function RoomChatPanel({
           type="button"
           className="room-chat-panel__send-btn"
           onClick={submit}
-          disabled={!canSend}
+          disabled={composerLocked || !canSend}
           title="Отправить"
           aria-label="Отправить сообщение"
         >
