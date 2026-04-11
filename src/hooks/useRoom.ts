@@ -146,7 +146,7 @@ function extractField(payload: unknown, camel: string, snake: string): string | 
 const producerIdFromClosedPayload = (p: unknown) => extractField(p, 'producerId', 'producer_id')
 const peerIdFromLeftPayload = (p: unknown) => extractField(p, 'peerId', 'peer_id')
 
-type PeerRosterRow = { peerId: string; name: string; avatarUrl?: string | null }
+type PeerRosterRow = { peerId: string; name: string; avatarUrl?: string | null; authUserId?: string | null }
 
 function parsePeerRosterRow(raw: unknown): PeerRosterRow | null {
   if (!raw || typeof raw !== 'object') return null
@@ -163,7 +163,11 @@ function parsePeerRosterRow(raw: unknown): PeerRosterRow | null {
   let avatarUrl: string | null | undefined
   if (av === null) avatarUrl = null
   else if (typeof av === 'string' && av.trim()) avatarUrl = av.trim()
-  return { peerId, name, avatarUrl }
+  const auth = o.authUserId ?? o.auth_user_id
+  let authUserId: string | null | undefined
+  if (auth === null) authUserId = null
+  else if (typeof auth === 'string' && auth.trim()) authUserId = auth.trim()
+  return { peerId, name, avatarUrl, authUserId }
 }
 
 function applyRosterRow(
@@ -173,11 +177,12 @@ function applyRosterRow(
 ): void {
   if (row.peerId === selfSocketId) return
   const ex = next.get(row.peerId)
-  next.set(row.peerId, {
-    peerId: row.peerId,
-    name: row.name,
-    avatarUrl: row.avatarUrl ?? ex?.avatarUrl ?? null,
-    audioStream: ex?.audioStream,
+    next.set(row.peerId, {
+      peerId: row.peerId,
+      name: row.name,
+      avatarUrl: row.avatarUrl ?? ex?.avatarUrl ?? null,
+      authUserId: row.authUserId ?? ex?.authUserId ?? null,
+      audioStream: ex?.audioStream,
     videoStream: ex?.videoStream,
     screenStream: ex?.screenStream,
     screenPeerId: ex?.screenPeerId,

@@ -7,6 +7,8 @@ export type DirectConversationSummary = {
   lastMessageAt: string | null
   lastMessagePreview: string | null
   messageCount: number
+  unreadCount: number
+  otherUserId: string | null
 }
 
 export type DirectMessage = {
@@ -28,6 +30,8 @@ function mapDirectConversationRow(row: Record<string, unknown>): DirectConversat
     lastMessageAt: typeof row.last_message_at === 'string' ? row.last_message_at : null,
     lastMessagePreview: typeof row.last_message_preview === 'string' ? row.last_message_preview : null,
     messageCount: typeof row.message_count === 'number' ? row.message_count : Number(row.message_count ?? 0) || 0,
+    unreadCount: typeof row.unread_count === 'number' ? row.unread_count : Number(row.unread_count ?? 0) || 0,
+    otherUserId: typeof row.other_user_id === 'string' ? row.other_user_id : null,
   }
 }
 
@@ -38,49 +42,28 @@ export async function ensureSelfDirectConversation(): Promise<{ data: string | n
 }
 
 export async function listDirectConversationsForUser(
-  userId: string,
 ): Promise<{ data: DirectConversationSummary[] | null; error: string | null }> {
-  const { data, error } = await supabase
-    .from('chat_conversations')
-    .select(
-      'id, kind, title, created_at, last_message_at, last_message_preview, message_count, chat_conversation_members!inner(user_id)',
-    )
-    .eq('chat_conversation_members.user_id', userId)
-    .eq('kind', 'direct')
-    .order('last_message_at', { ascending: false, nullsFirst: false })
-    .order('created_at', { ascending: false })
-
+  const { data, error } = await supabase.rpc('list_my_direct_conversations')
   if (error) return { data: null, error: error.message }
   return {
-    data: (data ?? []).map((row) => mapDirectConversationRow(row as Record<string, unknown>)),
+    data: (data ?? []).map((row: unknown) => mapDirectConversationRow(row as Record<string, unknown>)),
     error: null,
   }
 }
 
 export async function getDirectConversationForUser(
   conversationId: string,
-  userId: string,
 ): Promise<{ data: DirectConversationSummary | null; error: string | null }> {
-  const { data, error } = await supabase
-    .from('chat_conversations')
-    .select(
-      'id, kind, title, created_at, last_message_at, last_message_preview, message_count, chat_conversation_members!inner(user_id)',
-    )
-    .eq('chat_conversation_members.user_id', userId)
-    .eq('id', conversationId)
-    .eq('kind', 'direct')
-    .maybeSingle()
-
-  if (error) return { data: null, error: error.message }
-  if (!data) return { data: null, error: null }
-  return { data: mapDirectConversationRow(data as Record<string, unknown>), error: null }
+  const list = await listDirectConversationsForUser()
+  if (list.error) return { data: null, error: list.error }
+  const item = (list.data ?? []).find((row) => row.id === conversationId) ?? null
+  return { data: item, error: null }
 }
 
 export async function listDirectMessagesForUser(
   conversationId: string,
-  userId: string,
 ): Promise<{ data: DirectMessage[] | null; error: string | null }> {
-  const convo = await getDirectConversationForUser(conversationId, userId)
+  const convo = await getDirectConversationForUser(conversationId)
   if (convo.error) return { data: null, error: convo.error }
   if (!convo.data) return { data: null, error: 'Чат не найден' }
 
@@ -105,6 +88,36 @@ export async function listDirectMessagesForUser(
     })),
     error: null,
   }
+}
+
+export async function ensureDirectConversationWithUser(
+  targetUserId: string,
+  targetTitle?: string | null,
+): Promise<{ data: string | null; error: string | null }> {
+  const { data, error } = await supabase.rpc('ensure_direct_conversation_with_user', {
+    p_target_user_id: targetUserId,
+    p_target_title: targetTitle ?? null,
+  })
+  if (error) return { data: null, error: error.message }
+  return { data: typeof data === 'string' ? data : null, error: null }
+}
+
+export async function markDirectConversationRead(
+  conversationId: string,
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.rpc('mark_direct_conversation_read', {
+    p_conversation_id: conversationId,
+  })
+  return { error: error?.message ?? null }
+}
+
+export async function getDirectUnreadCount(): Promise<{ data: number | null; error: string | null }> {
+  const { data, error } = await supabase.rpc('list_my_direct_conversations')
+  if (error) return { data: null, error: error.message }
+  const count = Array.isArray(data)
+    ? data.reduce((sum: number, row: Record<string, unknown>) => sum + (typeof row.unread_count === 'number' ? row.unread_count : Number(row.unread_count ?? 0) || 0), 0)
+    : 0
+  return { data: count, error: null }
 }
 
 export async function appendDirectMessage(

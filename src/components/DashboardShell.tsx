@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import { setPendingHostClaim } from '../lib/spaceRoom'
 import { newRoomId } from '../utils/roomId'
 import { ChatBubbleIcon, DashboardIcon, ParticipantsBadgeIcon } from './icons'
@@ -44,6 +45,7 @@ function DashboardSidebarLink({
 
 export function DashboardShell({ active, canAccessAdmin, onSignOut, children }: DashboardShellProps) {
   const navigate = useNavigate()
+  const unreadCount = useMessengerUnreadCount()
 
   const goCreateRoom = () => {
     const id = newRoomId()
@@ -59,6 +61,14 @@ export function DashboardShell({ active, canAccessAdmin, onSignOut, children }: 
         </Link>
 
         <div className="dashboard-topbar__actions">
+          <Link to="/dashboard/messenger" className="dashboard-topbar__messenger" title="Мессенджер">
+            <ChatBubbleIcon />
+            {unreadCount > 0 ? (
+              <span className="dashboard-topbar__messenger-badge">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            ) : null}
+          </Link>
           <button
             type="button"
             className="dashboard-topbar__action dashboard-topbar__action--primary"
@@ -97,7 +107,10 @@ export function DashboardShell({ active, canAccessAdmin, onSignOut, children }: 
               label="Мессенджер"
               shortLabel="МС"
             >
-              <ChatBubbleIcon />
+              <span className="dashboard-sidebar__icon-badge-wrap">
+                <ChatBubbleIcon />
+                {unreadCount > 0 ? <span className="dashboard-sidebar__badge">{unreadCount > 99 ? '99+' : unreadCount}</span> : null}
+              </span>
             </DashboardSidebarLink>
             <DashboardSidebarLink
               to="/dashboard/friends"

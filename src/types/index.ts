@@ -26,6 +26,7 @@ export type ProducerDescriptor = {
   name: string
   /** С сервера / ростера; для плитки без видео */
   avatarUrl?: string | null
+  authUserId?: string | null
   /** Явный источник видео (из producer.appData на бэке). */
   videoSource?: 'camera' | 'screen' | 'vmix' | 'studio_program'
   /** Если peerId у видео экрана — отдельный, здесь peerId «хозяина» (камера/имя в комнате). */
@@ -50,6 +51,7 @@ export type RemoteParticipant = {
   peerId: string
   name: string
   avatarUrl?: string | null
+  authUserId?: string | null
   virtualSourceType?: 'studio_program'
   sourceOwnerPeerId?: string
   audioStream?: MediaStream

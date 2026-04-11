@@ -592,6 +592,46 @@ html.app-root--room #root {
   min-width: 0;
 }
 
+.dashboard-topbar__messenger {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.1);
+  color: var(--text);
+  background: rgba(255,255,255,.04);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.dashboard-topbar__messenger:hover {
+  background: rgba(255,255,255,.07);
+}
+
+.dashboard-topbar__messenger svg {
+  width: 18px;
+  height: 18px;
+}
+
+.dashboard-topbar__messenger-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .dashboard-topbar__action {
   display: inline-flex;
   align-items: center;
@@ -699,6 +739,30 @@ html.app-root--room #root {
 .dashboard-sidebar__icon {
   width: 22px;
   height: 22px;
+}
+
+.dashboard-sidebar__icon-badge-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dashboard-sidebar__badge {
+  position: absolute;
+  top: -7px;
+  right: -11px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .dashboard-sidebar__icon svg {
@@ -1591,6 +1655,27 @@ button.admin-stat-card--interactive:disabled {
   font-size: 16px;
   font-weight: 700;
   color: var(--text);
+}
+
+.dashboard-messenger__row-titleline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dashboard-messenger__row-badge {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .dashboard-messenger__row-meta {
@@ -3430,6 +3515,46 @@ button.admin-stat-card--interactive:disabled {
   justify-content: flex-end;
   gap: 16px;
   min-width: 0;
+}
+
+.room-header-messenger-btn {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(255,255,255,.05);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.room-header-messenger-btn:hover {
+  background: rgba(255,255,255,.08);
+}
+
+.room-header-messenger-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.room-header-messenger-btn__badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Тумблер-пилюля: шапка «Обычный / Стример», настройки, камера */

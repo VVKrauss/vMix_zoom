@@ -29,6 +29,7 @@ interface Props {
   getPeerUplinkVideoQuality?: (peerId: string) => Promise<InboundVideoQuality | null>
   showSoloViewerCopy?: boolean
   guestMute?: { show: boolean; onMute: () => void }
+  onOpenDirectChat?: (participant: RemoteParticipant) => void
 }
 
 export function ParticipantCard({
@@ -41,6 +42,7 @@ export function ParticipantCard({
   getPeerUplinkVideoQuality,
   showSoloViewerCopy = true,
   guestMute,
+  onOpenDirectChat,
 }: Props) {
   const mainVideoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -75,7 +77,19 @@ export function ParticipantCard({
   useBindPlayout(audioRef, playoutVolume, playoutSinkId, !!participant.audioStream)
 
   return (
-    <div className="participant-card" style={style}>
+    <div
+      className="participant-card"
+      style={style}
+      onContextMenu={
+        participant.authUserId && onOpenDirectChat
+          ? (e) => {
+              e.preventDefault()
+              onOpenDirectChat(participant)
+            }
+          : undefined
+      }
+      title={participant.authUserId && onOpenDirectChat ? 'Правый клик — открыть личный чат' : undefined}
+    >
       <div className="card-video-wrap">
         <SrtCopySurface
           connectUrl={srtConnectUrl}

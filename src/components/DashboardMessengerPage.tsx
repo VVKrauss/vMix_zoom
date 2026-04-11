@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import {
   appendDirectMessage,
   type DirectConversationSummary,
   type DirectMessage,
+  ensureDirectConversationWithUser,
   ensureSelfDirectConversation,
   getDirectConversationForUser,
   listDirectConversationsForUser,
   listDirectMessagesForUser,
+  markDirectConversationRead,
 } from '../lib/messenger'
 import { DashboardShell } from './DashboardShell'
 
@@ -25,6 +27,9 @@ function formatDateTime(value: string): string {
 export function DashboardMessengerPage() {
   const { conversationId: rawConversationId } = useParams<{ conversationId?: string }>()
   const conversationId = rawConversationId?.trim() ?? ''
+  const [searchParams] = useSearchParams()
+  const targetUserId = searchParams.get('with')?.trim() ?? ''
+  const targetTitle = searchParams.get('title')?.trim() ?? ''
   const navigate = useNavigate()
   const { signOut, user } = useAuth()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
@@ -53,7 +58,9 @@ export function DashboardMessengerPage() {
       setLoading(true)
       setError(null)
 
-      const ensured = await ensureSelfDirectConversation()
+      const ensured = targetUserId
+        ? await ensureDirectConversationWithUser(targetUserId, targetTitle || null)
+        : await ensureSelfDirectConversation()
       if (!active) return
       if (ensured.error) {
         setError(ensured.error)
@@ -61,7 +68,7 @@ export function DashboardMessengerPage() {
         return
       }
 
-      const listRes = await listDirectConversationsForUser(user.id)
+      const listRes = await listDirectConversationsForUser()
       if (!active) return
       if (listRes.error) {
         setError(listRes.error)
@@ -91,8 +98,8 @@ export function DashboardMessengerPage() {
       }
 
       const [conversationRes, messagesRes] = await Promise.all([
-        getDirectConversationForUser(targetConversationId, user.id),
-        listDirectMessagesForUser(targetConversationId, user.id),
+        getDirectConversationForUser(targetConversationId),
+        listDirectMessagesForUser(targetConversationId),
       ])
 
       if (!active) return
@@ -112,6 +119,7 @@ export function DashboardMessengerPage() {
       } else {
         setActiveConversation(conversationRes.data)
         setMessages(messagesRes.data ?? [])
+        void markDirectConversationRead(targetConversationId)
       }
 
       setLoading(false)
@@ -121,7 +129,7 @@ export function DashboardMessengerPage() {
     return () => {
       active = false
     }
-  }, [conversationId, navigate, user?.id])
+  }, [conversationId, navigate, targetTitle, targetUserId, user?.id])
 
   const activeConversationId = activeConversation?.id ?? conversationId
 
@@ -150,7 +158,7 @@ export function DashboardMessengerPage() {
       return
     }
 
-    const refresh = await listDirectMessagesForUser(activeConversationId, user.id)
+    const refresh = await listDirectMessagesForUser(activeConversationId)
     if (!refresh.error && refresh.data) {
       setMessages(refresh.data)
     }
@@ -163,6 +171,7 @@ export function DashboardMessengerPage() {
               lastMessageAt: res.data?.createdAt ?? optimistic.createdAt,
               lastMessagePreview: trimmed,
               messageCount: item.messageCount + 1,
+              unreadCount: 0,
             }
           : item,
       ),
@@ -210,7 +219,14 @@ export function DashboardMessengerPage() {
                     to={`/dashboard/messenger/${encodeURIComponent(item.id)}`}
                     className={`dashboard-messenger__row${item.id === activeConversationId ? ' dashboard-messenger__row--active' : ''}`}
                   >
-                    <div className="dashboard-messenger__row-title">{item.title}</div>
+                    <div className="dashboard-messenger__row-titleline">
+                      <div className="dashboard-messenger__row-title">{item.title}</div>
+                      {item.unreadCount > 0 ? (
+                        <span className="dashboard-messenger__row-badge">
+                          {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                        </span>
+                      ) : null}
+                    </div>
                     <div className="dashboard-messenger__row-meta">
                       <span>{item.messageCount} сообщ.</span>
                       <span>{formatDateTime(item.lastMessageAt ?? item.createdAt)}</span>

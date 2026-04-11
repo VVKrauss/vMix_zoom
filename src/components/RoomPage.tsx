@@ -7,14 +7,15 @@ import { ControlsBar } from './ControlsBar'
 import { ParticipantCard } from './ParticipantCard'
 import { DraggablePip } from './DraggablePip'
 import { AudioMeter } from './AudioMeter'
-import {
-  MicOffIcon,
-  DashboardIcon,
-  InviteIcon,
-  ParticipantsBadgeIcon,
-  FullscreenEnterIcon,
-  FullscreenExitIcon,
-} from './icons'
+  import {
+    MicOffIcon,
+    DashboardIcon,
+    InviteIcon,
+    ParticipantsBadgeIcon,
+    ChatBubbleIcon,
+    FullscreenEnterIcon,
+    FullscreenExitIcon,
+  } from './icons'
 import { useAuth } from '../context/AuthContext'
 import { shouldClosePopoverOnOutsidePointer } from '../utils/popoverOutsideClick'
 import { useAudioOutputs } from '../hooks/useAudioOutputs'
@@ -64,7 +65,8 @@ import { PillToggle } from './PillToggle'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useActiveSpeaker } from '../hooks/useActiveSpeaker'
 import { buildRoomInviteAbsoluteUrl } from '../utils/soloViewerParams'
-import { useTouchDoubleTap } from '../hooks/useTouchDoubleTap'
+  import { useTouchDoubleTap } from '../hooks/useTouchDoubleTap'
+  import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import { nextLayoutMode } from '../config/layoutModeCycle'
 import { useRoomUiSync } from '../hooks/useRoomUiSync'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
@@ -579,6 +581,7 @@ export function RoomPage({
     [isPlatformAdminish, isStreamerPlan, isRoomHost],
   )
   const avatarUrl = user?.user_metadata?.avatar_url as string | undefined
+  const messengerUnreadCount = useMessengerUnreadCount()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
 
@@ -738,6 +741,13 @@ export function RoomPage({
       [targetUserId]: result.data!,
     }))
   }, [chatContactStatuses])
+
+  const openDirectChat = useCallback((targetUserId: string, targetName?: string | null) => {
+    const sp = new URLSearchParams()
+    sp.set('with', targetUserId)
+    if (targetName?.trim()) sp.set('title', targetName.trim())
+    window.open(`/dashboard/messenger?${sp.toString()}`, '_blank', 'noopener')
+  }, [])
 
   /** Участники-люди в счётчике шапки (без виртуального vMix/SRT). */
   const remoteHumanPeers = useMemo(
@@ -1265,6 +1275,11 @@ export function RoomPage({
             ? { show: true, onMute: () => requestPeerMicMute(p.peerId) }
             : undefined
         }
+        onOpenDirectChat={
+          p.authUserId && user?.id && p.authUserId !== user.id
+            ? (participant) => openDirectChat(participant.authUserId!, participant.name)
+            : undefined
+        }
       />
     )
   }
@@ -1464,6 +1479,22 @@ export function RoomPage({
                   />
                 </div>
               ) : null}
+              {user && (
+                <button
+                  type="button"
+                  className="room-header-messenger-btn"
+                  title="Открыть мессенджер"
+                  aria-label="Открыть мессенджер"
+                  onClick={() => window.open('/dashboard/messenger', '_blank', 'noopener')}
+                >
+                  <ChatBubbleIcon />
+                  {messengerUnreadCount > 0 ? (
+                    <span className="room-header-messenger-btn__badge">
+                      {messengerUnreadCount > 99 ? '99+' : messengerUnreadCount}
+                    </span>
+                  ) : null}
+                </button>
+              )}
               {user && (
                 <div className="header-user-menu" ref={userMenuRef}>
                   <button
