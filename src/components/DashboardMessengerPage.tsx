@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
@@ -12,7 +12,7 @@ import {
   ensureSelfDirectConversation,
   getDirectConversationForUser,
   listDirectConversationsForUser,
-  listDirectMessagesForUser,
+  listDirectMessagesPage,
   mapDirectMessageFromRow,
   markDirectConversationRead,
 } from '../lib/messenger'
@@ -34,6 +34,7 @@ function conversationInitial(title: string): string {
 }
 
 const MESSENGER_LAST_OPEN_KEY = 'vmix.messenger.lastOpenConversation'
+const DM_PAGE_SIZE = 50
 
 function sortConversationsByActivity(list: DirectConversationSummary[]): DirectConversationSummary[] {
   return [...list].sort((a, b) => {
@@ -83,9 +84,20 @@ export function DashboardMessengerPage() {
   const [messages, setMessages] = useState<DirectMessage[]>([])
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  const [hasMoreOlder, setHasMoreOlder] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
 
   const conversationIdRef = useRef(conversationId)
   conversationIdRef.current = conversationId
+  const itemsRef = useRef(items)
+  itemsRef.current = items
+  const messagesScrollRef = useRef<HTMLDivElement | null>(null)
+  const olderFetchInFlightRef = useRef(false)
+  const prevThreadIdForClearRef = useRef<string | null>(null)
+  const prevMessagesLenForScrollRef = useRef(0)
+  /** Уже загруженные сообщения для этого id — не дергать API при повторном срабатывании эффекта (напр. loading). */
+  const lastFetchedThreadIdRef = useRef<string | null>(null)
+  const threadFetchInFlightRef = useRef<string | null>(null)
   /** После первой успешной загрузки списка — повторный bootstrap при «Назад к чатам» не нужен */
   const listLoadedOnceRef = useRef(false)
 
@@ -114,6 +126,9 @@ export function DashboardMessengerPage() {
     const run = async () => {
       if (!user?.id) {
         listLoadedOnceRef.current = false
+        lastFetchedThreadIdRef.current = null
+        threadFetchInFlightRef.current = null
+        prevThreadIdForClearRef.current = null
         if (active) {
           setItems([])
           setActiveConversation(null)
@@ -198,58 +213,93 @@ export function DashboardMessengerPage() {
     const run = async () => {
       if (!user?.id || loading) return
       if (listOnlyMobile) {
+        lastFetchedThreadIdRef.current = null
+        threadFetchInFlightRef.current = null
         if (active) {
           setThreadLoading(false)
           setActiveConversation(null)
           setMessages([])
+          setHasMoreOlder(false)
         }
         return
       }
       const targetConversationId =
-        conversationId.trim() || pickDefaultConversationId(items, null) || ''
+        conversationId.trim() || pickDefaultConversationId(itemsRef.current, null) || ''
       if (!targetConversationId) {
+        lastFetchedThreadIdRef.current = null
         if (active) {
           setActiveConversation(null)
           setMessages([])
+          setHasMoreOlder(false)
           setThreadLoading(false)
         }
         return
       }
 
-      setThreadLoading(true)
-      const [conversationRes, messagesRes] = await Promise.all([
-        getDirectConversationForUser(targetConversationId),
-        listDirectMessagesForUser(targetConversationId),
-      ])
-
-      if (!active) return
-
-      if (conversationRes.error) {
-        setError(conversationRes.error)
-        setActiveConversation(null)
+      const prevOpenedId = prevThreadIdForClearRef.current
+      const conversationSwitched = prevOpenedId !== targetConversationId
+      if (conversationSwitched) {
+        prevThreadIdForClearRef.current = targetConversationId
+        lastFetchedThreadIdRef.current = null
         setMessages([])
-      } else if (!conversationRes.data) {
-        setError('Чат не найден или у вас нет к нему доступа.')
-        setActiveConversation(null)
-        setMessages([])
-      } else if (messagesRes.error) {
-        setError(messagesRes.error)
-        setActiveConversation(conversationRes.data)
-        setMessages([])
-      } else {
-        setActiveConversation(conversationRes.data)
-        setMessages(messagesRes.data ?? [])
-        void markDirectConversationRead(targetConversationId)
+        setHasMoreOlder(false)
       }
 
-      setThreadLoading(false)
+      if (lastFetchedThreadIdRef.current === targetConversationId) {
+        if (active) setThreadLoading(false)
+        return
+      }
+
+      if (threadFetchInFlightRef.current === targetConversationId) {
+        return
+      }
+      threadFetchInFlightRef.current = targetConversationId
+      setThreadLoading(true)
+
+      try {
+        const [conversationRes, messagesRes] = await Promise.all([
+          getDirectConversationForUser(targetConversationId),
+          listDirectMessagesPage(targetConversationId, { limit: DM_PAGE_SIZE }),
+        ])
+
+        if (!active) return
+
+        if (conversationRes.error) {
+          setError(conversationRes.error)
+          setActiveConversation(null)
+          setMessages([])
+          setHasMoreOlder(false)
+          lastFetchedThreadIdRef.current = null
+        } else if (!conversationRes.data) {
+          setError('Чат не найден или у вас нет к нему доступа.')
+          setActiveConversation(null)
+          setMessages([])
+          setHasMoreOlder(false)
+          lastFetchedThreadIdRef.current = null
+        } else if (messagesRes.error) {
+          setError(messagesRes.error)
+          setActiveConversation(conversationRes.data)
+          setMessages([])
+          setHasMoreOlder(false)
+          lastFetchedThreadIdRef.current = null
+        } else {
+          setActiveConversation(conversationRes.data)
+          setMessages(messagesRes.data ?? [])
+          setHasMoreOlder(messagesRes.hasMoreOlder)
+          lastFetchedThreadIdRef.current = targetConversationId
+          void markDirectConversationRead(targetConversationId)
+        }
+      } finally {
+        threadFetchInFlightRef.current = null
+        if (active) setThreadLoading(false)
+      }
     }
 
     void run()
     return () => {
       active = false
     }
-  }, [conversationId, listOnlyMobile, loading, user?.id, items])
+  }, [conversationId, listOnlyMobile, loading, user?.id])
 
   const activeConversationId = listOnlyMobile ? '' : conversationId || activeConversation?.id || ''
 
@@ -284,10 +334,14 @@ export function DashboardMessengerPage() {
           const row = payload.new as Record<string, unknown>
           if (!row?.id) return
           const msg = mapDirectMessageFromRow(row)
+          const isOwn = msg.senderUserId === uid
+          const preview =
+            msg.kind === 'reaction' ? (msg.body.trim() || 'Реакция') : msg.body
+
           setMessages((prev) => {
             if (prev.some((m) => m.id === msg.id)) return prev
             let base = prev
-            if (msg.senderUserId === uid) {
+            if (isOwn) {
               const i = prev.findIndex(
                 (m) =>
                   m.id.startsWith('local-') &&
@@ -301,6 +355,33 @@ export function DashboardMessengerPage() {
             next.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
             return next
           })
+
+          if (!isOwn) {
+            setItems((prev) =>
+              prev.map((item) =>
+                item.id === convId
+                  ? {
+                      ...item,
+                      lastMessageAt: msg.createdAt,
+                      lastMessagePreview: preview,
+                      messageCount: item.messageCount + 1,
+                      unreadCount: item.unreadCount + 1,
+                    }
+                  : item,
+              ),
+            )
+            setActiveConversation((prev) =>
+              prev && prev.id === convId
+                ? {
+                    ...prev,
+                    lastMessageAt: msg.createdAt,
+                    lastMessagePreview: preview,
+                    messageCount: prev.messageCount + 1,
+                    unreadCount: prev.unreadCount + 1,
+                  }
+                : prev,
+            )
+          }
         },
       )
       .subscribe()
@@ -309,6 +390,97 @@ export function DashboardMessengerPage() {
       void supabase.removeChannel(channel)
     }
   }, [activeConversationId, listOnlyMobile, user?.id])
+
+  const prevThreadLoadingRef = useRef(false)
+  useLayoutEffect(() => {
+    const wasLoading = prevThreadLoadingRef.current
+    prevThreadLoadingRef.current = threadLoading
+    if (wasLoading && !threadLoading && !listOnlyMobile && messages.length > 0) {
+      const el = messagesScrollRef.current
+      if (el) el.scrollTop = el.scrollHeight
+    }
+  }, [threadLoading, listOnlyMobile, messages.length])
+
+  const loadOlderMessages = useCallback(async () => {
+    const convId = listOnlyMobile ? '' : conversationId.trim()
+    const conv = convId || activeConversation?.id || ''
+    if (!conv || loadingOlder || !hasMoreOlder || olderFetchInFlightRef.current) return
+    const oldest = messages[0]
+    if (!oldest?.id || oldest.id.startsWith('local-')) return
+
+    const scrollEl = messagesScrollRef.current
+    const prevScrollHeight = scrollEl?.scrollHeight ?? 0
+    const prevScrollTop = scrollEl?.scrollTop ?? 0
+
+    olderFetchInFlightRef.current = true
+    setLoadingOlder(true)
+    try {
+      const res = await listDirectMessagesPage(conv, {
+        limit: DM_PAGE_SIZE,
+        before: { createdAt: oldest.createdAt, id: oldest.id },
+      })
+      if (res.error) {
+        setError(res.error)
+        return
+      }
+      const older = res.data ?? []
+      if (older.length === 0) {
+        setHasMoreOlder(false)
+        return
+      }
+      setHasMoreOlder(res.hasMoreOlder)
+      setMessages((prev) => {
+        const seen = new Set(prev.map((m) => m.id))
+        const merged = [...older.filter((m) => !seen.has(m.id)), ...prev]
+        merged.sort(
+          (a, b) =>
+            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() ||
+            a.id.localeCompare(b.id),
+        )
+        return merged
+      })
+      requestAnimationFrame(() => {
+        const el = messagesScrollRef.current
+        if (!el) return
+        el.scrollTop = el.scrollHeight - prevScrollHeight + prevScrollTop
+      })
+    } finally {
+      olderFetchInFlightRef.current = false
+      setLoadingOlder(false)
+    }
+  }, [
+    activeConversation?.id,
+    conversationId,
+    hasMoreOlder,
+    listOnlyMobile,
+    loadingOlder,
+    messages,
+  ])
+
+  const lastOlderScrollInvokeRef = useRef(0)
+  const onMessagesScroll = useCallback(() => {
+    const el = messagesScrollRef.current
+    if (!el || threadLoading || loadingOlder || !hasMoreOlder || olderFetchInFlightRef.current) return
+    if (el.scrollTop > 96) return
+    const now = Date.now()
+    if (now - lastOlderScrollInvokeRef.current < 500) return
+    lastOlderScrollInvokeRef.current = now
+    void loadOlderMessages()
+  }, [threadLoading, loadingOlder, hasMoreOlder, loadOlderMessages])
+
+  useEffect(() => {
+    if (loadingOlder || threadLoading) {
+      prevMessagesLenForScrollRef.current = messages.length
+      return
+    }
+    const el = messagesScrollRef.current
+    const prevLen = prevMessagesLenForScrollRef.current
+    const grew = messages.length > prevLen
+    prevMessagesLenForScrollRef.current = messages.length
+    if (!el || !grew) return
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 140
+    if (nearBottom) el.scrollTop = el.scrollHeight
+  }, [messages.length, threadLoading, loadingOlder])
 
   const sendMessage = async () => {
     const trimmed = draft.trim()
@@ -359,7 +531,22 @@ export function DashboardMessengerPage() {
           : item,
       ),
     )
+    setActiveConversation((prev) =>
+      prev && prev.id === activeConversationId
+        ? {
+            ...prev,
+            lastMessageAt: res.data?.createdAt ?? optimistic.createdAt,
+            lastMessagePreview: trimmed,
+            messageCount: prev.messageCount + 1,
+            unreadCount: 0,
+          }
+        : prev,
+    )
     setSending(false)
+    requestAnimationFrame(() => {
+      const el = messagesScrollRef.current
+      if (el) el.scrollTop = el.scrollHeight
+    })
   }
 
   const sortedItems = useMemo(() => sortConversationsByActivity(items), [items])
@@ -469,7 +656,16 @@ export function DashboardMessengerPage() {
                           )}
                         </div>
                         <div>
-                          <h3 className="dashboard-section__subtitle">{threadHeadConversation.title}</h3>
+                          <div className="dashboard-messenger__thread-titleline">
+                            <h3 className="dashboard-section__subtitle">{threadHeadConversation.title}</h3>
+                            {threadHeadConversation.unreadCount > 0 ? (
+                              <span className="dashboard-messenger__row-badge">
+                                {threadHeadConversation.unreadCount > 99
+                                  ? '99+'
+                                  : threadHeadConversation.unreadCount}
+                              </span>
+                            ) : null}
+                          </div>
                           <div className="dashboard-messenger__thread-meta">
                             <span>{threadHeadConversation.messageCount} сообщ.</span>
                             <span>
@@ -484,7 +680,16 @@ export function DashboardMessengerPage() {
                     </div>
 
                     <div className="dashboard-messenger__thread-main">
-                      <div className="dashboard-messenger__messages-scroll">
+                      <div
+                        ref={messagesScrollRef}
+                        className="dashboard-messenger__messages-scroll"
+                        onScroll={onMessagesScroll}
+                      >
+                        {loadingOlder ? (
+                          <div className="dashboard-messenger__load-older" role="status" aria-live="polite">
+                            Загрузка истории…
+                          </div>
+                        ) : null}
                         <div className="dashboard-messenger__messages">
                           {threadLoading ? (
                             <div

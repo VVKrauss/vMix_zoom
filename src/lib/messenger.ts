@@ -135,24 +135,56 @@ export async function getDirectConversationForUser(
   return { data: item, error: null }
 }
 
-export async function listDirectMessagesForUser(
-  conversationId: string,
-): Promise<{ data: DirectMessage[] | null; error: string | null }> {
-  const convo = await getDirectConversationForUser(conversationId)
-  if (convo.error) return { data: null, error: convo.error }
-  if (!convo.data) return { data: null, error: 'Чат не найден' }
+const DIRECT_MESSAGES_PAGE_MAX = 100
 
-  const { data, error } = await supabase
+/** Для PostgREST or(): значение created_at в двойных кавычках. */
+function escapePostgrestQuotedTimestamp(iso: string): string {
+  return iso.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+/**
+ * Страница личных сообщений: по умолчанию последние `limit` штук;
+ * с `before` — ещё `limit` сообщений старше курсора (created_at, id).
+ *
+ * Реализовано через PostgREST (RLS на `chat_messages`), без RPC — чтобы работало,
+ * даже если миграция `list_direct_messages_page` ещё не применена на проекте.
+ */
+export async function listDirectMessagesPage(
+  conversationId: string,
+  options?: { before?: { createdAt: string; id: string }; limit?: number },
+): Promise<{ data: DirectMessage[] | null; error: string | null; hasMoreOlder: boolean }> {
+  const limit = Math.min(
+    Math.max(options?.limit ?? 50, 1),
+    DIRECT_MESSAGES_PAGE_MAX,
+  )
+  const before = options?.before
+
+  const convo = await getDirectConversationForUser(conversationId)
+  if (convo.error) return { data: null, error: convo.error, hasMoreOlder: false }
+  if (!convo.data) return { data: null, error: 'Чат не найден', hasMoreOlder: false }
+
+  let query = supabase
     .from('chat_messages')
     .select('id, sender_user_id, sender_name_snapshot, kind, body, created_at')
     .eq('conversation_id', conversationId)
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(limit)
 
-  if (error) return { data: null, error: error.message }
-  return {
-    data: (data ?? []).map((row) => mapDirectMessageFromRow(row as Record<string, unknown>)),
-    error: null,
+  if (before) {
+    const ts = escapePostgrestQuotedTimestamp(before.createdAt)
+    const bid = before.id.trim()
+    query = query.or(`and(created_at.eq."${ts}",id.lt.${bid}),created_at.lt."${ts}"`)
   }
+
+  const { data, error } = await query
+
+  if (error) return { data: null, error: error.message, hasMoreOlder: false }
+
+  const rows = (data ?? []) as Record<string, unknown>[]
+  const chronological = [...rows].reverse().map((row) => mapDirectMessageFromRow(row))
+  const hasMoreOlder = rows.length === limit
+  return { data: chronological, error: null, hasMoreOlder }
 }
 
 export async function ensureDirectConversationWithUser(
