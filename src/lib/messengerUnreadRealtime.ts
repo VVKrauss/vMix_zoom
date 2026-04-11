@@ -13,8 +13,37 @@ function emit(): void {
 }
 
 /**
+ * Событие нового фонового сообщения (в диалоге, который сейчас не открыт).
+ * detail: { conversationId: string; senderUserId: string | null; kind: string; body: string; createdAt: string }
+ */
+export const MESSENGER_BG_MESSAGE_EVENT = 'vmix:messenger-bg-message'
+
+export interface MessengerBgMessageDetail {
+  conversationId: string
+  senderUserId: string | null
+  kind: string
+  body: string
+  createdAt: string
+}
+
+function emitBgMessage(row: Record<string, unknown>): void {
+  const conversationId = typeof row.conversation_id === 'string' ? row.conversation_id : null
+  if (!conversationId) return
+  const detail: MessengerBgMessageDetail = {
+    conversationId,
+    senderUserId: typeof row.sender_user_id === 'string' ? row.sender_user_id : null,
+    kind: typeof row.kind === 'string' ? row.kind : 'text',
+    body: typeof row.body === 'string' ? row.body : '',
+    createdAt: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
+  }
+  window.dispatchEvent(new CustomEvent(MESSENGER_BG_MESSAGE_EVENT, { detail }))
+}
+
+/**
  * Один Realtime-канал на пользователя для бейджа непрочитанных, даже если
  * `useMessengerUnreadCount` смонтирован в нескольких местах (шелл, комната, главная).
+ * Также диспатчит MESSENGER_BG_MESSAGE_EVENT при каждом INSERT — потребители
+ * фильтруют по conversation_id сами (пропуская активный тред).
  */
 export function subscribeMessengerUnreadRealtime(userId: string, onSignal: () => void): () => void {
   notifies.add(onSignal)
@@ -31,8 +60,9 @@ export function subscribeMessengerUnreadRealtime(userId: string, onSignal: () =>
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'chat_messages' },
-        () => {
+        (payload) => {
           emit()
+          emitBgMessage(payload.new as Record<string, unknown>)
         },
       )
       .on(

@@ -5,6 +5,16 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
+import {
+  MESSENGER_BG_MESSAGE_EVENT,
+  type MessengerBgMessageDetail,
+} from '../lib/messengerUnreadRealtime'
+import {
+  isMessengerSoundEnabled,
+  playMessageSound,
+  setMessengerSoundEnabled,
+  unlockAudioContext,
+} from '../lib/messengerSound'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useProfile } from '../hooks/useProfile'
 import {
@@ -22,7 +32,7 @@ import {
   requestMessengerUnreadRefresh,
   toggleDirectMessageReaction,
 } from '../lib/messenger'
-import { setPendingHostClaim } from '../lib/spaceRoom'
+import { setPendingHostClaim, stashSpaceRoomCreateOptions, type SpaceRoomCreateOptions } from '../lib/spaceRoom'
 import { supabase } from '../lib/supabase'
 import { newRoomId } from '../utils/roomId'
 import { BrandLogoLoader } from './BrandLogoLoader'
@@ -34,6 +44,7 @@ import {
   ParticipantsBadgeIcon,
   RoomsIcon,
 } from './icons'
+import { CreateRoomOptionsModal } from './CreateRoomOptionsModal'
 import { DashboardShell } from './DashboardShell'
 import { ThemeToggle } from './ThemeToggle'
 import { MessengerMessageBody } from './MessengerMessageBody'
@@ -113,7 +124,9 @@ export function DashboardMessengerPage() {
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const isMobileMessenger = useMediaQuery('(max-width: 900px)')
   const headerMessengerUnread = useMessengerUnreadCount()
+  const [soundEnabled, setSoundEnabled] = useState(() => isMessengerSoundEnabled())
   const [messengerMenuOpen, setMessengerMenuOpen] = useState(false)
+  const [createRoomModalOpen, setCreateRoomModalOpen] = useState(false)
   /** Мобильный режим «только дерево чатов» — не подставлять chat в URL и не грузить тред */
   const listOnlyMobile = isMobileMessenger && searchParams.get('view') === 'list'
 
@@ -496,6 +509,8 @@ export function DashboardMessengerPage() {
           /* Пока тред открыт: входящие от других не должны увеличивать непрочитанные (сервер + бейдж в шапке). */
           if (!isOwn) {
             void markDirectConversationRead(convId)
+            /* Звук — только если вкладка не активна (пользователь видит переписку — достаточно). */
+            if (document.hidden) playMessageSound()
           }
         },
       )
@@ -538,6 +553,44 @@ export function DashboardMessengerPage() {
     return () => {
       void supabase.removeChannel(channel)
     }
+  }, [activeConversationId, listOnlyMobile, user?.id])
+
+  /**
+   * Фоновые диалоги: обновляем sidebar-превью и счётчик когда приходит сообщение
+   * в конверсацию, которая сейчас не открыта (или открыт список без треда).
+   */
+  useEffect(() => {
+    const uid = user?.id
+    if (!uid) return
+
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<MessengerBgMessageDetail>).detail
+      const { conversationId: cid, senderUserId, kind, body, createdAt } = detail
+
+      // Если тред открыт — per-thread subscription уже обработал это сообщение
+      if (cid === activeConversationId && !listOnlyMobile) return
+      // Реакции не меняют превью
+      if (kind === 'reaction') return
+
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === cid
+            ? {
+                ...item,
+                lastMessageAt: createdAt,
+                lastMessagePreview: body,
+                unreadCount: senderUserId !== uid ? item.unreadCount + 1 : item.unreadCount,
+                messageCount: item.messageCount + 1,
+              }
+            : item,
+        ),
+      )
+
+      if (senderUserId !== uid) playMessageSound()
+    }
+
+    window.addEventListener(MESSENGER_BG_MESSAGE_EVENT, handler)
+    return () => window.removeEventListener(MESSENGER_BG_MESSAGE_EVENT, handler)
   }, [activeConversationId, listOnlyMobile, user?.id])
 
   const prevThreadLoadingRef = useRef(false)
@@ -702,6 +755,15 @@ export function DashboardMessengerPage() {
 
   const sortedItems = useMemo(() => sortConversationsByActivity(items), [items])
 
+  /** Сумма непрочитанных во всех диалогах, кроме активного — для бейджа «Назад к чатам». */
+  const totalOtherUnread = useMemo(
+    () =>
+      items
+        .filter((i) => i.id !== activeConversationId)
+        .reduce((sum, i) => sum + i.unreadCount, 0),
+    [items, activeConversationId],
+  )
+
   const timelineMessages = useMemo(
     () => messages.filter((m) => m.kind !== 'reaction'),
     [messages],
@@ -857,11 +919,20 @@ export function DashboardMessengerPage() {
   }, [])
 
   const goCreateRoomFromMenu = useCallback(() => {
-    const id = newRoomId()
-    setPendingHostClaim(id)
     closeMessengerMenu()
-    navigate(`/r/${encodeURIComponent(id)}`)
-  }, [closeMessengerMenu, navigate])
+    setCreateRoomModalOpen(true)
+  }, [closeMessengerMenu])
+
+  const confirmCreateRoomFromMessenger = useCallback(
+    (opts: SpaceRoomCreateOptions) => {
+      const id = newRoomId()
+      stashSpaceRoomCreateOptions(id, opts)
+      setPendingHostClaim(id)
+      setCreateRoomModalOpen(false)
+      navigate(`/r/${encodeURIComponent(id)}`)
+    },
+    [navigate],
+  )
 
   useEffect(() => {
     if (!messengerMenuOpen) return
@@ -887,9 +958,24 @@ export function DashboardMessengerPage() {
         {!isMobileMessenger ? (
           <div className="dashboard-messenger__topbar">
             <h2 className="dashboard-section__title dashboard-messenger__page-title">Мессенджер</h2>
-            <Link to="/dashboard/chats" className="dashboard-messenger__switch">
-              Архивы комнат
-            </Link>
+            <div className="dashboard-messenger__topbar-actions">
+              <button
+                type="button"
+                className={`dashboard-messenger__sound-btn${soundEnabled ? ' dashboard-messenger__sound-btn--on' : ''}`}
+                onClick={() => {
+                  const next = !soundEnabled
+                  setSoundEnabled(next)
+                  setMessengerSoundEnabled(next)
+                }}
+                aria-pressed={soundEnabled}
+                title={soundEnabled ? 'Выключить звук уведомлений' : 'Включить звук уведомлений'}
+              >
+                {soundEnabled ? '🔔' : '🔕'}
+              </button>
+              <Link to="/dashboard/chats" className="dashboard-messenger__switch">
+                Архивы комнат
+              </Link>
+            </div>
           </div>
         ) : null}
 
@@ -969,6 +1055,11 @@ export function DashboardMessengerPage() {
                           onClick={() => navigate('/dashboard/messenger?view=list', { replace: true })}
                         >
                           ← Назад к чатам
+                          {totalOtherUnread > 0 ? (
+                            <span className="dashboard-messenger__back-badge">
+                              {totalOtherUnread > 99 ? '99+' : totalOtherUnread}
+                            </span>
+                          ) : null}
                         </button>
                       ) : null}
                       <div className="dashboard-messenger__thread-head-main">
@@ -1084,6 +1175,7 @@ export function DashboardMessengerPage() {
                           value={draft}
                           disabled={threadLoading}
                           onChange={(e) => setDraft(e.target.value)}
+                          onPointerDown={() => unlockAudioContext()}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {
                               e.preventDefault()
@@ -1207,6 +1299,22 @@ export function DashboardMessengerPage() {
                   <span className="dashboard-messenger-mobile-nav__row-label">Тема</span>
                   <ThemeToggle variant="inline" className="theme-toggle--dashboard" />
                 </div>
+                <div className="dashboard-messenger-mobile-nav__row">
+                  <span className="dashboard-messenger-mobile-nav__row-label">Звук сообщений</span>
+                  <button
+                    type="button"
+                    className={`dashboard-messenger-mobile-nav__sound-toggle${soundEnabled ? ' dashboard-messenger-mobile-nav__sound-toggle--on' : ''}`}
+                    onClick={() => {
+                      const next = !soundEnabled
+                      setSoundEnabled(next)
+                      setMessengerSoundEnabled(next)
+                    }}
+                    aria-pressed={soundEnabled}
+                    title={soundEnabled ? 'Выключить звук' : 'Включить звук'}
+                  >
+                    {soundEnabled ? '🔔' : '🔕'}
+                  </button>
+                </div>
                 <button type="button" className="dashboard-messenger-mobile-nav__btn" onClick={goCreateRoomFromMenu}>
                   Новая комната
                 </button>
@@ -1234,6 +1342,12 @@ export function DashboardMessengerPage() {
           </>
         ) : null}
       </section>
+
+      <CreateRoomOptionsModal
+        open={createRoomModalOpen}
+        onClose={() => setCreateRoomModalOpen(false)}
+        onConfirm={confirmCreateRoomFromMessenger}
+      />
     </DashboardShell>
   )
 }

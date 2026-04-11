@@ -13,6 +13,12 @@ import { useMediaQuery } from './hooks/useMediaQuery'
 import { mediaQueryMaxWidthMobile } from './config/uiBreakpoints'
 import { AdminProtectedRoute } from './components/AdminProtectedRoute'
 import { ProtectedRoute } from './components/ProtectedRoute'
+import { useVisualViewport } from './hooks/useVisualViewport'
+
+function VisualViewportSync() {
+  useVisualViewport()
+  return null
+}
 
 const HomePage = lazy(async () => {
   const mod = await import('./components/HomePage')
@@ -138,6 +144,7 @@ function RoomThemeFab() {
 export function App() {
   return (
     <>
+      <VisualViewportSync />
       <RoomThemeFab />
       <Suspense fallback={<RouteLoadingFallback />}>
       <Routes>
