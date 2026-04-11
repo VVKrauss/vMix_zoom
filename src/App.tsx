@@ -1,6 +1,16 @@
 import { Suspense, lazy, useMemo } from 'react'
-import { Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom'
 import { ThemeToggle } from './components/ThemeToggle'
+import { useMediaQuery } from './hooks/useMediaQuery'
+import { mediaQueryMaxWidthMobile } from './config/uiBreakpoints'
 import { AdminProtectedRoute } from './components/AdminProtectedRoute'
 import { ProtectedRoute } from './components/ProtectedRoute'
 
@@ -114,9 +124,14 @@ function RoomRoute() {
   return <RoomSession key={roomId} roomId={roomId} />
 }
 
+/** В шапке `RoomPage` на десктопе; FAB — на мобилке и в solo-режиме (?peer=), где шапки комнаты нет. */
 function RoomThemeFab() {
   const { pathname } = useLocation()
+  const [sp] = useSearchParams()
+  const isViewportMobile = useMediaQuery(mediaQueryMaxWidthMobile)
   if (!pathname.startsWith('/r/')) return null
+  const isSoloPeer = Boolean(sp.get('peer')?.trim())
+  if (!isViewportMobile && !isSoloPeer) return null
   return <ThemeToggle variant="fab" />
 }
 

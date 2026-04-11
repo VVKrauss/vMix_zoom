@@ -63,6 +63,7 @@ import { ReactionBurstOverlay } from './ReactionBurstOverlay'
 import { VmixIngressModal } from './VmixIngressModal'
 import { RoomInviteFriendsModal } from './RoomInviteFriendsModal'
 import { PillToggle } from './PillToggle'
+import { ThemeToggle } from './ThemeToggle'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useActiveSpeaker } from '../hooks/useActiveSpeaker'
 import { buildRoomInviteAbsoluteUrl } from '../utils/soloViewerParams'
@@ -1536,6 +1537,7 @@ export function RoomPage({
                   />
                 </div>
               ) : null}
+              <ThemeToggle variant="inline" className="theme-toggle--dashboard theme-toggle--room-header" />
               {user && (
                 <button
                   type="button"

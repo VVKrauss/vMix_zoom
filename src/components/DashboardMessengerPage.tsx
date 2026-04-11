@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
+import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useProfile } from '../hooks/useProfile'
 import {
@@ -20,9 +21,20 @@ import {
   requestMessengerUnreadRefresh,
   toggleDirectMessageReaction,
 } from '../lib/messenger'
+import { setPendingHostClaim } from '../lib/spaceRoom'
 import { supabase } from '../lib/supabase'
+import { newRoomId } from '../utils/roomId'
 import { BrandLogoLoader } from './BrandLogoLoader'
+import {
+  AdminPanelIcon,
+  ChatBubbleIcon,
+  DashboardIcon,
+  MenuBurgerIcon,
+  ParticipantsBadgeIcon,
+  RoomsIcon,
+} from './icons'
 import { DashboardShell } from './DashboardShell'
+import { ThemeToggle } from './ThemeToggle'
 import { MessengerMessageBody } from './MessengerMessageBody'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
 import type { ReactionEmoji } from '../types/roomComms'
@@ -99,6 +111,8 @@ export function DashboardMessengerPage() {
   const { profile } = useProfile()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const isMobileMessenger = useMediaQuery('(max-width: 900px)')
+  const headerMessengerUnread = useMessengerUnreadCount()
+  const [messengerMenuOpen, setMessengerMenuOpen] = useState(false)
   /** Мобильный режим «только дерево чатов» — не подставлять chat в URL и не грузить тред */
   const listOnlyMobile = isMobileMessenger && searchParams.get('view') === 'list'
 
@@ -851,15 +865,46 @@ export function DashboardMessengerPage() {
     threadHeadConversation?.avatarUrl ??
     (threadHeadConversation?.otherUserId ? null : profile?.avatar_url ?? null)
 
+  const closeMessengerMenu = useCallback(() => {
+    setMessengerMenuOpen(false)
+  }, [])
+
+  const goCreateRoomFromMenu = useCallback(() => {
+    const id = newRoomId()
+    setPendingHostClaim(id)
+    closeMessengerMenu()
+    navigate(`/r/${encodeURIComponent(id)}`)
+  }, [closeMessengerMenu, navigate])
+
+  useEffect(() => {
+    if (!messengerMenuOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeMessengerMenu()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [messengerMenuOpen, closeMessengerMenu])
+
   return (
-    <DashboardShell active="messenger" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
-      <section className="dashboard-section dashboard-messenger dashboard-messenger--fill">
-        <div className="dashboard-messenger__topbar">
-          <h2 className="dashboard-section__title dashboard-messenger__page-title">Мессенджер</h2>
-          <Link to="/dashboard/chats" className="dashboard-messenger__switch">
-            Архивы комнат
-          </Link>
-        </div>
+    <DashboardShell
+      active="messenger"
+      canAccessAdmin={canAccessAdmin}
+      onSignOut={() => signOut()}
+      chromeless={isMobileMessenger}
+    >
+      <section
+        className={`dashboard-section dashboard-messenger dashboard-messenger--fill${
+          isMobileMessenger ? ' dashboard-messenger--mobile-chromeless' : ''
+        }`}
+      >
+        {!isMobileMessenger ? (
+          <div className="dashboard-messenger__topbar">
+            <h2 className="dashboard-section__title dashboard-messenger__page-title">Мессенджер</h2>
+            <Link to="/dashboard/chats" className="dashboard-messenger__switch">
+              Архивы комнат
+            </Link>
+          </div>
+        ) : null}
 
         {error ? <p className="join-error">{error}</p> : null}
 
@@ -1073,7 +1118,9 @@ export function DashboardMessengerPage() {
                       <div className="dashboard-messenger__composer">
                         <textarea
                           ref={composerTextareaRef}
-                          className="dashboard-messenger__input"
+                          className={`dashboard-messenger__input${
+                            isMobileMessenger ? ' dashboard-messenger__input--mobile' : ''
+                          }`}
                           rows={3}
                           placeholder="Напиши сообщение..."
                           value={draft}
@@ -1126,6 +1173,105 @@ export function DashboardMessengerPage() {
               </div>
             ) : null}
           </div>
+        ) : null}
+
+        {isMobileMessenger ? (
+          <>
+            <div
+              className={`dashboard-messenger-mobile-nav-backdrop${
+                messengerMenuOpen ? ' dashboard-messenger-mobile-nav-backdrop--open' : ''
+              }`}
+              aria-hidden={!messengerMenuOpen}
+              onClick={closeMessengerMenu}
+            />
+            <nav
+              className={`dashboard-messenger-mobile-nav${
+                messengerMenuOpen ? ' dashboard-messenger-mobile-nav--open' : ''
+              }`}
+              aria-hidden={!messengerMenuOpen}
+              aria-label="Навигация"
+            >
+              <div className="dashboard-messenger-mobile-nav__header">
+                <span className="dashboard-messenger-mobile-nav__title">Меню</span>
+                <button
+                  type="button"
+                  className="dashboard-messenger-mobile-nav__close"
+                  onClick={closeMessengerMenu}
+                  aria-label="Закрыть меню"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="dashboard-messenger-mobile-nav__scroll">
+                <Link to="/" className="dashboard-messenger-mobile-nav__link" onClick={closeMessengerMenu}>
+                  На главную
+                </Link>
+                <Link to="/dashboard" className="dashboard-messenger-mobile-nav__link" onClick={closeMessengerMenu}>
+                  <span className="dashboard-messenger-mobile-nav__link-ico" aria-hidden>
+                    <DashboardIcon />
+                  </span>
+                  Кабинет
+                </Link>
+                <Link to="/dashboard/chats" className="dashboard-messenger-mobile-nav__link" onClick={closeMessengerMenu}>
+                  <span className="dashboard-messenger-mobile-nav__link-ico" aria-hidden>
+                    <RoomsIcon />
+                  </span>
+                  Архивы комнат
+                </Link>
+                <Link to="/dashboard/messenger" className="dashboard-messenger-mobile-nav__link" onClick={closeMessengerMenu}>
+                  <span className="dashboard-messenger-mobile-nav__link-ico" aria-hidden>
+                    <ChatBubbleIcon />
+                  </span>
+                  Мессенджер
+                  {headerMessengerUnread > 0 ? (
+                    <span className="dashboard-messenger-mobile-nav__badge">
+                      {headerMessengerUnread > 99 ? '99+' : headerMessengerUnread}
+                    </span>
+                  ) : null}
+                </Link>
+                <Link to="/dashboard/friends" className="dashboard-messenger-mobile-nav__link" onClick={closeMessengerMenu}>
+                  <span className="dashboard-messenger-mobile-nav__link-ico" aria-hidden>
+                    <ParticipantsBadgeIcon />
+                  </span>
+                  Друзья
+                </Link>
+                {canAccessAdmin ? (
+                  <Link to="/admin" className="dashboard-messenger-mobile-nav__link" onClick={closeMessengerMenu}>
+                    <span className="dashboard-messenger-mobile-nav__link-ico" aria-hidden>
+                      <AdminPanelIcon />
+                    </span>
+                    Админка
+                  </Link>
+                ) : null}
+                <div className="dashboard-messenger-mobile-nav__row">
+                  <span className="dashboard-messenger-mobile-nav__row-label">Тема</span>
+                  <ThemeToggle variant="inline" className="theme-toggle--dashboard" />
+                </div>
+                <button type="button" className="dashboard-messenger-mobile-nav__btn" onClick={goCreateRoomFromMenu}>
+                  Новая комната
+                </button>
+                <button
+                  type="button"
+                  className="dashboard-messenger-mobile-nav__btn dashboard-messenger-mobile-nav__btn--danger"
+                  onClick={() => {
+                    closeMessengerMenu()
+                    void signOut()
+                  }}
+                >
+                  Выход
+                </button>
+              </div>
+            </nav>
+            <button
+              type="button"
+              className={`dashboard-messenger-fab${messengerMenuOpen ? ' dashboard-messenger-fab--open' : ''}`}
+              onClick={() => setMessengerMenuOpen((v) => !v)}
+              aria-label={messengerMenuOpen ? 'Закрыть меню' : 'Открыть меню'}
+              aria-expanded={messengerMenuOpen}
+            >
+              <MenuBurgerIcon />
+            </button>
+          </>
         ) : null}
       </section>
     </DashboardShell>

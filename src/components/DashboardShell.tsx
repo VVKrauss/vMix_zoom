@@ -16,6 +16,8 @@ type DashboardShellProps = {
   canAccessAdmin: boolean
   onSignOut: () => void
   children: ReactNode
+  /** Мобильный мессенджер: без топбара и вкладок — навигация в FAB на странице. */
+  chromeless?: boolean
 }
 
 const SIDEBAR_TAB_HINTS = {
@@ -70,7 +72,7 @@ function DashboardSidebarLink({
   )
 }
 
-export function DashboardShell({ active, canAccessAdmin, onSignOut, children }: DashboardShellProps) {
+export function DashboardShell({ active, canAccessAdmin, onSignOut, children, chromeless }: DashboardShellProps) {
   const navigate = useNavigate()
   const { user } = useAuth()
   const unreadCount = useMessengerUnreadCount()
@@ -140,7 +142,7 @@ export function DashboardShell({ active, canAccessAdmin, onSignOut, children }: 
   }
 
   return (
-    <div className="dashboard-page">
+    <div className={`dashboard-page${chromeless ? ' dashboard-page--messenger-chromeless' : ''}`}>
       <header className="dashboard-topbar">
         <div className="dashboard-topbar__start">
           <Link to="/" className="dashboard-topbar__logo" title="На главную">
