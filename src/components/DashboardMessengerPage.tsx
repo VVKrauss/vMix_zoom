@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 import {
   appendDirectMessage,
   type DirectConversationSummary,
@@ -33,6 +34,7 @@ export function DashboardMessengerPage() {
   const navigate = useNavigate()
   const { signOut, user } = useAuth()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
+  const isMobileMessenger = useMediaQuery('(max-width: 900px)')
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -61,6 +63,7 @@ export function DashboardMessengerPage() {
       const ensured = targetUserId
         ? await ensureDirectConversationWithUser(targetUserId, targetTitle || null)
         : await ensureSelfDirectConversation()
+
       if (!active) return
       if (ensured.error) {
         setError(ensured.error)
@@ -132,6 +135,8 @@ export function DashboardMessengerPage() {
   }, [conversationId, navigate, targetTitle, targetUserId, user?.id])
 
   const activeConversationId = activeConversation?.id ?? conversationId
+  const showListPane = !isMobileMessenger || !activeConversationId
+  const showThreadPane = !isMobileMessenger || Boolean(activeConversationId)
 
   const sendMessage = async () => {
     const trimmed = draft.trim()
@@ -209,99 +214,112 @@ export function DashboardMessengerPage() {
 
         {!loading && !error ? (
           <div className="dashboard-messenger__layout">
-            <aside className="dashboard-messenger__list" aria-label="Список диалогов">
-              {sortedItems.length === 0 ? (
-                <div className="dashboard-chats-empty">Диалогов пока нет.</div>
-              ) : (
-                sortedItems.map((item) => (
-                  <Link
-                    key={item.id}
-                    to={`/dashboard/messenger/${encodeURIComponent(item.id)}`}
-                    className={`dashboard-messenger__row${item.id === activeConversationId ? ' dashboard-messenger__row--active' : ''}`}
-                  >
-                    <div className="dashboard-messenger__row-titleline">
-                      <div className="dashboard-messenger__row-title">{item.title}</div>
-                      {item.unreadCount > 0 ? (
-                        <span className="dashboard-messenger__row-badge">
-                          {item.unreadCount > 99 ? '99+' : item.unreadCount}
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="dashboard-messenger__row-meta">
-                      <span>{item.messageCount} сообщ.</span>
-                      <span>{formatDateTime(item.lastMessageAt ?? item.createdAt)}</span>
-                    </div>
-                    <div className="dashboard-messenger__row-preview">
-                      {item.lastMessagePreview?.trim() || 'Пока без сообщений'}
-                    </div>
-                  </Link>
-                ))
-              )}
-            </aside>
+            {showListPane ? (
+              <aside className="dashboard-messenger__list" aria-label="Список диалогов">
+                {sortedItems.length === 0 ? (
+                  <div className="dashboard-chats-empty">Диалогов пока нет.</div>
+                ) : (
+                  sortedItems.map((item) => (
+                    <Link
+                      key={item.id}
+                      to={`/dashboard/messenger/${encodeURIComponent(item.id)}`}
+                      className={`dashboard-messenger__row${item.id === activeConversationId ? ' dashboard-messenger__row--active' : ''}`}
+                    >
+                      <div className="dashboard-messenger__row-titleline">
+                        <div className="dashboard-messenger__row-title">{item.title}</div>
+                        {item.unreadCount > 0 ? (
+                          <span className="dashboard-messenger__row-badge">
+                            {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="dashboard-messenger__row-meta">
+                        <span>{item.messageCount} сообщ.</span>
+                        <span>{formatDateTime(item.lastMessageAt ?? item.createdAt)}</span>
+                      </div>
+                      <div className="dashboard-messenger__row-preview">
+                        {item.lastMessagePreview?.trim() || 'Пока без сообщений'}
+                      </div>
+                    </Link>
+                  ))
+                )}
+              </aside>
+            ) : null}
 
-            <div className="dashboard-messenger__thread">
-              {activeConversation ? (
-                <>
-                  <div className="dashboard-messenger__thread-head">
-                    <div>
-                      <h3 className="dashboard-section__subtitle">{activeConversation.title}</h3>
-                      <div className="dashboard-messenger__thread-meta">
-                        <span>Сообщений: {activeConversation.messageCount}</span>
-                        <span>Последняя активность: {formatDateTime(activeConversation.lastMessageAt ?? activeConversation.createdAt)}</span>
+            {showThreadPane ? (
+              <div className="dashboard-messenger__thread">
+                {activeConversation ? (
+                  <>
+                    <div className="dashboard-messenger__thread-head">
+                      {isMobileMessenger ? (
+                        <button
+                          type="button"
+                          className="dashboard-messenger__back-btn"
+                          onClick={() => navigate('/dashboard/messenger')}
+                        >
+                          ← Назад к чатам
+                        </button>
+                      ) : null}
+                      <div>
+                        <h3 className="dashboard-section__subtitle">{activeConversation.title}</h3>
+                        <div className="dashboard-messenger__thread-meta">
+                          <span>Сообщений: {activeConversation.messageCount}</span>
+                          <span>Последняя активность: {formatDateTime(activeConversation.lastMessageAt ?? activeConversation.createdAt)}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="dashboard-messenger__messages">
-                    {messages.length === 0 ? (
-                      <div className="dashboard-chats-empty">Напиши первое сообщение в этот чат.</div>
-                    ) : (
-                      messages.map((message) => {
-                        const isOwn = user?.id && message.senderUserId === user.id
-                        return (
-                          <article
-                            key={message.id}
-                            className={`dashboard-messenger__message${isOwn ? ' dashboard-messenger__message--own' : ''}`}
-                          >
-                            <div className="dashboard-messenger__message-meta">
-                              <span className="dashboard-messenger__message-author">{message.senderNameSnapshot}</span>
-                              <time dateTime={message.createdAt}>{formatDateTime(message.createdAt)}</time>
-                            </div>
-                            <div className="dashboard-messenger__message-body">{message.body}</div>
-                          </article>
-                        )
-                      })
-                    )}
-                  </div>
+                    <div className="dashboard-messenger__messages">
+                      {messages.length === 0 ? (
+                        <div className="dashboard-chats-empty">Напиши первое сообщение в этот чат.</div>
+                      ) : (
+                        messages.map((message) => {
+                          const isOwn = user?.id && message.senderUserId === user.id
+                          return (
+                            <article
+                              key={message.id}
+                              className={`dashboard-messenger__message${isOwn ? ' dashboard-messenger__message--own' : ''}`}
+                            >
+                              <div className="dashboard-messenger__message-meta">
+                                <span className="dashboard-messenger__message-author">{message.senderNameSnapshot}</span>
+                                <time dateTime={message.createdAt}>{formatDateTime(message.createdAt)}</time>
+                              </div>
+                              <div className="dashboard-messenger__message-body">{message.body}</div>
+                            </article>
+                          )
+                        })
+                      )}
+                    </div>
 
-                  <div className="dashboard-messenger__composer">
-                    <textarea
-                      className="dashboard-messenger__input"
-                      rows={3}
-                      placeholder="Напиши сообщение самому себе..."
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault()
-                          void sendMessage()
-                        }
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="dashboard-topbar__action dashboard-topbar__action--primary"
-                      disabled={!draft.trim() || sending}
-                      onClick={() => void sendMessage()}
-                    >
-                      Отправить
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div className="dashboard-chats-empty">Выберите диалог слева.</div>
-              )}
-            </div>
+                    <div className="dashboard-messenger__composer">
+                      <textarea
+                        className="dashboard-messenger__input"
+                        rows={3}
+                        placeholder="Напиши сообщение..."
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault()
+                            void sendMessage()
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
+                        disabled={!draft.trim() || sending}
+                        onClick={() => void sendMessage()}
+                      >
+                        Отправить
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="dashboard-chats-empty">Выберите диалог слева.</div>
+                )}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </section>
