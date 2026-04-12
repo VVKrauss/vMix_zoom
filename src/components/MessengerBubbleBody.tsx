@@ -48,11 +48,11 @@ export function MessengerBubbleBody({
               onClick={() => onOpenImageLightbox(imageUrl)}
               aria-label="Открыть изображение"
             >
-              <img className="messenger-message-img" src={imageUrl} alt="" loading="lazy" />
+              <img className="messenger-message-img" src={imageUrl} alt="" loading="eager" decoding="async" />
             </button>
           ) : (
             <a href={imageUrl} target="_blank" rel="noopener noreferrer" className="messenger-message-img-link">
-              <img className="messenger-message-img" src={imageUrl} alt="" loading="lazy" />
+              <img className="messenger-message-img" src={imageUrl} alt="" loading="eager" decoding="async" />
             </a>
           )
         ) : (

@@ -99,6 +99,8 @@ const MESSENGER_LAST_OPEN_KEY = 'vmix.messenger.lastOpenConversation'
 const DM_PAGE_SIZE = 50
 /** Лимит размера фото в мессенджере (клиент). */
 const MESSENGER_PHOTO_MAX_BYTES = 2 * 1024 * 1024
+/** Ниже этой дистанции от низа считаем, что пользователь «на хвосте» — догоняем при подгрузке картинок и т.п. */
+const MESSENGER_BOTTOM_PIN_PX = 160
 
 function sortDirectMessagesChrono(a: DirectMessage, b: DirectMessage): number {
   const ta = new Date(a.createdAt).getTime()
@@ -312,6 +314,10 @@ export function DashboardMessengerPage() {
   const messagesRef = useRef(messages)
   messagesRef.current = messages
   const messagesScrollRef = useRef<HTMLDivElement | null>(null)
+  /** Контейнер с сообщениями — ResizeObserver ловит рост высоты после decode изображений. */
+  const messagesContentRef = useRef<HTMLDivElement | null>(null)
+  /** Пользователь у нижней границы ленты (обновляется в onScroll). */
+  const messengerPinnedToBottomRef = useRef(true)
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const composerEmojiWrapRef = useRef<HTMLDivElement | null>(null)
   const photoInputRef = useRef<HTMLInputElement | null>(null)
@@ -322,6 +328,13 @@ export function DashboardMessengerPage() {
   const lastFetchedThreadIdRef = useRef<string | null>(null)
   /** После первой успешной загрузки списка — повторный bootstrap при «Назад к чатам» не нужен */
   const listLoadedOnceRef = useRef(false)
+
+  const updateMessengerScrollPinned = useCallback(() => {
+    const el = messagesScrollRef.current
+    if (!el) return
+    messengerPinnedToBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < MESSENGER_BOTTOM_PIN_PX
+  }, [])
 
   const buildMessengerUrl = (chatId?: string, withUserId?: string, withTitle?: string) => {
     const params = new URLSearchParams()
@@ -549,6 +562,10 @@ export function DashboardMessengerPage() {
   const activeConversationId = listOnlyMobile ? '' : conversationId || activeConversation?.id || ''
 
   useEffect(() => {
+    messengerPinnedToBottomRef.current = true
+  }, [activeConversationId, listOnlyMobile])
+
+  useEffect(() => {
     if (listOnlyMobile || !activeConversationId) return
     try {
       localStorage.setItem(MESSENGER_LAST_OPEN_KEY, activeConversationId)
@@ -556,6 +573,25 @@ export function DashboardMessengerPage() {
       /* ignore */
     }
   }, [activeConversationId, listOnlyMobile])
+
+  /** Рост ленты без нового сообщения (decode картинки, смена «Загрузка…» на img) — догоняем низ, если пользователь был у хвоста. */
+  useEffect(() => {
+    if (listOnlyMobile || typeof ResizeObserver === 'undefined') return
+    const root = messagesContentRef.current
+    if (!root || threadLoading) return
+
+    const ro = new ResizeObserver(() => {
+      if (!messengerPinnedToBottomRef.current) return
+      const el = messagesScrollRef.current
+      if (!el) return
+      requestAnimationFrame(() => {
+        if (!messengerPinnedToBottomRef.current) return
+        el.scrollTop = el.scrollHeight
+      })
+    })
+    ro.observe(root)
+    return () => ro.disconnect()
+  }, [activeConversationId, listOnlyMobile, threadLoading])
 
   /**
    * Сразу при открытии треда: сервер «прочитано» + нулим бейдж в списке и шапке.
@@ -792,7 +828,10 @@ export function DashboardMessengerPage() {
     prevThreadLoadingRef.current = threadLoading
     if (wasLoading && !threadLoading && !listOnlyMobile && messages.length > 0) {
       const el = messagesScrollRef.current
-      if (el) el.scrollTop = el.scrollHeight
+      if (el) {
+        el.scrollTop = el.scrollHeight
+        messengerPinnedToBottomRef.current = true
+      }
     }
   }, [threadLoading, listOnlyMobile, messages.length])
 
@@ -838,6 +877,7 @@ export function DashboardMessengerPage() {
         const el = messagesScrollRef.current
         if (!el) return
         el.scrollTop = el.scrollHeight - prevScrollHeight + prevScrollTop
+        updateMessengerScrollPinned()
       })
     } finally {
       olderFetchInFlightRef.current = false
@@ -850,10 +890,12 @@ export function DashboardMessengerPage() {
     listOnlyMobile,
     loadingOlder,
     messages,
+    updateMessengerScrollPinned,
   ])
 
   const lastOlderScrollInvokeRef = useRef(0)
   const onMessagesScroll = useCallback(() => {
+    updateMessengerScrollPinned()
     const el = messagesScrollRef.current
     if (!el || threadLoading || loadingOlder || !hasMoreOlder || olderFetchInFlightRef.current) return
     if (el.scrollTop > 96) return
@@ -861,7 +903,7 @@ export function DashboardMessengerPage() {
     if (now - lastOlderScrollInvokeRef.current < 500) return
     lastOlderScrollInvokeRef.current = now
     void loadOlderMessages()
-  }, [threadLoading, loadingOlder, hasMoreOlder, loadOlderMessages])
+  }, [threadLoading, loadingOlder, hasMoreOlder, loadOlderMessages, updateMessengerScrollPinned])
 
   useEffect(() => {
     if (loadingOlder || threadLoading) {
@@ -873,8 +915,11 @@ export function DashboardMessengerPage() {
     const grew = messages.length > prevLen
     prevMessagesLenForScrollRef.current = messages.length
     if (!el || !grew) return
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 140
-    if (nearBottom) el.scrollTop = el.scrollHeight
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < MESSENGER_BOTTOM_PIN_PX
+    if (nearBottom) {
+      el.scrollTop = el.scrollHeight
+      messengerPinnedToBottomRef.current = true
+    }
   }, [messages.length, threadLoading, loadingOlder])
 
   const insertEmojiInDraft = useCallback(
@@ -992,7 +1037,10 @@ export function DashboardMessengerPage() {
     setSending(false)
     requestAnimationFrame(() => {
       const el = messagesScrollRef.current
-      if (el) el.scrollTop = el.scrollHeight
+      if (el) {
+        el.scrollTop = el.scrollHeight
+        messengerPinnedToBottomRef.current = true
+      }
       composerTextareaRef.current?.focus()
     })
   }
@@ -1070,7 +1118,10 @@ export function DashboardMessengerPage() {
     )
     requestAnimationFrame(() => {
       const el = messagesScrollRef.current
-      if (el) el.scrollTop = el.scrollHeight
+      if (el) {
+        el.scrollTop = el.scrollHeight
+        messengerPinnedToBottomRef.current = true
+      }
     })
   }
 
@@ -1782,7 +1833,7 @@ export function DashboardMessengerPage() {
                             Загрузка истории…
                           </div>
                         ) : null}
-                        <div className="dashboard-messenger__messages">
+                        <div ref={messagesContentRef} className="dashboard-messenger__messages">
                           {threadLoading ? (
                             <div
                               className="dashboard-messenger__thread-loading"
