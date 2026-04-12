@@ -15,6 +15,13 @@ import {
   setMessengerSoundEnabled,
   unlockAudioContext,
 } from '../lib/messengerSound'
+import {
+  disableMessengerPush,
+  enableMessengerPush,
+  isMessengerPushSubscribed,
+  isMessengerWebPushConfigured,
+  isWebPushApiSupported,
+} from '../lib/messengerWebPush'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useProfile } from '../hooks/useProfile'
 import {
@@ -45,6 +52,7 @@ import {
   AttachmentIcon,
   BellIcon,
   BellOffIcon,
+  FiRrIcon,
   ChatBubbleIcon,
   ChevronLeftIcon,
   DashboardIcon,
@@ -255,6 +263,57 @@ export function DashboardMessengerPage() {
   const [chatListSearch, setChatListSearch] = useState('')
   /** Мобильный режим «только дерево чатов» — не подставлять chat в URL и не грузить тред */
   const listOnlyMobile = isMobileMessenger && searchParams.get('view') === 'list'
+
+  const [pushUi, setPushUi] = useState<
+    'absent' | 'unconfigured' | 'off' | 'on' | 'denied' | 'loading'
+  >('absent')
+
+  const refreshPushUi = useCallback(async () => {
+    if (!user?.id || !isWebPushApiSupported()) {
+      setPushUi('absent')
+      return
+    }
+    if (!isMessengerWebPushConfigured()) {
+      setPushUi('unconfigured')
+      return
+    }
+    if (Notification.permission === 'denied') {
+      setPushUi('denied')
+      return
+    }
+    const subbed = await isMessengerPushSubscribed()
+    setPushUi(subbed ? 'on' : 'off')
+  }, [user?.id])
+
+  useEffect(() => {
+    void refreshPushUi()
+  }, [refreshPushUi])
+
+  const toggleMessengerPush = useCallback(async () => {
+    if (!user?.id || pushUi === 'absent' || pushUi === 'unconfigured' || pushUi === 'loading') return
+    unlockAudioContext()
+    if (pushUi === 'denied') return
+    if (pushUi === 'on') {
+      setPushUi('loading')
+      const res = await disableMessengerPush(user.id)
+      if (!res.ok) {
+        setError(res.error ?? 'Не удалось отключить push')
+        void refreshPushUi()
+        return
+      }
+      setPushUi('off')
+      return
+    }
+    setPushUi('loading')
+    const res = await enableMessengerPush(user.id)
+    if (!res.ok) {
+      if (res.error === 'permission_denied') setPushUi('denied')
+      else setError(res.error ?? 'Не удалось включить push')
+      void refreshPushUi()
+      return
+    }
+    setPushUi('on')
+  }, [user?.id, pushUi, refreshPushUi])
 
   const [loading, setLoading] = useState(true)
   const [threadLoading, setThreadLoading] = useState(false)
@@ -1491,19 +1550,41 @@ export function DashboardMessengerPage() {
       chromeless={isMobileMessenger}
       headerExtra={
         !isMobileMessenger ? (
-          <button
-            type="button"
-            className={`dashboard-topbar__sound${soundEnabled ? ' dashboard-topbar__sound--on' : ''}`}
-            onClick={() => {
-              const next = !soundEnabled
-              setSoundEnabled(next)
-              setMessengerSoundEnabled(next)
-            }}
-            aria-pressed={soundEnabled}
-            title={soundEnabled ? 'Выключить звук уведомлений' : 'Включить звук уведомлений'}
-          >
-            {soundEnabled ? <BellIcon /> : <BellOffIcon />}
-          </button>
+          <div className="dashboard-topbar__messenger-controls">
+            <button
+              type="button"
+              className={`dashboard-topbar__sound${soundEnabled ? ' dashboard-topbar__sound--on' : ''}`}
+              onClick={() => {
+                const next = !soundEnabled
+                setSoundEnabled(next)
+                setMessengerSoundEnabled(next)
+              }}
+              aria-pressed={soundEnabled}
+              title={soundEnabled ? 'Выключить звук уведомлений' : 'Включить звук уведомлений'}
+            >
+              {soundEnabled ? <BellIcon /> : <BellOffIcon />}
+            </button>
+            {pushUi !== 'absent' ? (
+              <button
+                type="button"
+                className={`dashboard-topbar__push${pushUi === 'on' ? ' dashboard-topbar__push--on' : ''}${pushUi === 'denied' ? ' dashboard-topbar__push--denied' : ''}${pushUi === 'unconfigured' ? ' dashboard-topbar__push--unconfigured' : ''}`}
+                disabled={pushUi === 'loading' || pushUi === 'unconfigured'}
+                onClick={() => void toggleMessengerPush()}
+                aria-pressed={pushUi === 'on'}
+                title={
+                  pushUi === 'unconfigured'
+                    ? 'В сборке нет VITE_VAPID_PUBLIC_KEY — добавьте в Timeweb / .env и пересоберите'
+                    : pushUi === 'on'
+                      ? 'Отключить push-уведомления'
+                      : pushUi === 'denied'
+                        ? 'Браузер запретил уведомления'
+                        : 'Включить push-уведомления'
+                }
+              >
+                <FiRrIcon name="megaphone" className="dashboard-topbar__push-fi" />
+              </button>
+            ) : null}
+          </div>
         ) : null
       }
     >
@@ -2055,6 +2136,29 @@ export function DashboardMessengerPage() {
                   </span>
                   <span className="dashboard-messenger-quick-menu__lbl">Звук</span>
                 </button>
+                {pushUi !== 'absent' ? (
+                  <button
+                    type="button"
+                    className={`dashboard-messenger-quick-menu__btn${pushUi === 'on' ? ' dashboard-messenger-quick-menu__btn--active' : ''}${pushUi === 'denied' ? ' dashboard-messenger-quick-menu__btn--push-denied' : ''}${pushUi === 'unconfigured' ? ' dashboard-messenger-quick-menu__btn--push-unconfigured' : ''}`}
+                    disabled={pushUi === 'loading' || pushUi === 'unconfigured'}
+                    onClick={() => void toggleMessengerPush()}
+                    aria-pressed={pushUi === 'on'}
+                    title={
+                      pushUi === 'unconfigured'
+                        ? 'Нет VITE_VAPID_PUBLIC_KEY в сборке — добавьте и пересоберите'
+                        : pushUi === 'on'
+                          ? 'Отключить push'
+                          : pushUi === 'denied'
+                            ? 'Уведомления запрещены'
+                            : 'Включить push'
+                    }
+                  >
+                    <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                      <FiRrIcon name="megaphone" />
+                    </span>
+                    <span className="dashboard-messenger-quick-menu__lbl">Push</span>
+                  </button>
+                ) : null}
                 {canAccessAdmin ? (
                   <Link to="/admin" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
                     <span className="dashboard-messenger-quick-menu__ico" aria-hidden>

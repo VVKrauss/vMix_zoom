@@ -608,6 +608,7 @@ html[data-theme="light"] .dashboard-messenger__list-scroll::-webkit-scrollbar-th
 
 html[data-theme="light"] .dashboard-topbar__messenger,
 html[data-theme="light"] .dashboard-topbar__sound,
+html[data-theme="light"] .dashboard-topbar__push,
 html[data-theme="light"] .dashboard-topbar__circle-action,
 html[data-theme="light"] .dashboard-topbar__admin,
 html[data-theme="light"] .dashboard-topbar__action {
@@ -617,6 +618,7 @@ html[data-theme="light"] .dashboard-topbar__action {
 
 html[data-theme="light"] .dashboard-topbar__messenger:hover,
 html[data-theme="light"] .dashboard-topbar__sound:hover,
+html[data-theme="light"] .dashboard-topbar__push:hover,
 html[data-theme="light"] .dashboard-topbar__circle-action:hover,
 html[data-theme="light"] .dashboard-topbar__admin:hover,
 html[data-theme="light"] .dashboard-topbar__action:hover {
@@ -1814,6 +1816,57 @@ html.app-root--room #root {
   height: 18px;
 }
 
+.dashboard-topbar__messenger-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard-topbar__push {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.04);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
+}
+
+.dashboard-topbar__push:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+
+.dashboard-topbar__push--on {
+  color: var(--text);
+}
+
+.dashboard-topbar__push--denied {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.dashboard-topbar__push--unconfigured {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dashboard-topbar__push:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.dashboard-topbar__push-fi {
+  font-size: 18px;
+  line-height: 1;
+}
+
 .dashboard-topbar__circle-action {
   flex-shrink: 0;
   width: 42px;
@@ -2223,7 +2276,9 @@ html.app-root--room #root {
   }
 
   .dashboard-topbar__messenger,
+  .dashboard-topbar__messenger-controls,
   .dashboard-topbar__sound,
+  .dashboard-topbar__push,
   .dashboard-topbar__circle-action,
   .dashboard-topbar__action {
     flex-shrink: 0;
@@ -5246,6 +5301,15 @@ button.dashboard-messenger-quick-menu__btn:hover {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.14);
   color: var(--text);
+}
+
+.dashboard-messenger-quick-menu__btn--push-denied {
+  opacity: 0.5;
+}
+
+.dashboard-messenger-quick-menu__btn--push-unconfigured {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .dashboard-messenger-quick-menu__btn--danger {
