@@ -6,7 +6,8 @@ import { useEffect } from 'react'
  * - `--vv-offset-top` = visualViewport.offsetTop (компенсация сдвига layout viewport в iOS Safari);
  * - `--messenger-keyboard-bottom` = зона под «реальным» низом экрана (клавиатура): innerHeight − offsetTop − height.
  *
- * Использование в CSS: height: var(--vvh, 100dvh); transform: translateY(calc(-1 * var(--vv-offset-top, 0px)))
+ * Использование в CSS: height: var(--vvh, 100dvh); при необходимости — bottom с var(--messenger-keyboard-bottom).
+ * Не вешать translate по --vv-offset-top на предка с position:fixed внутри — ломает iOS Safari.
  */
 export function useVisualViewport(): void {
   useEffect(() => {

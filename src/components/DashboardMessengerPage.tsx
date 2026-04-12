@@ -114,6 +114,17 @@ function sortConversationsByActivity(list: DirectConversationSummary[]): DirectC
   })
 }
 
+function normalizeMessengerListSearch(raw: string): string {
+  return raw.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function itemMatchesMessengerListSearch(item: DirectConversationSummary, needle: string): boolean {
+  if (!needle) return true
+  const title = item.title.toLowerCase()
+  const preview = (item.lastMessagePreview ?? '').toLowerCase()
+  return title.includes(needle) || preview.includes(needle)
+}
+
 /** Последнее text/system в треде — для превью в списке (реакции не считаются «последним сообщением»). */
 function lastNonReactionBody(rows: DirectMessage[]): string | null {
   const sorted = [...rows].sort(sortDirectMessagesChrono)
@@ -236,6 +247,7 @@ export function DashboardMessengerPage() {
   const [soundEnabled, setSoundEnabled] = useState(() => isMessengerSoundEnabled())
   const [messengerMenuOpen, setMessengerMenuOpen] = useState(false)
   const [createRoomModalOpen, setCreateRoomModalOpen] = useState(false)
+  const [chatListSearch, setChatListSearch] = useState('')
   /** Мобильный режим «только дерево чатов» — не подставлять chat в URL и не грузить тред */
   const listOnlyMobile = isMobileMessenger && searchParams.get('view') === 'list'
 
@@ -1056,6 +1068,11 @@ export function DashboardMessengerPage() {
   }
 
   const sortedItems = useMemo(() => sortConversationsByActivity(items), [items])
+  const chatListSearchNorm = useMemo(() => normalizeMessengerListSearch(chatListSearch), [chatListSearch])
+  const filteredSortedItems = useMemo(() => {
+    if (!chatListSearchNorm) return sortedItems
+    return sortedItems.filter((item) => itemMatchesMessengerListSearch(item, chatListSearchNorm))
+  }, [sortedItems, chatListSearchNorm])
 
   /** Сумма непрочитанных во всех диалогах, кроме активного — для бейджа «Назад к чатам». */
   const totalOtherUnread = useMemo(
@@ -1335,7 +1352,17 @@ export function DashboardMessengerPage() {
                         <span>{conversationInitial(profile?.display_name || user?.email || 'Я')}</span>
                       )}
                     </button>
-                    <h1 className="dashboard-messenger__list-head-title">Мессенджер</h1>
+                    <input
+                      id="messenger-chat-list-search"
+                      type="search"
+                      enterKeyHint="search"
+                      className="dashboard-messenger__list-head-search"
+                      value={chatListSearch}
+                      onChange={(e) => setChatListSearch(e.target.value)}
+                      placeholder="Поиск по имени или сообщению…"
+                      autoComplete="off"
+                      aria-label="Поиск по чатам"
+                    />
                     <div className="dashboard-messenger__list-head-actions">
                       <button
                         type="button"
@@ -1359,6 +1386,24 @@ export function DashboardMessengerPage() {
                     </div>
                   </header>
                 ) : null}
+                {!isMobileMessenger ? (
+                  <div className="dashboard-messenger__list-search">
+                    <label className="dashboard-messenger__list-search-label" htmlFor="messenger-chat-list-search-desktop">
+                      Поиск
+                    </label>
+                    <input
+                      id="messenger-chat-list-search-desktop"
+                      type="search"
+                      enterKeyHint="search"
+                      className="dashboard-messenger__list-search-input"
+                      value={chatListSearch}
+                      onChange={(e) => setChatListSearch(e.target.value)}
+                      placeholder="Имя или последнее сообщение…"
+                      autoComplete="off"
+                      aria-label="Поиск по чатам"
+                    />
+                  </div>
+                ) : null}
                 <div className="dashboard-messenger__list-scroll">
                   {loading && sortedItems.length === 0 ? (
                     <div className="dashboard-messenger__pane-loader" aria-label="Загрузка списка…">
@@ -1366,8 +1411,10 @@ export function DashboardMessengerPage() {
                     </div>
                   ) : sortedItems.length === 0 ? (
                     <div className="dashboard-chats-empty">Диалогов пока нет.</div>
+                  ) : filteredSortedItems.length === 0 ? (
+                    <div className="dashboard-chats-empty">Ничего не найдено.</div>
                   ) : (
-                    sortedItems.map((item) => {
+                    filteredSortedItems.map((item) => {
                       const avatarUrl = item.avatarUrl ?? (!item.otherUserId ? profile?.avatar_url ?? null : null)
                       const rowPeekUserId = item.otherUserId?.trim() || (!item.otherUserId && user?.id ? user.id : '')
                       return (

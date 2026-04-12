@@ -358,6 +358,16 @@ html[data-theme="light"] .dashboard-messenger__input:focus {
   outline-color: rgba(142, 82, 82, 0.35);
 }
 
+html[data-theme="light"] .dashboard-messenger__list-head-search,
+html[data-theme="light"] .dashboard-messenger__list-search-input {
+  background: var(--surface);
+}
+
+html[data-theme="light"] .dashboard-messenger__list-head-search:focus,
+html[data-theme="light"] .dashboard-messenger__list-search-input:focus {
+  outline-color: rgba(142, 82, 82, 0.35);
+}
+
 html[data-theme="light"] .dashboard-chat-message {
   border-color: var(--border);
   background: var(--surface2);
@@ -3984,9 +3994,12 @@ html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
   box-sizing: border-box;
   overflow: hidden;
   max-width: 100%;
-  /* iOS: visualViewport.offsetTop — сдвиг «виртуального» viewport при фокусе в поле ввода */
-  transform: translate3d(0, calc(-1 * var(--vv-offset-top, 0px)), 0);
-  will-change: transform;
+  /*
+   * Не используем transform с --vv-offset-top на корне страницы: на iOS Safari любой transform
+   * у предка делает position:fixed привязанным к этому предку, а не к viewport — композер
+   * и вся колонка «улетают» при открытии клавиатуры. Высоту держим через --vvh, низ — через
+   * --messenger-keyboard-bottom на самом композере.
+   */
 }
 
 .dashboard-page.dashboard-page--messenger-chromeless .dashboard-topbar,
@@ -4118,6 +4131,62 @@ html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
   font-weight: 700;
   text-align: center;
   color: var(--text);
+}
+
+.dashboard-messenger__list-head-search {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 38px;
+  margin: 0;
+  padding: 0 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.dashboard-messenger__list-head-search::placeholder {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.dashboard-messenger__list-head-search:focus {
+  outline: 2px solid rgba(159, 214, 255, 0.35);
+  outline-offset: 1px;
+}
+
+.dashboard-messenger__list-search {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.dashboard-messenger__list-search-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.dashboard-messenger__list-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 40px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.dashboard-messenger__list-search-input:focus {
+  outline: 2px solid rgba(159, 214, 255, 0.35);
+  outline-offset: 1px;
 }
 
 .dashboard-messenger__list-head-actions {
