@@ -7,8 +7,10 @@ import { AuthProvider } from './context/AuthContext'
 import { MessengerUnreadProvider } from './context/MessengerUnreadContext'
 import { UserPeekProvider } from './context/UserPeekContext'
 import { applyTheme, getStoredTheme } from './config/themeStorage'
+import { registerPwa } from './pwaRegister'
 
 applyTheme(getStoredTheme())
+registerPwa()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <BrowserRouter

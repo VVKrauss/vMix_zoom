@@ -13807,3 +13807,70 @@ html[data-theme="light"] .room-chat-panel__input:focus {
     min-width: 30px !important;
   }
 }
+
+/* PWA: баннер обновления клиента (не трогает Supabase — см. vite-plugin-pwa / workbox). */
+.pwa-update-banner {
+  position: fixed;
+  left: 50%;
+  bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 20050;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px 16px;
+  max-width: min(calc(100vw - 24px), 420px);
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  font-family: var(--font);
+  font-size: 14px;
+  color: var(--text);
+}
+
+.pwa-update-banner__text {
+  flex: 1 1 200px;
+  line-height: 1.35;
+}
+
+.pwa-update-banner__actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.pwa-update-banner__btn {
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.pwa-update-banner__btn--primary {
+  background: var(--btn-red-grad);
+  border-color: var(--red-dk);
+  color: #fff;
+}
+
+.pwa-update-banner__btn--primary:hover {
+  filter: brightness(1.08);
+}
+
+.pwa-update-banner__btn--ghost {
+  background: var(--surface2);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.pwa-update-banner__btn--ghost:hover {
+  border-color: var(--red);
+  background: rgba(229, 57, 53, 0.12);
+  color: #fff;
+}
