@@ -179,6 +179,16 @@ function MessengerDmBubble({
           <time dateTime={message.createdAt}>{formatDt(message.createdAt)}</time>
           {message.editedAt ? <span className="dashboard-messenger__edited">изм.</span> : null}
         </div>
+        <button
+          type="button"
+          className={`dashboard-messenger__msg-more${menuOpen ? ' dashboard-messenger__msg-more--open' : ''}`}
+          aria-label="Действия с сообщением"
+          aria-expanded={menuOpen}
+          aria-haspopup="menu"
+          onClick={onMenuButtonClick}
+        >
+          ⋮
+        </button>
       </div>
       {replyPreview ? (
         <div className="dashboard-messenger__reply-quote" role="note">
@@ -204,16 +214,6 @@ function MessengerDmBubble({
           ))}
         </div>
       ) : null}
-      <button
-        type="button"
-        className={`dashboard-messenger__msg-more${menuOpen ? ' dashboard-messenger__msg-more--open' : ''}`}
-        aria-label="Действия с сообщением"
-        aria-expanded={menuOpen}
-        aria-haspopup="menu"
-        onClick={onMenuButtonClick}
-      >
-        ⋯
-      </button>
     </article>
   )
 }
@@ -1790,7 +1790,7 @@ export function DashboardMessengerPage() {
                               left: Math.min(messageMenu.left, window.innerWidth - 16),
                               top: messageMenu.top,
                               transform: 'translate(-100%, calc(-100% - 6px))',
-                              zIndex: 9400,
+                              zIndex: 26500,
                             }}
                           >
                             <MessengerMessageMenuPopover

@@ -1723,17 +1723,17 @@ export function RoomPage({
             onClick={() => setMobileInviteSheetOpen(false)}
           />
           <div
-            className="room-mobile-invite-sheet"
+            className="room-mobile-invite-sheet device-popover"
             role="dialog"
             aria-modal="true"
             aria-labelledby="room-mobile-invite-sheet-title"
           >
-            <h2 id="room-mobile-invite-sheet-title" className="room-mobile-invite-sheet__title">
+            <div id="room-mobile-invite-sheet-title" className="device-popover__title">
               Пригласить
-            </h2>
+            </div>
             <button
               type="button"
-              className="room-invite-dropdown__item"
+              className="device-popover__item"
               onClick={() => {
                 handleCopyInviteUrl()
               }}
@@ -1742,7 +1742,7 @@ export function RoomPage({
             </button>
             <button
               type="button"
-              className="room-invite-dropdown__item"
+              className="device-popover__item"
               onClick={() => {
                 handleCopyInviteId()
               }}
@@ -1752,7 +1752,7 @@ export function RoomPage({
             {user ? (
               <button
                 type="button"
-                className="room-invite-dropdown__item"
+                className="device-popover__item"
                 onClick={() => {
                   setMobileInviteSheetOpen(false)
                   setInviteFriendsModalOpen(true)

@@ -409,6 +409,16 @@ html[data-theme="light"] .dashboard-friend-card__remove-fav:hover:not(:disabled)
   color: #3d2a2a;
 }
 
+html[data-theme="light"] .dashboard-friend-card__reciprocal {
+  border-color: rgba(160, 100, 40, 0.35);
+  background: rgba(255, 200, 120, 0.14);
+}
+
+html[data-theme="light"] .dashboard-friend-card__reciprocal-add {
+  border-color: rgba(180, 50, 50, 0.4);
+  background: rgba(220, 80, 80, 0.16);
+}
+
 html[data-theme="light"] .dashboard-messenger__thread {
   background: var(--surface2);
 }
@@ -451,6 +461,10 @@ html[data-theme="light"] .dashboard-messenger__reaction-chip {
 html[data-theme="light"] .dashboard-messenger__message--own .dashboard-messenger__reaction-chip {
   border-color: rgba(158, 92, 92, 0.28);
   background: rgba(255, 255, 255, 0.45);
+}
+
+html[data-theme="light"] .messenger-msg-menu.device-popover {
+  background: var(--surface2);
 }
 
 html[data-theme="light"] .dashboard-messenger__messages-scroll,
@@ -2937,6 +2951,159 @@ button.dashboard-chat-row__last-author-avatar--btn {
   margin: 0 0 10px;
 }
 
+/* Компактная вёрстка страницы «Друзья и избранные» */
+.dashboard-friends-page .dashboard-friends__page-title {
+  margin: 0 0 6px;
+  font-size: 1.15rem;
+}
+
+.dashboard-friends-page .dashboard-chat-filters {
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.dashboard-friends-page .dashboard-chat-filters__label {
+  font-size: 11px;
+}
+
+.dashboard-friends-page .dashboard-chat-filters__input {
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.dashboard-friends-page .dashboard-friends-registry {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+}
+
+.dashboard-friends-page .dashboard-friends-registry__title {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.dashboard-friends-page .dashboard-friends-registry__empty {
+  font-size: 12px;
+}
+
+.dashboard-friends-page .dashboard-friends-list {
+  gap: 8px;
+}
+
+.dashboard-friends-page .dashboard-friend-card {
+  padding: 10px 12px;
+  gap: 10px;
+  border-radius: 14px;
+}
+
+.dashboard-friends-page .dashboard-friend-card__main {
+  gap: 10px;
+}
+
+.dashboard-friends-page .dashboard-friend-card__avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 13px;
+}
+
+.dashboard-friends-page .dashboard-friend-card__text {
+  gap: 4px;
+}
+
+.dashboard-friends-page .dashboard-friend-card__titleline {
+  gap: 6px;
+}
+
+.dashboard-friends-page .dashboard-friend-card__name {
+  font-size: 14px;
+}
+
+.dashboard-friends-page .dashboard-friend-card__slug {
+  font-size: 11px;
+}
+
+.dashboard-friends-page .dashboard-friend-card__meta {
+  gap: 8px;
+  font-size: 11px;
+}
+
+.dashboard-friends-page .dashboard-friend-card__fav-btn {
+  min-height: 34px;
+  padding: 0 10px;
+  gap: 6px;
+  font-size: 12px;
+  border-radius: 10px;
+}
+
+.dashboard-friends-page .dashboard-friend-card__fav-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.dashboard-friends-page .dashboard-friend-card__actions {
+  gap: 6px;
+}
+
+.dashboard-friends-page .dashboard-friend-card__remove-fav {
+  font-size: 11px;
+  padding: 4px 0;
+}
+
+.dashboard-friends-page .dashboard-chats-empty {
+  font-size: 13px;
+  padding: 12px 0;
+}
+
+.dashboard-friend-card__reciprocal {
+  margin-top: 2px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 211, 92, 0.28);
+  background: rgba(255, 211, 92, 0.07);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.dashboard-friend-card__reciprocal-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-dim);
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.dashboard-friend-card__reciprocal-text strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.dashboard-friend-card__reciprocal-add {
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(207, 44, 44, 0.45);
+  background: rgba(207, 44, 44, 0.18);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.dashboard-friend-card__reciprocal-add:hover:not(:disabled) {
+  background: rgba(207, 44, 44, 0.28);
+}
+
+.dashboard-friend-card__reciprocal-add:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .dashboard-friends-registry {
   margin: 0 0 20px;
   padding: 16px 18px;
@@ -3333,7 +3500,7 @@ button.dashboard-messenger__row-avatar {
   max-width: min(76%, 640px);
   border: 1px solid rgba(255,255,255,.08);
   border-radius: 16px 16px 16px 9px;
-  padding: 7px 9px 36px;
+  padding: 7px 9px 10px;
   background: rgba(255,255,255,.03);
   -webkit-touch-callout: none;
 }
@@ -3349,8 +3516,9 @@ button.dashboard-messenger__row-avatar {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   margin-bottom: 4px;
+  padding-right: 2px;
   color: var(--text-dim);
   font-size: 10px;
 }
@@ -3361,26 +3529,29 @@ button.dashboard-messenger__row-avatar {
   align-items: baseline;
   gap: 6px 10px;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .dashboard-messenger__msg-more {
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
-  z-index: 2;
+  position: relative;
   flex-shrink: 0;
-  width: 32px;
-  height: 28px;
-  margin: 0;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  margin: -2px 0 0;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
+  border-radius: 6px;
   background: rgba(10, 10, 10, 0.35);
   color: var(--text-dim);
-  font-size: 18px;
-  line-height: 1;
-  letter-spacing: -2px;
+  font-size: 15px;
+  line-height: 0.85;
+  letter-spacing: 0;
   cursor: pointer;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
@@ -3614,6 +3785,24 @@ button.dashboard-messenger__row-avatar {
 
 .messenger-msg-menu-wrap {
   pointer-events: auto;
+  z-index: 26500;
+  isolation: isolate;
+}
+
+/* Не тянуть позиционирование .device-popover (absolute/bottom) — меню в портале fixed. */
+.messenger-msg-menu.device-popover {
+  position: relative;
+  inset: auto;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  z-index: 1;
+  min-width: 200px;
+  background: #1e1e1e;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
 }
 
 .messenger-msg-menu {
@@ -4107,14 +4296,25 @@ button.dashboard-messenger__thread-head-center-avatar {
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__composer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--messenger-keyboard-bottom, 0px));
+  z-index: 9005;
   gap: 6px;
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
   margin-left: 0;
-  padding: 6px max(6px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px))
-    max(6px, env(safe-area-inset-left, 0px));
+  padding: 6px max(6px, env(safe-area-inset-right, 0px)) 8px max(6px, env(safe-area-inset-left, 0px));
   align-items: stretch;
+  border-top: 1px solid var(--border);
+  background: var(--surface2);
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.35);
+}
+
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__messages-scroll {
+  padding-bottom: calc(108px + env(safe-area-inset-bottom, 0px) + var(--messenger-keyboard-bottom, 0px));
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__composer-main {
@@ -6062,6 +6262,34 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   font-weight: 600;
   margin: 0 0 10px;
   color: var(--text);
+}
+
+/* Мобильная комната: «Пригласить» — как device-popover над панелью, не bottom-sheet под FAB. */
+.room-page--viewport-mobile .room-mobile-invite-sheet-backdrop {
+  z-index: 8350;
+}
+
+.room-page--viewport-mobile .room-mobile-invite-sheet.device-popover {
+  position: fixed !important;
+  left: 8px !important;
+  right: 8px !important;
+  top: auto !important;
+  bottom: max(76px, calc(env(safe-area-inset-bottom, 0px) + 60px)) !important;
+  z-index: 8360 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-height: min(72vh, 380px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  border-radius: var(--radius) !important;
+  padding: 4px 0 6px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+  transform: none !important;
+  margin: 0;
+}
+
+html[data-theme="light"] .room-page--viewport-mobile .room-mobile-invite-sheet.device-popover {
+  background: var(--surface2);
 }
 
 .room-invite-btn-compact {

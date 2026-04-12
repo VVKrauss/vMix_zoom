@@ -182,7 +182,7 @@ export function DashboardFriendsPage() {
 
   return (
     <DashboardShell active="friends" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
-      <section className="dashboard-section">
+      <section className="dashboard-section dashboard-friends-page">
         <h2 className="dashboard-section__title dashboard-friends__page-title">Друзья и избранные</h2>
 
         <div className="dashboard-chat-filters">
@@ -328,10 +328,26 @@ export function DashboardFriendsPage() {
                     {item.profileSlug ? (
                       <div className="dashboard-friend-card__slug">@{item.profileSlug}</div>
                     ) : null}
-                    <div className="dashboard-friend-card__meta">
-                      <span>{item.isFavorite ? 'У вас в избранном' : 'Не в избранном'}</span>
-                      <span>{item.favorsMe ? 'Добавил вас' : 'Ещё не добавил вас'}</span>
-                    </div>
+                    {item.favorsMe && !item.isFavorite ? (
+                      <div className="dashboard-friend-card__reciprocal">
+                        <p className="dashboard-friend-card__reciprocal-text">
+                          <strong>{item.displayName}</strong> добавил вас в избранное. Ответьте ему тем же?
+                        </p>
+                        <button
+                          type="button"
+                          className="dashboard-friend-card__reciprocal-add"
+                          disabled={busyTarget === item.targetUserId}
+                          onClick={() => void toggleFavorite(item)}
+                        >
+                          Добавить
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="dashboard-friend-card__meta">
+                        <span>{item.isFavorite ? 'У вас в избранном' : 'Не в избранном'}</span>
+                        <span>{item.favorsMe ? 'Добавил вас' : 'Ещё не добавил вас'}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
