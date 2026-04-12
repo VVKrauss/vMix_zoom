@@ -1519,6 +1519,22 @@ html.app-root--room #root {
   flex-shrink: 0;
 }
 
+/* Страховка: без размеров SVG/img раздуваются до intrinsic — не ломать остальную вёрстку */
+.dashboard-topbar svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.dashboard-topbar__logo img {
+  display: block;
+  height: 42px;
+  width: auto;
+  max-width: min(200px, 46vw);
+  object-fit: contain;
+}
+
 .dashboard-topbar__start {
   display: flex;
   align-items: center;
@@ -4074,8 +4090,10 @@ html[data-theme="light"] .dashboard-messenger-fab:not(.dashboard-messenger-fab--
 }
 
 .dashboard-messenger-quick-menu__btn {
-  all: unset;
   box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
