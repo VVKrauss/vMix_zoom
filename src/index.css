@@ -6360,6 +6360,136 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   margin-left: auto;
 }
 
+.room-header-manage-btn {
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.room-header-manage-btn:hover {
+  border-color: var(--red);
+  background: rgba(229, 57, 53, 0.12);
+  color: #fff;
+}
+
+.room-header-manage-btn:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.room-header-room-space {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.room-header-room-space__pair {
+  display: flex;
+  align-items: stretch;
+}
+
+.room-header-room-space__main {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: var(--radius) 0 0 var(--radius);
+  border: 1px solid var(--border);
+  border-right: none;
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.room-header-room-space__main:hover,
+.room-header-room-space__main.room-header-room-space__main--open {
+  border-color: var(--red);
+  background: rgba(229, 57, 53, 0.12);
+  color: #fff;
+}
+
+.room-header-room-space__main:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+  z-index: 1;
+}
+
+.room-header-room-space__fi {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.room-header-room-space__chev {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 34px;
+  padding: 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  border: 1px solid var(--border);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface2);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.room-header-room-space__chev:hover,
+.room-header-room-space__chev.room-header-room-space__chev--open {
+  border-color: var(--red);
+  background: rgba(229, 57, 53, 0.12);
+  color: #fff;
+}
+
+.room-header-room-space__chev:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+  z-index: 1;
+}
+
+.room-header-room-space__chev-svg {
+  display: block;
+  transition: transform 0.18s ease;
+}
+
+.room-header-room-space__chev-svg--open {
+  transform: rotate(180deg);
+}
+
+.room-header-room-space__dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 3000;
+}
+
+.room-header-room-space__dropdown .settings-popover {
+  position: static;
+  bottom: auto;
+  left: auto;
+  transform: none;
+}
+
+.room-header-manage-icon-btn .fi {
+  font-size: 18px;
+  line-height: 1;
+}
+
 .room-header-participant-count {
   display: inline-flex;
   flex-direction: row;
@@ -8868,6 +8998,12 @@ html[data-theme="light"] .card-name {
   height: 20px;
 }
 
+.ctrl-btn .fi,
+.ctrl-btn__fi {
+  font-size: 18px;
+  line-height: 1;
+}
+
 .ctrl-btn:hover { background: #2a2a2a; }
 
 .ctrl-btn:disabled,
@@ -9826,6 +9962,265 @@ html[data-theme="light"] .card-name {
 .screen-share-source-popover__icon svg {
   width: 100%;
   height: 100%;
+}
+
+/* ─── Управление комнатой (модалка) ───────────────────────────────────────── */
+.room-manage-modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 20980;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.room-manage-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.room-manage-modal {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 520px;
+  max-height: min(88vh, 720px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.room-manage-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.room-manage-modal__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.room-manage-modal__close {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.room-manage-modal__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.room-manage-modal__list {
+  list-style: none;
+  margin: 0;
+  padding: 8px 12px 14px;
+  overflow-y: auto;
+}
+
+.room-manage-modal__row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.room-manage-modal__who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.room-manage-modal__avatar {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+
+.room-manage-modal__avatar-fallback {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border);
+}
+
+.room-manage-modal__meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.room-manage-modal__name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.room-manage-modal__msgs {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.room-manage-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.room-manage-modal__btn {
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.room-manage-modal__btn--secondary {
+  background: rgba(159, 214, 255, 0.12);
+  border-color: rgba(159, 214, 255, 0.28);
+}
+
+.room-manage-modal__btn--danger {
+  background: rgba(220, 80, 80, 0.15);
+  border-color: rgba(220, 80, 80, 0.35);
+  color: #ffb4b4;
+}
+
+.room-manage-remove-confirm p {
+  margin: 0 0 10px;
+}
+
+.room-manage-remove-confirm__ban {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.room-manage-remove-confirm__ban input {
+  margin-top: 3px;
+}
+
+.room-manage-remove-confirm__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.room-space-settings-popover {
+  min-width: 280px;
+}
+
+.room-mobile-room-space-fab {
+  position: fixed;
+  right: 12px;
+  bottom: 96px;
+  z-index: 12040;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(12, 12, 14, 0.92);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+
+.room-mobile-room-space-fab .fi {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.room-mobile-room-space-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20970;
+  max-height: 85vh;
+  overflow: auto;
+  padding: 12px 14px 20px;
+  border-radius: 16px 16px 0 0;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  background: var(--surface);
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.room-mobile-room-space-sheet__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20960;
+  border: none;
+  margin: 0;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+}
+
+.room-mobile-room-space-sheet__manage {
+  margin-top: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
 }
 
 /* ─── Confirm dialog (кастомное подтверждение выхода) ─────────────────────── */

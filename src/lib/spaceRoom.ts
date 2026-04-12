@@ -32,6 +32,22 @@ export const SPACE_ROOM_HOST_CREATE_CHAT_OPTIONS: {
   { value: 'closed', label: 'Закрыт', hint: 'Сообщения видны, отправка отключена для всех' },
 ]
 
+/** Короткие подписи для select политики чата в UI. */
+export const SPACE_ROOM_CHAT_POLICY_SELECT_OPTIONS: { value: SpaceRoomChatVisibility; label: string }[] = [
+  { value: 'everyone', label: 'Все участники' },
+  { value: 'authenticated_only', label: 'Только с аккаунтом' },
+  { value: 'staff_only', label: 'Хост и админы' },
+  { value: 'closed', label: 'Закрыт (только чтение)' },
+]
+
+export type SpaceRoomChatParticipantCtx = {
+  isAuthed: boolean
+  isDbHost: boolean
+  isElevatedStaff: boolean
+  /** Со-админ комнаты (`space_rooms.room_admin_user_ids`). */
+  isRoomSpaceAdmin?: boolean
+}
+
 /** Срок «горячей» ссылки для временной комнаты (минуты). */
 export const SPACE_ROOM_TEMPORARY_INVITE_MINUTES = 2
 
@@ -159,10 +175,14 @@ function isChatVisibility(v: string | null | undefined): v is SpaceRoomChatVisib
   )
 }
 
+function isRoomModeratorLike(ctx: SpaceRoomChatParticipantCtx): boolean {
+  return ctx.isDbHost || ctx.isElevatedStaff || Boolean(ctx.isRoomSpaceAdmin)
+}
+
 /** Видит панель чата (сообщения). */
 export function participantCanSeeRoomChat(
   visibility: SpaceRoomChatVisibility,
-  ctx: { isAuthed: boolean; isDbHost: boolean; isElevatedStaff: boolean },
+  ctx: SpaceRoomChatParticipantCtx,
 ): boolean {
   switch (visibility) {
     case 'everyone':
@@ -170,7 +190,7 @@ export function participantCanSeeRoomChat(
     case 'authenticated_only':
       return ctx.isAuthed
     case 'staff_only':
-      return ctx.isDbHost || ctx.isElevatedStaff
+      return isRoomModeratorLike(ctx)
     case 'closed':
       return true
     default:
@@ -181,7 +201,7 @@ export function participantCanSeeRoomChat(
 /** Может отправлять сообщения в чат комнаты. */
 export function participantCanPostRoomChat(
   visibility: SpaceRoomChatVisibility,
-  ctx: { isAuthed: boolean; isDbHost: boolean; isElevatedStaff: boolean },
+  ctx: SpaceRoomChatParticipantCtx,
 ): boolean {
   switch (visibility) {
     case 'everyone':
@@ -189,7 +209,7 @@ export function participantCanPostRoomChat(
     case 'authenticated_only':
       return ctx.isAuthed
     case 'staff_only':
-      return ctx.isDbHost || ctx.isElevatedStaff
+      return isRoomModeratorLike(ctx)
     case 'closed':
       return false
     default:
@@ -376,17 +396,16 @@ export async function registerSpaceRoomAsHost(
 
 export async function updateSpaceRoomChatVisibility(
   slug: string,
-  userId: string,
+  _actorUserId: string,
   visibility: SpaceRoomChatVisibility,
 ): Promise<boolean> {
   const trimmed = slug.trim()
-  if (!trimmed || !userId) return false
+  if (!trimmed) return false
   if (!isChatVisibility(visibility)) return false
   const { error, data } = await supabase
     .from('space_rooms')
     .update({ chat_visibility: visibility, updated_at: new Date().toISOString() })
     .eq('slug', trimmed)
-    .eq('host_user_id', userId)
     .select('slug')
     .maybeSingle()
   if (error) {
@@ -402,20 +421,15 @@ export async function hostLeaveSpaceRoom(slug: string): Promise<void> {
   await supabase.rpc('host_leave_space_room', { p_slug: trimmed })
 }
 
-/** Заблокировать пользователя в комнате (только хост). Read-modify-write. */
+/** Заблокировать пользователя в комнате (хост / staff / со-админ комнаты — RLS). Read-modify-write. */
 export async function banUserFromSpaceRoom(
   slug: string,
-  hostUserId: string,
+  _actorUserId: string,
   targetUserId: string,
 ): Promise<boolean> {
   const trimmed = slug.trim()
-  if (!trimmed || !hostUserId || !targetUserId) return false
-  const { data: row } = await supabase
-    .from('space_rooms')
-    .select('banned_user_ids')
-    .eq('slug', trimmed)
-    .eq('host_user_id', hostUserId)
-    .maybeSingle()
+  if (!trimmed || !targetUserId) return false
+  const { data: row } = await supabase.from('space_rooms').select('banned_user_ids').eq('slug', trimmed).maybeSingle()
   if (!row) return false
   const current: string[] = Array.isArray(row.banned_user_ids) ? row.banned_user_ids : []
   if (current.includes(targetUserId)) return true
@@ -423,7 +437,6 @@ export async function banUserFromSpaceRoom(
     .from('space_rooms')
     .update({ banned_user_ids: [...current, targetUserId], updated_at: new Date().toISOString() })
     .eq('slug', trimmed)
-    .eq('host_user_id', hostUserId)
   if (error) {
     console.warn('banUserFromSpaceRoom:', error.message)
     return false
@@ -431,20 +444,15 @@ export async function banUserFromSpaceRoom(
   return true
 }
 
-/** Одобрить вход пользователя (только хост, access_mode=approval). */
+/** Одобрить вход пользователя (режим approval; хост / staff / со-админ — RLS). */
 export async function approveSpaceRoomJoiner(
   slug: string,
-  hostUserId: string,
+  _actorUserId: string,
   targetUserId: string,
 ): Promise<boolean> {
   const trimmed = slug.trim()
-  if (!trimmed || !hostUserId || !targetUserId) return false
-  const { data: row } = await supabase
-    .from('space_rooms')
-    .select('approved_joiners')
-    .eq('slug', trimmed)
-    .eq('host_user_id', hostUserId)
-    .maybeSingle()
+  if (!trimmed || !targetUserId) return false
+  const { data: row } = await supabase.from('space_rooms').select('approved_joiners').eq('slug', trimmed).maybeSingle()
   if (!row) return false
   const current: string[] = Array.isArray(row.approved_joiners) ? row.approved_joiners : []
   if (current.includes(targetUserId)) return true
@@ -452,7 +460,6 @@ export async function approveSpaceRoomJoiner(
     .from('space_rooms')
     .update({ approved_joiners: [...current, targetUserId], updated_at: new Date().toISOString() })
     .eq('slug', trimmed)
-    .eq('host_user_id', hostUserId)
   if (error) {
     console.warn('approveSpaceRoomJoiner:', error.message)
     return false
@@ -463,17 +470,12 @@ export async function approveSpaceRoomJoiner(
 /** Убрать пользователя из списка ожидающих (отклонить или очистить после входа). */
 export async function removeSpaceRoomApprovedJoiner(
   slug: string,
-  hostUserId: string,
+  _actorUserId: string,
   targetUserId: string,
 ): Promise<void> {
   const trimmed = slug.trim()
-  if (!trimmed || !hostUserId || !targetUserId) return
-  const { data: row } = await supabase
-    .from('space_rooms')
-    .select('approved_joiners')
-    .eq('slug', trimmed)
-    .eq('host_user_id', hostUserId)
-    .maybeSingle()
+  if (!trimmed || !targetUserId) return
+  const { data: row } = await supabase.from('space_rooms').select('approved_joiners').eq('slug', trimmed).maybeSingle()
   if (!row) return
   const current: string[] = Array.isArray(row.approved_joiners) ? row.approved_joiners : []
   const next = current.filter((id) => id !== targetUserId)
@@ -482,22 +484,20 @@ export async function removeSpaceRoomApprovedJoiner(
     .from('space_rooms')
     .update({ approved_joiners: next, updated_at: new Date().toISOString() })
     .eq('slug', trimmed)
-    .eq('host_user_id', hostUserId)
 }
 
-/** Добавить комнату в режим approval (хост устанавливает). */
+/** Режим входа в комнату (хост / staff / со-админ — RLS). */
 export async function updateSpaceRoomAccessMode(
   slug: string,
-  hostUserId: string,
+  _actorUserId: string,
   mode: 'link' | 'approval' | 'invite_only',
 ): Promise<boolean> {
   const trimmed = slug.trim()
-  if (!trimmed || !hostUserId) return false
+  if (!trimmed) return false
   const { error, data } = await supabase
     .from('space_rooms')
     .update({ access_mode: mode, updated_at: new Date().toISOString() })
     .eq('slug', trimmed)
-    .eq('host_user_id', hostUserId)
     .select('slug')
     .maybeSingle()
   if (error) {
@@ -505,4 +505,66 @@ export async function updateSpaceRoomAccessMode(
     return false
   }
   return Boolean(data?.slug)
+}
+
+function parseUuidArray(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter((x): x is string => typeof x === 'string' && x.length > 0)
+}
+
+/** Назначить со-администратора комнаты (не хоста; хост / staff — RLS). */
+export async function addSpaceRoomAdminUser(slug: string, targetUserId: string): Promise<boolean> {
+  const trimmed = slug.trim()
+  const tid = targetUserId.trim()
+  if (!trimmed || !tid) return false
+  const { data: row, error: selErr } = await supabase
+    .from('space_rooms')
+    .select('host_user_id, room_admin_user_ids')
+    .eq('slug', trimmed)
+    .maybeSingle()
+  if (selErr || !row) {
+    if (selErr) console.warn('addSpaceRoomAdminUser:', selErr.message)
+    return false
+  }
+  const hostId = typeof row.host_user_id === 'string' ? row.host_user_id : null
+  if (hostId && tid === hostId) return false
+  const current = parseUuidArray(row.room_admin_user_ids)
+  if (current.includes(tid)) return true
+  const { error } = await supabase
+    .from('space_rooms')
+    .update({ room_admin_user_ids: [...current, tid], updated_at: new Date().toISOString() })
+    .eq('slug', trimmed)
+  if (error) {
+    console.warn('addSpaceRoomAdminUser:', error.message)
+    return false
+  }
+  return true
+}
+
+/** Снять со-администратора комнаты. */
+export async function removeSpaceRoomAdminUser(slug: string, targetUserId: string): Promise<boolean> {
+  const trimmed = slug.trim()
+  const tid = targetUserId.trim()
+  if (!trimmed || !tid) return false
+  const { data: row, error: selErr } = await supabase
+    .from('space_rooms')
+    .select('room_admin_user_ids')
+    .eq('slug', trimmed)
+    .maybeSingle()
+  if (selErr || !row) {
+    if (selErr) console.warn('removeSpaceRoomAdminUser:', selErr.message)
+    return false
+  }
+  const current = parseUuidArray(row.room_admin_user_ids)
+  const next = current.filter((id) => id !== tid)
+  if (next.length === current.length) return true
+  const { error } = await supabase
+    .from('space_rooms')
+    .update({ room_admin_user_ids: next, updated_at: new Date().toISOString() })
+    .eq('slug', trimmed)
+  if (error) {
+    console.warn('removeSpaceRoomAdminUser:', error.message)
+    return false
+  }
+  return true
 }

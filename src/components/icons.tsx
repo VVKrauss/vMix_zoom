@@ -1,3 +1,5 @@
+import type { HTMLAttributes } from 'react'
+
 /** SVG-иконки приложения (named exports). При ошибке «нет экспорта» в dev — очистить `node_modules/.vite` и перезапустить Vite. */
 export function MicIcon() {
   return (
@@ -262,5 +264,26 @@ export function XCloseIcon() {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
       <path d="M18 6L6 18M6 6l12 12" />
     </svg>
+  )
+}
+
+export type FiRrIconProps = {
+  /** Имя иконки без префикса: `home` → классы `fi fi-rr-home`. Список: flaticon.com/uicons */
+  name: string
+} & Omit<HTMLAttributes<HTMLElement>, 'children'>
+
+/**
+ * Иконка из [@flaticon/flaticon-uicons](https://www.flaticon.com/uicons) (regular rounded, префикс `fi-rr-`).
+ * Стили `regular/rounded` подключены в `main.tsx`. Лицензия пакета требует атрибуции Flaticon там, где это уместно.
+ */
+export function FiRrIcon({ name, className, 'aria-hidden': ariaHidden, ...rest }: FiRrIconProps) {
+  const key = name.trim()
+  if (!key) return null
+  return (
+    <i
+      className={['fi', `fi-rr-${key}`, className].filter(Boolean).join(' ')}
+      aria-hidden={ariaHidden ?? true}
+      {...rest}
+    />
   )
 }

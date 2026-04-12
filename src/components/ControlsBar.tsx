@@ -14,6 +14,7 @@ import type { VideoPreset } from '../types'
 import { presetToSimpleTier, simpleTierToPreset } from '../utils/simpleVideoQuality'
 import type { LayoutMode, VmixIngressPhase } from './RoomPage'
 import type { SpaceRoomChatVisibility } from '../lib/spaceRoom'
+import { SPACE_ROOM_CHAT_POLICY_SELECT_OPTIONS } from '../lib/spaceRoom'
 import type { SpaceRoomAccessMode } from '../hooks/useSpaceRoomSettings'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
 import { MicIcon, MicOffIcon, CamIcon, CamOffIcon, InviteIcon, EndCallIcon } from './icons'
@@ -141,6 +142,10 @@ interface Props {
   showStudioEntry?: boolean
   studioOpen?: boolean
   onStudioToggle?: () => void
+  /** Личные «Настройки»: скрыть тумблер «Инфо» (перенесён в шапку «Комната»). */
+  hidePersonalVideoInfoToggle?: boolean
+  /** Меню «Чат»: скрыть политику комнаты (она в шапке). */
+  hideHostRoomPoliciesInChat?: boolean
 }
 
 const LONG_PRESS_MS = 550
@@ -279,6 +284,8 @@ export function ControlsBar({
   showStudioEntry = false,
   studioOpen = false,
   onStudioToggle,
+  hidePersonalVideoInfoToggle = false,
+  hideHostRoomPoliciesInChat = false,
 }: Props) {
   const [open, setOpen] = useState<OpenPopover>(null)
   const [screenPickerOpen, setScreenPickerOpen] = useState(false)
@@ -399,6 +406,7 @@ export function ControlsBar({
           roomChatVisibility={roomChatVisibility}
           onRoomChatVisibilityChange={onRoomChatVisibilityChange}
           showRoomChatPolicySettings={showRoomChatPolicySettings}
+          hideHostRoomPolicies={hideHostRoomPoliciesInChat}
           roomAccessMode={roomAccessMode}
           onRoomAccessModeChange={onRoomAccessModeChange}
         />
@@ -488,6 +496,7 @@ export function ControlsBar({
       </button>
       {open === 'settings' && (
         <SettingsPopover
+          hideVideoInfoToggle={hidePersonalVideoInfoToggle}
           showInfo={showInfo}
           onToggleInfo={onToggleInfo}
           showButtonLabels={showButtonLabels}
@@ -1099,13 +1108,6 @@ function PlayoutPopover({
   )
 }
 
-const ROOM_CHAT_POLICY_OPTIONS: { value: SpaceRoomChatVisibility; label: string }[] = [
-  { value: 'everyone', label: 'Все участники' },
-  { value: 'authenticated_only', label: 'Только с аккаунтом' },
-  { value: 'staff_only', label: 'Хост и админы' },
-  { value: 'closed', label: 'Закрыт (только чтение)' },
-]
-
 function ChatOptionsPopover({
   chatEmbed,
   onToggleChatEmbed,
@@ -1115,6 +1117,7 @@ function ChatOptionsPopover({
   roomChatVisibility,
   onRoomChatVisibilityChange,
   showRoomChatPolicySettings = false,
+  hideHostRoomPolicies = false,
   roomAccessMode,
   onRoomAccessModeChange,
 }: {
@@ -1126,6 +1129,8 @@ function ChatOptionsPopover({
   roomChatVisibility?: SpaceRoomChatVisibility
   onRoomChatVisibilityChange?: (v: SpaceRoomChatVisibility) => void
   showRoomChatPolicySettings?: boolean
+  /** Политика чата и вход перенесены в «Комната». */
+  hideHostRoomPolicies?: boolean
   roomAccessMode?: SpaceRoomAccessMode
   onRoomAccessModeChange?: (v: SpaceRoomAccessMode) => void
 }) {
@@ -1153,7 +1158,8 @@ function ChatOptionsPopover({
           ariaLabel="Всплывающие уведомления о новых сообщениях в чате"
         />
       </div>
-      {showRoomChatPolicySettings &&
+      {!hideHostRoomPolicies &&
+      showRoomChatPolicySettings &&
       roomChatVisibility &&
       onRoomChatVisibilityChange ? (
         <div className="settings-popover__section settings-popover__section--bordered">
@@ -1166,7 +1172,7 @@ function ChatOptionsPopover({
             }}
             aria-label="Политика чата для всех участников"
           >
-            {ROOM_CHAT_POLICY_OPTIONS.map((o) => (
+            {SPACE_ROOM_CHAT_POLICY_SELECT_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
@@ -1174,7 +1180,7 @@ function ChatOptionsPopover({
           </select>
         </div>
       ) : null}
-      {onRoomAccessModeChange ? (
+      {!hideHostRoomPolicies && onRoomAccessModeChange ? (
         <div className="settings-popover__section settings-popover__section--bordered">
           <div className="settings-popover__subtitle">Вход в комнату</div>
           <div className="settings-row settings-row--pill">
@@ -1202,6 +1208,7 @@ function ChatOptionsPopover({
 }
 
 function SettingsPopover({
+  hideVideoInfoToggle = false,
   showInfo, onToggleInfo,
   showButtonLabels, onToggleButtonLabels,
   onResetView, onClose,
@@ -1213,6 +1220,7 @@ function SettingsPopover({
   hideVideoLetterboxing,
   onHideVideoLetterboxingChange,
 }: {
+  hideVideoInfoToggle?: boolean
   showInfo: boolean
   onToggleInfo: () => void
   showButtonLabels: boolean
@@ -1270,15 +1278,17 @@ function SettingsPopover({
         />
       </div>
 
-      <div className="settings-row settings-row--pill">
-        <span className="settings-label">Инфо</span>
-        <PillToggle
-          compact
-          checked={showInfo}
-          onCheckedChange={() => onToggleInfo()}
-          ariaLabel="Информация на видео"
-        />
-      </div>
+      {!hideVideoInfoToggle ? (
+        <div className="settings-row settings-row--pill">
+          <span className="settings-label">Инфо</span>
+          <PillToggle
+            compact
+            checked={showInfo}
+            onCheckedChange={() => onToggleInfo()}
+            ariaLabel="Информация на видео"
+          />
+        </div>
+      ) : null}
 
       <div className="settings-row settings-row--pill">
         <span className="settings-label">Подписи кнопок</span>

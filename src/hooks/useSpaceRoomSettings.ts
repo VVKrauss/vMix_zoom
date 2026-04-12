@@ -10,6 +10,8 @@ export type SpaceRoomSettingsRow = {
   chatVisibility: SpaceRoomChatVisibility
   accessMode: SpaceRoomAccessMode
   status: string
+  /** Со-администраторы комнаты (не хост). */
+  roomAdminUserIds: string[]
 }
 
 function parseRow(raw: Record<string, unknown> | null): SpaceRoomSettingsRow | null {
@@ -27,12 +29,15 @@ function parseRow(raw: Record<string, unknown> | null): SpaceRoomSettingsRow | n
   const am = raw.access_mode
   const accessMode: SpaceRoomAccessMode =
     am === 'approval' || am === 'invite_only' ? am : 'link'
+  const ra = raw.room_admin_user_ids
+  const roomAdminUserIds: string[] = Array.isArray(ra) ? ra.filter((x): x is string => typeof x === 'string') : []
   return {
     slug,
     hostUserId: typeof raw.host_user_id === 'string' ? raw.host_user_id : null,
     chatVisibility,
     accessMode,
     status: typeof raw.status === 'string' ? raw.status : '',
+    roomAdminUserIds,
   }
 }
 
@@ -55,7 +60,7 @@ export function useSpaceRoomSettings(roomSlug: string | undefined): {
     }
     void supabase
       .from('space_rooms')
-      .select('slug, host_user_id, chat_visibility, access_mode, status')
+      .select('slug, host_user_id, chat_visibility, access_mode, status, room_admin_user_ids')
       .eq('slug', slug)
       .maybeSingle()
       .then(({ data, error }) => {

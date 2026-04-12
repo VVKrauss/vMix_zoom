@@ -16,6 +16,7 @@ import {
     ChatBubbleIcon,
     FullscreenEnterIcon,
     FullscreenExitIcon,
+    FiRrIcon,
   } from './icons'
 import { useAuth } from '../context/AuthContext'
 import { useUserPeek } from '../context/UserPeekContext'
@@ -58,9 +59,12 @@ import {
 import { LocalScreenShareTile } from './LocalScreenShareTile'
 import { StudioProgramShareTile } from './StudioProgramShareTile'
 import type { RoomChatMessage, RoomReactionBurst } from '../types/roomComms'
+import { isScreenShareChatNotice } from '../types/roomComms'
 import { pickLatestBurstForPeer } from '../types/roomComms'
 import { ParticipantTileIdle } from './ParticipantTileIdle'
 import { RoomChatPanel } from './RoomChatPanel'
+import { RoomManageModal, type RoomManageParticipantRow } from './RoomManageModal'
+import { RoomSpaceSettingsPopover } from './RoomSpaceSettingsPopover'
 import { ReactionBurstOverlay } from './ReactionBurstOverlay'
 import { VmixIngressModal } from './VmixIngressModal'
 import { RoomInviteFriendsModal } from './RoomInviteFriendsModal'
@@ -87,6 +91,8 @@ import {
   removeSpaceRoomApprovedJoiner,
   banUserFromSpaceRoom,
   updateSpaceRoomAccessMode,
+  addSpaceRoomAdminUser,
+  removeSpaceRoomAdminUser,
   type SpaceRoomChatVisibility,
 } from '../lib/spaceRoom'
 import { supabase } from '../lib/supabase'
@@ -100,6 +106,21 @@ interface JoinRequest {
   userId: string | null
   displayName: string
   receivedAt: number
+}
+
+function RoomHeaderChevronGlyph({ open }: { open: boolean }) {
+  return (
+    <svg
+      className={`room-header-room-space__chev-svg${open ? ' room-header-room-space__chev-svg--open' : ''}`}
+      width="10"
+      height="10"
+      viewBox="0 0 10 10"
+      fill="currentColor"
+      aria-hidden
+    >
+      <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+    </svg>
+  )
 }
 
 const StudioModeWorkspace = lazy(async () => {
@@ -469,6 +490,8 @@ export function RoomPage({
   const [mobileInviteSheetOpen, setMobileInviteSheetOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
   const inviteRef = useRef<HTMLDivElement>(null)
+  const [roomSpaceSettingsOpen, setRoomSpaceSettingsOpen] = useState(false)
+  const roomSpaceHeaderRef = useRef<HTMLDivElement>(null)
   const [fullscreenActive, setFullscreenActive] = useState(false)
   const fullscreenSupported = canToggleBrowserFullscreen()
 
@@ -482,6 +505,17 @@ export function RoomPage({
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [inviteOpen])
+
+  useEffect(() => {
+    if (!roomSpaceSettingsOpen) return
+    const handler = (e: MouseEvent) => {
+      if (shouldClosePopoverOnOutsidePointer(roomSpaceHeaderRef.current, e.target)) {
+        setRoomSpaceSettingsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [roomSpaceSettingsOpen])
 
   const handleCopyInviteUrl = useCallback(() => {
     const id = roomId.trim()
@@ -591,6 +625,8 @@ export function RoomPage({
   const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([])
   /** Открыта ли модалка запросов */
   const [joinRequestsOpen, setJoinRequestsOpen] = useState(false)
+  const [roomManageModalOpen, setRoomManageModalOpen] = useState(false)
+  const [mobileRoomSpaceSheetOpen, setMobileRoomSpaceSheetOpen] = useState(false)
   /** Тост о новом запросе на вход */
   const [joinRequestToast, setJoinRequestToast] = useState<string | null>(null)
   const joinRequestToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -632,14 +668,41 @@ export function RoomPage({
   const { row: spaceRoomRow } = useSpaceRoomSettings(roomId)
   const roomChatVisibility: SpaceRoomChatVisibility = spaceRoomRow?.chatVisibility ?? 'everyone'
   const roomAccessMode = spaceRoomRow?.accessMode ?? 'link'
+  const roomAdminUserIds = useMemo(() => spaceRoomRow?.roomAdminUserIds ?? [], [spaceRoomRow?.roomAdminUserIds])
+  const isRoomSpaceAdmin = useMemo(
+    () => Boolean(user?.id && roomAdminUserIds.includes(user.id)),
+    [user?.id, roomAdminUserIds],
+  )
+  const canManageRoomSpace = useMemo(
+    () => isDbSpaceRoomHost || isPlatformAdminish || isRoomSpaceAdmin,
+    [isDbSpaceRoomHost, isPlatformAdminish, isRoomSpaceAdmin],
+  )
+  const canEditSpaceRoomPolicies = useMemo(
+    () =>
+      Boolean(
+        user?.id &&
+          spaceRoomRow &&
+          (isDbSpaceRoomHost || isPlatformAdminish || roomAdminUserIds.includes(user.id)),
+      ),
+    [user?.id, spaceRoomRow, isDbSpaceRoomHost, isPlatformAdminish, roomAdminUserIds],
+  )
+  const canAssignRoomAdmins = useMemo(
+    () => isDbSpaceRoomHost || isPlatformAdminish,
+    [isDbSpaceRoomHost, isPlatformAdminish],
+  )
+  const canModerateParticipants = canManageRoomSpace
+  const canRemoteMutePeers = Boolean(
+    requestPeerMicMute && (canUseElevatedRoomTools || canModerateParticipants),
+  )
 
   const chatParticipantCtx = useMemo(
     () => ({
       isAuthed: Boolean(user?.id),
       isDbHost: isDbSpaceRoomHost,
       isElevatedStaff: isPlatformAdminish,
+      isRoomSpaceAdmin,
     }),
-    [user?.id, isDbSpaceRoomHost, isPlatformAdminish],
+    [user?.id, isDbSpaceRoomHost, isPlatformAdminish, isRoomSpaceAdmin],
   )
 
   const canSeeRoomChat = useMemo(
@@ -658,20 +721,20 @@ export function RoomPage({
 
   const handleRoomChatVisibilityChange = useCallback(
     async (v: SpaceRoomChatVisibility) => {
-      if (!user?.id || !isDbSpaceRoomHost) return
+      if (!user?.id || !canEditSpaceRoomPolicies) return
       const ok = await updateSpaceRoomChatVisibility(roomId.trim(), user.id, v)
       if (!ok) console.warn('room chat policy: update failed')
     },
-    [user?.id, isDbSpaceRoomHost, roomId],
+    [user?.id, canEditSpaceRoomPolicies, roomId],
   )
 
   const handleRoomAccessModeChange = useCallback(
     async (v: SpaceRoomAccessMode) => {
-      if (!user?.id || !isDbSpaceRoomHost) return
+      if (!user?.id || !canEditSpaceRoomPolicies) return
       const ok = await updateSpaceRoomAccessMode(roomId.trim(), user.id, v)
       if (!ok) console.warn('room access mode: update failed')
     },
-    [user?.id, isDbSpaceRoomHost, roomId],
+    [user?.id, canEditSpaceRoomPolicies, roomId],
   )
 
   // Supabase Realtime broadcast-канал комнаты: join-requests и host-transfer
@@ -767,11 +830,38 @@ export function RoomPage({
 
   const handleBanPeer = useCallback(
     async (targetPeerId: string, targetAuthUserId: string) => {
-      if (!user?.id || !isDbSpaceRoomHost) return
+      if (!user?.id || !canModerateParticipants) return
       await banUserFromSpaceRoom(roomId.trim(), user.id, targetAuthUserId)
       if (requestKickPeer) requestKickPeer(targetPeerId)
     },
-    [roomId, user?.id, isDbSpaceRoomHost, requestKickPeer],
+    [roomId, user?.id, canModerateParticipants, requestKickPeer],
+  )
+
+  const handleRemoveFromRoom = useCallback(
+    async (targetPeerId: string, opts: { alsoBan: boolean; authUserId: string | null }) => {
+      if (!canModerateParticipants) return
+      if (opts.alsoBan && opts.authUserId) {
+        await banUserFromSpaceRoom(roomId.trim(), user?.id ?? '', opts.authUserId)
+      }
+      requestKickPeer?.(targetPeerId)
+    },
+    [canModerateParticipants, roomId, user?.id, requestKickPeer],
+  )
+
+  const handleAssignRoomAdmin = useCallback(
+    async (targetUserId: string) => {
+      const ok = await addSpaceRoomAdminUser(roomId.trim(), targetUserId)
+      if (!ok) console.warn('add room admin: failed')
+    },
+    [roomId],
+  )
+
+  const handleRemoveRoomAdmin = useCallback(
+    async (targetUserId: string) => {
+      const ok = await removeSpaceRoomAdminUser(roomId.trim(), targetUserId)
+      if (!ok) console.warn('remove room admin: failed')
+    },
+    [roomId],
   )
 
   const sendChatGuarded = useCallback(
@@ -989,6 +1079,66 @@ export function RoomPage({
     () => remoteList.filter((p) => p.name !== 'vMix' && p.virtualSourceType !== 'studio_program'),
     [remoteList],
   )
+
+  const messageCountByPeerId = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const m of chatMessages) {
+      if (m.kind === 'reaction' || m.kind === 'system') continue
+      if (isScreenShareChatNotice(m.text)) continue
+      map.set(m.peerId, (map.get(m.peerId) ?? 0) + 1)
+    }
+    return map
+  }, [chatMessages])
+
+  const chatMessagesVisibleCount = useMemo(() => {
+    let n = 0
+    for (const m of chatMessages) {
+      if (m.kind === 'reaction' || m.kind === 'system') continue
+      if (isScreenShareChatNotice(m.text)) continue
+      n++
+    }
+    return n
+  }, [chatMessages])
+
+  const dbHostUserId = spaceRoomRow?.hostUserId ?? null
+
+  const roomManageRows: RoomManageParticipantRow[] = useMemo(() => {
+    const rows: RoomManageParticipantRow[] = []
+    if (localPeerId) {
+      rows.push({
+        peerId: localPeerId,
+        name,
+        avatarUrl: avatarUrl ?? null,
+        authUserId: user?.id ?? null,
+        messageCount: messageCountByPeerId.get(localPeerId) ?? 0,
+        isLocal: true,
+        isDbHost: Boolean(user?.id && dbHostUserId && user.id === dbHostUserId),
+        isRoomAdmin: Boolean(user?.id && roomAdminUserIds.includes(user.id)),
+      })
+    }
+    for (const p of remoteHumanPeers) {
+      rows.push({
+        peerId: p.peerId,
+        name: p.name,
+        avatarUrl: p.avatarUrl ?? null,
+        authUserId: p.authUserId ?? null,
+        messageCount: messageCountByPeerId.get(p.peerId) ?? 0,
+        isLocal: false,
+        isDbHost: Boolean(p.authUserId && dbHostUserId && p.authUserId === dbHostUserId),
+        isRoomAdmin: Boolean(p.authUserId && roomAdminUserIds.includes(p.authUserId)),
+      })
+    }
+    return rows
+  }, [
+    localPeerId,
+    name,
+    avatarUrl,
+    user?.id,
+    remoteHumanPeers,
+    messageCountByPeerId,
+    dbHostUserId,
+    roomAdminUserIds,
+  ])
 
   const inviteExcludeUserIds = useMemo(() => {
     const ids: string[] = []
@@ -1413,8 +1563,8 @@ export function RoomPage({
           reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
           showSoloViewerCopy={canUseElevatedRoomTools}
           guestMute={
-            canUseElevatedRoomTools && requestPeerMicMute
-              ? { show: true, onMute: () => requestPeerMicMute(localPeerId) }
+            canRemoteMutePeers
+              ? { show: true, onMute: () => { requestPeerMicMute?.(localPeerId) } }
               : undefined
           }
         />
@@ -1436,8 +1586,8 @@ export function RoomPage({
           reactionBurst={pickLatestBurstForPeer(reactionBursts, remotePresenter.peerId)}
           showSoloViewerCopy={canUseElevatedRoomTools}
           guestMute={
-            canUseElevatedRoomTools && requestPeerMicMute
-              ? { show: true, onMute: () => requestPeerMicMute(remotePresenter.peerId) }
+            canRemoteMutePeers
+              ? { show: true, onMute: () => { requestPeerMicMute?.(remotePresenter.peerId) } }
               : undefined
           }
           extraMenuItems={screenShareExtras}
@@ -1464,8 +1614,8 @@ export function RoomPage({
             reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
             showSoloViewerCopy={canUseElevatedRoomTools}
             guestMute={
-              canUseElevatedRoomTools && requestPeerMicMute
-                ? { show: true, onMute: () => requestPeerMicMute(localPeerId) }
+              canRemoteMutePeers
+                ? { show: true, onMute: () => { requestPeerMicMute?.(localPeerId) } }
                 : undefined
             }
           />
@@ -1487,8 +1637,8 @@ export function RoomPage({
           reactionBurst={pickLatestBurstForPeer(reactionBursts, owner)}
           showSoloViewerCopy={canUseElevatedRoomTools}
           guestMute={
-            canUseElevatedRoomTools && requestPeerMicMute
-              ? { show: true, onMute: () => requestPeerMicMute(owner) }
+            canRemoteMutePeers
+              ? { show: true, onMute: () => { requestPeerMicMute?.(owner) } }
               : undefined
           }
           extraMenuItems={screenExtrasRemote}
@@ -1523,8 +1673,8 @@ export function RoomPage({
           showSoloViewerCopy={canUseElevatedRoomTools}
           rtmpPhase={phase}
           guestMute={
-            canUseElevatedRoomTools && requestPeerMicMute
-              ? { show: true, onMute: () => requestPeerMicMute(owner) }
+            canRemoteMutePeers
+              ? { show: true, onMute: () => { requestPeerMicMute?.(owner) } }
               : undefined
           }
           extraMenuItems={studioExtras}
@@ -1549,16 +1699,18 @@ export function RoomPage({
         getPeerUplinkVideoQuality={getPeerUplinkVideoQuality}
         showSoloViewerCopy={canUseElevatedRoomTools}
         guestMute={
-          !isVmixTile && canUseElevatedRoomTools && requestPeerMicMute
-            ? { show: true, onMute: () => requestPeerMicMute(p.peerId) }
+          !isVmixTile && canRemoteMutePeers
+            ? { show: true, onMute: () => { requestPeerMicMute?.(p.peerId) } }
             : undefined
         }
         guestKick={
-          !isVmixTile && isDbSpaceRoomHost && p.authUserId && p.authUserId !== user?.id
+          !isVmixTile && canModerateParticipants && (p.authUserId !== user?.id || !p.authUserId)
             ? {
                 show: true,
                 onKick: () => requestKickPeer?.(p.peerId),
-                onBan: () => void handleBanPeer(p.peerId, p.authUserId!),
+                ...(p.authUserId
+                  ? { onBan: () => void handleBanPeer(p.peerId, p.authUserId!) }
+                  : {}),
               }
             : undefined
         }
@@ -1642,10 +1794,9 @@ export function RoomPage({
     const muteTarget = guestMuteTargetPeerId(id, localPeerId)
     const pipGuestMute =
       muteTarget &&
-      canUseElevatedRoomTools &&
-      requestPeerMicMute &&
+      canRemoteMutePeers &&
       participants.get(muteTarget)?.name !== 'vMix'
-        ? { show: true as const, onMute: () => requestPeerMicMute(muteTarget) }
+        ? { show: true as const, onMute: () => { requestPeerMicMute?.(muteTarget) } }
         : undefined
     return { ...core, showSoloViewerCopy: canUseElevatedRoomTools, guestMute: pipGuestMute }
   }, [
@@ -1659,6 +1810,7 @@ export function RoomPage({
     srtByPeer,
     participants,
     canUseElevatedRoomTools,
+    canRemoteMutePeers,
     requestPeerMicMute,
   ])
 
@@ -1796,6 +1948,57 @@ export function RoomPage({
 
             <div className="room-center">
               <div className="room-center__row">
+                {canManageRoomSpace ? (
+                  <div className="room-header-room-space" ref={roomSpaceHeaderRef}>
+                    <div className="room-header-room-space__pair">
+                      <button
+                        type="button"
+                        className={`room-header-room-space__main${roomSpaceSettingsOpen ? ' room-header-room-space__main--open' : ''}`}
+                        onClick={() => setRoomSpaceSettingsOpen((v) => !v)}
+                        title="Настройки комнаты"
+                        aria-expanded={roomSpaceSettingsOpen}
+                        aria-haspopup="dialog"
+                      >
+                        <FiRrIcon name="settings-sliders" className="room-header-room-space__fi" />
+                      </button>
+                      <button
+                        type="button"
+                        className={`room-header-room-space__chev${roomSpaceSettingsOpen ? ' room-header-room-space__chev--open' : ''}`}
+                        onClick={() => setRoomSpaceSettingsOpen((v) => !v)}
+                        title="Настройки комнаты"
+                        aria-label="Открыть настройки комнаты"
+                      >
+                        <RoomHeaderChevronGlyph open={roomSpaceSettingsOpen} />
+                      </button>
+                    </div>
+                    {roomSpaceSettingsOpen ? (
+                      <div className="room-header-room-space__dropdown">
+                        <RoomSpaceSettingsPopover
+                          embedded
+                          showInfo={showInfo}
+                          onToggleInfo={() => setShowInfo((v) => !v)}
+                          roomChatVisibility={roomChatVisibility}
+                          onRoomChatVisibilityChange={(v) => void handleRoomChatVisibilityChange(v)}
+                          canEditPolicies={canEditSpaceRoomPolicies}
+                          roomAccessMode={roomAccessMode}
+                          onRoomAccessModeChange={(v) => void handleRoomAccessModeChange(v)}
+                          onClose={() => setRoomSpaceSettingsOpen(false)}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {canManageRoomSpace ? (
+                  <button
+                    type="button"
+                    className="room-invite-btn room-header-manage-icon-btn"
+                    onClick={() => setRoomManageModalOpen(true)}
+                    title="Управление комнатой"
+                    aria-label="Управление комнатой"
+                  >
+                    <FiRrIcon name="member-list" />
+                  </button>
+                ) : null}
                 <div
                   className="room-header-participant-count"
                   title={`${rosterCount} ${ruParticipantsWord(rosterCount)}`}
@@ -2198,6 +2401,70 @@ export function RoomPage({
         )}
       </div>
 
+      {canManageRoomSpace ? (
+        <RoomManageModal
+          open={roomManageModalOpen}
+          onClose={() => setRoomManageModalOpen(false)}
+          participantCount={rosterCount}
+          chatMessageCount={chatMessagesVisibleCount}
+          rows={roomManageRows}
+          canMutePeers={canRemoteMutePeers}
+          canAssignRoomAdmins={canAssignRoomAdmins}
+          dbHostUserId={dbHostUserId}
+          onMutePeer={(peerId) => requestPeerMicMute?.(peerId)}
+          onAssignRoomAdmin={(uid) => void handleAssignRoomAdmin(uid)}
+          onRemoveRoomAdmin={(uid) => void handleRemoveRoomAdmin(uid)}
+          onRemoveFromRoom={(peerId, opts) => void handleRemoveFromRoom(peerId, opts)}
+        />
+      ) : null}
+
+      {isViewportMobile && canManageRoomSpace ? (
+        <>
+          <button
+            type="button"
+            className="room-mobile-room-space-fab"
+            title="Комната: настройки и управление"
+            aria-label="Комната: настройки и управление"
+            onClick={() => setMobileRoomSpaceSheetOpen(true)}
+          >
+            <FiRrIcon name="settings" />
+          </button>
+          {mobileRoomSpaceSheetOpen ? (
+            <>
+              <button
+                type="button"
+                className="room-mobile-room-space-sheet__backdrop"
+                aria-label="Закрыть"
+                onClick={() => setMobileRoomSpaceSheetOpen(false)}
+              />
+              <div className="room-mobile-room-space-sheet">
+                <RoomSpaceSettingsPopover
+                  embedded
+                  showInfo={showInfo}
+                  onToggleInfo={() => setShowInfo((v) => !v)}
+                  roomChatVisibility={roomChatVisibility}
+                  onRoomChatVisibilityChange={(v) => void handleRoomChatVisibilityChange(v)}
+                  canEditPolicies={canEditSpaceRoomPolicies}
+                  roomAccessMode={roomAccessMode}
+                  onRoomAccessModeChange={(v) => void handleRoomAccessModeChange(v)}
+                  onClose={() => setMobileRoomSpaceSheetOpen(false)}
+                />
+                <button
+                  type="button"
+                  className="room-mobile-room-space-sheet__manage"
+                  onClick={() => {
+                    setMobileRoomSpaceSheetOpen(false)
+                    setRoomManageModalOpen(true)
+                  }}
+                >
+                  Управление комнатой
+                </button>
+              </div>
+            </>
+          ) : null}
+        </>
+      ) : null}
+
       <ControlsBar
         isMuted={isMuted}
         isCamOff={isCamOff}
@@ -2263,10 +2530,12 @@ export function RoomPage({
         }
         chatFeatureHidden={!canSeeRoomChat}
         roomChatVisibility={roomChatVisibility}
-        onRoomChatVisibilityChange={isDbSpaceRoomHost ? handleRoomChatVisibilityChange : undefined}
-        showRoomChatPolicySettings={isDbSpaceRoomHost}
-        roomAccessMode={isDbSpaceRoomHost ? roomAccessMode : undefined}
-        onRoomAccessModeChange={isDbSpaceRoomHost ? handleRoomAccessModeChange : undefined}
+        onRoomChatVisibilityChange={canEditSpaceRoomPolicies ? handleRoomChatVisibilityChange : undefined}
+        showRoomChatPolicySettings={canEditSpaceRoomPolicies}
+        roomAccessMode={canEditSpaceRoomPolicies ? roomAccessMode : undefined}
+        onRoomAccessModeChange={canEditSpaceRoomPolicies ? handleRoomAccessModeChange : undefined}
+        hidePersonalVideoInfoToggle={canManageRoomSpace}
+        hideHostRoomPoliciesInChat={canManageRoomSpace}
         showAdminPanelLink={isPlatformAdminish}
         hideVideoLetterboxing={hideVideoLetterboxing}
         onHideVideoLetterboxingChange={setHideVideoLetterboxing}

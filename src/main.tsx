@@ -1,5 +1,6 @@
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
+import '@flaticon/flaticon-uicons/css/regular/rounded.css'
 import './index.css'
 import { App } from './App'
 import { AuthProvider } from './context/AuthContext'

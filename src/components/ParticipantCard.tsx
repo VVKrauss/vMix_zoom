@@ -30,7 +30,7 @@ interface Props {
   getPeerUplinkVideoQuality?: (peerId: string) => Promise<InboundVideoQuality | null>
   showSoloViewerCopy?: boolean
   guestMute?: { show: boolean; onMute: () => void }
-  guestKick?: { show: boolean; onKick: () => void; onBan: () => void }
+  guestKick?: { show: boolean; onKick: () => void; onBan?: () => void }
   onOpenDirectChat?: (participant: RemoteParticipant) => void
   currentUserId?: string | null
   /** Статус избранного/друзей для участника с authUserId */

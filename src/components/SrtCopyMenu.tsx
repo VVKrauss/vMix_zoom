@@ -20,7 +20,7 @@ type MenuOptions = {
   /** ПКМ: выключить микрофон этому участнику (шлётся на сигналинг). */
   guestMute?: { show: boolean; onMute: () => void }
   /** ПКМ: выгнать участника (только хост). */
-  guestKick?: { show: boolean; onKick: () => void; onBan: () => void }
+  guestKick?: { show: boolean; onKick: () => void; onBan?: () => void }
   /** Доп. пункты (личный чат, избранное и т.д.) — те же, что можно открыть с плитки. */
   extraMenuItems?: SrtCopyMenuExtraItem[]
 }
@@ -207,9 +207,9 @@ export function useSrtCopyMenu(
             : undefined
         }
         onGuestBan={
-          guestKick?.show
+          guestKick?.show && guestKick.onBan
             ? () => {
-                guestKick.onBan()
+                guestKick.onBan?.()
                 close()
               }
             : undefined
@@ -370,7 +370,7 @@ export function SrtCopySurface({
   enableLongPress?: boolean
   showSoloViewerCopy?: boolean
   guestMute?: { show: boolean; onMute: () => void }
-  guestKick?: { show: boolean; onKick: () => void; onBan: () => void }
+  guestKick?: { show: boolean; onKick: () => void; onBan?: () => void }
   extraMenuItems?: SrtCopyMenuExtraItem[]
   /** Кнопка «⋯» справа снизу — то же меню, что по ПКМ / long-press. */
   showTileOverflowButton?: boolean
