@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useUserPeek } from '../context/UserPeekContext'
 import type { ContactStatus } from '../lib/socialGraph'
 import type { RoomChatMessage } from '../types/roomComms'
 import { CHAT_MESSAGE_MAX_LEN } from '../types/roomComms'
@@ -44,6 +45,7 @@ export function RoomChatPanel({
   composerLocked = false,
   composerLockedHint = null,
 }: Props) {
+  const { openUserPeek } = useUserPeek()
   const [draft, setDraft] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
   const canSend = draft.trim().length > 0
@@ -104,6 +106,7 @@ export function RoomChatPanel({
               avatarByPeerId[message.peerId] ??
               (message.senderUserId ? avatarByUserId[message.senderUserId] ?? null : null)
             const showBrandFallback = !authorAvatarUrl && Boolean(message.senderUserId)
+            const peekUid = message.senderUserId?.trim() ?? ''
 
             return (
               <div
@@ -112,15 +115,39 @@ export function RoomChatPanel({
               >
                 <div className="room-chat-msg__meta">
                   <span className="room-chat-msg__author">
-                    <span className="room-chat-msg__avatar" aria-hidden>
-                      {authorAvatarUrl ? (
-                        <img src={authorAvatarUrl} alt="" className="room-chat-msg__avatar-img" />
-                      ) : showBrandFallback ? (
-                        <img src="/logo.png" alt="" className="room-chat-msg__avatar-img room-chat-msg__avatar-img--brand" />
-                      ) : (
-                        <span className="room-chat-msg__avatar-fallback" />
-                      )}
-                    </span>
+                    {peekUid ? (
+                      <button
+                        type="button"
+                        className="room-chat-msg__avatar room-chat-msg__avatar-btn"
+                        aria-label={`Профиль: ${message.name}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openUserPeek({
+                            userId: peekUid,
+                            displayName: message.name,
+                            avatarUrl: authorAvatarUrl,
+                          })
+                        }}
+                      >
+                        {authorAvatarUrl ? (
+                          <img src={authorAvatarUrl} alt="" className="room-chat-msg__avatar-img" />
+                        ) : showBrandFallback ? (
+                          <img src="/logo.png" alt="" className="room-chat-msg__avatar-img room-chat-msg__avatar-img--brand" />
+                        ) : (
+                          <span className="room-chat-msg__avatar-fallback" />
+                        )}
+                      </button>
+                    ) : (
+                      <span className="room-chat-msg__avatar" aria-hidden>
+                        {authorAvatarUrl ? (
+                          <img src={authorAvatarUrl} alt="" className="room-chat-msg__avatar-img" />
+                        ) : showBrandFallback ? (
+                          <img src="/logo.png" alt="" className="room-chat-msg__avatar-img room-chat-msg__avatar-img--brand" />
+                        ) : (
+                          <span className="room-chat-msg__avatar-fallback" />
+                        )}
+                      </span>
+                    )}
                     <span className="room-chat-msg__name-wrap">
                       <span className="room-chat-msg__name">{message.name}</span>
                       {statusLabel ? <span className="room-chat-msg__tag">{statusLabel}</span> : null}

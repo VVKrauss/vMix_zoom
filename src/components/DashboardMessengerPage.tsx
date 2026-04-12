@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useUserPeek } from '../context/UserPeekContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import {
@@ -45,6 +46,7 @@ import {
   BellIcon,
   BellOffIcon,
   ChatBubbleIcon,
+  ChevronLeftIcon,
   DashboardIcon,
   HomeIcon,
   LogOutIcon,
@@ -226,6 +228,7 @@ export function DashboardMessengerPage() {
   const targetTitle = searchParams.get('title')?.trim() ?? ''
   const navigate = useNavigate()
   const { signOut, user } = useAuth()
+  const { openUserPeek } = useUserPeek()
   const { profile } = useProfile()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const isMobileMessenger = useMediaQuery('(max-width: 900px)')
@@ -339,6 +342,17 @@ export function DashboardMessengerPage() {
           setLoading(false)
         }
         return
+      }
+
+      if (isMobileMessenger) {
+        const spBoot = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+        const hasChatBoot = Boolean(spBoot.get('chat')?.trim())
+        const hasWithBoot = Boolean(spBoot.get('with')?.trim())
+        if (!hasChatBoot && !hasWithBoot && spBoot.get('view') !== 'list') {
+          navigate('/dashboard/messenger?view=list', { replace: true })
+          if (active) setLoading(false)
+          return
+        }
       }
 
       const treeOnlyReturn =
@@ -1211,8 +1225,10 @@ export function DashboardMessengerPage() {
   const adjustMobileComposerHeight = useCallback(() => {
     const ta = composerTextareaRef.current
     if (!ta || !isMobileMessenger) return
+    const vv = window.visualViewport
+    const vh = vv?.height ?? window.innerHeight
     ta.style.height = 'auto'
-    ta.style.height = `${Math.min(ta.scrollHeight, Math.round(window.innerHeight * 0.34))}px`
+    ta.style.height = `${Math.min(ta.scrollHeight, Math.round(vh * 0.28))}px`
   }, [isMobileMessenger])
 
   useLayoutEffect(() => {
@@ -1297,13 +1313,28 @@ export function DashboardMessengerPage() {
               <aside className="dashboard-messenger__list" aria-label="Список диалогов">
                 {isMobileMessenger ? (
                   <header className="dashboard-messenger__list-head">
-                    <div className="dashboard-messenger__list-head-user" aria-hidden>
+                    <button
+                      type="button"
+                      className="dashboard-messenger__list-head-user"
+                      aria-label="Мой профиль"
+                      title="Мой профиль"
+                      disabled={!user?.id}
+                      onClick={() => {
+                        if (user?.id) {
+                          openUserPeek({
+                            userId: user.id,
+                            displayName: profile?.display_name ?? user.email ?? 'Я',
+                            avatarUrl: profile?.avatar_url ?? null,
+                          })
+                        }
+                      }}
+                    >
                       {profile?.avatar_url ? (
                         <img src={profile.avatar_url} alt="" />
                       ) : (
                         <span>{conversationInitial(profile?.display_name || user?.email || 'Я')}</span>
                       )}
-                    </div>
+                    </button>
                     <h1 className="dashboard-messenger__list-head-title">Мессенджер</h1>
                     <div className="dashboard-messenger__list-head-actions">
                       <button
@@ -1338,6 +1369,7 @@ export function DashboardMessengerPage() {
                   ) : (
                     sortedItems.map((item) => {
                       const avatarUrl = item.avatarUrl ?? (!item.otherUserId ? profile?.avatar_url ?? null : null)
+                      const rowPeekUserId = item.otherUserId?.trim() || (!item.otherUserId && user?.id ? user.id : '')
                       return (
                         <Link
                           key={item.id}
@@ -1352,13 +1384,29 @@ export function DashboardMessengerPage() {
                           }`}
                         >
                           <div className="dashboard-messenger__row-main">
-                            <div className="dashboard-messenger__row-avatar" aria-hidden>
+                            <button
+                              type="button"
+                              className="dashboard-messenger__row-avatar"
+                              aria-hidden
+                              tabIndex={-1}
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                if (rowPeekUserId) {
+                                  openUserPeek({
+                                    userId: rowPeekUserId,
+                                    displayName: item.title,
+                                    avatarUrl,
+                                  })
+                                }
+                              }}
+                            >
                               {avatarUrl ? (
                                 <img src={avatarUrl ?? undefined} alt="" />
                               ) : (
                                 <span>{conversationInitial(item.title)}</span>
                               )}
-                            </div>
+                            </button>
                             <div className="dashboard-messenger__row-content">
                               <div className="dashboard-messenger__row-titleline">
                                 <div className="dashboard-messenger__row-title">{item.title}</div>
@@ -1399,49 +1447,146 @@ export function DashboardMessengerPage() {
                   <>
                     <div className="dashboard-messenger__thread-head">
                       {isMobileMessenger ? (
-                        <button
-                          type="button"
-                          className="dashboard-messenger__back-btn"
-                          onClick={() => navigate('/dashboard/messenger?view=list', { replace: true })}
-                        >
-                          ← Назад к чатам
-                          {totalOtherUnread > 0 ? (
-                            <span className="dashboard-messenger__back-badge">
-                              {totalOtherUnread > 99 ? '99+' : totalOtherUnread}
-                            </span>
-                          ) : null}
-                        </button>
-                      ) : null}
-                      <div className="dashboard-messenger__thread-head-main">
-                        <div className="dashboard-messenger__thread-avatar" aria-hidden>
-                          {activeAvatarUrl ? (
-                            <img src={activeAvatarUrl ?? undefined} alt="" />
-                          ) : (
-                            <span>{conversationInitial(threadHeadConversation.title)}</span>
-                          )}
-                        </div>
-                        <div>
-                          <div className="dashboard-messenger__thread-titleline">
-                            <h3 className="dashboard-section__subtitle">{threadHeadConversation.title}</h3>
-                            {threadHeadConversation.unreadCount > 0 ? (
-                              <span className="dashboard-messenger__row-badge">
-                                {threadHeadConversation.unreadCount > 99
-                                  ? '99+'
-                                  : threadHeadConversation.unreadCount}
+                        <header className="dashboard-messenger__list-head">
+                          <div className="dashboard-messenger__thread-head-back-wrap">
+                            <button
+                              type="button"
+                              className="dashboard-messenger__list-head-btn"
+                              aria-label="К списку чатов"
+                              title="К списку чатов"
+                              onClick={() => navigate('/dashboard/messenger?view=list', { replace: true })}
+                            >
+                              <ChevronLeftIcon />
+                            </button>
+                            {totalOtherUnread > 0 ? (
+                              <span className="dashboard-messenger__back-badge dashboard-messenger__back-badge--thread">
+                                {totalOtherUnread > 99 ? '99+' : totalOtherUnread}
                               </span>
                             ) : null}
                           </div>
-                          <div className="dashboard-messenger__thread-meta">
-                            <span>{threadHeadConversation.messageCount} сообщ.</span>
-                            <span>
-                              Последняя активность:{' '}
-                              {formatDateTime(
-                                threadHeadConversation.lastMessageAt ?? threadHeadConversation.createdAt,
+                          <div className="dashboard-messenger__thread-head-center">
+                            <button
+                              type="button"
+                              className="dashboard-messenger__thread-head-center-avatar"
+                              aria-label="Профиль собеседника"
+                              onClick={() => {
+                                const oid = threadHeadConversation.otherUserId?.trim()
+                                if (oid) {
+                                  openUserPeek({
+                                    userId: oid,
+                                    displayName: threadHeadConversation.title,
+                                    avatarUrl: activeAvatarUrl,
+                                  })
+                                } else if (user?.id) {
+                                  openUserPeek({
+                                    userId: user.id,
+                                    displayName: profile?.display_name ?? threadHeadConversation.title,
+                                    avatarUrl: profile?.avatar_url ?? null,
+                                  })
+                                }
+                              }}
+                            >
+                              {activeAvatarUrl ? (
+                                <img src={activeAvatarUrl ?? undefined} alt="" />
+                              ) : (
+                                <span>{conversationInitial(threadHeadConversation.title)}</span>
                               )}
-                            </span>
+                            </button>
+                            <div className="dashboard-messenger__thread-head-center-text">
+                              <h3 className="dashboard-messenger__thread-head-center-title">
+                                {threadHeadConversation.title}
+                              </h3>
+                              <div className="dashboard-messenger__thread-head-center-meta">
+                                {formatMessengerListRowTime(
+                                  threadHeadConversation.lastMessageAt ?? threadHeadConversation.createdAt,
+                                )}
+                                {threadHeadConversation.unreadCount > 0 ? (
+                                  <>
+                                    {' · '}
+                                    <span className="dashboard-messenger__row-badge dashboard-messenger__row-badge--inline">
+                                      {threadHeadConversation.unreadCount > 99
+                                        ? '99+'
+                                        : threadHeadConversation.unreadCount}
+                                    </span>
+                                  </>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="dashboard-messenger__list-head-actions">
+                            <button
+                              type="button"
+                              className="dashboard-messenger__list-head-btn dashboard-messenger__list-head-btn--primary"
+                              onClick={() => setCreateRoomModalOpen(true)}
+                              aria-label="Новая комната"
+                              title="Новая комната"
+                            >
+                              <PlusIcon />
+                            </button>
+                            <button
+                              type="button"
+                              className={`dashboard-messenger__list-head-btn${messengerMenuOpen ? ' dashboard-messenger__list-head-btn--open' : ''}`}
+                              onClick={() => setMessengerMenuOpen((v) => !v)}
+                              aria-label={messengerMenuOpen ? 'Закрыть меню' : 'Меню'}
+                              title="Меню"
+                              aria-expanded={messengerMenuOpen}
+                            >
+                              <MenuBurgerIcon />
+                            </button>
+                          </div>
+                        </header>
+                      ) : (
+                        <div className="dashboard-messenger__thread-head-main">
+                          <button
+                            type="button"
+                            className="dashboard-messenger__thread-avatar"
+                            aria-label="Профиль в диалоге"
+                            onClick={() => {
+                              const oid = threadHeadConversation.otherUserId?.trim()
+                              if (oid) {
+                                openUserPeek({
+                                  userId: oid,
+                                  displayName: threadHeadConversation.title,
+                                  avatarUrl: activeAvatarUrl,
+                                })
+                              } else if (user?.id) {
+                                openUserPeek({
+                                  userId: user.id,
+                                  displayName: profile?.display_name ?? threadHeadConversation.title,
+                                  avatarUrl: profile?.avatar_url ?? null,
+                                })
+                              }
+                            }}
+                          >
+                            {activeAvatarUrl ? (
+                              <img src={activeAvatarUrl ?? undefined} alt="" />
+                            ) : (
+                              <span>{conversationInitial(threadHeadConversation.title)}</span>
+                            )}
+                          </button>
+                          <div>
+                            <div className="dashboard-messenger__thread-titleline">
+                              <h3 className="dashboard-section__subtitle">{threadHeadConversation.title}</h3>
+                              {threadHeadConversation.unreadCount > 0 ? (
+                                <span className="dashboard-messenger__row-badge">
+                                  {threadHeadConversation.unreadCount > 99
+                                    ? '99+'
+                                    : threadHeadConversation.unreadCount}
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="dashboard-messenger__thread-meta">
+                              <span>{threadHeadConversation.messageCount} сообщ.</span>
+                              <span>
+                                Последняя активность:{' '}
+                                {formatDateTime(
+                                  threadHeadConversation.lastMessageAt ?? threadHeadConversation.createdAt,
+                                )}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      )}
                     </div>
 
                     <div className="dashboard-messenger__thread-main">
@@ -1717,7 +1862,7 @@ export function DashboardMessengerPage() {
             <nav
               className={`dashboard-messenger-quick-menu${
                 messengerMenuOpen ? ' dashboard-messenger-quick-menu--open' : ''
-              } dashboard-messenger-quick-menu--${showListPane ? 'anchor-head' : 'anchor-fab'}`}
+              } dashboard-messenger-quick-menu--anchor-head`}
               aria-hidden={!messengerMenuOpen}
               aria-label="Навигация"
             >
@@ -1811,17 +1956,6 @@ export function DashboardMessengerPage() {
                 </button>
               </div>
             </nav>
-            {!showListPane ? (
-              <button
-                type="button"
-                className={`dashboard-messenger-fab${messengerMenuOpen ? ' dashboard-messenger-fab--open' : ''}`}
-                onClick={() => setMessengerMenuOpen((v) => !v)}
-                aria-label={messengerMenuOpen ? 'Закрыть меню' : 'Открыть меню'}
-                aria-expanded={messengerMenuOpen}
-              >
-                <MenuBurgerIcon />
-              </button>
-            ) : null}
           </>
         ) : null}
       </section>

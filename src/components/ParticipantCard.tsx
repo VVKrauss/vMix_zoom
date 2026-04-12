@@ -137,7 +137,11 @@ export function ParticipantCard({
           />
           {!hasVideo && (
             <div className="cam-off-avatar">
-              <ParticipantTileIdle name={participant.name} avatarUrl={participant.avatarUrl} />
+              <ParticipantTileIdle
+                name={participant.name}
+                avatarUrl={participant.avatarUrl}
+                peekUserId={participant.authUserId?.trim() || undefined}
+              />
             </div>
           )}
           <audio ref={audioRef} autoPlay playsInline />

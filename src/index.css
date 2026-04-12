@@ -1428,6 +1428,16 @@ html.app-root--room #root {
   border-radius: 50%;
   object-fit: cover;
   display: block;
+  cursor: pointer;
+}
+
+.header-dashboard-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
 }
 
 .header-dashboard-btn:hover,
@@ -1966,9 +1976,9 @@ html.app-root--room #root {
    * .dashboard-messenger--fill оставляем вертикальный flex и явную высоту viewport.
    */
   .dashboard-page:has(.dashboard-messenger--fill) {
-    height: 100dvh;
-    min-height: 100dvh;
-    max-height: 100dvh;
+    height: var(--vvh, 100dvh);
+    min-height: var(--vvh, 100dvh);
+    max-height: var(--vvh, 100dvh);
     box-sizing: border-box;
     overflow: hidden;
   }
@@ -2858,6 +2868,26 @@ button.admin-stat-card--interactive:disabled {
 .dashboard-chat-row__last-author-avatar--placeholder {
   background: rgba(255,255,255,.16);
 }
+
+button.dashboard-chat-row__last-author-avatar--btn {
+  appearance: none;
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.dashboard-chat-row__last-author-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 .dashboard-chat-row__last-author-name {
   color: var(--text-dim);
   font-size: 11px;
@@ -3072,6 +3102,14 @@ button.admin-stat-card--interactive:disabled {
   object-fit: cover;
 }
 
+button.dashboard-messenger__row-avatar {
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
 .dashboard-messenger__row:hover,
 .dashboard-messenger__row--active {
   border-color: rgba(159,214,255,.3);
@@ -3247,6 +3285,11 @@ button.admin-stat-card--interactive:disabled {
   font-size: 14px;
   font-weight: 700;
   flex-shrink: 0;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  appearance: none;
 }
 .dashboard-messenger__thread-avatar img {
   width: 100%;
@@ -3752,6 +3795,9 @@ html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
   box-sizing: border-box;
   overflow: hidden;
   max-width: 100%;
+  /* iOS: visualViewport.offsetTop — сдвиг «виртуального» viewport при фокусе в поле ввода */
+  transform: translate3d(0, calc(-1 * var(--vv-offset-top, 0px)), 0);
+  will-change: transform;
 }
 
 .dashboard-page.dashboard-page--messenger-chromeless .dashboard-topbar,
@@ -3860,6 +3906,15 @@ html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
   font-size: 14px;
   font-weight: 700;
   border: 1px solid var(--border);
+  appearance: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.dashboard-messenger__list-head-user:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .dashboard-messenger__list-head-user img {
@@ -3951,10 +4006,104 @@ html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
   padding: 6px max(6px, env(safe-area-inset-left, 0px)) 6px max(6px, env(safe-area-inset-right, 0px));
 }
 
-/* Без отступа у всей сетки (иначе видна полоса фона --bg). Safe area и место под FAB — в шапке треда / у списка. */
+/* Шапка треда на мобилке: единая панель как у списка (без отступа под FAB). */
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__thread-head {
-  padding-top: calc(10px + var(--messenger-mobile-top-inset));
-  padding-right: calc(14px + 52px + 10px + env(safe-area-inset-right, 0px));
+  padding: 0;
+  border-bottom: none;
+}
+
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__thread-head .dashboard-messenger__list-head {
+  width: 100%;
+}
+
+.dashboard-messenger__thread-head-center {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  justify-content: center;
+  text-align: center;
+}
+
+.dashboard-messenger__thread-head-center-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.dashboard-messenger__thread-head-center-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+button.dashboard-messenger__thread-head-center-avatar {
+  appearance: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.dashboard-messenger__thread-head-back-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+}
+
+.dashboard-messenger__back-badge--thread {
+  position: absolute;
+  top: 0;
+  right: 0;
+  transform: translate(20%, -18%);
+  pointer-events: none;
+}
+
+.dashboard-messenger__row-badge--inline {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 2px;
+}
+
+.dashboard-messenger__thread-head-center-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+}
+
+.dashboard-messenger__thread-head-center-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-messenger__thread-head-center-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__composer {
@@ -4403,6 +4552,11 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   justify-content: center;
   color: var(--text);
   font-weight: 700;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  appearance: none;
+  font-family: inherit;
 }
 
 .dashboard-friend-card__avatar img {
@@ -4832,6 +4986,11 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   display: flex;
   align-items: center;
   justify-content: center;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  appearance: none;
+  font: inherit;
 }
 
 .dashboard-profile-summary__avatar img {
@@ -8768,6 +8927,113 @@ html[data-theme="light"] .card-name {
   overflow: hidden;
 }
 
+.confirm-dialog.user-peek-modal {
+  max-width: 380px;
+  width: calc(100vw - 32px);
+  padding: 22px 20px 18px;
+  text-align: center;
+}
+
+.user-peek-modal__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.user-peek-modal__avatar-wrap {
+  width: 88px;
+  height: 88px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.user-peek-modal__avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.user-peek-modal__avatar-fallback {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.user-peek-modal__name {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.user-peek-modal__slug {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.user-peek-modal__active {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--text-dim);
+}
+
+.user-peek-modal__hint {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.user-peek-modal__err {
+  margin: 0 0 10px;
+  text-align: center;
+}
+
+.user-peek-modal__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.user-peek-modal__actions .dashboard-topbar__action {
+  width: 100%;
+  justify-content: center;
+}
+
+button.participant-tile-idle--peek {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: center;
+}
+
+button.participant-tile-idle--peek:focus-visible {
+  outline: 2px solid rgba(159, 214, 255, 0.45);
+  outline-offset: 2px;
+}
+
 @keyframes confirm-dialog-in {
   from {
     opacity: 0;
@@ -9212,6 +9478,15 @@ html[data-theme="light"] .room-chat-msg--own {
   justify-content: center;
   background: color-mix(in srgb, var(--text) 8%, transparent);
   border: 1px solid var(--border);
+}
+
+button.room-chat-msg__avatar-btn {
+  appearance: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  vertical-align: middle;
 }
 
 .room-chat-msg__avatar-img {

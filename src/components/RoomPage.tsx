@@ -7,7 +7,7 @@ import { ControlsBar } from './ControlsBar'
 import { ParticipantCard } from './ParticipantCard'
 import { DraggablePip } from './DraggablePip'
 import { AudioMeter } from './AudioMeter'
-  import {
+import {
     MicOffIcon,
     DashboardIcon,
     InviteIcon,
@@ -18,6 +18,7 @@ import { AudioMeter } from './AudioMeter'
     FullscreenExitIcon,
   } from './icons'
 import { useAuth } from '../context/AuthContext'
+import { useUserPeek } from '../context/UserPeekContext'
 import { shouldClosePopoverOnOutsidePointer } from '../utils/popoverOutsideClick'
 import { useAudioOutputs } from '../hooks/useAudioOutputs'
 import { useDevices } from '../hooks/useDevices'
@@ -790,6 +791,7 @@ export function RoomPage({
 
   const avatarUrl = user?.user_metadata?.avatar_url as string | undefined
   const messengerUnreadCount = useMessengerUnreadCount()
+  const { openUserPeek } = useUserPeek()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
 
@@ -1245,6 +1247,7 @@ export function RoomPage({
       srtListenPort={localSrt?.listenPort}
       reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
       mirrorLocalPreview={mirrorLocalCamera}
+      peekUserId={user?.id ?? null}
       showSoloViewerCopy={canUseElevatedRoomTools}
     />
   )
@@ -1890,10 +1893,39 @@ export function RoomPage({
                     title="Меню пользователя"
                     onClick={() => setUserMenuOpen((v) => !v)}
                   >
-                    {avatarUrl
-                      ? <img src={avatarUrl} alt="" className="header-dashboard-avatar" />
-                      : <DashboardIcon />
-                    }
+                    {avatarUrl ? (
+                      <img
+                        src={avatarUrl}
+                        alt=""
+                        className="header-dashboard-avatar"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (user?.id) {
+                            openUserPeek({
+                              userId: user.id,
+                              displayName: name,
+                              avatarUrl: avatarUrl ?? null,
+                            })
+                          }
+                        }}
+                      />
+                    ) : (
+                      <span
+                        className="header-dashboard-avatar-fallback"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (user?.id) {
+                            openUserPeek({
+                              userId: user.id,
+                              displayName: name,
+                              avatarUrl: null,
+                            })
+                          }
+                        }}
+                      >
+                        <DashboardIcon />
+                      </span>
+                    )}
                   </button>
 
                   {userMenuOpen && (
@@ -2423,6 +2455,7 @@ function LocalTile({
   reactionBurst,
   mirrorLocalPreview,
   avatarUrl,
+  peekUserId,
   showSoloViewerCopy = true,
 }: {
   stream: MediaStream | null
@@ -2430,6 +2463,7 @@ function LocalTile({
   isMuted: boolean
   isCamOff: boolean
   avatarUrl?: string | null
+  peekUserId?: string | null
   videoStyle: React.CSSProperties
   showInfo?: boolean
   showMeter?: boolean
@@ -2466,7 +2500,7 @@ function LocalTile({
       />
       {showAvatar && (
         <div className="cam-off-avatar">
-          <ParticipantTileIdle name={name} avatarUrl={avatarUrl} />
+          <ParticipantTileIdle name={name} avatarUrl={avatarUrl} peekUserId={peekUserId ?? undefined} />
         </div>
       )}
       {showMeter && !isMuted && <AudioMeter stream={stream} stereo />}

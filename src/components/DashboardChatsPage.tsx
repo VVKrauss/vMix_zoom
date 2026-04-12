@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useUserPeek } from '../context/UserPeekContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import {
   type RoomChatConversationSummary,
@@ -76,6 +77,7 @@ function sortChatItems(items: RoomChatConversationSummary[], mode: ChatSortMode)
 
 export function DashboardChatsPage() {
   const { signOut, user } = useAuth()
+  const { openUserPeek } = useUserPeek()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -223,7 +225,35 @@ export function DashboardChatsPage() {
                     </div>
                     {lastSenders[item.id] ? (
                       <div className="dashboard-chat-row__last-author">
-                        {lastSenders[item.id].avatarUrl ? (
+                        {lastSenders[item.id].senderUserId?.trim() ? (
+                          <button
+                            type="button"
+                            className="dashboard-chat-row__last-author-avatar dashboard-chat-row__last-author-avatar--btn"
+                            aria-label={`Профиль: ${lastSenders[item.id].senderNameSnapshot}`}
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              openUserPeek({
+                                userId: lastSenders[item.id].senderUserId!.trim(),
+                                displayName: lastSenders[item.id].senderNameSnapshot,
+                                avatarUrl: lastSenders[item.id].avatarUrl,
+                              })
+                            }}
+                          >
+                            {lastSenders[item.id].avatarUrl ? (
+                              <img
+                                className="dashboard-chat-row__last-author-avatar-img"
+                                src={lastSenders[item.id].avatarUrl ?? undefined}
+                                alt=""
+                              />
+                            ) : (
+                              <span
+                                className="dashboard-chat-row__last-author-avatar dashboard-chat-row__last-author-avatar--placeholder"
+                                aria-hidden
+                              />
+                            )}
+                          </button>
+                        ) : lastSenders[item.id].avatarUrl ? (
                           <img
                             className="dashboard-chat-row__last-author-avatar"
                             src={lastSenders[item.id].avatarUrl ?? undefined}

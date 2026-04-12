@@ -4,6 +4,7 @@ import './index.css'
 import { App } from './App'
 import { AuthProvider } from './context/AuthContext'
 import { MessengerUnreadProvider } from './context/MessengerUnreadContext'
+import { UserPeekProvider } from './context/UserPeekContext'
 import { applyTheme, getStoredTheme } from './config/themeStorage'
 
 applyTheme(getStoredTheme())
@@ -17,7 +18,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   >
     <AuthProvider>
       <MessengerUnreadProvider>
-        <App />
+        <UserPeekProvider>
+          <App />
+        </UserPeekProvider>
       </MessengerUnreadProvider>
     </AuthProvider>
   </BrowserRouter>,

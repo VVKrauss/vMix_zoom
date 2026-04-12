@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { useUserPeek } from '../context/UserPeekContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useProfile } from '../hooks/useProfile'
 import { supabase } from '../lib/supabase'
@@ -43,6 +44,7 @@ function globalRoleBadgeClass(code: string): string {
 
 export function DashboardPage() {
   const { signOut, user } = useAuth()
+  const { openUserPeek } = useUserPeek()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const { profile, plan, loading, saving, uploadingAvatar, error, saveProfile, uploadAvatar, removeAvatar } =
     useProfile()
@@ -209,13 +211,26 @@ export function DashboardPage() {
         <section className="dashboard-section">
           <h2 className="dashboard-section__title">Профиль</h2>
           <div className="dashboard-profile-summary">
-            <div className="dashboard-profile-summary__avatar">
+            <button
+              type="button"
+              className="dashboard-profile-summary__avatar"
+              aria-label="Просмотр профиля"
+              onClick={() => {
+                if (user?.id) {
+                  openUserPeek({
+                    userId: user.id,
+                    displayName: profile.display_name,
+                    avatarUrl: profile.avatar_url,
+                  })
+                }
+              }}
+            >
               {profile.avatar_url ? (
                 <img src={profile.avatar_url} alt={profile.display_name} />
               ) : (
                 <span className="dashboard-profile-summary__initials">{initials}</span>
               )}
-            </div>
+            </button>
             <div className="dashboard-profile-summary__text">
               <span className="dashboard-profile-summary__name">{profile.display_name}</span>
               <span className="dashboard-profile-summary__email" title={profile.email ?? undefined}>

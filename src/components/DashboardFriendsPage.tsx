@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { useUserPeek } from '../context/UserPeekContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import {
   type ContactCard,
@@ -37,6 +38,7 @@ function statusLabel(item: ContactCard): string {
 
 export function DashboardFriendsPage() {
   const { signOut, user } = useAuth()
+  const { openUserPeek } = useUserPeek()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -223,13 +225,24 @@ export function DashboardFriendsPage() {
                   return (
                     <article key={hit.id} className="dashboard-friend-card">
                       <div className="dashboard-friend-card__main">
-                        <div className="dashboard-friend-card__avatar">
+                        <button
+                          type="button"
+                          className="dashboard-friend-card__avatar"
+                          aria-label={`Профиль: ${hit.displayName}`}
+                          onClick={() =>
+                            openUserPeek({
+                              userId: hit.id,
+                              displayName: hit.displayName,
+                              avatarUrl: hit.avatarUrl,
+                            })
+                          }
+                        >
                           {hit.avatarUrl ? (
                             <img src={hit.avatarUrl} alt={hit.displayName} />
                           ) : (
                             <span>{hit.displayName.charAt(0).toUpperCase()}</span>
                           )}
-                        </div>
+                        </button>
                         <div className="dashboard-friend-card__text">
                           <div className="dashboard-friend-card__titleline">
                             <span className="dashboard-friend-card__name">{hit.displayName}</span>
@@ -287,13 +300,24 @@ export function DashboardFriendsPage() {
             {filtered.map((item) => (
               <article key={item.targetUserId} className="dashboard-friend-card">
                 <div className="dashboard-friend-card__main">
-                  <div className="dashboard-friend-card__avatar">
+                  <button
+                    type="button"
+                    className="dashboard-friend-card__avatar"
+                    aria-label={`Профиль: ${item.displayName}`}
+                    onClick={() =>
+                      openUserPeek({
+                        userId: item.targetUserId,
+                        displayName: item.displayName,
+                        avatarUrl: item.avatarUrl,
+                      })
+                    }
+                  >
                     {item.avatarUrl ? (
                       <img src={item.avatarUrl} alt={item.displayName} />
                     ) : (
                       <span>{item.displayName.charAt(0).toUpperCase()}</span>
                     )}
-                  </div>
+                  </button>
                   <div className="dashboard-friend-card__text">
                     <div className="dashboard-friend-card__titleline">
                       <span className="dashboard-friend-card__name">{item.displayName}</span>
