@@ -4380,7 +4380,8 @@ button.dashboard-messenger__thread-head-center-avatar {
   white-space: nowrap;
 }
 
-.dashboard-messenger--mobile-chromeless .dashboard-messenger__composer {
+/* Портал на document.body — не режется overflow у fixed-страницы мессенджера (iOS). */
+.dashboard-messenger__composer.dashboard-messenger__composer--viewport-portal {
   position: fixed;
   left: 0;
   right: 0;
@@ -4402,14 +4403,14 @@ button.dashboard-messenger__thread-head-center-avatar {
   padding-bottom: calc(108px + env(safe-area-inset-bottom, 0px) + var(--messenger-keyboard-bottom, 0px));
 }
 
-.dashboard-messenger--mobile-chromeless .dashboard-messenger__composer-main {
+.dashboard-messenger__composer--viewport-portal .dashboard-messenger__composer-main {
   flex-direction: column;
   align-items: stretch;
   min-width: 0;
   max-width: 100%;
 }
 
-.dashboard-messenger--mobile-chromeless .dashboard-messenger__composer-side {
+.dashboard-messenger__composer--viewport-portal .dashboard-messenger__composer-side {
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
@@ -4420,11 +4421,11 @@ button.dashboard-messenger__thread-head-center-avatar {
   box-sizing: border-box;
 }
 
-.dashboard-messenger--mobile-chromeless .dashboard-messenger__composer-tools {
+.dashboard-messenger__composer--viewport-portal .dashboard-messenger__composer-tools {
   flex-shrink: 0;
 }
 
-.dashboard-messenger--mobile-chromeless .dashboard-messenger__send-btn {
+.dashboard-messenger__composer--viewport-portal .dashboard-messenger__send-btn {
   flex: 1 1 auto;
   min-width: 0;
   width: auto;
@@ -4432,7 +4433,7 @@ button.dashboard-messenger__thread-head-center-avatar {
   box-sizing: border-box;
 }
 
-.dashboard-messenger--mobile-chromeless .dashboard-messenger__input {
+.dashboard-messenger__composer--viewport-portal .dashboard-messenger__input {
   min-height: calc(1.35em + 20px);
   max-height: min(34vh, 220px);
   padding: 8px 10px;
@@ -4967,7 +4968,7 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
     padding: 14px 14px calc(14px + env(safe-area-inset-bottom, 0px));
   }
 
-  .dashboard-messenger--mobile-chromeless .dashboard-messenger__composer {
+  .dashboard-messenger__composer.dashboard-messenger__composer--viewport-portal {
     gap: 6px;
     box-sizing: border-box;
     width: 100%;
@@ -4978,7 +4979,7 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
     align-items: stretch;
   }
 
-  .dashboard-messenger--mobile-chromeless .dashboard-messenger__input {
+  .dashboard-messenger__composer--viewport-portal .dashboard-messenger__input {
     width: 100%;
     max-width: none;
     box-sizing: border-box;

@@ -1293,6 +1293,130 @@ export function DashboardMessengerPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [messengerMenuOpen, closeMessengerMenu])
 
+  const renderThreadComposer = () => (
+    <div
+      className={
+        isMobileMessenger
+          ? 'dashboard-messenger__composer dashboard-messenger__composer--viewport-portal'
+          : 'dashboard-messenger__composer'
+      }
+      role="region"
+      aria-label="Новое сообщение"
+    >
+      {replyTo && !editingMessageId ? (
+        <div className="dashboard-messenger__composer-reply">
+          <div className="dashboard-messenger__composer-reply-text">
+            <span className="dashboard-messenger__composer-reply-label">Ответ</span>{' '}
+            <strong>{replyTo.senderNameSnapshot}</strong>:{' '}
+            {replyTo.kind === 'image' ? replyTo.body.trim() || '📷 Фото' : replyTo.body.trim().slice(0, 120)}
+          </div>
+          <button
+            type="button"
+            className="dashboard-messenger__composer-reply-cancel"
+            aria-label="Отменить ответ"
+            onClick={() => setReplyTo(null)}
+          >
+            ✕
+          </button>
+        </div>
+      ) : null}
+      {editingMessageId ? (
+        <div className="dashboard-messenger__composer-edit-bar">
+          <span>Редактирование сообщения</span>
+          <button
+            type="button"
+            className="dashboard-messenger__composer-edit-cancel"
+            onClick={() => {
+              setEditingMessageId(null)
+              setDraft('')
+            }}
+          >
+            Отмена
+          </button>
+        </div>
+      ) : null}
+      <div className="dashboard-messenger__composer-main">
+        <textarea
+          ref={composerTextareaRef}
+          className="dashboard-messenger__input"
+          rows={isMobileMessenger ? 1 : 3}
+          placeholder={editingMessageId ? 'Исправьте текст…' : 'Напиши сообщение…'}
+          value={draft}
+          disabled={threadLoading || photoUploading}
+          onChange={(e) => {
+            setDraft(e.target.value)
+            if (isMobileMessenger) queueMicrotask(() => adjustMobileComposerHeight())
+          }}
+          onPointerDown={() => unlockAudioContext()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              void sendMessage()
+            }
+          }}
+        />
+        <div className="dashboard-messenger__composer-side">
+          <div className="dashboard-messenger__composer-tools" ref={composerEmojiWrapRef}>
+            {composerEmojiOpen && !editingMessageId ? (
+              <div className="dashboard-messenger__composer-emoji-pop">
+                <ReactionEmojiPopover
+                  title="Эмодзи"
+                  emojis={MESSENGER_COMPOSER_EMOJIS}
+                  onClose={() => setComposerEmojiOpen(false)}
+                  onPick={(em) => insertEmojiInDraft(em)}
+                />
+              </div>
+            ) : null}
+            <button
+              type="button"
+              className="dashboard-messenger__composer-icon-btn"
+              title="Эмодзи"
+              aria-label="Вставить эмодзи"
+              disabled={threadLoading || Boolean(editingMessageId)}
+              onClick={() => setComposerEmojiOpen((v) => !v)}
+            >
+              😀
+            </button>
+            <button
+              type="button"
+              className="dashboard-messenger__composer-icon-btn"
+              title="Фото"
+              aria-label="Прикрепить фото"
+              disabled={threadLoading || photoUploading || Boolean(editingMessageId)}
+              onClick={() => photoInputRef.current?.click()}
+            >
+              <AttachmentIcon />
+            </button>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="dashboard-messenger__photo-input"
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                e.target.value = ''
+                if (f) void sendPhotoFile(f)
+              }}
+            />
+          </div>
+          <button
+            type="button"
+            className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
+            disabled={!draft.trim() || sending || threadLoading || photoUploading}
+            onClick={() => void sendMessage()}
+          >
+            {editingMessageId ? 'Сохранить' : 'Отправить'}
+          </button>
+        </div>
+      </div>
+      {photoUploading ? (
+        <p className="dashboard-messenger__photo-status" role="status">
+          Загрузка фото…
+        </p>
+      ) : null}
+    </div>
+  )
+
   return (
     <DashboardShell
       active="messenger"
@@ -1325,6 +1449,7 @@ export function DashboardMessengerPage() {
         {error ? <p className="join-error">{error}</p> : null}
 
         {!error ? (
+          <>
           <div className="dashboard-messenger__layout">
             {showListPane ? (
               <aside className="dashboard-messenger__list" aria-label="Список диалогов">
@@ -1707,125 +1832,7 @@ export function DashboardMessengerPage() {
                         </div>
                       </div>
 
-                      <div className="dashboard-messenger__composer">
-                        {replyTo && !editingMessageId ? (
-                          <div className="dashboard-messenger__composer-reply">
-                            <div className="dashboard-messenger__composer-reply-text">
-                              <span className="dashboard-messenger__composer-reply-label">Ответ</span>{' '}
-                              <strong>{replyTo.senderNameSnapshot}</strong>:{' '}
-                              {replyTo.kind === 'image'
-                                ? replyTo.body.trim() || '📷 Фото'
-                                : replyTo.body.trim().slice(0, 120)}
-                            </div>
-                            <button
-                              type="button"
-                              className="dashboard-messenger__composer-reply-cancel"
-                              aria-label="Отменить ответ"
-                              onClick={() => setReplyTo(null)}
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ) : null}
-                        {editingMessageId ? (
-                          <div className="dashboard-messenger__composer-edit-bar">
-                            <span>Редактирование сообщения</span>
-                            <button
-                              type="button"
-                              className="dashboard-messenger__composer-edit-cancel"
-                              onClick={() => {
-                                setEditingMessageId(null)
-                                setDraft('')
-                              }}
-                            >
-                              Отмена
-                            </button>
-                          </div>
-                        ) : null}
-                        <div className="dashboard-messenger__composer-main">
-                          <textarea
-                            ref={composerTextareaRef}
-                            className="dashboard-messenger__input"
-                            rows={isMobileMessenger ? 1 : 3}
-                            placeholder={
-                              editingMessageId ? 'Исправьте текст…' : 'Напиши сообщение…'
-                            }
-                            value={draft}
-                            disabled={threadLoading || photoUploading}
-                            onChange={(e) => {
-                              setDraft(e.target.value)
-                              if (isMobileMessenger) queueMicrotask(() => adjustMobileComposerHeight())
-                            }}
-                            onPointerDown={() => unlockAudioContext()}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault()
-                                void sendMessage()
-                              }
-                            }}
-                          />
-                          <div className="dashboard-messenger__composer-side">
-                            <div className="dashboard-messenger__composer-tools" ref={composerEmojiWrapRef}>
-                              {composerEmojiOpen && !editingMessageId ? (
-                                <div className="dashboard-messenger__composer-emoji-pop">
-                                  <ReactionEmojiPopover
-                                    title="Эмодзи"
-                                    emojis={MESSENGER_COMPOSER_EMOJIS}
-                                    onClose={() => setComposerEmojiOpen(false)}
-                                    onPick={(em) => insertEmojiInDraft(em)}
-                                  />
-                                </div>
-                              ) : null}
-                              <button
-                                type="button"
-                                className="dashboard-messenger__composer-icon-btn"
-                                title="Эмодзи"
-                                aria-label="Вставить эмодзи"
-                                disabled={threadLoading || Boolean(editingMessageId)}
-                                onClick={() => setComposerEmojiOpen((v) => !v)}
-                              >
-                                😀
-                              </button>
-                              <button
-                                type="button"
-                                className="dashboard-messenger__composer-icon-btn"
-                                title="Фото"
-                                aria-label="Прикрепить фото"
-                                disabled={threadLoading || photoUploading || Boolean(editingMessageId)}
-                                onClick={() => photoInputRef.current?.click()}
-                              >
-                                <AttachmentIcon />
-                              </button>
-                              <input
-                                ref={photoInputRef}
-                                type="file"
-                                accept="image/jpeg,image/png,image/webp,image/gif"
-                                className="dashboard-messenger__photo-input"
-                                onChange={(e) => {
-                                  const f = e.target.files?.[0]
-                                  e.target.value = ''
-                                  if (f) void sendPhotoFile(f)
-                                }}
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
-                              disabled={
-                                !draft.trim() || sending || threadLoading || photoUploading
-                              }
-                              onClick={() => void sendMessage()}
-                            >
-                              {editingMessageId ? 'Сохранить' : 'Отправить'}
-                            </button>
-                          </div>
-                        </div>
-                        {photoUploading ? (
-                          <p className="dashboard-messenger__photo-status" role="status">
-                            Загрузка фото…
-                          </p>
-                        ) : null}
-                      </div>
+                      {!isMobileMessenger ? renderThreadComposer() : null}
                     </div>
 
                     {messageMenu
@@ -1895,6 +1902,10 @@ export function DashboardMessengerPage() {
               </div>
             ) : null}
           </div>
+          {isMobileMessenger && threadHeadConversation && showThreadPane
+            ? createPortal(renderThreadComposer(), document.body)
+            : null}
+          </>
         ) : null}
 
         {isMobileMessenger ? (
