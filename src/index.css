@@ -3977,9 +3977,19 @@ button.dashboard-messenger__row-avatar {
 
 /* Мобильный мессенджер: без шапки кабинета, полная ширина, FAB-меню */
 html:has(.dashboard-page.dashboard-page--messenger-chromeless),
-html:has(.dashboard-page.dashboard-page--messenger-chromeless) body,
+html:has(.dashboard-page.dashboard-page--messenger-chromeless) body {
+  overflow: hidden;
+  overscroll-behavior: none;
+  height: 100%;
+  min-height: 100dvh;
+  max-width: 100%;
+}
+
 html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
   overflow-x: hidden;
+  overflow-y: hidden;
+  min-height: 100dvh;
+  height: 100%;
   max-width: 100%;
 }
 
@@ -3987,19 +3997,25 @@ html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
   /* В Safari под панелью URL safe-area часто 0 — даём минимум под системную зону */
   --messenger-mobile-top-inset: max(env(safe-area-inset-top, 0px), 44px);
   padding-top: 0 !important;
-  /* --vvh устанавливается через useVisualViewport; 100dvh — fallback для браузеров без visualViewport */
+  /*
+   * iOS Safari: при фокусе в поле прокручивает layout viewport — шапка и чат уезжают вверх,
+   * а композер (position:fixed) остаётся. Вешаем оболочку на прямоугольник visual viewport
+   * (top/left/width из --vv*, высота --vvh). Без transform на предке — вложенный fixed-композер
+   * по-прежнему к окну.
+   */
+  position: fixed;
+  left: var(--vv-offset-left, 0px);
+  top: var(--vv-offset-top, 0px);
+  right: auto;
+  width: var(--vvw, 100%);
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   min-height: var(--vvh, 100dvh);
   height: var(--vvh, 100dvh);
   max-height: var(--vvh, 100dvh);
-  box-sizing: border-box;
   overflow: hidden;
-  max-width: 100%;
-  /*
-   * Не используем transform с --vv-offset-top на корне страницы: на iOS Safari любой transform
-   * у предка делает position:fixed привязанным к этому предку, а не к viewport — композер
-   * и вся колонка «улетают» при открытии клавиатуры. Высоту держим через --vvh, низ — через
-   * --messenger-keyboard-bottom на самом композере.
-   */
+  z-index: 1;
 }
 
 .dashboard-page.dashboard-page--messenger-chromeless .dashboard-topbar,

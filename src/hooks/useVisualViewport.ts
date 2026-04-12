@@ -3,7 +3,8 @@ import { useEffect } from 'react'
 /**
  * Устанавливает CSS-переменные:
  * - `--vvh` = visualViewport.height (видимая область с учётом клавиатуры);
- * - `--vv-offset-top` = visualViewport.offsetTop (компенсация сдвига layout viewport в iOS Safari);
+ * - `--vv-offset-top` / `--vv-offset-left` = смещение visual viewport внутри layout (iOS Safari, клавиатура);
+ * - `--vvw` = visualViewport.width;
  * - `--messenger-keyboard-bottom` = зона под «реальным» низом экрана (клавиатура): innerHeight − offsetTop − height.
  *
  * Использование в CSS: height: var(--vvh, 100dvh); при необходимости — bottom с var(--messenger-keyboard-bottom).
@@ -14,13 +15,28 @@ export function useVisualViewport(): void {
     const vv = window.visualViewport
     if (!vv) return
 
+    const scrollLockMessengerChromeless = () => {
+      if (!document.querySelector('.dashboard-page--messenger-chromeless')) return
+      const lock = () => {
+        window.scrollTo(0, 0)
+        document.documentElement.scrollTop = 0
+        document.documentElement.scrollLeft = 0
+        document.body.scrollTop = 0
+        document.body.scrollLeft = 0
+      }
+      lock()
+      requestAnimationFrame(lock)
+    }
+
     const update = () => {
       document.documentElement.style.setProperty('--vvh', `${vv.height}px`)
-      /** iOS Safari: при клавиатуре смещает layout viewport — компенсируем, чтобы UI не «улетал» вверх. */
       document.documentElement.style.setProperty('--vv-offset-top', `${vv.offsetTop}px`)
+      document.documentElement.style.setProperty('--vv-offset-left', `${vv.offsetLeft}px`)
+      document.documentElement.style.setProperty('--vvw', `${vv.width}px`)
       /** Высота «полоски» под видимой областью (клавиатура) — для фикс. композера мессенджера. */
       const kb = Math.max(0, window.innerHeight - vv.offsetTop - vv.height)
       document.documentElement.style.setProperty('--messenger-keyboard-bottom', `${kb}px`)
+      scrollLockMessengerChromeless()
     }
 
     update()
@@ -32,6 +48,8 @@ export function useVisualViewport(): void {
       vv.removeEventListener('scroll', update)
       document.documentElement.style.removeProperty('--vvh')
       document.documentElement.style.removeProperty('--vv-offset-top')
+      document.documentElement.style.removeProperty('--vv-offset-left')
+      document.documentElement.style.removeProperty('--vvw')
       document.documentElement.style.removeProperty('--messenger-keyboard-bottom')
     }
   }, [])
