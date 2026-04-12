@@ -6,7 +6,15 @@ import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import { listMyContacts } from '../lib/socialGraph'
 import { setPendingHostClaim, stashSpaceRoomCreateOptions, type SpaceRoomCreateOptions } from '../lib/spaceRoom'
 import { newRoomId } from '../utils/roomId'
-import { AdminPanelIcon, ChatBubbleIcon, DashboardIcon, ParticipantsBadgeIcon, RoomsIcon } from './icons'
+import {
+  AdminPanelIcon,
+  ChatBubbleIcon,
+  DashboardIcon,
+  LogOutIcon,
+  ParticipantsBadgeIcon,
+  PlusIcon,
+  RoomsIcon,
+} from './icons'
 import { CreateRoomOptionsModal } from './CreateRoomOptionsModal'
 import { ThemeToggle } from './ThemeToggle'
 
@@ -19,6 +27,8 @@ type DashboardShellProps = {
   children: ReactNode
   /** Мобильный мессенджер: без топбара и вкладок — навигация в FAB на странице. */
   chromeless?: boolean
+  /** Доп. элементы в правой части шапки (например, переключатель звука на странице мессенджера). */
+  headerExtra?: ReactNode
 }
 
 const SIDEBAR_TAB_HINTS = {
@@ -73,7 +83,14 @@ function DashboardSidebarLink({
   )
 }
 
-export function DashboardShell({ active, canAccessAdmin, onSignOut, children, chromeless }: DashboardShellProps) {
+export function DashboardShell({
+  active,
+  canAccessAdmin,
+  onSignOut,
+  children,
+  chromeless,
+  headerExtra,
+}: DashboardShellProps) {
   const navigate = useNavigate()
   const { user } = useAuth()
   const unreadCount = useMessengerUnreadCount()
@@ -163,6 +180,7 @@ export function DashboardShell({ active, canAccessAdmin, onSignOut, children, ch
         </div>
 
         <div className="dashboard-topbar__actions">
+          {headerExtra}
           <ThemeToggle variant="inline" className="theme-toggle--dashboard" />
           <Link
             to="/dashboard/messenger"
@@ -178,13 +196,21 @@ export function DashboardShell({ active, canAccessAdmin, onSignOut, children, ch
           </Link>
           <button
             type="button"
-            className="dashboard-topbar__action dashboard-topbar__action--primary"
+            className="dashboard-topbar__circle-action dashboard-topbar__circle-action--primary"
             onClick={goCreateRoom}
+            title="Новая комната"
+            aria-label="Новая комната"
           >
-            Новая комната
+            <PlusIcon />
           </button>
-          <button type="button" className="dashboard-topbar__action" onClick={onSignOut}>
-            Выход
+          <button
+            type="button"
+            className="dashboard-topbar__circle-action"
+            onClick={onSignOut}
+            title="Выход"
+            aria-label="Выход"
+          >
+            <LogOutIcon />
           </button>
         </div>
       </header>

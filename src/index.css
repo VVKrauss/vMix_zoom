@@ -454,24 +454,29 @@ html[data-theme="light"] .dashboard-messenger__message--own .dashboard-messenger
 }
 
 html[data-theme="light"] .dashboard-messenger__messages-scroll,
-html[data-theme="light"] .dashboard-messenger__list {
+html[data-theme="light"] .dashboard-messenger__list,
+html[data-theme="light"] .dashboard-messenger__list-scroll {
   scrollbar-color: rgba(158, 92, 92, 0.45) transparent;
   scrollbar-color: color-mix(in srgb, var(--red) 48%, var(--surface2)) transparent;
 }
 
 html[data-theme="light"] .dashboard-messenger__messages-scroll::-webkit-scrollbar-thumb,
-html[data-theme="light"] .dashboard-messenger__list::-webkit-scrollbar-thumb {
+html[data-theme="light"] .dashboard-messenger__list::-webkit-scrollbar-thumb,
+html[data-theme="light"] .dashboard-messenger__list-scroll::-webkit-scrollbar-thumb {
   background: rgba(158, 92, 92, 0.42);
   background: color-mix(in srgb, var(--red) 44%, var(--surface2));
 }
 
 html[data-theme="light"] .dashboard-messenger__messages-scroll::-webkit-scrollbar-thumb:hover,
-html[data-theme="light"] .dashboard-messenger__list::-webkit-scrollbar-thumb:hover {
+html[data-theme="light"] .dashboard-messenger__list::-webkit-scrollbar-thumb:hover,
+html[data-theme="light"] .dashboard-messenger__list-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(138, 80, 80, 0.55);
   background: color-mix(in srgb, var(--red-hover) 55%, var(--surface2));
 }
 
 html[data-theme="light"] .dashboard-topbar__messenger,
+html[data-theme="light"] .dashboard-topbar__sound,
+html[data-theme="light"] .dashboard-topbar__circle-action,
 html[data-theme="light"] .dashboard-topbar__admin,
 html[data-theme="light"] .dashboard-topbar__action {
   border-color: var(--border);
@@ -479,14 +484,22 @@ html[data-theme="light"] .dashboard-topbar__action {
 }
 
 html[data-theme="light"] .dashboard-topbar__messenger:hover,
+html[data-theme="light"] .dashboard-topbar__sound:hover,
+html[data-theme="light"] .dashboard-topbar__circle-action:hover,
 html[data-theme="light"] .dashboard-topbar__admin:hover,
 html[data-theme="light"] .dashboard-topbar__action:hover {
   background: rgba(142, 82, 82, 0.08);
 }
 
-html[data-theme="light"] .dashboard-topbar__action--primary {
+html[data-theme="light"] .dashboard-topbar__action--primary,
+html[data-theme="light"] .dashboard-topbar__circle-action--primary {
   background: rgba(158, 92, 92, 0.14);
   border-color: rgba(158, 92, 92, 0.32);
+}
+
+html[data-theme="light"] .dashboard-topbar__circle-action--primary:hover {
+  background: rgba(158, 92, 92, 0.24);
+  border-color: rgba(158, 92, 92, 0.45);
 }
 
 /* Ширина мобильного блока — то же число, что MOBILE_MAX_WIDTH_PX в src/config/uiBreakpoints.ts */
@@ -1598,6 +1611,73 @@ html.app-root--room #root {
   justify-content: center;
 }
 
+.dashboard-topbar__sound {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.04);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.dashboard-topbar__sound:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+
+.dashboard-topbar__sound--on {
+  color: var(--text);
+}
+
+.dashboard-topbar__sound svg {
+  width: 18px;
+  height: 18px;
+}
+
+.dashboard-topbar__circle-action {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.04);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.dashboard-topbar__circle-action:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+
+.dashboard-topbar__circle-action--primary {
+  color: var(--text);
+  background: rgba(207, 44, 44, 0.16);
+  border-color: rgba(207, 44, 44, 0.34);
+}
+
+.dashboard-topbar__circle-action--primary:hover {
+  background: rgba(207, 44, 44, 0.24);
+  border-color: rgba(207, 44, 44, 0.45);
+}
+
+.dashboard-topbar__circle-action svg {
+  width: 18px;
+  height: 18px;
+}
+
 .dashboard-topbar__action {
   display: inline-flex;
   align-items: center;
@@ -1970,8 +2050,20 @@ html.app-root--room #root {
   }
 
   .dashboard-topbar__messenger,
+  .dashboard-topbar__sound,
+  .dashboard-topbar__circle-action,
   .dashboard-topbar__action {
     flex-shrink: 0;
+  }
+
+  .dashboard-topbar__circle-action {
+    width: 38px;
+    height: 38px;
+  }
+
+  .dashboard-topbar__circle-action svg {
+    width: 17px;
+    height: 17px;
   }
 }
 
@@ -2784,46 +2876,13 @@ button.admin-stat-card--interactive:disabled {
   text-decoration: underline;
 }
 
-.dashboard-chat-page__head,
-.dashboard-messenger__topbar {
+.dashboard-chat-page__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
 }
 
-.dashboard-messenger__topbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.dashboard-messenger__sound-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  border-radius: 8px;
-  font-size: 17px;
-  cursor: pointer;
-  opacity: 0.55;
-  transition: opacity 0.15s, background 0.15s;
-  line-height: 1;
-}
-
-.dashboard-messenger__sound-btn:hover {
-  opacity: 1;
-  background: var(--surface2);
-}
-
-.dashboard-messenger__sound-btn--on {
-  opacity: 1;
-}
-
-.dashboard-messenger__page-title,
 .dashboard-chat-page__page-title {
   margin: 0;
 }
@@ -2923,6 +2982,11 @@ button.admin-stat-card--interactive:disabled {
   align-content: start;
 }
 
+/* Обертка: на десктопе не меняет сетку; на моб. списке — колонка со скроллом под шапкой. */
+.dashboard-messenger__list-scroll {
+  display: contents;
+}
+
 .dashboard-messenger__row {
   display: block;
   text-decoration: none;
@@ -2935,17 +2999,19 @@ button.admin-stat-card--interactive:disabled {
 .dashboard-messenger__row-main {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 9px;
-  align-items: start;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
 }
 .dashboard-messenger__row-content {
   min-width: 0;
-  display: grid;
-  gap: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 .dashboard-messenger__row-avatar {
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   overflow: hidden;
   display: flex;
@@ -2969,17 +3035,41 @@ button.admin-stat-card--interactive:disabled {
   background: rgba(90,150,255,.08);
 }
 
+.dashboard-messenger__row-titleline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
 .dashboard-messenger__row-title {
+  flex: 1 1 auto;
+  align-self: center;
   font-size: 14px;
   font-weight: 700;
   color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.dashboard-messenger__row-titleline {
+.dashboard-messenger__row-aside {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.dashboard-messenger__row-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
 }
 
 .dashboard-messenger__row-badge {
@@ -2996,19 +3086,10 @@ button.admin-stat-card--interactive:disabled {
   justify-content: center;
 }
 
-.dashboard-messenger__row-meta {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  color: var(--text-dim);
-  font-size: 10px;
-}
-
 .dashboard-messenger__row-preview {
-  color: var(--text);
-  opacity: .88;
+  color: var(--text-dim);
   font-size: 12px;
-  line-height: 1.25;
+  line-height: 1.3;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3049,32 +3130,37 @@ button.admin-stat-card--interactive:disabled {
 
 /* Скролл в цветах проекта (акцент --red, тёмная/светлая тема) */
 .dashboard-messenger__messages-scroll,
-.dashboard-messenger__list {
+.dashboard-messenger__list,
+.dashboard-messenger__list-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgba(210, 0, 0, 0.35) transparent;
   scrollbar-color: color-mix(in srgb, var(--red) 42%, var(--surface2)) transparent;
 }
 
 .dashboard-messenger__messages-scroll::-webkit-scrollbar,
-.dashboard-messenger__list::-webkit-scrollbar {
+.dashboard-messenger__list::-webkit-scrollbar,
+.dashboard-messenger__list-scroll::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 .dashboard-messenger__messages-scroll::-webkit-scrollbar-track,
-.dashboard-messenger__list::-webkit-scrollbar-track {
+.dashboard-messenger__list::-webkit-scrollbar-track,
+.dashboard-messenger__list-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 
 .dashboard-messenger__messages-scroll::-webkit-scrollbar-thumb,
-.dashboard-messenger__list::-webkit-scrollbar-thumb {
+.dashboard-messenger__list::-webkit-scrollbar-thumb,
+.dashboard-messenger__list-scroll::-webkit-scrollbar-thumb {
   background: rgba(210, 0, 0, 0.32);
   background: color-mix(in srgb, var(--red) 38%, var(--surface2));
   border-radius: 10px;
 }
 
 .dashboard-messenger__messages-scroll::-webkit-scrollbar-thumb:hover,
-.dashboard-messenger__list::-webkit-scrollbar-thumb:hover {
+.dashboard-messenger__list::-webkit-scrollbar-thumb:hover,
+.dashboard-messenger__list-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(210, 0, 0, 0.5);
   background: color-mix(in srgb, var(--red) 58%, var(--surface2));
 }
@@ -3132,47 +3218,6 @@ button.admin-stat-card--interactive:disabled {
   color: var(--text-dim);
   font-size: 10px;
   margin-top: 4px;
-}
-
-.dashboard-messenger__thread-tail {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-  min-width: 0;
-}
-
-.dashboard-messenger__thread-tail-avatar {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  overflow: hidden;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.dashboard-messenger__thread-tail-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.dashboard-messenger__thread-tail-preview {
-  margin: 0;
-  min-width: 0;
-  flex: 1 1 auto;
-  font-size: 12px;
-  line-height: 1.3;
-  color: var(--text-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .dashboard-messenger__messages {
@@ -3722,17 +3767,130 @@ html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__list {
-  gap: 4px;
+  gap: 0;
   box-sizing: border-box;
   min-width: 0;
   max-width: 100%;
   overflow-x: hidden;
-  padding-top: calc(8px + var(--messenger-mobile-top-inset));
-  padding-right: calc(10px + 52px + 10px + env(safe-area-inset-right, 0px));
+  overflow-y: hidden;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-.dashboard-messenger--mobile-chromeless .dashboard-messenger__row {
-  padding: 7px 8px;
+.dashboard-messenger--mobile-chromeless.dashboard-messenger--fill .dashboard-messenger__list {
+  overflow-y: hidden;
+}
+
+.dashboard-messenger__list-head {
+  display: none;
+}
+
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__list-head {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: calc(8px + env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 10px
+    max(12px, env(safe-area-inset-left, 0px));
+  background: inherit;
+  border-bottom: 1px solid var(--border);
+  z-index: 4;
+}
+
+.dashboard-messenger__list-head-user {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  border: 1px solid var(--border);
+}
+
+.dashboard-messenger__list-head-user img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dashboard-messenger__list-head-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text);
+}
+
+.dashboard-messenger__list-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.dashboard-messenger__list-head-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.04);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.dashboard-messenger__list-head-btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dashboard-messenger__list-head-btn--primary {
+  color: #fff;
+  background: rgba(207, 44, 44, 0.2);
+  border-color: rgba(207, 44, 44, 0.4);
+}
+
+.dashboard-messenger__list-head-btn--primary:hover {
+  background: rgba(207, 44, 44, 0.3);
+  color: #fff;
+}
+
+.dashboard-messenger__list-head-btn--open {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dashboard-messenger__list-head-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.dashboard-messenger__list-head-btn--primary svg {
+  width: 20px;
+  height: 20px;
+}
+
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__list-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 10px max(12px, env(safe-area-inset-right, 0px)) 16px max(12px, env(safe-area-inset-left, 0px));
+  -webkit-overflow-scrolling: touch;
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__thread,
@@ -3765,12 +3923,31 @@ html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__composer-main {
   flex-direction: column;
   align-items: stretch;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__composer-side {
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__composer-tools {
+  flex-shrink: 0;
+}
+
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__send-btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__input {
@@ -3779,6 +3956,8 @@ html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
   padding: 8px 10px;
   resize: none;
   overflow-y: auto;
+  min-width: 0;
+  max-width: 100%;
   /* iOS Safari: при font-size < 16px на фокусе включается зум и «уезжает» вёрстка вправо */
   font-size: 16px;
   line-height: 1.35;
@@ -3839,183 +4018,197 @@ html[data-theme="light"] .dashboard-messenger-fab:not(.dashboard-messenger-fab--
   background: color-mix(in srgb, var(--red-hover) 55%, var(--surface2));
 }
 
-.dashboard-messenger-mobile-nav-backdrop {
+.dashboard-messenger-quick-menu-backdrop {
   position: fixed;
   inset: 0;
   z-index: 9100;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.35);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.18s ease;
+  transition: opacity 0.15s ease;
 }
 
-.dashboard-messenger-mobile-nav-backdrop--open {
+.dashboard-messenger-quick-menu-backdrop--open {
   opacity: 1;
   pointer-events: auto;
 }
 
-.dashboard-messenger-mobile-nav {
+.dashboard-messenger-quick-menu {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 9150;
-  max-height: min(82vh, 560px);
-  display: flex;
-  flex-direction: column;
+  right: max(10px, env(safe-area-inset-right, 0px));
+  z-index: 9120;
+  width: min(272px, calc(100vw - 20px));
+  max-height: min(72vh, 380px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
   background: var(--surface);
-  border-top: 1px solid var(--border);
-  border-radius: 18px 18px 0 0;
-  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.35);
-  transform: translateY(100%);
-  transition: transform 0.22s ease;
-  padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.38);
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  -webkit-overflow-scrolling: touch;
 }
 
-.dashboard-messenger-mobile-nav--open {
-  transform: translateY(0);
+.dashboard-messenger-quick-menu--open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
 }
 
-.dashboard-messenger-mobile-nav__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px 8px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+.dashboard-messenger-quick-menu--anchor-head {
+  top: calc(env(safe-area-inset-top, 0px) + 56px);
 }
 
-.dashboard-messenger-mobile-nav__title {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text);
+.dashboard-messenger-quick-menu--anchor-fab {
+  top: calc(max(10px, env(safe-area-inset-top, 0px)) + 58px);
 }
 
-.dashboard-messenger-mobile-nav__close {
+.dashboard-messenger-quick-menu__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.dashboard-messenger-quick-menu__btn {
   all: unset;
   box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  cursor: pointer;
-  font-size: 18px;
-  line-height: 1;
-  color: var(--text-dim);
-}
-
-.dashboard-messenger-mobile-nav__close:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text);
-}
-
-.dashboard-messenger-mobile-nav__scroll {
-  overflow-y: auto;
-  padding: 6px 10px 10px;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 4px;
+  min-height: 64px;
+  padding: 8px 4px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
-.dashboard-messenger-mobile-nav__link {
+a.dashboard-messenger-quick-menu__btn:hover,
+button.dashboard-messenger-quick-menu__btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.dashboard-messenger-quick-menu__btn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.45);
+  outline-offset: 2px;
+}
+
+.dashboard-messenger-quick-menu__btn--active {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--text);
+}
+
+.dashboard-messenger-quick-menu__btn--danger {
+  border-color: rgba(229, 57, 53, 0.35);
+  background: rgba(229, 57, 53, 0.12);
+  color: #ffb4b0;
+}
+
+.dashboard-messenger-quick-menu__btn--danger:hover {
+  background: rgba(229, 57, 53, 0.22);
+  color: #ffd6d4;
+}
+
+.dashboard-messenger-quick-menu__cell {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 64px;
+  padding: 8px 4px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.dashboard-messenger-quick-menu__cell--filler {
+  visibility: hidden;
+  pointer-events: none;
+  border-color: transparent;
+  background: transparent;
+}
+
+.dashboard-messenger-quick-menu__ico {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 11px 12px;
-  border-radius: 12px;
-  text-decoration: none;
-  color: var(--text);
-  font-size: 14px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid transparent;
-}
-
-.dashboard-messenger-mobile-nav__link:hover {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: var(--border);
-}
-
-.dashboard-messenger-mobile-nav__link-ico {
-  display: flex;
-  width: 22px;
-  height: 22px;
-  flex-shrink: 0;
+  justify-content: center;
   color: var(--text-dim);
 }
 
-.dashboard-messenger-mobile-nav__link-ico svg {
-  width: 22px;
-  height: 22px;
+.dashboard-messenger-quick-menu__btn--active .dashboard-messenger-quick-menu__ico,
+.dashboard-messenger-quick-menu__btn:hover .dashboard-messenger-quick-menu__ico {
+  color: var(--text);
 }
 
-.dashboard-messenger-mobile-nav__badge {
-  margin-left: auto;
-  min-width: 20px;
+.dashboard-messenger-quick-menu__ico svg {
+  width: 20px;
   height: 20px;
-  padding: 0 5px;
+}
+
+.dashboard-messenger-quick-menu__lbl {
+  display: block;
+  max-width: 100%;
+  padding: 0 2px;
+  word-break: break-word;
+}
+
+.dashboard-messenger-quick-menu__badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
   border-radius: 999px;
   background: var(--red);
   color: #fff;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  line-height: 1;
 }
 
-.dashboard-messenger-mobile-nav__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
+.dashboard-messenger-quick-menu__btn--span {
+  grid-column: 1 / -1;
+  min-height: 44px;
+  flex-direction: row;
+  gap: 8px;
+  justify-content: center;
 }
 
-.dashboard-messenger-mobile-nav__row-label {
-  font-size: 13px;
-  color: var(--text-dim);
+.dashboard-messenger-quick-menu__btn--span .dashboard-messenger-quick-menu__ico svg {
+  width: 18px;
+  height: 18px;
 }
 
-.dashboard-messenger-mobile-nav__btn {
-  all: unset;
-  box-sizing: border-box;
-  display: block;
-  width: 100%;
-  text-align: center;
-  padding: 12px 14px;
-  border-radius: 12px;
-  font-size: 14px;
-  font-family: var(--font);
-  font-weight: 600;
-  cursor: pointer;
-  background: rgba(229, 57, 53, 0.18);
-  color: #ffb4b0;
-  border: 1px solid rgba(229, 57, 53, 0.35);
-}
-
-.dashboard-messenger-mobile-nav__btn:hover {
-  background: rgba(229, 57, 53, 0.28);
-}
-
-.dashboard-messenger-mobile-nav__btn--danger {
-  margin-top: 4px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-dim);
-  border-color: var(--border);
-}
-
-.dashboard-messenger-mobile-nav__btn--danger:hover {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.07);
-}
-
-html[data-theme="light"] .dashboard-messenger-mobile-nav {
-  box-shadow: 0 -8px 28px rgba(60, 40, 40, 0.12);
+html[data-theme="light"] .dashboard-messenger-quick-menu {
+  box-shadow: 0 10px 28px rgba(60, 40, 40, 0.14);
 }
 
 .dashboard-chat-thread {
@@ -4251,8 +4444,7 @@ html[data-theme="light"] .dashboard-messenger-mobile-nav {
     grid-template-columns: 1fr;
   }
 
-  .dashboard-chat-page__head,
-  .dashboard-messenger__topbar {
+  .dashboard-chat-page__head {
     flex-direction: column;
     align-items: stretch;
   }
@@ -4291,8 +4483,7 @@ html[data-theme="light"] .dashboard-messenger-mobile-nav {
     align-items: stretch;
   }
 
-  .dashboard-messenger--mobile-chromeless .dashboard-messenger__input,
-  .dashboard-messenger--mobile-chromeless .dashboard-messenger__send-btn {
+  .dashboard-messenger--mobile-chromeless .dashboard-messenger__input {
     width: 100%;
     max-width: none;
     box-sizing: border-box;
@@ -4367,31 +4558,6 @@ html[data-theme="light"] .dashboard-messenger-mobile-nav {
   font-size: 11px;
   font-weight: 600;
   line-height: 1;
-}
-
-.dashboard-messenger-mobile-nav__sound-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  font-size: 18px;
-  cursor: pointer;
-  opacity: 0.55;
-  transition: opacity 0.15s, background 0.15s;
-  line-height: 1;
-}
-
-.dashboard-messenger-mobile-nav__sound-toggle:hover,
-.dashboard-messenger-mobile-nav__sound-toggle--on {
-  opacity: 1;
-}
-
-.dashboard-messenger-mobile-nav__sound-toggle:hover {
-  background: var(--surface2);
 }
 
 .dashboard-field--checkbox {

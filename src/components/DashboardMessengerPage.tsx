@@ -41,10 +41,15 @@ import { BrandLogoLoader } from './BrandLogoLoader'
 import {
   AdminPanelIcon,
   AttachmentIcon,
+  BellIcon,
+  BellOffIcon,
   ChatBubbleIcon,
   DashboardIcon,
+  HomeIcon,
+  LogOutIcon,
   MenuBurgerIcon,
   ParticipantsBadgeIcon,
+  PlusIcon,
   RoomsIcon,
 } from './icons'
 import { CreateRoomOptionsModal } from './CreateRoomOptionsModal'
@@ -61,6 +66,26 @@ function formatDateTime(value: string): string {
   return dt.toLocaleString('ru-RU', {
     dateStyle: 'medium',
     timeStyle: 'short',
+  })
+}
+
+/** Время в строке списка чатов: сегодня — только часы, иначе короткая дата + время. */
+function formatMessengerListRowTime(iso: string): string {
+  const dt = new Date(iso)
+  if (Number.isNaN(dt.getTime())) return '—'
+  const now = new Date()
+  const sameDay =
+    dt.getDate() === now.getDate() &&
+    dt.getMonth() === now.getMonth() &&
+    dt.getFullYear() === now.getFullYear()
+  if (sameDay) {
+    return dt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  }
+  return dt.toLocaleString('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
   })
 }
 
@@ -95,19 +120,6 @@ function lastNonReactionBody(rows: DirectMessage[]): string | null {
     if (m.kind === 'image') return m.body.trim() || '📷 Фото'
   }
   return null
-}
-
-/** Текст превью последнего сообщения в шапке треда (сервер или хвост загруженной ленты). */
-function threadHeadPreviewLine(
-  head: DirectConversationSummary,
-  loading: boolean,
-  timeline: DirectMessage[],
-): string {
-  const p = head.lastMessagePreview?.trim()
-  if (p) return p
-  if (loading) return head.messageCount > 0 ? '…' : 'Пока без сообщений'
-  const tail = lastNonReactionBody(timeline)
-  return tail ?? (head.messageCount > 0 ? '…' : 'Пока без сообщений')
 }
 
 /** URL пустой: последний открытый диалог из localStorage, иначе самый свежий по активности, иначе запасной id (напр. «с собой»). */
@@ -1147,14 +1159,6 @@ export function DashboardMessengerPage() {
     threadHeadConversation?.avatarUrl ??
     (threadHeadConversation?.otherUserId ? null : profile?.avatar_url ?? null)
 
-  const threadHeadPreviewText = useMemo(
-    () =>
-      threadHeadConversation
-        ? threadHeadPreviewLine(threadHeadConversation, threadLoading, timelineMessages)
-        : '',
-    [threadHeadConversation, threadLoading, timelineMessages],
-  )
-
   const adjustMobileComposerHeight = useCallback(() => {
     const ta = composerTextareaRef.current
     if (!ta || !isMobileMessenger) return
@@ -1213,93 +1217,126 @@ export function DashboardMessengerPage() {
       canAccessAdmin={canAccessAdmin}
       onSignOut={() => signOut()}
       chromeless={isMobileMessenger}
+      headerExtra={
+        !isMobileMessenger ? (
+          <button
+            type="button"
+            className={`dashboard-topbar__sound${soundEnabled ? ' dashboard-topbar__sound--on' : ''}`}
+            onClick={() => {
+              const next = !soundEnabled
+              setSoundEnabled(next)
+              setMessengerSoundEnabled(next)
+            }}
+            aria-pressed={soundEnabled}
+            title={soundEnabled ? 'Выключить звук уведомлений' : 'Включить звук уведомлений'}
+          >
+            {soundEnabled ? <BellIcon /> : <BellOffIcon />}
+          </button>
+        ) : null
+      }
     >
       <section
         className={`dashboard-section dashboard-messenger dashboard-messenger--fill${
           isMobileMessenger ? ' dashboard-messenger--mobile-chromeless' : ''
         }`}
       >
-        {!isMobileMessenger ? (
-          <div className="dashboard-messenger__topbar">
-            <h2 className="dashboard-section__title dashboard-messenger__page-title">Мессенджер</h2>
-            <div className="dashboard-messenger__topbar-actions">
-              <button
-                type="button"
-                className={`dashboard-messenger__sound-btn${soundEnabled ? ' dashboard-messenger__sound-btn--on' : ''}`}
-                onClick={() => {
-                  const next = !soundEnabled
-                  setSoundEnabled(next)
-                  setMessengerSoundEnabled(next)
-                }}
-                aria-pressed={soundEnabled}
-                title={soundEnabled ? 'Выключить звук уведомлений' : 'Включить звук уведомлений'}
-              >
-                {soundEnabled ? '🔔' : '🔕'}
-              </button>
-              <Link to="/dashboard/chats" className="dashboard-messenger__switch">
-                Архивы комнат
-              </Link>
-            </div>
-          </div>
-        ) : null}
-
         {error ? <p className="join-error">{error}</p> : null}
 
         {!error ? (
           <div className="dashboard-messenger__layout">
             {showListPane ? (
               <aside className="dashboard-messenger__list" aria-label="Список диалогов">
-                {loading && sortedItems.length === 0 ? (
-                  <div className="dashboard-messenger__pane-loader" aria-label="Загрузка списка…">
-                    <BrandLogoLoader size={56} />
-                  </div>
-                ) : sortedItems.length === 0 ? (
-                  <div className="dashboard-chats-empty">Диалогов пока нет.</div>
-                ) : (
-                  sortedItems.map((item) => {
-                    const avatarUrl = item.avatarUrl ?? (!item.otherUserId ? profile?.avatar_url ?? null : null)
-                    return (
-                      <Link
-                        key={item.id}
-                        to={buildMessengerUrl(item.id)}
-                        onClick={(e) => {
-                          e.preventDefault()
-                          selectConversation(item.id)
-                        }}
-                        className={`dashboard-messenger__row${
-                          item.id === activeConversationId ? ' dashboard-messenger__row--active' : ''
-                        }`}
+                {isMobileMessenger ? (
+                  <header className="dashboard-messenger__list-head">
+                    <div className="dashboard-messenger__list-head-user" aria-hidden>
+                      {profile?.avatar_url ? (
+                        <img src={profile.avatar_url} alt="" />
+                      ) : (
+                        <span>{conversationInitial(profile?.display_name || user?.email || 'Я')}</span>
+                      )}
+                    </div>
+                    <h1 className="dashboard-messenger__list-head-title">Мессенджер</h1>
+                    <div className="dashboard-messenger__list-head-actions">
+                      <button
+                        type="button"
+                        className="dashboard-messenger__list-head-btn dashboard-messenger__list-head-btn--primary"
+                        onClick={() => setCreateRoomModalOpen(true)}
+                        aria-label="Новая комната"
+                        title="Новая комната"
                       >
-                        <div className="dashboard-messenger__row-main">
-                          <div className="dashboard-messenger__row-avatar" aria-hidden>
-                            {avatarUrl ? (
-                              <img src={avatarUrl ?? undefined} alt="" />
-                            ) : (
-                              <span>{conversationInitial(item.title)}</span>
-                            )}
+                        <PlusIcon />
+                      </button>
+                      <button
+                        type="button"
+                        className={`dashboard-messenger__list-head-btn${messengerMenuOpen ? ' dashboard-messenger__list-head-btn--open' : ''}`}
+                        onClick={() => setMessengerMenuOpen((v) => !v)}
+                        aria-label={messengerMenuOpen ? 'Закрыть меню' : 'Меню'}
+                        title="Меню"
+                        aria-expanded={messengerMenuOpen}
+                      >
+                        <MenuBurgerIcon />
+                      </button>
+                    </div>
+                  </header>
+                ) : null}
+                <div className="dashboard-messenger__list-scroll">
+                  {loading && sortedItems.length === 0 ? (
+                    <div className="dashboard-messenger__pane-loader" aria-label="Загрузка списка…">
+                      <BrandLogoLoader size={56} />
+                    </div>
+                  ) : sortedItems.length === 0 ? (
+                    <div className="dashboard-chats-empty">Диалогов пока нет.</div>
+                  ) : (
+                    sortedItems.map((item) => {
+                      const avatarUrl = item.avatarUrl ?? (!item.otherUserId ? profile?.avatar_url ?? null : null)
+                      return (
+                        <Link
+                          key={item.id}
+                          to={buildMessengerUrl(item.id)}
+                          title={`${item.messageCount} сообщ.`}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            selectConversation(item.id)
+                          }}
+                          className={`dashboard-messenger__row${
+                            item.id === activeConversationId ? ' dashboard-messenger__row--active' : ''
+                          }`}
+                        >
+                          <div className="dashboard-messenger__row-main">
+                            <div className="dashboard-messenger__row-avatar" aria-hidden>
+                              {avatarUrl ? (
+                                <img src={avatarUrl ?? undefined} alt="" />
+                              ) : (
+                                <span>{conversationInitial(item.title)}</span>
+                              )}
+                            </div>
+                            <div className="dashboard-messenger__row-content">
+                              <div className="dashboard-messenger__row-titleline">
+                                <div className="dashboard-messenger__row-title">{item.title}</div>
+                                <div className="dashboard-messenger__row-aside">
+                                  <time
+                                    className="dashboard-messenger__row-time"
+                                    dateTime={item.lastMessageAt ?? item.createdAt}
+                                  >
+                                    {formatMessengerListRowTime(item.lastMessageAt ?? item.createdAt)}
+                                  </time>
+                                  {item.unreadCount > 0 ? (
+                                    <span className="dashboard-messenger__row-badge">
+                                      {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <div className="dashboard-messenger__row-preview">
+                                {item.lastMessagePreview?.trim() || 'Пока без сообщений'}
+                              </div>
+                            </div>
                           </div>
-                          <div className="dashboard-messenger__row-content">
-                            <div className="dashboard-messenger__row-titleline">
-                              <div className="dashboard-messenger__row-title">{item.title}</div>
-                              {item.unreadCount > 0 ? (
-                                <span className="dashboard-messenger__row-badge">
-                                  {item.unreadCount > 99 ? '99+' : item.unreadCount}
-                                </span>
-                              ) : null}
-                            </div>
-                            <div className="dashboard-messenger__row-meta">
-                              <span>{item.messageCount} сообщ.</span>
-                              <span>{formatDateTime(item.lastMessageAt ?? item.createdAt)}</span>
-                            </div>
-                            <div className="dashboard-messenger__row-preview">
-                              {item.lastMessagePreview?.trim() || 'Пока без сообщений'}
-                            </div>
-                          </div>
-                        </div>
-                      </Link>
-                    )
-                  })
-                )}
+                        </Link>
+                      )
+                    })
+                  )}
+                </div>
               </aside>
             ) : null}
 
@@ -1353,18 +1390,6 @@ export function DashboardMessengerPage() {
                                 threadHeadConversation.lastMessageAt ?? threadHeadConversation.createdAt,
                               )}
                             </span>
-                          </div>
-                          <div className="dashboard-messenger__thread-tail" aria-label="Последнее сообщение">
-                            <div className="dashboard-messenger__thread-tail-avatar" aria-hidden>
-                              {activeAvatarUrl ? (
-                                <img src={activeAvatarUrl} alt="" />
-                              ) : (
-                                <span>{conversationInitial(threadHeadConversation.title)}</span>
-                              )}
-                            </div>
-                            <p className="dashboard-messenger__thread-tail-preview" title={threadHeadPreviewText}>
-                              {threadHeadPreviewText}
-                            </p>
                           </div>
                         </div>
                       </div>
@@ -1610,115 +1635,120 @@ export function DashboardMessengerPage() {
         {isMobileMessenger ? (
           <>
             <div
-              className={`dashboard-messenger-mobile-nav-backdrop${
-                messengerMenuOpen ? ' dashboard-messenger-mobile-nav-backdrop--open' : ''
+              className={`dashboard-messenger-quick-menu-backdrop${
+                messengerMenuOpen ? ' dashboard-messenger-quick-menu-backdrop--open' : ''
               }`}
               aria-hidden={!messengerMenuOpen}
               onClick={closeMessengerMenu}
             />
             <nav
-              className={`dashboard-messenger-mobile-nav${
-                messengerMenuOpen ? ' dashboard-messenger-mobile-nav--open' : ''
-              }`}
+              className={`dashboard-messenger-quick-menu${
+                messengerMenuOpen ? ' dashboard-messenger-quick-menu--open' : ''
+              } dashboard-messenger-quick-menu--${showListPane ? 'anchor-head' : 'anchor-fab'}`}
               aria-hidden={!messengerMenuOpen}
               aria-label="Навигация"
             >
-              <div className="dashboard-messenger-mobile-nav__header">
-                <span className="dashboard-messenger-mobile-nav__title">Меню</span>
-                <button
-                  type="button"
-                  className="dashboard-messenger-mobile-nav__close"
-                  onClick={closeMessengerMenu}
-                  aria-label="Закрыть меню"
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="dashboard-messenger-mobile-nav__scroll">
-                <Link to="/" className="dashboard-messenger-mobile-nav__link" onClick={closeMessengerMenu}>
-                  На главную
+              <div className="dashboard-messenger-quick-menu__grid" role="toolbar">
+                <Link to="/" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
+                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                    <HomeIcon />
+                  </span>
+                  <span className="dashboard-messenger-quick-menu__lbl">Главная</span>
                 </Link>
-                <Link to="/dashboard" className="dashboard-messenger-mobile-nav__link" onClick={closeMessengerMenu}>
-                  <span className="dashboard-messenger-mobile-nav__link-ico" aria-hidden>
+                <Link to="/dashboard" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
+                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
                     <DashboardIcon />
                   </span>
-                  Кабинет
+                  <span className="dashboard-messenger-quick-menu__lbl">Кабинет</span>
                 </Link>
-                <Link to="/dashboard/chats" className="dashboard-messenger-mobile-nav__link" onClick={closeMessengerMenu}>
-                  <span className="dashboard-messenger-mobile-nav__link-ico" aria-hidden>
+                <Link to="/dashboard/chats" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
+                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
                     <RoomsIcon />
                   </span>
-                  Архивы комнат
+                  <span className="dashboard-messenger-quick-menu__lbl">Комнаты</span>
                 </Link>
-                <Link to="/dashboard/messenger" className="dashboard-messenger-mobile-nav__link" onClick={closeMessengerMenu}>
-                  <span className="dashboard-messenger-mobile-nav__link-ico" aria-hidden>
+                <Link to="/dashboard/messenger" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
+                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
                     <ChatBubbleIcon />
                   </span>
-                  Мессенджер
+                  <span className="dashboard-messenger-quick-menu__lbl">Мессенджер</span>
                   {headerMessengerUnread > 0 ? (
-                    <span className="dashboard-messenger-mobile-nav__badge">
+                    <span className="dashboard-messenger-quick-menu__badge">
                       {headerMessengerUnread > 99 ? '99+' : headerMessengerUnread}
                     </span>
                   ) : null}
                 </Link>
-                <Link to="/dashboard/friends" className="dashboard-messenger-mobile-nav__link" onClick={closeMessengerMenu}>
-                  <span className="dashboard-messenger-mobile-nav__link-ico" aria-hidden>
+                <Link to="/dashboard/friends" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
+                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
                     <ParticipantsBadgeIcon />
                   </span>
-                  Друзья
+                  <span className="dashboard-messenger-quick-menu__lbl">Друзья</span>
                 </Link>
-                {canAccessAdmin ? (
-                  <Link to="/admin" className="dashboard-messenger-mobile-nav__link" onClick={closeMessengerMenu}>
-                    <span className="dashboard-messenger-mobile-nav__link-ico" aria-hidden>
-                      <AdminPanelIcon />
-                    </span>
-                    Админка
-                  </Link>
-                ) : null}
-                <div className="dashboard-messenger-mobile-nav__row">
-                  <span className="dashboard-messenger-mobile-nav__row-label">Тема</span>
+                <button type="button" className="dashboard-messenger-quick-menu__btn" onClick={goCreateRoomFromMenu}>
+                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                    <PlusIcon />
+                  </span>
+                  <span className="dashboard-messenger-quick-menu__lbl">Новая комната</span>
+                </button>
+                <div className="dashboard-messenger-quick-menu__cell">
+                  <span className="dashboard-messenger-quick-menu__lbl">Тема</span>
                   <ThemeToggle variant="inline" className="theme-toggle--dashboard" />
                 </div>
-                <div className="dashboard-messenger-mobile-nav__row">
-                  <span className="dashboard-messenger-mobile-nav__row-label">Звук сообщений</span>
-                  <button
-                    type="button"
-                    className={`dashboard-messenger-mobile-nav__sound-toggle${soundEnabled ? ' dashboard-messenger-mobile-nav__sound-toggle--on' : ''}`}
-                    onClick={() => {
-                      const next = !soundEnabled
-                      setSoundEnabled(next)
-                      setMessengerSoundEnabled(next)
-                    }}
-                    aria-pressed={soundEnabled}
-                    title={soundEnabled ? 'Выключить звук' : 'Включить звук'}
-                  >
-                    {soundEnabled ? '🔔' : '🔕'}
-                  </button>
-                </div>
-                <button type="button" className="dashboard-messenger-mobile-nav__btn" onClick={goCreateRoomFromMenu}>
-                  Новая комната
-                </button>
                 <button
                   type="button"
-                  className="dashboard-messenger-mobile-nav__btn dashboard-messenger-mobile-nav__btn--danger"
+                  className={`dashboard-messenger-quick-menu__btn${soundEnabled ? ' dashboard-messenger-quick-menu__btn--active' : ''}`}
+                  onClick={() => {
+                    const next = !soundEnabled
+                    setSoundEnabled(next)
+                    setMessengerSoundEnabled(next)
+                  }}
+                  aria-pressed={soundEnabled}
+                  title={soundEnabled ? 'Выключить звук' : 'Включить звук'}
+                >
+                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                    {soundEnabled ? <BellIcon /> : <BellOffIcon />}
+                  </span>
+                  <span className="dashboard-messenger-quick-menu__lbl">Звук</span>
+                </button>
+                {canAccessAdmin ? (
+                  <Link to="/admin" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
+                    <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                      <AdminPanelIcon />
+                    </span>
+                    <span className="dashboard-messenger-quick-menu__lbl">Админка</span>
+                  </Link>
+                ) : (
+                  <div
+                    className="dashboard-messenger-quick-menu__cell dashboard-messenger-quick-menu__cell--filler"
+                    aria-hidden
+                  />
+                )}
+                <button
+                  type="button"
+                  className="dashboard-messenger-quick-menu__btn dashboard-messenger-quick-menu__btn--danger dashboard-messenger-quick-menu__btn--span"
                   onClick={() => {
                     closeMessengerMenu()
                     void signOut()
                   }}
                 >
-                  Выход
+                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                    <LogOutIcon />
+                  </span>
+                  <span className="dashboard-messenger-quick-menu__lbl">Выход</span>
                 </button>
               </div>
             </nav>
-            <button
-              type="button"
-              className={`dashboard-messenger-fab${messengerMenuOpen ? ' dashboard-messenger-fab--open' : ''}`}
-              onClick={() => setMessengerMenuOpen((v) => !v)}
-              aria-label={messengerMenuOpen ? 'Закрыть меню' : 'Открыть меню'}
-              aria-expanded={messengerMenuOpen}
-            >
-              <MenuBurgerIcon />
-            </button>
+            {!showListPane ? (
+              <button
+                type="button"
+                className={`dashboard-messenger-fab${messengerMenuOpen ? ' dashboard-messenger-fab--open' : ''}`}
+                onClick={() => setMessengerMenuOpen((v) => !v)}
+                aria-label={messengerMenuOpen ? 'Закрыть меню' : 'Открыть меню'}
+                aria-expanded={messengerMenuOpen}
+              >
+                <MenuBurgerIcon />
+              </button>
+            ) : null}
           </>
         ) : null}
       </section>
