@@ -1,282 +1,390 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { useUserPeek } from '../context/UserPeekContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import {
   type RoomChatConversationSummary,
-  type RoomChatLastSender,
+  ROOM_CHAT_PAGE_SIZE,
+  leaveRoomChatArchiveEntry,
   listRoomChatConversationsForUser,
-  listRoomChatLastSenders,
 } from '../lib/chatArchive'
-import { DashboardMenuPicker, type DashboardMenuOption } from './DashboardMenuPicker'
+import {
+  fetchPersistentSpaceRoomsForUser,
+  setPendingHostClaim,
+  stashSpaceRoomCreateOptions,
+  type PersistentSpaceRoomRow,
+} from '../lib/spaceRoom'
+import { newRoomId } from '../utils/roomId'
+import { ConfirmDialog } from './ConfirmDialog'
 import { DashboardShell } from './DashboardShell'
-import { ChatBubbleIcon } from './icons'
+import { CamIcon, ChatBubbleIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, TrashIcon } from './icons'
+import { RoomChatArchiveModal } from './RoomChatArchiveModal'
 
-type ChatSortMode = 'recent_desc' | 'recent_asc' | 'messages_desc' | 'messages_asc'
-type ChatTimeFilter = 'all' | 'today' | '7d' | '30d'
-
-const CHAT_SORT_OPTIONS: DashboardMenuOption<ChatSortMode>[] = [
-  { value: 'recent_desc', label: 'Сначала новые' },
-  { value: 'recent_asc', label: 'Сначала старые' },
-  { value: 'messages_desc', label: 'Больше сообщений' },
-  { value: 'messages_asc', label: 'Меньше сообщений' },
-]
-
-const CHAT_TIME_FILTER_OPTIONS: DashboardMenuOption<ChatTimeFilter>[] = [
-  { value: 'all', label: 'За всё время' },
-  { value: 'today', label: 'Сегодня' },
-  { value: '7d', label: 'За 7 дней' },
-  { value: '30d', label: 'За 30 дней' },
-]
-
-function formatDateTime(value: string | null): string {
+function formatRoomListDate(value: string | null): string {
   if (!value) return '—'
   const dt = new Date(value)
   if (Number.isNaN(dt.getTime())) return '—'
   return dt.toLocaleString('ru-RU', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
   })
-}
-
-function applyTimeFilter(items: RoomChatConversationSummary[], filter: ChatTimeFilter): RoomChatConversationSummary[] {
-  if (filter === 'all') return items
-  const now = Date.now()
-  const startOfToday = new Date()
-  startOfToday.setHours(0, 0, 0, 0)
-  const minTs =
-    filter === 'today'
-      ? startOfToday.getTime()
-      : now - (filter === '7d' ? 7 : 30) * 24 * 60 * 60 * 1000
-
-  return items.filter((item) => {
-    const source = item.lastMessageAt ?? item.createdAt
-    const ts = source ? new Date(source).getTime() : Number.NaN
-    return Number.isFinite(ts) && ts >= minTs
-  })
-}
-
-function sortChatItems(items: RoomChatConversationSummary[], mode: ChatSortMode): RoomChatConversationSummary[] {
-  const next = [...items]
-  next.sort((a, b) => {
-    const aRecent = new Date(a.lastMessageAt ?? a.createdAt).getTime()
-    const bRecent = new Date(b.lastMessageAt ?? b.createdAt).getTime()
-
-    if (mode === 'recent_desc') return bRecent - aRecent
-    if (mode === 'recent_asc') return aRecent - bRecent
-    if (mode === 'messages_desc') {
-      if (b.messageCount !== a.messageCount) return b.messageCount - a.messageCount
-      return bRecent - aRecent
-    }
-    if (a.messageCount !== b.messageCount) return a.messageCount - b.messageCount
-    return bRecent - aRecent
-  })
-  return next
 }
 
 export function DashboardChatsPage() {
   const { signOut, user } = useAuth()
-  const { openUserPeek } = useUserPeek()
+  const navigate = useNavigate()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [items, setItems] = useState<RoomChatConversationSummary[]>([])
-  const [lastSenders, setLastSenders] = useState<Record<string, RoomChatLastSender>>({})
-  const [query, setQuery] = useState('')
-  const [sortMode, setSortMode] = useState<ChatSortMode>('recent_desc')
-  const [timeFilter, setTimeFilter] = useState<ChatTimeFilter>('all')
+  const [pageOffset, setPageOffset] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [modalConversationId, setModalConversationId] = useState<string | null>(null)
+  const [modalSummary, setModalSummary] = useState<RoomChatConversationSummary | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<RoomChatConversationSummary | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [myRooms, setMyRooms] = useState<PersistentSpaceRoomRow[]>([])
+  const [myRoomsLoading, setMyRoomsLoading] = useState(false)
+  const [myRoomsError, setMyRoomsError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let active = true
-    const run = async () => {
+  const loadPage = useCallback(
+    async (offset: number) => {
       if (!user?.id) {
-        if (active) {
-          setItems([])
-          setLoading(false)
-        }
+        setItems([])
+        setHasMore(false)
+        setLoading(false)
         return
       }
       setLoading(true)
       setError(null)
-      const result = await listRoomChatConversationsForUser(user.id)
-      if (!active) return
+      const result = await listRoomChatConversationsForUser(user.id, {
+        limit: ROOM_CHAT_PAGE_SIZE,
+        offset,
+      })
       if (result.error) {
         setError(result.error)
         setItems([])
-        setLastSenders({})
+        setHasMore(false)
       } else {
         const nextItems = result.data ?? []
-        setItems(nextItems)
-        const senders = await listRoomChatLastSenders(nextItems.map((item) => item.id))
-        if (!active) return
-        if (!senders.error) {
-          setLastSenders(senders.data ?? {})
+        if (nextItems.length === 0 && offset > 0) {
+          setLoading(false)
+          void loadPage(Math.max(0, offset - ROOM_CHAT_PAGE_SIZE))
+          return
         }
+        setItems(nextItems)
+        setHasMore(result.hasMore)
+        setPageOffset(offset)
       }
       setLoading(false)
+    },
+    [user?.id],
+  )
+
+  useEffect(() => {
+    void loadPage(0)
+  }, [loadPage])
+
+  useEffect(() => {
+    let active = true
+    const uid = user?.id?.trim()
+    if (!uid) {
+      setMyRooms([])
+      setMyRoomsError(null)
+      return
     }
-    void run()
+    setMyRoomsLoading(true)
+    setMyRoomsError(null)
+    void (async () => {
+      const res = await fetchPersistentSpaceRoomsForUser(uid)
+      if (!active) return
+      if (res.error) {
+        setMyRooms([])
+        setMyRoomsError(res.error)
+      } else {
+        setMyRooms(res.data ?? [])
+      }
+      setMyRoomsLoading(false)
+    })()
     return () => {
       active = false
     }
   }, [user?.id])
 
-  const filteredItems = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    let next = items
+  const createPersistentRoom = () => {
+    if (!user?.id) return
+    const id = newRoomId()
+    setPendingHostClaim(id)
+    stashSpaceRoomCreateOptions(id, { lifecycle: 'permanent', chatVisibility: 'everyone' })
+    navigate(`/r/${encodeURIComponent(id)}`)
+  }
 
-    if (q) {
-      next = next.filter((item) => {
-        const haystack = [item.title, item.roomSlug ?? '', item.lastMessagePreview ?? ''].join(' ').toLowerCase()
-        return haystack.includes(q)
-      })
+  const goNewer = () => {
+    if (pageOffset <= 0) return
+    void loadPage(Math.max(0, pageOffset - ROOM_CHAT_PAGE_SIZE))
+  }
+
+  const goOlder = () => {
+    if (!hasMore) return
+    void loadPage(pageOffset + ROOM_CHAT_PAGE_SIZE)
+  }
+
+  const openChatModal = (item: RoomChatConversationSummary) => {
+    if (item.messageCount <= 0) return
+    setModalSummary(item)
+    setModalConversationId(item.id)
+    setModalOpen(true)
+  }
+
+  const closeChatModal = () => {
+    setModalOpen(false)
+    setModalConversationId(null)
+    setModalSummary(null)
+  }
+
+  const confirmRemoveFromList = async () => {
+    if (!deleteTarget) return
+    setDeleteBusy(true)
+    const res = await leaveRoomChatArchiveEntry(deleteTarget.id)
+    setDeleteBusy(false)
+    if (!res.ok) {
+      setError(res.error ?? 'Не удалось удалить запись.')
+      setDeleteTarget(null)
+      return
     }
+    setDeleteTarget(null)
+    if (modalConversationId === deleteTarget.id) closeChatModal()
+    void loadPage(pageOffset)
+  }
 
-    next = applyTimeFilter(next, timeFilter)
-    return sortChatItems(next, sortMode)
-  }, [items, query, sortMode, timeFilter])
+  const canGoNewer = pageOffset > 0
+
+  const emptyHint = useMemo(
+    () =>
+      !loading && !error && items.length === 0
+        ? 'Здесь появятся комнаты, в которых вы участвовали. Откройте эфир по ссылке — запись добавится автоматически.'
+        : null,
+    [loading, error, items.length],
+  )
 
   return (
     <DashboardShell active="chats" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
       <section className="dashboard-section">
         <div className="dashboard-chat-page__head">
-          <h2 className="dashboard-section__title dashboard-chat-page__page-title">Чаты комнат</h2>
-          <Link to="/dashboard/messenger" className="dashboard-messenger__switch">
-            Мессенджер
-          </Link>
+          <h2 className="dashboard-section__title dashboard-chat-page__page-title">Комнаты</h2>
         </div>
 
-        {!loading && !error && items.length > 0 ? (
-          <div className="dashboard-chat-filters">
-            <label className="dashboard-chat-filters__search">
-              <span className="dashboard-chat-filters__label">Поиск</span>
-              <input
-                type="search"
-                className="dashboard-chat-filters__input"
-                placeholder="Название, комната или фрагмент сообщения"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </label>
+        <div className="dashboard-my-rooms">
+          <div className="dashboard-my-rooms__head">
+            <h3 className="dashboard-my-rooms__title">Мои комнаты</h3>
+            <button
+              type="button"
+              className="dashboard-my-rooms__add"
+              onClick={createPersistentRoom}
+              disabled={!user?.id}
+              title="Создать постоянную комнату"
+              aria-label="Создать постоянную комнату"
+            >
+              <PlusIcon />
+            </button>
+          </div>
+          {myRoomsLoading ? (
+            <p className="dashboard-my-rooms__hint">Загрузка…</p>
+          ) : myRoomsError ? (
+            <p className="join-error dashboard-my-rooms__hint">{myRoomsError}</p>
+          ) : myRooms.length === 0 ? (
+            <p className="dashboard-my-rooms__hint">
+              Постоянных комнат пока нет. Нажмите «+» — откроется эфир с новой ссылкой; после первого входа комната
+              сохранится в списке.
+            </p>
+          ) : (
+            <ul className="dashboard-my-rooms__list">
+              {myRooms.map((r) => {
+                const label = r.displayName?.trim() || r.slug
+                const showTitle = Boolean(r.displayName?.trim())
+                return (
+                <li key={r.slug} className="dashboard-my-rooms__row">
+                  {r.status === 'open' ? (
+                    <span className="dashboard-rooms-live-dot" title="Открыта" aria-label="Открыта" />
+                  ) : (
+                    <span className="dashboard-rooms-live-slot" aria-hidden />
+                  )}
+                  {r.avatarUrl ? (
+                    <img
+                      src={r.avatarUrl}
+                      alt=""
+                      className="dashboard-my-rooms__avatar"
+                      width={24}
+                      height={24}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : null}
+                  <Link
+                    to={`/r/${encodeURIComponent(r.slug)}`}
+                    className={`dashboard-my-rooms__slug${showTitle ? ' dashboard-my-rooms__slug--title' : ''}`}
+                    title={showTitle ? r.slug : undefined}
+                  >
+                    {label}
+                  </Link>
+                  <span className="dashboard-my-rooms__meta" title={`Доступ: ${r.accessMode}, чат: ${r.chatVisibility}`}>
+                    {r.accessMode} · {r.chatVisibility}
+                  </span>
+                  <Link
+                    to={`/r/${encodeURIComponent(r.slug)}`}
+                    className="dashboard-rooms-icon-btn dashboard-my-rooms__open"
+                    title="Открыть комнату"
+                    aria-label="Открыть комнату"
+                  >
+                    <CamIcon />
+                  </Link>
+                </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
 
-            <div className="dashboard-chat-filters__control">
-              <span className="dashboard-chat-filters__label">Сортировка</span>
-              <DashboardMenuPicker
-                value={sortMode}
-                onChange={setSortMode}
-                options={CHAT_SORT_OPTIONS}
-                ariaLabelPrefix="Сортировка"
-                modifierClass="admin-role-picker--dashboard-filters"
-              />
-            </div>
-
-            <div className="dashboard-chat-filters__control">
-              <span className="dashboard-chat-filters__label">Период</span>
-              <DashboardMenuPicker
-                value={timeFilter}
-                onChange={setTimeFilter}
-                options={CHAT_TIME_FILTER_OPTIONS}
-                ariaLabelPrefix="Период"
-                modifierClass="admin-role-picker--dashboard-filters"
-              />
-            </div>
+        {!loading && !error && (items.length > 0 || pageOffset > 0) ? (
+          <div className="dashboard-rooms-pager" role="navigation" aria-label="Страницы списка комнат">
+            <button
+              type="button"
+              className="dashboard-rooms-pager__btn"
+              disabled={!canGoNewer || loading}
+              onClick={goNewer}
+              aria-label="Более новые комнаты"
+              title="Более новые комнаты"
+            >
+              <ChevronLeftIcon />
+            </button>
+            <span className="dashboard-rooms-pager__info">
+              {pageOffset + 1}–{pageOffset + items.length}
+              {hasMore ? ' …' : ''}
+            </span>
+            <button
+              type="button"
+              className="dashboard-rooms-pager__btn"
+              disabled={!hasMore || loading}
+              onClick={goOlder}
+              aria-label={`Предыдущие ${ROOM_CHAT_PAGE_SIZE} комнат`}
+              title={`Предыдущие ${ROOM_CHAT_PAGE_SIZE} комнат`}
+            >
+              <ChevronRightIcon />
+            </button>
           </div>
         ) : null}
 
         {loading ? <div className="auth-loading" aria-label="Загрузка..." /> : null}
         {!loading && error ? <p className="join-error">{error}</p> : null}
-        {!loading && !error && items.length === 0 ? (
-          <div className="dashboard-chats-empty">
-            После завершения вашей первой комнаты здесь появится архив переписки.
-          </div>
+        {!loading && !error && items.length === 0 && pageOffset === 0 ? (
+          <div className="dashboard-chats-empty">{emptyHint}</div>
         ) : null}
 
         {!loading && !error && items.length > 0 ? (
-          <div className="dashboard-chat-list">
-            {filteredItems.length === 0 ? (
-              <div className="dashboard-chats-empty">По текущим фильтрам ничего не найдено.</div>
-            ) : (
-              filteredItems.map((item) => (
-                <Link key={item.id} to={`/dashboard/chats/${encodeURIComponent(item.id)}`} className="dashboard-chat-row">
-                  <div className="dashboard-chat-row__main">
-                    <div className="dashboard-chat-row__titleline">
-                      <div className="dashboard-chat-row__titlewrap">
-                        <span className="dashboard-chat-row__title">{item.title}</span>
-                        <span className="dashboard-chat-row__count" title={`Сообщений: ${item.messageCount}`}>
-                          <span className="dashboard-chat-row__count-icon" aria-hidden>
-                            <ChatBubbleIcon />
-                          </span>
-                          <span>{item.messageCount}</span>
-                        </span>
-                      </div>
-                      <div className="dashboard-chat-row__statusline">
-                        <span className="dashboard-chat-row__activity">
-                          {formatDateTime(item.lastMessageAt ?? item.createdAt)}
-                        </span>
-                        <span
-                          className={`dashboard-badge ${
-                            item.closedAt ? 'dashboard-badge--pending' : 'dashboard-badge--active'
-                          }`}
-                        >
-                          {item.closedAt ? 'Завершён' : 'Активен'}
-                        </span>
-                      </div>
-                    </div>
-                    {lastSenders[item.id] ? (
-                      <div className="dashboard-chat-row__last-author">
-                        {lastSenders[item.id].senderUserId?.trim() ? (
-                          <button
-                            type="button"
-                            className="dashboard-chat-row__last-author-avatar dashboard-chat-row__last-author-avatar--btn"
-                            aria-label={`Профиль: ${lastSenders[item.id].senderNameSnapshot}`}
-                            onClick={(e) => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              openUserPeek({
-                                userId: lastSenders[item.id].senderUserId!.trim(),
-                                displayName: lastSenders[item.id].senderNameSnapshot,
-                                avatarUrl: lastSenders[item.id].avatarUrl,
-                              })
-                            }}
-                          >
-                            {lastSenders[item.id].avatarUrl ? (
-                              <img
-                                className="dashboard-chat-row__last-author-avatar-img"
-                                src={lastSenders[item.id].avatarUrl ?? undefined}
-                                alt=""
-                              />
-                            ) : (
-                              <span
-                                className="dashboard-chat-row__last-author-avatar dashboard-chat-row__last-author-avatar--placeholder"
-                                aria-hidden
-                              />
-                            )}
-                          </button>
-                        ) : lastSenders[item.id].avatarUrl ? (
-                          <img
-                            className="dashboard-chat-row__last-author-avatar"
-                            src={lastSenders[item.id].avatarUrl ?? undefined}
-                            alt=""
-                          />
-                        ) : (
-                          <span className="dashboard-chat-row__last-author-avatar dashboard-chat-row__last-author-avatar--placeholder" aria-hidden />
-                        )}
-                        <span className="dashboard-chat-row__last-author-name">
-                          {lastSenders[item.id].senderNameSnapshot}
-                        </span>
-                      </div>
-                    ) : null}
-                    <div className="dashboard-chat-row__preview">
-                      {item.lastMessagePreview?.trim() || 'Сообщений пока нет'}
-                    </div>
+          <ul className="dashboard-rooms-compact-list">
+            {items.map((item) => {
+              const chatEnabled = item.messageCount > 0
+              const isOpen = !item.closedAt
+              return (
+                <li key={item.id} className="dashboard-rooms-compact-row">
+                  {isOpen ? (
+                    <span className="dashboard-rooms-live-dot" title="Комната ещё открыта" aria-label="Открыта" />
+                  ) : (
+                    <span className="dashboard-rooms-live-slot" aria-hidden />
+                  )}
+                  <span className="dashboard-rooms-compact-row__title" title={item.title}>
+                    {item.title}
+                  </span>
+                  <span className="dashboard-rooms-compact-row__date">
+                    {formatRoomListDate(item.lastMessageAt ?? item.createdAt)}
+                  </span>
+                  <div className="dashboard-rooms-compact-row__actions">
+                    <button
+                      type="button"
+                      className="dashboard-rooms-icon-btn"
+                      disabled={!chatEnabled}
+                      title={chatEnabled ? 'Чат комнаты' : 'Нет сообщений'}
+                      aria-label="Чат комнаты"
+                      onClick={() => openChatModal(item)}
+                    >
+                      <ChatBubbleIcon />
+                    </button>
+                    {item.roomSlug ? (
+                      <Link
+                        to={`/r/${encodeURIComponent(item.roomSlug)}`}
+                        className="dashboard-rooms-icon-btn"
+                        title="К эфиру"
+                        aria-label="К эфиру"
+                      >
+                        <CamIcon />
+                      </Link>
+                    ) : (
+                      <span
+                        className="dashboard-rooms-icon-btn dashboard-rooms-icon-btn--disabled"
+                        aria-hidden
+                        title="Нет ссылки на комнату"
+                      >
+                        <CamIcon />
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className="dashboard-rooms-icon-btn dashboard-rooms-icon-btn--danger"
+                      title="Убрать из списка"
+                      aria-label="Убрать из списка"
+                      onClick={() => setDeleteTarget(item)}
+                    >
+                      <TrashIcon />
+                    </button>
                   </div>
-                </Link>
-              ))
-            )}
-          </div>
+                </li>
+              )
+            })}
+          </ul>
         ) : null}
       </section>
+
+      {user?.id && modalConversationId ? (
+        <RoomChatArchiveModal
+          open={modalOpen}
+          conversationId={modalConversationId}
+          summary={modalSummary}
+          userId={user.id}
+          onClose={closeChatModal}
+        />
+      ) : null}
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Убрать комнату из списка?"
+        message={
+          <div className="dashboard-rooms-delete-confirm">
+            <p>
+              Запись о комнате «{deleteTarget?.title ?? '—'}» исчезнет только у вас. У других участников эфира доступ к
+              чату сохранится.
+            </p>
+            <p>
+              <strong>Важно:</strong> если в этом чате не было сообщений, диалог будет удалён из базы целиком — у всех
+              пропадёт пустая запись. Если сообщения были, история останется у тех, кто не удалял запись.
+            </p>
+            <p className="dashboard-rooms-delete-confirm--warn">
+              У вас локально переписка из этого списка больше не отобразится; восстановить только вашу «закладку» без
+              повторного входа в эфир нельзя.
+            </p>
+          </div>
+        }
+        confirmLabel="Удалить из списка"
+        cancelLabel="Отмена"
+        confirmLoading={deleteBusy}
+        onCancel={() => {
+          if (!deleteBusy) setDeleteTarget(null)
+        }}
+        onConfirm={() => void confirmRemoveFromList()}
+      />
     </DashboardShell>
   )
 }

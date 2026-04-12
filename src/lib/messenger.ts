@@ -33,8 +33,8 @@ export type DirectMessage = {
   createdAt: string
   editedAt?: string | null
   replyToMessageId?: string | null
-  /** Для kind=reaction: id целевого сообщения (сервер: meta.react_to). Для image: meta.image.path (storage). */
-  meta?: { react_to?: string; image?: { path: string } } | null
+  /** Для kind=reaction: id целевого сообщения (сервер: meta.react_to). Для image: пути в storage (превью опционально). */
+  meta?: { react_to?: string; image?: { path: string; thumbPath?: string } } | null
 }
 
 function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
@@ -42,10 +42,16 @@ function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
   const o = raw as Record<string, unknown>
   const reactTo = o.react_to
   const img = o.image
-  let image: { path: string } | undefined
+  let image: { path: string; thumbPath?: string } | undefined
   if (img && typeof img === 'object') {
-    const p = (img as Record<string, unknown>).path
-    if (typeof p === 'string' && p.trim()) image = { path: p.trim() }
+    const io = img as Record<string, unknown>
+    const p = io.path
+    const tp = io.thumbPath ?? io.thumb_path
+    if (typeof p === 'string' && p.trim()) {
+      const path = p.trim()
+      image =
+        typeof tp === 'string' && tp.trim() ? { path, thumbPath: tp.trim() } : { path }
+    }
   }
   const react = typeof reactTo === 'string' && reactTo.trim() ? reactTo.trim() : undefined
   if (!react && !image) return null
@@ -343,55 +349,71 @@ export async function editDirectMessage(
 
 const MESSENGER_IMAGE_MAX_EDGE = 1680
 const MESSENGER_IMAGE_JPEG_QUALITY = 0.86
+/** Превью в ленте: меньший файл, отдельный объект в storage. */
+const MESSENGER_THUMB_MAX_EDGE = 480
+const MESSENGER_THUMB_JPEG_QUALITY = 0.76
 
-async function imageToJpegBlob(file: File): Promise<Blob> {
+async function encodeJpegFromBitmap(bmp: ImageBitmap, maxEdge: number, quality: number): Promise<Blob> {
+  const scale = Math.min(1, maxEdge / Math.max(bmp.width, bmp.height))
+  const w = Math.max(1, Math.round(bmp.width * scale))
+  const h = Math.max(1, Math.round(bmp.height * scale))
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('no_canvas')
+  ctx.drawImage(bmp, 0, 0, w, h)
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob((b) => resolve(b), 'image/jpeg', quality),
+  )
+  if (!blob) throw new Error('to_blob_failed')
+  return blob
+}
+
+async function messengerImageFullAndThumbBlobs(file: File): Promise<{ full: Blob; thumb: Blob }> {
   const bmp = await createImageBitmap(file)
   try {
-    const scale = Math.min(1, MESSENGER_IMAGE_MAX_EDGE / Math.max(bmp.width, bmp.height))
-    const w = Math.max(1, Math.round(bmp.width * scale))
-    const h = Math.max(1, Math.round(bmp.height * scale))
-    const canvas = document.createElement('canvas')
-    canvas.width = w
-    canvas.height = h
-    const ctx = canvas.getContext('2d')
-    if (!ctx) throw new Error('no_canvas')
-    ctx.drawImage(bmp, 0, 0, w, h)
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((b) => resolve(b), 'image/jpeg', MESSENGER_IMAGE_JPEG_QUALITY),
-    )
-    if (!blob) throw new Error('to_blob_failed')
-    return blob
+    const full = await encodeJpegFromBitmap(bmp, MESSENGER_IMAGE_MAX_EDGE, MESSENGER_IMAGE_JPEG_QUALITY)
+    const thumb = await encodeJpegFromBitmap(bmp, MESSENGER_THUMB_MAX_EDGE, MESSENGER_THUMB_JPEG_QUALITY)
+    return { full, thumb }
   } finally {
     bmp.close()
   }
 }
 
-/** Загрузка сжатого JPEG в bucket `messenger-media` (первый сегмент пути = conversation_id). */
+/** Загрузка полного и превью JPEG в bucket `messenger-media` (первый сегмент пути = conversation_id). */
 export async function uploadMessengerImage(
   conversationId: string,
   file: File,
-): Promise<{ path: string | null; error: string | null }> {
+): Promise<{ path: string | null; thumbPath: string | null; error: string | null }> {
   const cid = conversationId.trim()
-  if (!cid) return { path: null, error: 'Нет чата' }
-  if (!file.type.startsWith('image/')) return { path: null, error: 'Нужен файл изображения' }
-  if (file.size > 20 * 1024 * 1024) return { path: null, error: 'Файл слишком большой (макс. 20 МБ)' }
+  if (!cid) return { path: null, thumbPath: null, error: 'Нет чата' }
+  if (!file.type.startsWith('image/')) return { path: null, thumbPath: null, error: 'Нужен файл изображения' }
+  if (file.size > 20 * 1024 * 1024)
+    return { path: null, thumbPath: null, error: 'Файл слишком большой (макс. 20 МБ)' }
 
   try {
-    const blob = await imageToJpegBlob(file)
+    const { full, thumb } = await messengerImageFullAndThumbBlobs(file)
     const id =
       typeof crypto !== 'undefined' && 'randomUUID' in crypto
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const path = `${cid}/${id}.jpg`
-    const { error } = await supabase.storage.from('messenger-media').upload(path, blob, {
+    const thumbPath = `${cid}/${id}_thumb.jpg`
+    const { error } = await supabase.storage.from('messenger-media').upload(path, full, {
       contentType: 'image/jpeg',
       upsert: false,
     })
-    if (error) return { path: null, error: error.message }
-    return { path, error: null }
+    if (error) return { path: null, thumbPath: null, error: error.message }
+    const { error: thumbErr } = await supabase.storage.from('messenger-media').upload(thumbPath, thumb, {
+      contentType: 'image/jpeg',
+      upsert: false,
+    })
+    if (thumbErr) return { path, thumbPath: null, error: null }
+    return { path, thumbPath, error: null }
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'upload_failed'
-    return { path: null, error: msg }
+    return { path: null, thumbPath: null, error: msg }
   }
 }
 

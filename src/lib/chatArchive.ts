@@ -1,5 +1,7 @@
 import { supabase } from './supabase'
 
+export const ROOM_CHAT_PAGE_SIZE = 10
+
 export type RoomChatConversationSummary = {
   id: string
   title: string
@@ -47,7 +49,11 @@ function mapConversationRow(row: Record<string, unknown>): RoomChatConversationS
 
 export async function listRoomChatConversationsForUser(
   userId: string,
-): Promise<{ data: RoomChatConversationSummary[] | null; error: string | null }> {
+  options?: { limit?: number; offset?: number },
+): Promise<{ data: RoomChatConversationSummary[] | null; error: string | null; hasMore: boolean }> {
+  const limit = Math.min(Math.max(options?.limit ?? ROOM_CHAT_PAGE_SIZE, 1), 100)
+  const offset = Math.max(options?.offset ?? 0, 0)
+
   const { data, error } = await supabase
     .from('chat_conversations')
     .select(
@@ -57,12 +63,52 @@ export async function listRoomChatConversationsForUser(
     .eq('kind', 'room')
     .order('last_message_at', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1)
 
-  if (error) return { data: null, error: error.message }
+  if (error) return { data: null, error: error.message, hasMore: false }
+  const rows = (data ?? []).map((row) => mapConversationRow(row as Record<string, unknown>))
   return {
-    data: (data ?? []).map((row) => mapConversationRow(row as Record<string, unknown>)),
+    data: rows,
+    error: null,
+    hasMore: rows.length === limit,
+  }
+}
+
+/** Убрать комнату из своего списка; при отсутствии сообщений диалог удаляется из БД для всех. */
+export async function leaveRoomChatArchiveEntry(
+  conversationId: string,
+): Promise<{ ok: boolean; removedConversation: boolean; error: string | null }> {
+  const id = conversationId.trim()
+  if (!id) return { ok: false, removedConversation: false, error: 'Нет id' }
+
+  const { data, error } = await supabase.rpc('leave_room_chat_archive_entry', {
+    p_conversation_id: id,
+  })
+
+  if (error) return { ok: false, removedConversation: false, error: error.message }
+  const row = data as Record<string, unknown> | null
+  if (!row || row.ok !== true) {
+    const err = typeof row?.error === 'string' ? row.error : 'request_failed'
+    return { ok: false, removedConversation: false, error: err }
+  }
+  return {
+    ok: true,
+    removedConversation: row.removed_conversation === true,
     error: null,
   }
+}
+
+/** Админ: удалить room-чаты без сообщений или без участников. */
+export async function adminPurgeStaleRoomChats(): Promise<{ deleted: number; error: string | null }> {
+  const { data, error } = await supabase.rpc('admin_purge_stale_room_chats')
+  if (error) return { deleted: 0, error: error.message }
+  const row = data as Record<string, unknown> | null
+  if (!row || row.ok !== true) {
+    const err = typeof row?.error === 'string' ? row.error : 'request_failed'
+    return { deleted: 0, error: err }
+  }
+  const n = typeof row.deleted === 'number' ? row.deleted : Number(row.deleted ?? 0) || 0
+  return { deleted: n, error: null }
 }
 
 export async function getRoomChatConversationForUser(

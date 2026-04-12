@@ -5,9 +5,19 @@ export type SpaceRoomLifecycleKind = 'permanent' | 'temporary'
 
 export type SpaceRoomChatVisibility = 'everyone' | 'authenticated_only' | 'staff_only' | 'closed'
 
+export const SPACE_ROOM_DISPLAY_NAME_MAX = 160
+export const SPACE_ROOM_AVATAR_URL_MAX = 2048
+
 export type SpaceRoomCreateOptions = {
   lifecycle: SpaceRoomLifecycleKind
   chatVisibility: SpaceRoomChatVisibility
+  /** Имя в списке «Мои комнаты» и UI; URL остаётся по slug. */
+  displayName?: string | null
+  avatarUrl?: string | null
+  /** Политика гостей (произвольный JSON для клиента). */
+  guestPolicy?: Record<string, unknown> | null
+  /** Намерение: не пускать гостей без создателя-хоста в эфире (исполнение в приложении). */
+  requireCreatorHostForJoin?: boolean
 }
 
 /** Варианты видимости чата при создании комнаты (экран входа / хост). */
@@ -90,6 +100,12 @@ export function stashSpaceRoomCreateOptions(slug: string, opts: SpaceRoomCreateO
   }
 }
 
+function parseGuestPolicyFromStorage(raw: unknown): Record<string, unknown> | null {
+  if (raw == null) return null
+  if (typeof raw !== 'object' || Array.isArray(raw)) return null
+  return raw as Record<string, unknown>
+}
+
 export function takeSpaceRoomCreateOptions(slug: string): SpaceRoomCreateOptions | null {
   const trimmed = slug.trim()
   if (!trimmed) return null
@@ -98,7 +114,12 @@ export function takeSpaceRoomCreateOptions(slug: string): SpaceRoomCreateOptions
     const raw = sessionStorage.getItem(key)
     if (!raw) return null
     sessionStorage.removeItem(key)
-    const p = JSON.parse(raw) as Partial<SpaceRoomCreateOptions>
+    const p = JSON.parse(raw) as Partial<SpaceRoomCreateOptions> & {
+      display_name?: string
+      avatar_url?: string
+      guest_policy?: unknown
+      require_creator_host_for_join?: unknown
+    }
     if (p.lifecycle !== 'permanent' && p.lifecycle !== 'temporary') return null
     const cv = p.chatVisibility
     if (
@@ -109,7 +130,21 @@ export function takeSpaceRoomCreateOptions(slug: string): SpaceRoomCreateOptions
     ) {
       return null
     }
-    return { lifecycle: p.lifecycle, chatVisibility: cv }
+    const base: SpaceRoomCreateOptions = { lifecycle: p.lifecycle, chatVisibility: cv }
+    const dnRaw = typeof p.displayName === 'string' ? p.displayName : typeof p.display_name === 'string' ? p.display_name : ''
+    const dn = dnRaw.trim().slice(0, SPACE_ROOM_DISPLAY_NAME_MAX)
+    if (dn) base.displayName = dn
+    const auRaw =
+      typeof p.avatarUrl === 'string' ? p.avatarUrl : typeof p.avatar_url === 'string' ? p.avatar_url : ''
+    const au = auRaw.trim().slice(0, SPACE_ROOM_AVATAR_URL_MAX)
+    if (au) base.avatarUrl = au
+    const gpStored = p.guestPolicy ?? p.guest_policy
+    const gp = parseGuestPolicyFromStorage(gpStored)
+    if (gp && Object.keys(gp).length > 0) base.guestPolicy = gp
+    if (p.requireCreatorHostForJoin === true || p.require_creator_host_for_join === true) {
+      base.requireCreatorHostForJoin = true
+    }
+    return base
   } catch {
     return null
   }
@@ -240,6 +275,64 @@ export async function isSpaceRoomJoinable(slug: string, authUserId?: string | nu
   return joinable
 }
 
+/** Постоянные комнаты пользователя как хоста (`retain_instance`), для кабинета «Мои комнаты». */
+export type PersistentSpaceRoomRow = {
+  slug: string
+  status: string
+  accessMode: string
+  chatVisibility: SpaceRoomChatVisibility
+  createdAt: string
+  displayName: string | null
+  avatarUrl: string | null
+  guestPolicy: Record<string, unknown>
+  requireCreatorHostForJoin: boolean
+}
+
+export async function fetchPersistentSpaceRoomsForUser(
+  userId: string,
+): Promise<{ data: PersistentSpaceRoomRow[] | null; error: string | null }> {
+  const uid = userId.trim()
+  if (!uid) return { data: [], error: null }
+
+  const { data, error } = await supabase
+    .from('space_rooms')
+    .select(
+      'slug, status, access_mode, chat_visibility, created_at, display_name, avatar_url, guest_policy, require_creator_host_for_join',
+    )
+    .eq('host_user_id', uid)
+    .eq('retain_instance', true)
+    .order('created_at', { ascending: false })
+
+  if (error) return { data: null, error: error.message }
+
+  const rows = (data ?? []).map((r) => {
+    const gpRaw = r.guest_policy
+    const guestPolicy =
+      gpRaw != null && typeof gpRaw === 'object' && !Array.isArray(gpRaw) ? (gpRaw as Record<string, unknown>) : {}
+    return {
+      slug: typeof r.slug === 'string' ? r.slug : '',
+      status: typeof r.status === 'string' ? r.status : '',
+      accessMode: typeof r.access_mode === 'string' ? r.access_mode : '',
+      chatVisibility: isChatVisibility(r.chat_visibility as string)
+        ? (r.chat_visibility as SpaceRoomChatVisibility)
+        : 'everyone',
+      createdAt: typeof r.created_at === 'string' ? r.created_at : '',
+      displayName:
+        typeof r.display_name === 'string' && r.display_name.trim()
+          ? r.display_name.trim().slice(0, SPACE_ROOM_DISPLAY_NAME_MAX)
+          : null,
+      avatarUrl:
+        typeof r.avatar_url === 'string' && r.avatar_url.trim()
+          ? r.avatar_url.trim().slice(0, SPACE_ROOM_AVATAR_URL_MAX)
+          : null,
+      guestPolicy,
+      requireCreatorHostForJoin: r.require_creator_host_for_join === true,
+    }
+  })
+
+  return { data: rows.filter((r) => r.slug), error: null }
+}
+
 export async function registerSpaceRoomAsHost(
   slug: string,
   userId: string,
@@ -253,14 +346,26 @@ export async function registerSpaceRoomAsHost(
   const chatVisibility =
     opts?.chatVisibility && isChatVisibility(opts.chatVisibility) ? opts.chatVisibility : 'everyone'
 
-  const { error } = await supabase.from('space_rooms').insert({
+  const insertPayload: Record<string, unknown> = {
     slug: trimmed,
     host_user_id: userId,
     status: 'open',
     retain_instance: retainInstance,
     access_mode: 'link',
     chat_visibility: chatVisibility,
-  })
+  }
+  const displayName = typeof opts?.displayName === 'string' ? opts.displayName.trim() : ''
+  if (displayName) insertPayload.display_name = displayName.slice(0, SPACE_ROOM_DISPLAY_NAME_MAX)
+  const avatarUrl = typeof opts?.avatarUrl === 'string' ? opts.avatarUrl.trim() : ''
+  if (avatarUrl) insertPayload.avatar_url = avatarUrl.slice(0, SPACE_ROOM_AVATAR_URL_MAX)
+  if (opts?.guestPolicy && typeof opts.guestPolicy === 'object' && !Array.isArray(opts.guestPolicy)) {
+    insertPayload.guest_policy = opts.guestPolicy
+  }
+  if (opts?.requireCreatorHostForJoin === true) {
+    insertPayload.require_creator_host_for_join = true
+  }
+
+  const { error } = await supabase.from('space_rooms').insert(insertPayload)
   if (error) {
     if (error.code === '23505') return false
     console.warn('registerSpaceRoomAsHost:', error.message)

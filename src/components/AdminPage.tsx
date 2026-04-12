@@ -6,8 +6,9 @@ import { AdminDashboardPanel } from './AdminDashboardPanel'
 import { AdminRegisteredUsersTable } from './AdminRegisteredUsersTable'
 import { ServerSettingsModal } from './ServerSettingsModal'
 import { TelegramNotificationsPanel } from './TelegramNotificationsPanel'
+import { AdminRoomChatsCleanupPanel } from './AdminRoomChatsCleanupPanel'
 
-type AdminTab = 'dashboard' | 'users' | 'server' | 'notifications'
+type AdminTab = 'dashboard' | 'users' | 'server' | 'notifications' | 'roomChats'
 
 export function AdminPage() {
   const { signOut } = useAuth()
@@ -85,6 +86,8 @@ export function AdminPage() {
           {tab === 'server' ? <ServerSettingsModal variant="inline" open /> : null}
 
           {tab === 'notifications' ? <TelegramNotificationsPanel /> : null}
+
+          {tab === 'roomChats' ? <AdminRoomChatsCleanupPanel /> : null}
         </div>
       </div>
     </div>

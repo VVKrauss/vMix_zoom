@@ -52,6 +52,7 @@ import {
   LogOutIcon,
   MenuBurgerIcon,
   ParticipantsBadgeIcon,
+  XCloseIcon,
   PlusIcon,
   RoomsIcon,
 } from './icons'
@@ -1062,9 +1063,15 @@ export function DashboardMessengerPage() {
     }
     const caption = draft.trim()
     const replyId = replyTo?.id ?? null
+    const imageMeta = {
+      image: {
+        path: up.path!,
+        ...(up.thumbPath ? { thumbPath: up.thumbPath } : {}),
+      },
+    }
     const res = await appendDirectMessage(convId, caption, {
       kind: 'image',
-      meta: { image: { path: up.path! } },
+      meta: imageMeta,
       replyToMessageId: replyId,
     })
     if (res.error) {
@@ -2092,12 +2099,14 @@ export function DashboardMessengerPage() {
               <button
                 type="button"
                 className="messenger-image-lightbox__close"
+                aria-label="Закрыть"
+                title="Закрыть"
                 onClick={(e) => {
                   e.stopPropagation()
                   setMessengerImageLightboxUrl(null)
                 }}
               >
-                Закрыть
+                <XCloseIcon />
               </button>
               <div className="messenger-image-lightbox__frame" onClick={(e) => e.stopPropagation()}>
                 <img src={messengerImageLightboxUrl} className="messenger-image-lightbox__img" alt="" />
