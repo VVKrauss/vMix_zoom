@@ -4143,30 +4143,51 @@ html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
   min-width: 0;
   width: 100%;
   max-width: 100%;
-  overflow-x: hidden;
+  overflow: hidden;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__layout {
-  gap: 4px;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   min-width: 0;
   width: 100%;
   max-width: 100%;
 }
 
+/* Тред: шапка | скролл ленты | композер — одна колонка на высоту --vvh (клавиатура уменьшает страницу). */
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__thread {
+  flex: 1 1 0;
+  min-height: 0;
   min-width: 0;
   max-width: 100%;
-  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__thread--mobile {
+  border: none;
+  border-radius: 0;
+  background: var(--surface);
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger--fill .dashboard-messenger__layout {
-  max-height: calc(var(--vvh, 100dvh) - var(--messenger-mobile-top-inset) - env(safe-area-inset-bottom, 0px));
+  max-height: none;
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__list {
   gap: 0;
   box-sizing: border-box;
+  flex: 1 1 0;
   min-width: 0;
+  min-height: 0;
   max-width: 100%;
   overflow-x: hidden;
   overflow-y: hidden;
@@ -4369,10 +4390,92 @@ html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__thread-head {
   padding: 0;
   border-bottom: none;
+  flex-shrink: 0;
+  z-index: 6;
+  background: var(--surface);
 }
 
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__thread-head .dashboard-messenger__list-head {
   width: 100%;
+}
+
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__thread-main {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__messages-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-bottom: 0;
+}
+
+/* Композер в потоке колонки — низ = низ видимой области (вместе с клавиатурой через --vvh на странице). */
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__thread-main > .dashboard-messenger__composer {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 5;
+  gap: 6px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 6px max(6px, env(safe-area-inset-right, 0px)) max(8px, env(safe-area-inset-bottom, 0px))
+    max(6px, env(safe-area-inset-left, 0px));
+  border-top: 1px solid var(--border);
+  background: var(--surface2);
+  box-shadow: 0 -4px 22px rgba(0, 0, 0, 0.32);
+}
+
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__thread-main > .dashboard-messenger__composer .dashboard-messenger__composer-main {
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__thread-main > .dashboard-messenger__composer .dashboard-messenger__composer-side {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__thread-main > .dashboard-messenger__composer .dashboard-messenger__composer-tools {
+  flex-shrink: 0;
+}
+
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__thread-main > .dashboard-messenger__composer .dashboard-messenger__send-btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__thread-main > .dashboard-messenger__composer .dashboard-messenger__input {
+  min-height: calc(1.35em + 20px);
+  max-height: min(28vh, 200px);
+  padding: 8px 10px;
+  resize: none;
+  overflow-y: auto;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 16px;
+  line-height: 1.35;
 }
 
 .dashboard-messenger__thread-head-center {
@@ -4463,72 +4566,6 @@ button.dashboard-messenger__thread-head-center-avatar {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* Портал на document.body — не режется overflow у fixed-страницы мессенджера (iOS). */
-.dashboard-messenger__composer.dashboard-messenger__composer--viewport-portal {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--messenger-keyboard-bottom, 0px));
-  z-index: 9005;
-  gap: 6px;
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 100%;
-  margin-left: 0;
-  padding: 6px max(6px, env(safe-area-inset-right, 0px)) 8px max(6px, env(safe-area-inset-left, 0px));
-  align-items: stretch;
-  border-top: 1px solid var(--border);
-  background: var(--surface2);
-  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.35);
-}
-
-.dashboard-messenger--mobile-chromeless .dashboard-messenger__messages-scroll {
-  padding-bottom: calc(108px + env(safe-area-inset-bottom, 0px) + var(--messenger-keyboard-bottom, 0px));
-}
-
-.dashboard-messenger__composer--viewport-portal .dashboard-messenger__composer-main {
-  flex-direction: column;
-  align-items: stretch;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.dashboard-messenger__composer--viewport-portal .dashboard-messenger__composer-side {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
-}
-
-.dashboard-messenger__composer--viewport-portal .dashboard-messenger__composer-tools {
-  flex-shrink: 0;
-}
-
-.dashboard-messenger__composer--viewport-portal .dashboard-messenger__send-btn {
-  flex: 1 1 auto;
-  min-width: 0;
-  width: auto;
-  max-width: 100%;
-  box-sizing: border-box;
-}
-
-.dashboard-messenger__composer--viewport-portal .dashboard-messenger__input {
-  min-height: calc(1.35em + 20px);
-  max-height: min(34vh, 220px);
-  padding: 8px 10px;
-  resize: none;
-  overflow-y: auto;
-  min-width: 0;
-  max-width: 100%;
-  /* iOS Safari: при font-size < 16px на фокусе включается зум и «уезжает» вёрстка вправо */
-  font-size: 16px;
-  line-height: 1.35;
 }
 
 .dashboard-page.dashboard-page--messenger-chromeless .dashboard-messenger-fab {
@@ -5053,23 +5090,6 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
     padding: 14px 14px calc(14px + env(safe-area-inset-bottom, 0px));
   }
 
-  .dashboard-messenger__composer.dashboard-messenger__composer--viewport-portal {
-    gap: 6px;
-    box-sizing: border-box;
-    width: 100%;
-    max-width: 100%;
-    margin-left: 0;
-    padding: 6px max(6px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px))
-      max(6px, env(safe-area-inset-left, 0px));
-    align-items: stretch;
-  }
-
-  .dashboard-messenger__composer--viewport-portal .dashboard-messenger__input {
-    width: 100%;
-    max-width: none;
-    box-sizing: border-box;
-  }
-
   .dashboard-messenger--mobile-chromeless .dashboard-messenger__messages {
     box-sizing: border-box;
     padding: 6px max(6px, env(safe-area-inset-left, 0px)) 6px max(6px, env(safe-area-inset-right, 0px));
@@ -5103,7 +5123,7 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   }
 
   .dashboard-messenger--mobile-chromeless.dashboard-messenger--fill .dashboard-messenger__layout {
-    max-height: calc(var(--vvh, 100dvh) - var(--messenger-mobile-top-inset) - env(safe-area-inset-bottom, 0px));
+    max-height: none;
   }
 }
 

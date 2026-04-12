@@ -97,6 +97,8 @@ function conversationInitial(title: string): string {
 
 const MESSENGER_LAST_OPEN_KEY = 'vmix.messenger.lastOpenConversation'
 const DM_PAGE_SIZE = 50
+/** Лимит размера фото в мессенджере (клиент). */
+const MESSENGER_PHOTO_MAX_BYTES = 2 * 1024 * 1024
 
 function sortDirectMessagesChrono(a: DirectMessage, b: DirectMessage): number {
   const ta = new Date(a.createdAt).getTime()
@@ -998,6 +1000,10 @@ export function DashboardMessengerPage() {
   const sendPhotoFile = async (file: File) => {
     const convId = activeConversationId.trim()
     if (!user?.id || !convId || photoUploading || threadLoading) return
+    if (file.size > MESSENGER_PHOTO_MAX_BYTES) {
+      setError('Файл больше 2 МБ. Выберите изображение меньшего размера.')
+      return
+    }
     setPhotoUploading(true)
     setError(null)
     const up = await uploadMessengerImage(convId, file)
@@ -1299,15 +1305,7 @@ export function DashboardMessengerPage() {
   }, [messengerMenuOpen, closeMessengerMenu])
 
   const renderThreadComposer = () => (
-    <div
-      className={
-        isMobileMessenger
-          ? 'dashboard-messenger__composer dashboard-messenger__composer--viewport-portal'
-          : 'dashboard-messenger__composer'
-      }
-      role="region"
-      aria-label="Новое сообщение"
-    >
+    <div className="dashboard-messenger__composer" role="region" aria-label="Новое сообщение">
       {replyTo && !editingMessageId ? (
         <div className="dashboard-messenger__composer-reply">
           <div className="dashboard-messenger__composer-reply-text">
@@ -1400,7 +1398,12 @@ export function DashboardMessengerPage() {
               onChange={(e) => {
                 const f = e.target.files?.[0]
                 e.target.value = ''
-                if (f) void sendPhotoFile(f)
+                if (!f) return
+                if (f.size > MESSENGER_PHOTO_MAX_BYTES) {
+                  setError('Файл больше 2 МБ. Выберите изображение меньшего размера.')
+                  return
+                }
+                void sendPhotoFile(f)
               }}
             />
           </div>
@@ -1615,7 +1618,9 @@ export function DashboardMessengerPage() {
             ) : null}
 
             {showThreadPane ? (
-              <div className="dashboard-messenger__thread">
+              <div
+                className={`dashboard-messenger__thread${isMobileMessenger ? ' dashboard-messenger__thread--mobile' : ''}`}
+              >
                 {loading && !threadHeadConversation ? (
                   <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…">
                     <BrandLogoLoader size={56} />
@@ -1841,7 +1846,7 @@ export function DashboardMessengerPage() {
                         </div>
                       </div>
 
-                      {!isMobileMessenger ? renderThreadComposer() : null}
+                      {renderThreadComposer()}
                     </div>
 
                     {messageMenu
@@ -1911,9 +1916,6 @@ export function DashboardMessengerPage() {
               </div>
             ) : null}
           </div>
-          {isMobileMessenger && threadHeadConversation && showThreadPane
-            ? createPortal(renderThreadComposer(), document.body)
-            : null}
           </>
         ) : null}
 
