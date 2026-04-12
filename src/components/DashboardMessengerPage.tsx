@@ -35,7 +35,7 @@ import {
   uploadMessengerImage,
 } from '../lib/messenger'
 import { MESSENGER_COMPOSER_EMOJIS } from '../lib/messengerComposerEmojis'
-import { setPendingHostClaim, stashSpaceRoomCreateOptions, type SpaceRoomCreateOptions } from '../lib/spaceRoom'
+import { setPendingHostClaim } from '../lib/spaceRoom'
 import { getContactStatuses, setUserFavorite, type ContactStatus } from '../lib/socialGraph'
 import { supabase } from '../lib/supabase'
 import { newRoomId } from '../utils/roomId'
@@ -55,7 +55,6 @@ import {
   PlusIcon,
   RoomsIcon,
 } from './icons'
-import { CreateRoomOptionsModal } from './CreateRoomOptionsModal'
 import { DashboardShell } from './DashboardShell'
 import { ThemeToggle } from './ThemeToggle'
 import { MessengerBubbleBody } from './MessengerBubbleBody'
@@ -246,7 +245,6 @@ export function DashboardMessengerPage() {
   const headerMessengerUnread = useMessengerUnreadCount()
   const [soundEnabled, setSoundEnabled] = useState(() => isMessengerSoundEnabled())
   const [messengerMenuOpen, setMessengerMenuOpen] = useState(false)
-  const [createRoomModalOpen, setCreateRoomModalOpen] = useState(false)
   const [chatListSearch, setChatListSearch] = useState('')
   /** Мобильный режим «только дерево чатов» — не подставлять chat в URL и не грузить тред */
   const listOnlyMobile = isMobileMessenger && searchParams.get('view') === 'list'
@@ -1268,21 +1266,16 @@ export function DashboardMessengerPage() {
     setMessengerMenuOpen(false)
   }, [])
 
+  const goCreateRoomFromMessenger = useCallback(() => {
+    const id = newRoomId()
+    setPendingHostClaim(id)
+    navigate(`/r/${encodeURIComponent(id)}`)
+  }, [navigate])
+
   const goCreateRoomFromMenu = useCallback(() => {
     closeMessengerMenu()
-    setCreateRoomModalOpen(true)
-  }, [closeMessengerMenu])
-
-  const confirmCreateRoomFromMessenger = useCallback(
-    (opts: SpaceRoomCreateOptions) => {
-      const id = newRoomId()
-      stashSpaceRoomCreateOptions(id, opts)
-      setPendingHostClaim(id)
-      setCreateRoomModalOpen(false)
-      navigate(`/r/${encodeURIComponent(id)}`)
-    },
-    [navigate],
-  )
+    goCreateRoomFromMessenger()
+  }, [closeMessengerMenu, goCreateRoomFromMessenger])
 
   useEffect(() => {
     if (!messengerMenuOpen) return
@@ -1492,7 +1485,7 @@ export function DashboardMessengerPage() {
                       <button
                         type="button"
                         className="dashboard-messenger__list-head-btn dashboard-messenger__list-head-btn--primary"
-                        onClick={() => setCreateRoomModalOpen(true)}
+                        onClick={() => goCreateRoomFromMessenger()}
                         aria-label="Новая комната"
                         title="Новая комната"
                       >
@@ -1689,7 +1682,7 @@ export function DashboardMessengerPage() {
                             <button
                               type="button"
                               className="dashboard-messenger__list-head-btn dashboard-messenger__list-head-btn--primary"
-                              onClick={() => setCreateRoomModalOpen(true)}
+                              onClick={() => goCreateRoomFromMessenger()}
                               aria-label="Новая комната"
                               title="Новая комната"
                             >
@@ -2018,11 +2011,6 @@ export function DashboardMessengerPage() {
         ) : null}
       </section>
 
-      <CreateRoomOptionsModal
-        open={createRoomModalOpen}
-        onClose={() => setCreateRoomModalOpen(false)}
-        onConfirm={confirmCreateRoomFromMessenger}
-      />
     </DashboardShell>
   )
 }

@@ -630,6 +630,21 @@ html.app-root--room #root {
   gap: 10px;
 }
 
+.join-host-create__fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.join-host-create__note {
+  margin: 0;
+}
+
+.join-host-create__select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .join-label {
   font-size: 12px;
   color: var(--text-dim);

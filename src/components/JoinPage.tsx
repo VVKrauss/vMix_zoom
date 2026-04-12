@@ -1,18 +1,41 @@
-import { useState, FormEvent } from 'react'
+import { useState, FormEvent, useMemo } from 'react'
 import type { JoinRoomMediaOptions } from '../hooks/useRoom'
 import type { VideoPreset } from '../types'
-import { getStoredVideoPreset } from '../config/roomUiStorage'
+import { VIDEO_PRESETS } from '../types'
+import { getStoredVideoPreset, persistVideoPreset } from '../config/roomUiStorage'
 import { MicIcon, MicOffIcon, CamIcon, CamOffIcon } from './icons'
 import { useAuth } from '../context/AuthContext'
+import type { SpaceRoomChatVisibility, SpaceRoomCreateOptions } from '../lib/spaceRoom'
+import { SPACE_ROOM_HOST_CREATE_CHAT_OPTIONS } from '../lib/spaceRoom'
 
 interface Props {
   roomId: string
-  onJoin: (name: string, roomId: string, preset: VideoPreset, media: JoinRoomMediaOptions) => void | Promise<void>
+  /** Создание комнаты хостом: на этом экране выбираем качество и чат (тип комнаты — пока только временная). */
+  hostCreateFlow?: boolean
+  onJoin: (
+    name: string,
+    roomId: string,
+    preset: VideoPreset,
+    media: JoinRoomMediaOptions,
+    hostCreateOptions?: SpaceRoomCreateOptions,
+  ) => void | Promise<void>
   onBackToHome: () => void
   error: string | null
 }
 
-export function JoinPage({ roomId, onJoin, onBackToHome, error }: Props) {
+function presetIndexFromStored(): number {
+  const p = getStoredVideoPreset()
+  const i = VIDEO_PRESETS.findIndex(
+    (x) =>
+      x.width === p.width &&
+      x.height === p.height &&
+      x.maxBitrate === p.maxBitrate &&
+      x.frameRate === p.frameRate,
+  )
+  return i >= 0 ? i : 1
+}
+
+export function JoinPage({ roomId, hostCreateFlow = false, onJoin, onBackToHome, error }: Props) {
   const { user } = useAuth()
 
   const profileName = user?.user_metadata?.display_name as string | undefined
@@ -22,15 +45,26 @@ export function JoinPage({ roomId, onJoin, onBackToHome, error }: Props) {
   const [guestName, setGuestName] = useState('')
   const [micOn, setMicOn] = useState(true)
   const [camOn, setCamOn] = useState(true)
+  const [videoPresetIndex, setVideoPresetIndex] = useState(presetIndexFromStored)
+  const [chatVisibility, setChatVisibility] = useState<SpaceRoomChatVisibility>('everyone')
 
   const isAuthed = !!user
   const name = isAuthed ? profileName : guestName
+
+  const selectedPreset = useMemo(
+    () => VIDEO_PRESETS[videoPresetIndex] ?? getStoredVideoPreset(),
+    [videoPresetIndex],
+  )
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
     const rid = roomId.trim()
     if (!name.trim() || !rid) return
-    void onJoin(name.trim(), rid, getStoredVideoPreset(), { enableMic: micOn, enableCam: camOn })
+    persistVideoPreset(selectedPreset)
+    const hostCreateOptions: SpaceRoomCreateOptions | undefined = hostCreateFlow
+      ? { lifecycle: 'temporary', chatVisibility }
+      : undefined
+    void onJoin(name.trim(), rid, selectedPreset, { enableMic: micOn, enableCam: camOn }, hostCreateOptions)
   }
 
   const goMain = () => {
@@ -93,12 +127,52 @@ export function JoinPage({ roomId, onJoin, onBackToHome, error }: Props) {
             </button>
           </div>
 
+          {hostCreateFlow ? (
+            <>
+              <label className="join-label" htmlFor="join-video-preset">
+                Качество видео
+              </label>
+              <select
+                id="join-video-preset"
+                className="create-room-options__select join-host-create__select"
+                value={videoPresetIndex}
+                onChange={(e) => setVideoPresetIndex(Number.parseInt(e.target.value, 10) || 0)}
+                aria-label="Качество видео при входе"
+              >
+                {VIDEO_PRESETS.map((p, idx) => (
+                  <option key={`${p.width}x${p.height}-${p.maxBitrate}`} value={idx}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+
+              <div className="join-host-create__fieldset">
+                <span className="join-label">Чат при старте</span>
+                <p className="create-room-options__note join-host-create__note">
+                  Хост может изменить режим чата во время встречи.
+                </p>
+                <select
+                  className="create-room-options__select join-host-create__select"
+                  value={chatVisibility}
+                  onChange={(e) => setChatVisibility(e.target.value as SpaceRoomChatVisibility)}
+                  aria-label="Режим чата при создании"
+                >
+                  {SPACE_ROOM_HOST_CREATE_CHAT_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label} — {o.hint}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          ) : null}
+
           <button
             className="join-btn join-btn--block"
             type="submit"
             disabled={!name.trim() || !roomId.trim()}
           >
-            Войти
+            {hostCreateFlow ? 'Создать и войти' : 'Войти'}
           </button>
         </form>
 

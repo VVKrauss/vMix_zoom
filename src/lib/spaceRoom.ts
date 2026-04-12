@@ -10,6 +10,18 @@ export type SpaceRoomCreateOptions = {
   chatVisibility: SpaceRoomChatVisibility
 }
 
+/** Варианты видимости чата при создании комнаты (экран входа / хост). */
+export const SPACE_ROOM_HOST_CREATE_CHAT_OPTIONS: {
+  value: SpaceRoomChatVisibility
+  label: string
+  hint: string
+}[] = [
+  { value: 'everyone', label: 'Все участники', hint: 'Гости и зарегистрированные' },
+  { value: 'authenticated_only', label: 'Только с аккаунтом', hint: 'Гости не видят чат' },
+  { value: 'staff_only', label: 'Хост и админы', hint: 'Только организатор и персонал платформы' },
+  { value: 'closed', label: 'Закрыт', hint: 'Сообщения видны, отправка отключена для всех' },
+]
+
 /** Срок «горячей» ссылки для временной комнаты (минуты). */
 export const SPACE_ROOM_TEMPORARY_INVITE_MINUTES = 2
 

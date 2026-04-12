@@ -21,6 +21,7 @@ import {
   markSessionAsHostFor,
   registerSpaceRoomAsHost,
   takeSpaceRoomCreateOptions,
+  type SpaceRoomCreateOptions,
 } from '../lib/spaceRoom'
 
 const CHAT_PREVIEW_TOAST_MS = 7000
@@ -111,6 +112,7 @@ export function RoomSession({ roomId }: Props) {
     rid: string
     preset: VideoPreset
     media: JoinRoomMediaOptions
+    hostCreateOptions?: SpaceRoomCreateOptions | null
   } | null>(null)
 
   const dismissChatIncomingPreview = useCallback(() => {
@@ -255,13 +257,22 @@ export function RoomSession({ roomId }: Props) {
   }, [])
 
   /** Реальное подключение к комнате (вызывается после всех проверок). */
-  const executeJoin = useCallback(async (n: string, rid: string, preset: VideoPreset, media: JoinRoomMediaOptions) => {
+  const executeJoin = useCallback(
+    async (
+      n: string,
+      rid: string,
+      preset: VideoPreset,
+      media: JoinRoomMediaOptions,
+      hostCreateOptions?: SpaceRoomCreateOptions | null,
+    ) => {
     const trimmedRid = rid.trim()
     console.log('[room-session] executeJoin:start', { roomId: trimmedRid, userId: user?.id ?? null })
     if (user?.id && matchesPendingHostClaim(trimmedRid)) {
       clearPendingHostClaim()
-      const createOpts = takeSpaceRoomCreateOptions(trimmedRid)
-      const ok = await registerSpaceRoomAsHost(trimmedRid, user.id, createOpts ?? undefined)
+      const fromSession = takeSpaceRoomCreateOptions(trimmedRid)
+      const createOpts: SpaceRoomCreateOptions =
+        hostCreateOptions ?? fromSession ?? { lifecycle: 'temporary', chatVisibility: 'everyone' }
+      const ok = await registerSpaceRoomAsHost(trimmedRid, user.id, createOpts)
       console.log('[room-session] registerSpaceRoomAsHost', { roomId: trimmedRid, userId: user.id, ok })
       if (ok) markSessionAsHostFor(trimmedRid)
     }
@@ -277,15 +288,28 @@ export function RoomSession({ roomId }: Props) {
   }, [user, canAccessAdminPanel, join])
 
   /** Обработчик кнопки «Войти» на JoinPage. */
-  const handleJoin = useCallback(async (n: string, rid: string, preset: VideoPreset, media: JoinRoomMediaOptions) => {
+  const handleJoin = useCallback(
+    async (
+      n: string,
+      rid: string,
+      preset: VideoPreset,
+      media: JoinRoomMediaOptions,
+      hostCreateOptions?: SpaceRoomCreateOptions,
+    ) => {
     // Если комната требует одобрения — сохраняем параметры и показываем экран ожидания
     if (needsApprovalRef.current) {
       const trimmedRid = rid.trim()
-      setPendingJoin({ name: n, rid: trimmedRid, preset, media })
+      setPendingJoin({
+        name: n,
+        rid: trimmedRid,
+        preset,
+        media,
+        hostCreateOptions: hostCreateOptions ?? null,
+      })
       setWaitingApproval(true)
       return
     }
-    await executeJoin(n, rid, preset, media)
+    await executeJoin(n, rid, preset, media, hostCreateOptions ?? null)
   }, [executeJoin])
 
   const handleLeaveRoom = async () => {
@@ -467,7 +491,7 @@ export function RoomSession({ roomId }: Props) {
           setWaitingApproval(false)
           const p = pendingJoin
           setPendingJoin(null)
-          void executeJoin(p.name, p.rid, p.preset, p.media)
+          void executeJoin(p.name, p.rid, p.preset, p.media, p.hostCreateOptions ?? null)
         }}
         onBack={() => {
           setWaitingApproval(false)
@@ -481,6 +505,7 @@ export function RoomSession({ roomId }: Props) {
   return (
     <JoinPage
       roomId={roomId}
+      hostCreateFlow={matchesPendingHostClaim(roomId.trim())}
       onJoin={handleJoin}
       onBackToHome={() => navigate('/')}
       error={error}
