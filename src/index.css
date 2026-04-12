@@ -2907,6 +2907,33 @@ button.admin-stat-card--interactive:disabled {
   margin: 0 0 10px;
 }
 
+.dashboard-friends-registry {
+  margin: 0 0 20px;
+  padding: 16px 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(255,255,255,.08);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01)),
+    rgba(12,12,14,.72);
+}
+
+.dashboard-friends-registry__title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dashboard-friends-registry__empty {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+.dashboard-friends-list--registry {
+  margin-top: 12px;
+}
+
 .dashboard-chat-view__titleline {
   display: flex;
   flex-wrap: wrap;
@@ -3259,10 +3286,11 @@ button.admin-stat-card--interactive:disabled {
 }
 
 .dashboard-messenger__message {
+  position: relative;
   max-width: min(76%, 640px);
   border: 1px solid rgba(255,255,255,.08);
   border-radius: 16px 16px 16px 9px;
-  padding: 7px 9px;
+  padding: 7px 9px 36px;
   background: rgba(255,255,255,.03);
   -webkit-touch-callout: none;
 }
@@ -3293,20 +3321,24 @@ button.admin-stat-card--interactive:disabled {
 }
 
 .dashboard-messenger__msg-more {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 2;
   flex-shrink: 0;
   width: 32px;
   height: 28px;
-  margin: -4px -6px 0 0;
+  margin: 0;
   padding: 0;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
-  background: transparent;
+  background: rgba(10, 10, 10, 0.35);
   color: var(--text-dim);
   font-size: 18px;
   line-height: 1;
   letter-spacing: -2px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
 .dashboard-messenger__msg-more:hover,
@@ -4398,6 +4430,12 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   color: var(--text);
 }
 
+.dashboard-friend-card__slug {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
 .dashboard-friend-card__meta {
   display: flex;
   gap: 12px;
@@ -4693,6 +4731,13 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: .05em;
+}
+
+.dashboard-field__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.35;
 }
 
 /* Одна строка: подпись + контрол (внутренний ряд, не борется с column у .dashboard-field). */
@@ -5032,6 +5077,13 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   border-top-color: var(--red);
   border-radius: 50%;
   animation: auth-spin 0.7s linear infinite;
+}
+
+.auth-loading--inline {
+  width: 24px;
+  height: 24px;
+  border-width: 2px;
+  margin: 10px 0;
 }
 
 @keyframes auth-spin {
@@ -7140,6 +7192,35 @@ button.vio-row--peer:focus-visible {
   flex-direction: column;
   -webkit-touch-callout: none;
   touch-action: manipulation;
+}
+
+.participant-tile-overflow-btn {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 8;
+  width: 34px;
+  height: 30px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(10, 10, 10, 0.55);
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  letter-spacing: -2px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.participant-tile-overflow-btn:hover {
+  background: rgba(30, 30, 30, 0.85);
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .srt-copy-target--bar {

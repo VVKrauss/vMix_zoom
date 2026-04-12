@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { normalizeProfileSlug, validateProfileSlugInput } from '../lib/profileSlug'
 
 /** Глобальные роли из `user_global_roles` + справочник `roles`. */
 export interface UserGlobalRole {
@@ -12,6 +13,8 @@ export interface UserGlobalRole {
 export interface UserProfile {
   id: string
   display_name: string
+  /** Публичный латинский slug; null — не задан */
+  profile_slug: string | null
   email: string | null
   avatar_url: string | null
   status: string
@@ -34,7 +37,7 @@ interface UseProfileReturn {
   saving: boolean
   uploadingAvatar: boolean
   error: string | null
-  saveProfile: (displayName: string) => Promise<{ error: string | null }>
+  saveProfile: (displayName: string, profileSlugRaw?: string) => Promise<{ error: string | null }>
   uploadAvatar: (file: File) => Promise<{ error: string | null }>
   removeAvatar: () => Promise<{ error: string | null }>
 }
@@ -58,7 +61,7 @@ export function useProfile(): UseProfileReturn {
       const [{ data: userData, error: userError }, { data: roleRows, error: rolesError }] = await Promise.all([
         supabase
           .from('users')
-          .select('id, display_name, email, avatar_url, status, room_ui_preferences')
+          .select('id, display_name, profile_slug, email, avatar_url, status, room_ui_preferences')
           .eq('id', user.id)
           .single(),
         supabase
@@ -98,6 +101,10 @@ export function useProfile(): UseProfileReturn {
       setProfile({
         id: userData.id,
         display_name: userData.display_name,
+        profile_slug:
+          typeof userData.profile_slug === 'string' && userData.profile_slug.trim()
+            ? userData.profile_slug.trim()
+            : null,
         email: userData.email ?? user.email ?? null,
         avatar_url: userData.avatar_url,
         status: userData.status,
@@ -136,26 +143,68 @@ export function useProfile(): UseProfileReturn {
     fetchProfile()
   }, [user])
 
-  const saveProfile = useCallback(async (displayName: string): Promise<{ error: string | null }> => {
-    if (!user || !profile) return { error: 'Нет пользователя' }
-    setSaving(true)
+  const saveProfile = useCallback(
+    async (displayName: string, profileSlugRaw?: string): Promise<{ error: string | null }> => {
+      if (!user || !profile) return { error: 'Нет пользователя' }
+      setSaving(true)
 
-    const trimmed = displayName.trim()
-    if (!trimmed) { setSaving(false); return { error: 'Имя не может быть пустым' } }
+      const trimmed = displayName.trim()
+      if (!trimmed) {
+        setSaving(false)
+        return { error: 'Имя не может быть пустым' }
+      }
 
-    const { error: dbErr } = await supabase
-      .from('users')
-      .update({ display_name: trimmed, updated_at: new Date().toISOString() })
-      .eq('id', user.id)
+      let nextSlug: string | null = profile.profile_slug
+      if (profileSlugRaw !== undefined) {
+        const raw = profileSlugRaw.trim()
+        if (raw.length === 0) {
+          nextSlug = null
+        } else {
+          const slugErr = validateProfileSlugInput(raw)
+          if (slugErr) {
+            setSaving(false)
+            return { error: slugErr }
+          }
+          nextSlug = normalizeProfileSlug(raw)
+        }
+      }
 
-    if (dbErr) { setSaving(false); return { error: dbErr.message } }
+      const patch: Record<string, unknown> = {
+        display_name: trimmed,
+        updated_at: new Date().toISOString(),
+      }
+      if (profileSlugRaw !== undefined) {
+        patch.profile_slug = nextSlug
+      }
 
-    await supabase.auth.updateUser({ data: { display_name: trimmed } })
+      const { error: dbErr } = await supabase.from('users').update(patch).eq('id', user.id)
 
-    setProfile((prev) => (prev ? { ...prev, display_name: trimmed } : prev))
-    setSaving(false)
-    return { error: null }
-  }, [user, profile])
+      if (dbErr) {
+        setSaving(false)
+        return { error: dbErr.message }
+      }
+
+      await supabase.auth.updateUser({
+        data: {
+          display_name: trimmed,
+          ...(profileSlugRaw !== undefined ? { profile_slug: nextSlug } : {}),
+        },
+      })
+
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              display_name: trimmed,
+              ...(profileSlugRaw !== undefined ? { profile_slug: nextSlug } : {}),
+            }
+          : prev,
+      )
+      setSaving(false)
+      return { error: null }
+    },
+    [user, profile],
+  )
 
   const uploadAvatar = useCallback(async (file: File): Promise<{ error: string | null }> => {
     if (!user) return { error: 'Нет пользователя' }

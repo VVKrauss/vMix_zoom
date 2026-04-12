@@ -9,9 +9,17 @@ export type ContactStatus = {
 
 export type ContactCard = ContactStatus & {
   displayName: string
+  profileSlug: string | null
   avatarUrl: string | null
   accountStatus: string
   favoritedAt: string | null
+}
+
+export type RegisteredUserSearchHit = {
+  id: string
+  displayName: string
+  profileSlug: string | null
+  avatarUrl: string | null
 }
 
 function mapContactStatusRow(row: Record<string, unknown>): ContactStatus {
@@ -35,12 +43,17 @@ function mapContactStatusRow(row: Record<string, unknown>): ContactStatus {
 }
 
 function mapContactCardRow(row: Record<string, unknown>): ContactCard {
+  const slug =
+    typeof row.profile_slug === 'string' && row.profile_slug.trim()
+      ? row.profile_slug.trim()
+      : null
   return {
     ...mapContactStatusRow(row),
     displayName:
       typeof row.display_name === 'string' && row.display_name.trim()
         ? row.display_name.trim()
         : 'Пользователь',
+    profileSlug: slug,
     avatarUrl:
       typeof row.avatar_url === 'string' && row.avatar_url.trim()
         ? row.avatar_url.trim()
@@ -103,4 +116,33 @@ export async function setUserFavorite(
   if (error) return { data: null, error: error.message }
   if (!data || typeof data !== 'object') return { data: null, error: 'Пустой ответ сервера' }
   return { data: mapContactStatusRow(data as Record<string, unknown>), error: null }
+}
+
+export async function searchRegisteredUsers(
+  query: string,
+  limit = 20,
+): Promise<{ data: RegisteredUserSearchHit[] | null; error: string | null }> {
+  const q = query.trim()
+  if (q.length < 2) return { data: [], error: null }
+  const { data, error } = await supabase.rpc('search_registered_users', {
+    p_query: q,
+    p_limit: limit,
+  })
+  if (error) return { data: null, error: error.message }
+  const rows = Array.isArray(data) ? data : []
+  const mapped: RegisteredUserSearchHit[] = rows.map((row) => {
+    const r = row as Record<string, unknown>
+    return {
+      id: String(r.id ?? ''),
+      displayName:
+        typeof r.display_name === 'string' && r.display_name.trim()
+          ? r.display_name.trim()
+          : 'Пользователь',
+      profileSlug:
+        typeof r.profile_slug === 'string' && r.profile_slug.trim() ? r.profile_slug.trim() : null,
+      avatarUrl:
+        typeof r.avatar_url === 'string' && r.avatar_url.trim() ? r.avatar_url.trim() : null,
+    }
+  })
+  return { data: mapped.filter((x) => x.id.length > 0), error: null }
 }

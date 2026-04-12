@@ -38,7 +38,7 @@ import {
   useLocalStorageBool,
 } from '../hooks/useLocalStorage'
 import { VideoInfoOverlay } from './VideoInfoOverlay'
-import { SrtCopySurface } from './SrtCopyMenu'
+import { SrtCopySurface, type SrtCopyMenuExtraItem } from './SrtCopyMenu'
 import type { PipPos, PipSize } from './DraggablePip'
 import type { RemoteParticipant, SrtSessionInfo, VideoPreset, VmixIngressInfo } from '../types'
 import type { InboundVideoQuality } from '../utils/inboundVideoStats'
@@ -896,32 +896,34 @@ export function RoomPage({
     if (user?.id) map[user.id] = avatarUrl ?? null
     return map
   }, [user?.id, avatarUrl])
-  const chatKnownUserIds = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          chatMessages
-            .map((m) => m.senderUserId?.trim() ?? '')
-            .filter((id) => id && id !== (user?.id ?? '')),
-        ),
-      ),
-    [chatMessages, user?.id],
-  )
+  const contactStatusQueryIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const id of chatMessages
+      .map((m) => m.senderUserId?.trim() ?? '')
+      .filter((id) => id && id !== (user?.id ?? ''))) {
+      s.add(id)
+    }
+    for (const p of remoteList) {
+      const id = p.authUserId?.trim()
+      if (id && id !== (user?.id ?? '')) s.add(id)
+    }
+    return [...s]
+  }, [chatMessages, remoteList, user?.id])
 
   useEffect(() => {
     let cancelled = false
-    if (!user?.id || chatKnownUserIds.length === 0) {
+    if (!user?.id || contactStatusQueryIds.length === 0) {
       setChatContactStatuses({})
       return
     }
-    void getContactStatuses(chatKnownUserIds).then((result) => {
+    void getContactStatuses(contactStatusQueryIds).then((result) => {
       if (cancelled) return
       if (result.data) setChatContactStatuses(result.data)
     })
     return () => {
       cancelled = true
     }
-  }, [chatKnownUserIds, user?.id])
+  }, [contactStatusQueryIds, user?.id])
 
   const toggleFavoriteFromChat = useCallback(async (targetUserId: string, nextFavorite: boolean) => {
     const current = chatContactStatuses[targetUserId]
@@ -956,6 +958,29 @@ export function RoomPage({
     if (targetName?.trim()) sp.set('title', targetName.trim())
     window.open(`/dashboard/messenger?${sp.toString()}`, '_blank', 'noopener')
   }, [])
+
+  const buildTileExtras = useCallback(
+    (authUserId: string | null | undefined, displayName: string): SrtCopyMenuExtraItem[] | undefined => {
+      const uid = authUserId?.trim()
+      if (!uid || !user?.id || uid === user.id) return undefined
+      const c = chatContactStatuses[uid]
+      return [
+        {
+          key: 'dm',
+          label: 'Личный чат',
+          onSelect: () => openDirectChat(uid, displayName),
+        },
+        {
+          key: 'fav',
+          label: c?.isFavorite ? 'Убрать из избранного' : 'В избранное',
+          onSelect: () => {
+            void toggleFavoriteFromChat(uid, !(c?.isFavorite ?? false))
+          },
+        },
+      ]
+    },
+    [user?.id, chatContactStatuses, openDirectChat, toggleFavoriteFromChat],
+  )
 
   /** Участники-люди в счётчике шапки (без виртуального vMix/SRT). */
   const remoteHumanPeers = useMemo(
@@ -1394,6 +1419,7 @@ export function RoomPage({
     }
     const remotePresenter = remoteList.find((p) => remoteScreenTileId(p) === id)
     if (remotePresenter?.screenStream) {
+      const screenShareExtras = buildTileExtras(remotePresenter.authUserId, remotePresenter.name)
       return (
         <LocalScreenShareTile
           stream={remotePresenter.screenStream}
@@ -1411,6 +1437,8 @@ export function RoomPage({
               ? { show: true, onMute: () => requestPeerMicMute(remotePresenter.peerId) }
               : undefined
           }
+          extraMenuItems={screenShareExtras}
+          showTileOverflowButton={Boolean(screenShareExtras?.length)}
         />
       )
     }
@@ -1442,6 +1470,7 @@ export function RoomPage({
       }
       const p = participants.get(owner)
       if (!p?.screenStream) return null
+      const screenExtrasRemote = buildTileExtras(p.authUserId, p.name)
       return (
         <LocalScreenShareTile
           stream={p.screenStream}
@@ -1459,6 +1488,8 @@ export function RoomPage({
               ? { show: true, onMute: () => requestPeerMicMute(owner) }
               : undefined
           }
+          extraMenuItems={screenExtrasRemote}
+          showTileOverflowButton={Boolean(screenExtrasRemote?.length)}
         />
       )
     }
@@ -1470,6 +1501,11 @@ export function RoomPage({
       const phase =
         remoteStudioRtmpByPeer[owner] ??
         (remoteStudioProgramConsumePending ? 'connecting' : 'idle')
+      const ownerPart = participants.get(owner)
+      const studioExtras = buildTileExtras(
+        ownerPart?.authUserId ?? p.authUserId,
+        ownerPart?.name ?? p.name,
+      )
       return (
         <StudioProgramShareTile
           stream={p.videoStream}
@@ -1488,6 +1524,8 @@ export function RoomPage({
               ? { show: true, onMute: () => requestPeerMicMute(owner) }
               : undefined
           }
+          extraMenuItems={studioExtras}
+          showTileOverflowButton={Boolean(studioExtras?.length)}
         />
       )
     }
@@ -1521,9 +1559,20 @@ export function RoomPage({
               }
             : undefined
         }
+        currentUserId={user?.id}
+        contactStatus={p.authUserId ? chatContactStatuses[p.authUserId] : undefined}
         onOpenDirectChat={
           p.authUserId && user?.id && p.authUserId !== user.id
             ? (participant) => openDirectChat(participant.authUserId!, participant.name)
+            : undefined
+        }
+        onToggleFavorite={
+          p.authUserId && user?.id && p.authUserId !== user.id
+            ? () => {
+                const uid = p.authUserId!
+                const cur = chatContactStatuses[uid]
+                void toggleFavoriteFromChat(uid, !(cur?.isFavorite ?? false))
+              }
             : undefined
         }
       />

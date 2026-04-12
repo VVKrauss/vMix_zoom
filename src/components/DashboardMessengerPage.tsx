@@ -35,6 +35,7 @@ import {
 } from '../lib/messenger'
 import { MESSENGER_COMPOSER_EMOJIS } from '../lib/messengerComposerEmojis'
 import { setPendingHostClaim, stashSpaceRoomCreateOptions, type SpaceRoomCreateOptions } from '../lib/spaceRoom'
+import { getContactStatuses, setUserFavorite, type ContactStatus } from '../lib/socialGraph'
 import { supabase } from '../lib/supabase'
 import { newRoomId } from '../utils/roomId'
 import { BrandLogoLoader } from './BrandLogoLoader'
@@ -146,6 +147,7 @@ type MessengerDmBubbleProps = {
   replyPreview: { author: string; snippet: string } | null
   menuOpen: boolean
   onMenuButtonClick: (e: React.MouseEvent<HTMLButtonElement>) => void
+  onBubbleContextMenu: (e: React.MouseEvent<HTMLElement>) => void
 }
 
 function MessengerDmBubble({
@@ -156,6 +158,7 @@ function MessengerDmBubble({
   replyPreview,
   menuOpen,
   onMenuButtonClick,
+  onBubbleContextMenu,
 }: MessengerDmBubbleProps) {
   const reactionCounts = new Map<string, number>()
   for (const r of reactions) {
@@ -164,23 +167,16 @@ function MessengerDmBubble({
   }
 
   return (
-    <article className={`dashboard-messenger__message${isOwn ? ' dashboard-messenger__message--own' : ''}`}>
+    <article
+      className={`dashboard-messenger__message${isOwn ? ' dashboard-messenger__message--own' : ''}`}
+      onContextMenu={onBubbleContextMenu}
+    >
       <div className="dashboard-messenger__message-meta">
         <div className="dashboard-messenger__message-meta-main">
           <span className="dashboard-messenger__message-author">{message.senderNameSnapshot}</span>
           <time dateTime={message.createdAt}>{formatDt(message.createdAt)}</time>
           {message.editedAt ? <span className="dashboard-messenger__edited">изм.</span> : null}
         </div>
-        <button
-          type="button"
-          className={`dashboard-messenger__msg-more${menuOpen ? ' dashboard-messenger__msg-more--open' : ''}`}
-          aria-label="Действия с сообщением"
-          aria-expanded={menuOpen}
-          aria-haspopup="menu"
-          onClick={onMenuButtonClick}
-        >
-          ⋯
-        </button>
       </div>
       {replyPreview ? (
         <div className="dashboard-messenger__reply-quote" role="note">
@@ -206,6 +202,16 @@ function MessengerDmBubble({
           ))}
         </div>
       ) : null}
+      <button
+        type="button"
+        className={`dashboard-messenger__msg-more${menuOpen ? ' dashboard-messenger__msg-more--open' : ''}`}
+        aria-label="Действия с сообщением"
+        aria-expanded={menuOpen}
+        aria-haspopup="menu"
+        onClick={onMenuButtonClick}
+      >
+        ⋯
+      </button>
     </article>
   )
 }
@@ -252,8 +258,34 @@ export function DashboardMessengerPage() {
     left: number
     top: number
   } | null>(null)
+  const [senderContactByUserId, setSenderContactByUserId] = useState<Record<string, ContactStatus>>({})
+  const [favoriteBusyUserId, setFavoriteBusyUserId] = useState<string | null>(null)
   /** Снятие реакции уже отразили в списке диалогов после RPC — пропускаем дубль из realtime DELETE. */
   const reactionDeleteSidebarSyncedRef = useRef(new Set<string>())
+
+  const messengerSenderUserIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const m of messages) {
+      const id = m.senderUserId?.trim()
+      if (id && id !== (user?.id ?? '')) s.add(id)
+    }
+    return [...s]
+  }, [messages, user?.id])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!user?.id || messengerSenderUserIds.length === 0) {
+      setSenderContactByUserId({})
+      return
+    }
+    void getContactStatuses(messengerSenderUserIds).then((result) => {
+      if (cancelled || !result.data) return
+      setSenderContactByUserId(result.data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id, messengerSenderUserIds.join('|')])
 
   const conversationIdRef = useRef(conversationId)
   conversationIdRef.current = conversationId
@@ -1142,6 +1174,23 @@ export function DashboardMessengerPage() {
 
   const closeMessageActionMenu = useCallback(() => setMessageMenu(null), [])
 
+  const toggleFavoriteFromMessageMenu = useCallback(async () => {
+    const m = messageMenu?.message
+    const sid = m?.senderUserId?.trim()
+    if (!sid || !user?.id || sid === user.id) return
+    setFavoriteBusyUserId(sid)
+    try {
+      const cur = senderContactByUserId[sid]?.isFavorite ?? false
+      const res = await setUserFavorite(sid, !cur)
+      if (res.data) {
+        setSenderContactByUserId((prev) => ({ ...prev, [sid]: res.data! }))
+      }
+    } finally {
+      setFavoriteBusyUserId(null)
+    }
+    closeMessageActionMenu()
+  }, [messageMenu, user?.id, senderContactByUserId, closeMessageActionMenu])
+
   useEffect(() => {
     if (!messageMenu) return
     const onKey = (e: KeyboardEvent) => {
@@ -1449,7 +1498,14 @@ export function DashboardMessengerPage() {
                                     const r = e.currentTarget.getBoundingClientRect()
                                     setMessageMenu((cur) => {
                                       if (cur?.message.id === message.id) return null
-                                      return { message, left: r.right, top: r.bottom }
+                                      return { message, left: r.right, top: r.top }
+                                    })
+                                  }}
+                                  onBubbleContextMenu={(e) => {
+                                    e.preventDefault()
+                                    setMessageMenu((cur) => {
+                                      if (cur?.message.id === message.id) return null
+                                      return { message, left: e.clientX, top: e.clientY }
                                     })
                                   }}
                                 />
@@ -1586,8 +1642,9 @@ export function DashboardMessengerPage() {
                             className="messenger-msg-menu-wrap"
                             style={{
                               position: 'fixed',
-                              left: Math.max(8, Math.min(messageMenu.left - 216, window.innerWidth - 228)),
-                              top: messageMenu.top + 6,
+                              left: Math.min(messageMenu.left, window.innerWidth - 16),
+                              top: messageMenu.top,
+                              transform: 'translate(-100%, calc(-100% - 6px))',
                               zIndex: 9400,
                             }}
                           >
@@ -1617,6 +1674,22 @@ export function DashboardMessengerPage() {
                                 if (!isDirectReactionEmoji(emoji)) return
                                 void toggleMessengerReaction(messageMenu.message.id, emoji)
                                 closeMessageActionMenu()
+                              }}
+                              showAddFavorite={Boolean(
+                                messageMenu.message.senderUserId &&
+                                  user?.id &&
+                                  messageMenu.message.senderUserId !== user.id,
+                              )}
+                              favoriteActive={Boolean(
+                                messageMenu.message.senderUserId &&
+                                  senderContactByUserId[messageMenu.message.senderUserId]?.isFavorite,
+                              )}
+                              favoriteBusy={
+                                Boolean(messageMenu.message.senderUserId) &&
+                                favoriteBusyUserId === messageMenu.message.senderUserId
+                              }
+                              onToggleFavorite={() => {
+                                void toggleFavoriteFromMessageMenu()
                               }}
                             />
                           </div>,

@@ -48,6 +48,8 @@ export function DashboardPage() {
     useProfile()
 
   const [displayName, setDisplayName] = useState('')
+  const [profileSlug, setProfileSlug] = useState('')
+  const [slugEdited, setSlugEdited] = useState(false)
   const [nameEdited, setNameEdited] = useState(false)
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
   const [saveErr, setSaveErr] = useState<string | null>(null)
@@ -70,12 +72,15 @@ export function DashboardPage() {
   useEffect(() => {
     if (!profileEditOpen || !profile) return
     setDisplayName(profile.display_name)
+    setProfileSlug(profile.profile_slug ?? '')
+    setSlugEdited(false)
     setNameEdited(false)
     setSaveMsg(null)
     setSaveErr(null)
   }, [profileEditOpen, profile])
 
   const currentName = nameEdited ? displayName : (profile?.display_name ?? '')
+  const currentSlug = slugEdited ? profileSlug : (profile?.profile_slug ?? '')
 
   const handleNameChange = (value: string) => {
     setDisplayName(value)
@@ -84,11 +89,18 @@ export function DashboardPage() {
     setSaveErr(null)
   }
 
+  const handleSlugChange = (value: string) => {
+    setProfileSlug(value)
+    setSlugEdited(true)
+    setSaveMsg(null)
+    setSaveErr(null)
+  }
+
   const handleSave = async (event: FormEvent) => {
     event.preventDefault()
     setSaveMsg(null)
     setSaveErr(null)
-    const { error: err } = await saveProfile(currentName)
+    const { error: err } = await saveProfile(currentName, currentSlug)
     if (err) setSaveErr(err)
     else setSaveMsg('Сохранено')
   }
@@ -173,6 +185,8 @@ export function DashboardPage() {
         onClose={closeProfileModal}
         displayName={currentName}
         onDisplayNameChange={handleNameChange}
+        profileSlug={currentSlug}
+        onProfileSlugChange={handleSlugChange}
         currentName={currentName}
         email={profile.email ?? ''}
         avatarUrl={profile.avatar_url}

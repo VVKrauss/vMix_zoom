@@ -1,12 +1,13 @@
-import { CSSProperties, useCallback, useEffect, useRef } from 'react'
+import { CSSProperties, useCallback, useEffect, useMemo, useRef } from 'react'
 import type { RemoteParticipant } from '../types'
 import type { RoomReactionBurst } from '../types/roomComms'
 import type { InboundVideoQuality } from '../utils/inboundVideoStats'
+import type { ContactStatus } from '../lib/socialGraph'
 import { ReactionBurstOverlay } from './ReactionBurstOverlay'
 import { ParticipantTileIdle } from './ParticipantTileIdle'
 import { AudioMeter } from './AudioMeter'
 import { useBindPlayout } from '../hooks/useMediaPlayout'
-import { SrtCopySurface } from './SrtCopyMenu'
+import { SrtCopySurface, type SrtCopyMenuExtraItem } from './SrtCopyMenu'
 import { VideoInfoOverlay } from './VideoInfoOverlay'
 import { RemoteVideoSignalBars, useInboundVideoQualityPoll } from './RemoteVideoSignalBars'
 
@@ -31,6 +32,11 @@ interface Props {
   guestMute?: { show: boolean; onMute: () => void }
   guestKick?: { show: boolean; onKick: () => void; onBan: () => void }
   onOpenDirectChat?: (participant: RemoteParticipant) => void
+  currentUserId?: string | null
+  /** Статус избранного/друзей для участника с authUserId */
+  contactStatus?: ContactStatus | null
+  /** Переключить избранное (только для чужого залогиненного участника) */
+  onToggleFavorite?: () => void
 }
 
 export function ParticipantCard({
@@ -45,6 +51,9 @@ export function ParticipantCard({
   guestMute,
   guestKick,
   onOpenDirectChat,
+  currentUserId,
+  contactStatus,
+  onToggleFavorite,
 }: Props) {
   const mainVideoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -67,6 +76,33 @@ export function ParticipantCard({
     fetchInboundQuality,
   )
 
+  const extraMenuItems = useMemo((): SrtCopyMenuExtraItem[] => {
+    const uid = participant.authUserId?.trim()
+    const me = currentUserId?.trim()
+    const out: SrtCopyMenuExtraItem[] = []
+    if (uid && me && uid !== me && onOpenDirectChat) {
+      out.push({
+        key: 'dm',
+        label: 'Личный чат',
+        onSelect: () => onOpenDirectChat(participant),
+      })
+    }
+    if (uid && me && uid !== me && onToggleFavorite) {
+      out.push({
+        key: 'fav',
+        label: contactStatus?.isFavorite ? 'Убрать из избранного' : 'В избранное',
+        onSelect: onToggleFavorite,
+      })
+    }
+    return out
+  }, [
+    participant,
+    currentUserId,
+    onOpenDirectChat,
+    onToggleFavorite,
+    contactStatus?.isFavorite,
+  ])
+
   useEffect(() => {
     if (mainVideoRef.current) mainVideoRef.current.srcObject = mainStream
   }, [mainStream])
@@ -79,19 +115,7 @@ export function ParticipantCard({
   useBindPlayout(audioRef, playoutVolume, playoutSinkId, !!participant.audioStream)
 
   return (
-    <div
-      className="participant-card"
-      style={style}
-      onContextMenu={
-        participant.authUserId && onOpenDirectChat
-          ? (e) => {
-              e.preventDefault()
-              onOpenDirectChat(participant)
-            }
-          : undefined
-      }
-      title={participant.authUserId && onOpenDirectChat ? 'Правый клик — открыть личный чат' : undefined}
-    >
+    <div className="participant-card" style={style}>
       <div className="card-video-wrap">
         <SrtCopySurface
           connectUrl={srtConnectUrl}
@@ -101,6 +125,8 @@ export function ParticipantCard({
           showSoloViewerCopy={showSoloViewerCopy}
           guestMute={guestMute}
           guestKick={guestKick}
+          extraMenuItems={extraMenuItems}
+          showTileOverflowButton
         >
           <video
             ref={mainVideoRef}

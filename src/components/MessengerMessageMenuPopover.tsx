@@ -9,12 +9,20 @@ export function MessengerMessageMenuPopover({
   onEdit,
   onReply,
   onPickReaction,
+  showAddFavorite,
+  favoriteActive,
+  favoriteBusy,
+  onToggleFavorite,
 }: {
   canEdit: boolean
   onClose: () => void
   onEdit: () => void
   onReply: () => void
   onPickReaction: (emoji: ReactionEmoji) => void
+  showAddFavorite?: boolean
+  favoriteActive?: boolean
+  favoriteBusy?: boolean
+  onToggleFavorite?: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -59,6 +67,17 @@ export function MessengerMessageMenuPopover({
       <button type="button" className="messenger-msg-menu__item" role="menuitem" onClick={onReply}>
         Ответить
       </button>
+      {showAddFavorite && onToggleFavorite ? (
+        <button
+          type="button"
+          className="messenger-msg-menu__item"
+          role="menuitem"
+          disabled={favoriteBusy}
+          onClick={onToggleFavorite}
+        >
+          {favoriteActive ? 'Убрать из избранного' : 'В избранное'}
+        </button>
+      ) : null}
     </div>
   )
 }

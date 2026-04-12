@@ -1,5 +1,5 @@
 import { useEffect, useRef, type CSSProperties } from 'react'
-import { SrtCopySurface } from './SrtCopyMenu'
+import { SrtCopySurface, type SrtCopyMenuExtraItem } from './SrtCopyMenu'
 import { VideoInfoOverlay } from './VideoInfoOverlay'
 import type { RoomReactionBurst } from '../types/roomComms'
 import { ReactionBurstOverlay } from './ReactionBurstOverlay'
@@ -23,6 +23,8 @@ interface Props {
   reactionBurst?: RoomReactionBurst | null
   showSoloViewerCopy?: boolean
   guestMute?: { show: boolean; onMute: () => void }
+  extraMenuItems?: SrtCopyMenuExtraItem[]
+  showTileOverflowButton?: boolean
 }
 
 export function LocalScreenShareTile({
@@ -38,6 +40,8 @@ export function LocalScreenShareTile({
   reactionBurst,
   showSoloViewerCopy = true,
   guestMute,
+  extraMenuItems,
+  showTileOverflowButton = false,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -60,6 +64,8 @@ export function LocalScreenShareTile({
           tilePeerId={linkPeerId}
           showSoloViewerCopy={showSoloViewerCopy}
           guestMute={guestMute}
+          extraMenuItems={extraMenuItems}
+          showTileOverflowButton={showTileOverflowButton}
         >
           <video
             key={stream.id}

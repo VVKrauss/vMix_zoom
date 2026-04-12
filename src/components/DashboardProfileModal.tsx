@@ -5,6 +5,8 @@ export interface DashboardProfileModalProps {
   onClose: () => void
   displayName: string
   onDisplayNameChange: (v: string) => void
+  profileSlug: string
+  onProfileSlugChange: (v: string) => void
   currentName: string
   email: string
   avatarUrl: string | null
@@ -24,6 +26,8 @@ export function DashboardProfileModal({
   onClose,
   displayName,
   onDisplayNameChange,
+  profileSlug,
+  onProfileSlugChange,
   currentName,
   email,
   avatarUrl,
@@ -125,6 +129,27 @@ export function DashboardProfileModal({
                 maxLength={40}
                 required
               />
+            </div>
+            <div className="dashboard-field">
+              <label className="dashboard-field__label" htmlFor="dashboard-profile-slug">
+                Публичный адрес (slug)
+              </label>
+              <input
+                id="dashboard-profile-slug"
+                className="join-input"
+                type="text"
+                value={profileSlug}
+                onChange={(e) => onProfileSlugChange(e.target.value)}
+                maxLength={32}
+                placeholder="например, ivan-stream"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+              <p className="dashboard-field__hint">
+                Латиница, цифры и дефис, 3–32 символа. По нему вас можно найти во вкладке «Друзья». Оставьте пустым,
+                чтобы убрать slug.
+              </p>
             </div>
             <div className="dashboard-field">
               <label className="dashboard-field__label" htmlFor="dashboard-profile-email">

@@ -1,5 +1,5 @@
 import { useEffect, useRef, type CSSProperties } from 'react'
-import { SrtCopySurface } from './SrtCopyMenu'
+import { SrtCopySurface, type SrtCopyMenuExtraItem } from './SrtCopyMenu'
 import { VideoInfoOverlay } from './VideoInfoOverlay'
 import type { RoomReactionBurst } from '../types/roomComms'
 import { ReactionBurstOverlay } from './ReactionBurstOverlay'
@@ -20,6 +20,8 @@ interface Props {
   guestMute?: { show: boolean; onMute: () => void }
   /** Состояние RTMP с бэка / эвристика (серый / жёлтый / красный). */
   rtmpPhase: StudioRtmpPhase
+  extraMenuItems?: SrtCopyMenuExtraItem[]
+  showTileOverflowButton?: boolean
 }
 
 function RtmpStatusDot({ phase }: { phase: StudioRtmpPhase }) {
@@ -53,6 +55,8 @@ export function StudioProgramShareTile({
   showSoloViewerCopy = true,
   guestMute,
   rtmpPhase,
+  extraMenuItems,
+  showTileOverflowButton = false,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -75,6 +79,8 @@ export function StudioProgramShareTile({
           tilePeerId={linkPeerId}
           showSoloViewerCopy={showSoloViewerCopy}
           guestMute={guestMute}
+          extraMenuItems={extraMenuItems}
+          showTileOverflowButton={showTileOverflowButton}
         >
           <video
             key={stream.id}

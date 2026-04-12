@@ -3,6 +3,13 @@ import { createPortal } from 'react-dom'
 import { parseSrtListenPort } from '../utils/parseSrtListenPort'
 import { buildSoloViewerAbsoluteUrl } from '../utils/soloViewerParams'
 
+export type SrtCopyMenuExtraItem = {
+  key: string
+  label: string
+  onSelect: () => void
+  variant?: 'default' | 'warn' | 'danger'
+}
+
 type MenuOptions = {
   enableLongPress: boolean
   /** Для пункта соло-ссылки на эту плитку */
@@ -14,6 +21,8 @@ type MenuOptions = {
   guestMute?: { show: boolean; onMute: () => void }
   /** ПКМ: выгнать участника (только хост). */
   guestKick?: { show: boolean; onKick: () => void; onBan: () => void }
+  /** Доп. пункты (личный чат, избранное и т.д.) — те же, что можно открыть с плитки. */
+  extraMenuItems?: SrtCopyMenuExtraItem[]
 }
 
 const LONG_MS = 550
@@ -34,7 +43,15 @@ export function useSrtCopyMenu(
   listenPort?: number,
   options: MenuOptions = { enableLongPress: true },
 ) {
-  const { enableLongPress, roomId, tilePeerId, showSoloViewerCopy = true, guestMute, guestKick } = options
+  const {
+    enableLongPress,
+    roomId,
+    tilePeerId,
+    showSoloViewerCopy = true,
+    guestMute,
+    guestKick,
+    extraMenuItems,
+  } = options
 
   const port = useMemo(() => {
     if (listenPort != null && listenPort > 0) return listenPort
@@ -49,9 +66,16 @@ export function useSrtCopyMenu(
     showSoloViewerCopy && Boolean(roomId?.trim()) && Boolean(tilePeerId?.trim())
   const canGuestMute = Boolean(guestMute?.show)
   const canGuestKick = Boolean(guestKick?.show)
+  const extraCount = extraMenuItems?.length ?? 0
   /** Иначе на плитке экрана без SRT и до прихода screenPeerId меню не открывалось вовсе. */
   const canOpen =
-    canCopyPort || canCopyUrl || canCopySoloPage || Boolean(roomId?.trim()) || canGuestMute || canGuestKick
+    canCopyPort ||
+    canCopyUrl ||
+    canCopySoloPage ||
+    Boolean(roomId?.trim()) ||
+    canGuestMute ||
+    canGuestKick ||
+    extraCount > 0
 
   const soloPageFullUrl = useMemo(() => {
     if (!canCopySoloPage) return ''
@@ -190,6 +214,7 @@ export function useSrtCopyMenu(
               }
             : undefined
         }
+        extraMenuItems={extraMenuItems}
         onClose={close}
       />,
       document.body,
@@ -204,7 +229,7 @@ export function useSrtCopyMenu(
       }
     : { onContextMenu }
 
-  return { canOpen, surfaceProps, menuPortal }
+  return { canOpen, surfaceProps, menuPortal, openAt }
 }
 
 function SrtCopyMenuPanel({
@@ -221,6 +246,7 @@ function SrtCopyMenuPanel({
   canGuestKick,
   onGuestKick,
   onGuestBan,
+  extraMenuItems,
   onClose,
 }: {
   x: number
@@ -236,6 +262,7 @@ function SrtCopyMenuPanel({
   canGuestKick: boolean
   onGuestKick?: () => void
   onGuestBan?: () => void
+  extraMenuItems?: SrtCopyMenuExtraItem[]
   onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -291,6 +318,28 @@ function SrtCopyMenuPanel({
           Выгнать и заблокировать
         </button>
       ) : null}
+      {extraMenuItems?.map((it) => {
+        const cls =
+          it.variant === 'danger'
+            ? 'srt-copy-menu__btn srt-copy-menu__btn--danger'
+            : it.variant === 'warn'
+              ? 'srt-copy-menu__btn srt-copy-menu__btn--warn'
+              : 'srt-copy-menu__btn'
+        return (
+          <button
+            key={it.key}
+            type="button"
+            className={cls}
+            role="menuitem"
+            onClick={() => {
+              it.onSelect()
+              onClose()
+            }}
+          >
+            {it.label}
+          </button>
+        )
+      })}
       <button type="button" className="srt-copy-menu__btn srt-copy-menu__btn--muted" onClick={onClose}>
         Отмена
       </button>
@@ -308,6 +357,8 @@ export function SrtCopySurface({
   showSoloViewerCopy = true,
   guestMute,
   guestKick,
+  extraMenuItems,
+  showTileOverflowButton = false,
   className = '',
   children,
 }: {
@@ -320,24 +371,47 @@ export function SrtCopySurface({
   showSoloViewerCopy?: boolean
   guestMute?: { show: boolean; onMute: () => void }
   guestKick?: { show: boolean; onKick: () => void; onBan: () => void }
+  extraMenuItems?: SrtCopyMenuExtraItem[]
+  /** Кнопка «⋯» справа снизу — то же меню, что по ПКМ / long-press. */
+  showTileOverflowButton?: boolean
   className?: string
   children: ReactNode
 }) {
-  const { canOpen, surfaceProps, menuPortal } = useSrtCopyMenu(connectUrl, listenPort, {
+  const { canOpen, surfaceProps, menuPortal, openAt } = useSrtCopyMenu(connectUrl, listenPort, {
     enableLongPress,
     roomId,
     tilePeerId,
     showSoloViewerCopy,
     guestMute,
     guestKick,
+    extraMenuItems,
   })
 
   if (!canOpen) return <>{children}</>
+
+  const onOverflowClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const r = e.currentTarget.getBoundingClientRect()
+    openAt(r.right, r.bottom)
+  }
 
   return (
     <>
       <div className={`srt-copy-target ${className}`.trim()} {...surfaceProps}>
         {children}
+        {showTileOverflowButton ? (
+          <button
+            type="button"
+            className="participant-tile-overflow-btn"
+            aria-haspopup="menu"
+            aria-label="Меню плитки"
+            title="Меню"
+            onClick={onOverflowClick}
+          >
+            ⋯
+          </button>
+        ) : null}
       </div>
       {menuPortal}
     </>
