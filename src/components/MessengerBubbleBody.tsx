@@ -3,7 +3,14 @@ import type { DirectMessage } from '../lib/messenger'
 import { getMessengerImageSignedUrl } from '../lib/messenger'
 import { MessengerMessageBody } from './MessengerMessageBody'
 
-export function MessengerBubbleBody({ message }: { message: DirectMessage }) {
+export function MessengerBubbleBody({
+  message,
+  onOpenImageLightbox,
+}: {
+  message: DirectMessage
+  /** Открыть полноэкранный просмотр вместо новой вкладки */
+  onOpenImageLightbox?: (imageUrl: string) => void
+}) {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [imageErr, setImageErr] = useState(false)
   const path = message.kind === 'image' ? message.meta?.image?.path?.trim() : ''
@@ -34,9 +41,20 @@ export function MessengerBubbleBody({ message }: { message: DirectMessage }) {
     return (
       <div className="messenger-bubble-stack">
         {imageUrl ? (
-          <a href={imageUrl} target="_blank" rel="noopener noreferrer" className="messenger-message-img-link">
-            <img className="messenger-message-img" src={imageUrl} alt="" loading="lazy" />
-          </a>
+          onOpenImageLightbox ? (
+            <button
+              type="button"
+              className="messenger-message-img-link messenger-message-img-trigger"
+              onClick={() => onOpenImageLightbox(imageUrl)}
+              aria-label="Открыть изображение"
+            >
+              <img className="messenger-message-img" src={imageUrl} alt="" loading="lazy" />
+            </button>
+          ) : (
+            <a href={imageUrl} target="_blank" rel="noopener noreferrer" className="messenger-message-img-link">
+              <img className="messenger-message-img" src={imageUrl} alt="" loading="lazy" />
+            </a>
+          )
         ) : (
           <span className="messenger-message-img-missing">
             {imageErr ? 'Изображение недоступно' : 'Загрузка…'}

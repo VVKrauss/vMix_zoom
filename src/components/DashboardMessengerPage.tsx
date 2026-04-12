@@ -160,6 +160,7 @@ type MessengerDmBubbleProps = {
   menuOpen: boolean
   onMenuButtonClick: (e: React.MouseEvent<HTMLButtonElement>) => void
   onBubbleContextMenu: (e: React.MouseEvent<HTMLElement>) => void
+  onOpenImageLightbox: (imageUrl: string) => void
 }
 
 function MessengerDmBubble({
@@ -171,6 +172,7 @@ function MessengerDmBubble({
   menuOpen,
   onMenuButtonClick,
   onBubbleContextMenu,
+  onOpenImageLightbox,
 }: MessengerDmBubbleProps) {
   const reactionCounts = new Map<string, number>()
   for (const r of reactions) {
@@ -208,7 +210,7 @@ function MessengerDmBubble({
         </div>
       ) : null}
       <div className="dashboard-messenger__message-body">
-        <MessengerBubbleBody message={message} />
+        <MessengerBubbleBody message={message} onOpenImageLightbox={onOpenImageLightbox} />
       </div>
       {reactionCounts.size > 0 ? (
         <div
@@ -271,6 +273,7 @@ export function DashboardMessengerPage() {
     left: number
     top: number
   } | null>(null)
+  const [messengerImageLightboxUrl, setMessengerImageLightboxUrl] = useState<string | null>(null)
   const [senderContactByUserId, setSenderContactByUserId] = useState<Record<string, ContactStatus>>({})
   const [favoriteBusyUserId, setFavoriteBusyUserId] = useState<string | null>(null)
   /** Снятие реакции уже отразили в списке диалогов после RPC — пропускаем дубль из realtime DELETE. */
@@ -1229,6 +1232,15 @@ export function DashboardMessengerPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [messageMenu, closeMessageActionMenu])
 
+  useEffect(() => {
+    if (!messengerImageLightboxUrl) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMessengerImageLightboxUrl(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [messengerImageLightboxUrl])
+
   /** Шапка треда: сразу из списка по URL, пока грузится полная карточка с сервера */
   const threadHeadConversation =
     sortedItems.find((i) => i.id === activeConversationId) ?? activeConversation
@@ -1803,6 +1815,10 @@ export function DashboardMessengerPage() {
                                   formatDt={formatDateTime}
                                   replyPreview={replyPreview}
                                   menuOpen={messageMenu?.message.id === message.id}
+                                  onOpenImageLightbox={(url) => {
+                                    closeMessageActionMenu()
+                                    setMessengerImageLightboxUrl(url)
+                                  }}
                                   onMenuButtonClick={(e) => {
                                     e.stopPropagation()
                                     const r = e.currentTarget.getBoundingClientRect()
@@ -2010,6 +2026,33 @@ export function DashboardMessengerPage() {
           </>
         ) : null}
       </section>
+
+      {messengerImageLightboxUrl
+        ? createPortal(
+            <div
+              className="messenger-image-lightbox-backdrop"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Просмотр изображения"
+              onClick={() => setMessengerImageLightboxUrl(null)}
+            >
+              <button
+                type="button"
+                className="messenger-image-lightbox__close"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setMessengerImageLightboxUrl(null)
+                }}
+              >
+                Закрыть
+              </button>
+              <div className="messenger-image-lightbox__frame" onClick={(e) => e.stopPropagation()}>
+                <img src={messengerImageLightboxUrl} className="messenger-image-lightbox__img" alt="" />
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
 
     </DashboardShell>
   )

@@ -3947,6 +3947,76 @@ button.dashboard-messenger__row-avatar {
   max-width: min(100%, 320px);
 }
 
+button.messenger-message-img-trigger {
+  appearance: none;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  width: 100%;
+  max-width: min(100%, 320px);
+}
+
+button.messenger-message-img-trigger:focus-visible {
+  outline: 2px solid rgba(159, 214, 255, 0.45);
+  outline-offset: 2px;
+}
+
+.messenger-image-lightbox-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 27100;
+  background: rgba(0, 0, 0, 0.94);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  padding: max(48px, calc(env(safe-area-inset-top, 0px) + 40px)) max(10px, env(safe-area-inset-right, 0px))
+    max(16px, env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px));
+  box-sizing: border-box;
+}
+
+.messenger-image-lightbox__close {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top, 0px));
+  right: max(10px, env(safe-area-inset-right, 0px));
+  z-index: 2;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.messenger-image-lightbox__close:hover {
+  background: var(--surface);
+}
+
+.messenger-image-lightbox__frame {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.messenger-image-lightbox__img {
+  max-width: 96vw;
+  max-height: min(90dvh, calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 56px));
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
 .messenger-message-img {
   display: block;
   width: 100%;
