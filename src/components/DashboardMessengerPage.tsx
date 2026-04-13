@@ -41,6 +41,12 @@ import {
   toggleDirectMessageReaction,
   uploadMessengerImage,
 } from '../lib/messenger'
+import {
+  getMessengerFontPreset,
+  setMessengerFontPreset,
+  truncateMessengerReplySnippet,
+  type MessengerFontPreset,
+} from '../lib/messengerUi'
 import { MESSENGER_COMPOSER_EMOJIS } from '../lib/messengerComposerEmojis'
 import { setPendingHostClaim } from '../lib/spaceRoom'
 import { getContactStatuses, setUserFavorite, type ContactStatus } from '../lib/socialGraph'
@@ -67,6 +73,7 @@ import {
 import { DashboardShell } from './DashboardShell'
 import { ThemeToggle } from './ThemeToggle'
 import { MessengerBubbleBody } from './MessengerBubbleBody'
+import { MessengerReplyMiniThumb } from './MessengerReplyMiniThumb'
 import { MessengerMessageMenuPopover } from './MessengerMessageMenuPopover'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
 import type { ReactionEmoji } from '../types/roomComms'
@@ -164,12 +171,36 @@ function pickDefaultConversationId(
   return sorted[0]?.id || fallbackId?.trim() || ''
 }
 
+type MessengerReplyPreview =
+  | { snippet: string; kind: 'text'; quotedAvatarUrl: string | null; quotedName?: string }
+  | { snippet: string; kind: 'image'; thumbPath?: string; quotedAvatarUrl: string | null; quotedName?: string }
+
+function resolveQuotedAvatarForDm(
+  quotedUserId: string | null | undefined,
+  currentUserId: string | undefined,
+  profileAvatar: string | null | undefined,
+  conv: DirectConversationSummary | null,
+): string | null {
+  const qid = quotedUserId?.trim()
+  if (!qid) return null
+  if (currentUserId && qid === currentUserId) return profileAvatar?.trim() || null
+  if (conv?.otherUserId?.trim() === qid) return conv.avatarUrl?.trim() || null
+  if (currentUserId && qid !== currentUserId && conv?.avatarUrl?.trim()) return conv.avatarUrl.trim()
+  return null
+}
+
 type MessengerDmBubbleProps = {
   message: DirectMessage
   isOwn: boolean
   reactions: DirectMessage[]
   formatDt: (iso: string) => string
-  replyPreview: { author: string; snippet: string } | null
+  replyPreview: MessengerReplyPreview | null
+  /** Если цитируемое сообщение есть в ленте — прокрутка к нему по клику. */
+  replyScrollTargetId: string | null
+  onReplyQuoteNavigate?: (messageId: string) => void
+  bindMessageAnchor: (messageId: string, el: HTMLElement | null) => void
+  currentUserId: string | null
+  onReactionChipTap?: (targetMessageId: string, emoji: ReactionEmoji) => void
   menuOpen: boolean
   onMenuButtonClick: (e: React.MouseEvent<HTMLButtonElement>) => void
   onBubbleContextMenu: (e: React.MouseEvent<HTMLElement>) => void
@@ -182,6 +213,11 @@ function MessengerDmBubble({
   reactions,
   formatDt,
   replyPreview,
+  replyScrollTargetId,
+  onReplyQuoteNavigate,
+  bindMessageAnchor,
+  currentUserId,
+  onReactionChipTap,
   menuOpen,
   onMenuButtonClick,
   onBubbleContextMenu,
@@ -193,8 +229,40 @@ function MessengerDmBubble({
     reactionCounts.set(key, (reactionCounts.get(key) ?? 0) + 1)
   }
 
+  const quoteNavigable = Boolean(replyScrollTargetId && onReplyQuoteNavigate)
+
+  const replyQuoteInner =
+    replyPreview ? (
+      <span className="dashboard-messenger__reply-quote-inner">
+        {replyPreview.quotedAvatarUrl ? (
+          <img
+            src={replyPreview.quotedAvatarUrl}
+            alt=""
+            className="dashboard-messenger__reply-quote-avatar"
+            draggable={false}
+          />
+        ) : (
+          <span className="dashboard-messenger__reply-quote-avatar dashboard-messenger__reply-quote-avatar--fallback" aria-hidden>
+            {(replyPreview.quotedName ?? '?').trim().slice(0, 1).toUpperCase() || '?'}
+          </span>
+        )}
+        {replyPreview.kind === 'image' && replyPreview.thumbPath ? (
+          <MessengerReplyMiniThumb thumbPath={replyPreview.thumbPath} />
+        ) : null}
+        <span className="dashboard-messenger__reply-quote-snippet">{replyPreview.snippet}</span>
+      </span>
+    ) : null
+
+  const replyQuoteAria =
+    replyPreview?.quotedName?.trim()
+      ? `К цитируемому сообщению: ${replyPreview.quotedName.trim()}`
+      : 'К цитируемому сообщению'
+
   return (
     <article
+      ref={(el) => {
+        bindMessageAnchor(message.id, el)
+      }}
       className={`dashboard-messenger__message${isOwn ? ' dashboard-messenger__message--own' : ''}`}
       onContextMenu={onBubbleContextMenu}
     >
@@ -216,11 +284,20 @@ function MessengerDmBubble({
         </button>
       </div>
       {replyPreview ? (
-        <div className="dashboard-messenger__reply-quote" role="note">
-          <span className="dashboard-messenger__reply-quote-label">Ответ</span>
-          <span className="dashboard-messenger__reply-quote-author">{replyPreview.author}</span>
-          <span className="dashboard-messenger__reply-quote-snippet">{replyPreview.snippet}</span>
-        </div>
+        quoteNavigable ? (
+          <button
+            type="button"
+            className="dashboard-messenger__reply-quote dashboard-messenger__reply-quote--action"
+            aria-label={replyQuoteAria}
+            onClick={() => onReplyQuoteNavigate?.(replyScrollTargetId!)}
+          >
+            {replyQuoteInner}
+          </button>
+        ) : (
+          <div className="dashboard-messenger__reply-quote" role="note">
+            {replyQuoteInner}
+          </div>
+        )
       ) : null}
       <div className="dashboard-messenger__message-body">
         <MessengerBubbleBody message={message} onOpenImageLightbox={onOpenImageLightbox} />
@@ -231,12 +308,44 @@ function MessengerDmBubble({
           aria-label="Реакции"
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          {[...reactionCounts.entries()].map(([emoji, count]) => (
-            <span key={emoji} className="dashboard-messenger__reaction-chip">
-              <span className="dashboard-messenger__reaction-emoji">{emoji}</span>
-              {count > 1 ? <span className="dashboard-messenger__reaction-count">{count}</span> : null}
-            </span>
-          ))}
+          {[...reactionCounts.entries()].map(([emoji, count]) => {
+            const mine = Boolean(
+              currentUserId &&
+                reactions.some(
+                  (r) => r.senderUserId === currentUserId && (r.body.trim() || r.body) === emoji,
+                ),
+            )
+            return (
+              <span
+                key={emoji}
+                className={`dashboard-messenger__reaction-chip${mine ? ' dashboard-messenger__reaction-chip--mine' : ''}`}
+                role={mine ? 'button' : undefined}
+                tabIndex={mine ? 0 : undefined}
+                onClick={
+                  mine
+                    ? (e) => {
+                        e.stopPropagation()
+                        if (isDirectReactionEmoji(emoji)) onReactionChipTap?.(message.id, emoji)
+                      }
+                    : undefined
+                }
+                onKeyDown={
+                  mine
+                    ? (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          if (isDirectReactionEmoji(emoji)) onReactionChipTap?.(message.id, emoji)
+                        }
+                      }
+                    : undefined
+                }
+              >
+                <span className="dashboard-messenger__reaction-emoji">{emoji}</span>
+                {count > 1 ? <span className="dashboard-messenger__reaction-count">{count}</span> : null}
+              </span>
+            )
+          })}
         </div>
       ) : null}
     </article>
@@ -259,6 +368,10 @@ export function DashboardMessengerPage() {
   const isMobileMessenger = useMediaQuery('(max-width: 900px)')
   const headerMessengerUnread = useMessengerUnreadCount()
   const [soundEnabled, setSoundEnabled] = useState(() => isMessengerSoundEnabled())
+  const [messengerFontPreset, setMessengerFontPresetState] = useState<MessengerFontPreset>(() =>
+    getMessengerFontPreset(),
+  )
+  const [messengerSettingsOpen, setMessengerSettingsOpen] = useState(false)
   const [messengerMenuOpen, setMessengerMenuOpen] = useState(false)
   const [chatListSearch, setChatListSearch] = useState('')
   /** Мобильный режим «только дерево чатов» — не подставлять chat в URL и не грузить тред */
@@ -331,12 +444,14 @@ export function DashboardMessengerPage() {
   const [composerEmojiOpen, setComposerEmojiOpen] = useState(false)
   const [hasMoreOlder, setHasMoreOlder] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
-  /** Меню «⋯» у сообщения: позиция и данные для поповера */
+  /** Меню «⋯» у сообщения: якорь и данные для поповера */
   const [messageMenu, setMessageMenu] = useState<{
     message: DirectMessage
-    left: number
-    top: number
+    mode: 'kebab' | 'context'
+    anchorX: number
+    anchorY: number
   } | null>(null)
+  const msgMenuWrapRef = useRef<HTMLDivElement | null>(null)
   const [messengerImageLightboxUrl, setMessengerImageLightboxUrl] = useState<string | null>(null)
   const [senderContactByUserId, setSenderContactByUserId] = useState<Record<string, ContactStatus>>({})
   const [favoriteBusyUserId, setFavoriteBusyUserId] = useState<string | null>(null)
@@ -376,6 +491,7 @@ export function DashboardMessengerPage() {
   const messagesScrollRef = useRef<HTMLDivElement | null>(null)
   /** Контейнер с сообщениями — ResizeObserver ловит рост высоты после decode изображений. */
   const messagesContentRef = useRef<HTMLDivElement | null>(null)
+  const messageAnchorRef = useRef<Map<string, HTMLElement>>(new Map())
   /** Пользователь у нижней границы ленты (обновляется в onScroll). */
   const messengerPinnedToBottomRef = useRef(true)
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -1355,6 +1471,38 @@ export function DashboardMessengerPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [messageMenu, closeMessageActionMenu])
 
+  useLayoutEffect(() => {
+    const el = msgMenuWrapRef.current
+    if (!el || !messageMenu) return
+    const place = () => {
+      const rect = el.getBoundingClientRect()
+      if (rect.width < 2 || rect.height < 2) {
+        requestAnimationFrame(place)
+        return
+      }
+      const pad = 10
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      let left =
+        messageMenu.mode === 'kebab'
+          ? messageMenu.anchorX - rect.width
+          : messageMenu.anchorX
+      let top =
+        messageMenu.mode === 'kebab'
+          ? messageMenu.anchorY - rect.height - 6
+          : messageMenu.anchorY
+      if (left + rect.width > vw - pad) left = vw - pad - rect.width
+      if (left < pad) left = pad
+      if (top + rect.height > vh - pad) top = vh - pad - rect.height
+      if (top < pad) top = pad
+      el.style.left = `${left}px`
+      el.style.top = `${top}px`
+      el.style.visibility = 'visible'
+    }
+    el.style.visibility = 'hidden'
+    place()
+  }, [messageMenu])
+
   useEffect(() => {
     if (!messengerImageLightboxUrl) return
     const onKey = (e: KeyboardEvent) => {
@@ -1401,6 +1549,21 @@ export function DashboardMessengerPage() {
     setMessengerMenuOpen(false)
   }, [])
 
+  const bindMessageAnchor = useCallback((messageId: string, el: HTMLElement | null) => {
+    if (el) messageAnchorRef.current.set(messageId, el)
+    else messageAnchorRef.current.delete(messageId)
+  }, [])
+
+  const scrollToQuotedMessage = useCallback((quotedId: string) => {
+    const el = messageAnchorRef.current.get(quotedId)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('dashboard-messenger__message--highlight')
+    window.setTimeout(() => {
+      el.classList.remove('dashboard-messenger__message--highlight')
+    }, 1400)
+  }, [])
+
   const goCreateRoomFromMessenger = useCallback(() => {
     const id = newRoomId()
     setPendingHostClaim(id)
@@ -1421,14 +1584,40 @@ export function DashboardMessengerPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [messengerMenuOpen, closeMessengerMenu])
 
+  useEffect(() => {
+    if (!messengerSettingsOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMessengerSettingsOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [messengerSettingsOpen])
+
   const renderThreadComposer = () => (
     <div className="dashboard-messenger__composer" role="region" aria-label="Новое сообщение">
       {replyTo && !editingMessageId ? (
         <div className="dashboard-messenger__composer-reply">
           <div className="dashboard-messenger__composer-reply-text">
             <span className="dashboard-messenger__composer-reply-label">Ответ</span>{' '}
-            <strong>{replyTo.senderNameSnapshot}</strong>:{' '}
-            {replyTo.kind === 'image' ? replyTo.body.trim() || '📷 Фото' : replyTo.body.trim().slice(0, 120)}
+            <strong>{replyTo.senderNameSnapshot}</strong>
+            <span className="dashboard-messenger__composer-reply-snippet">
+              {replyTo.kind === 'image' ? (
+                <>
+                  {replyTo.meta?.image?.thumbPath?.trim() || replyTo.meta?.image?.path?.trim() ? (
+                    <MessengerReplyMiniThumb
+                      thumbPath={(
+                        replyTo.meta?.image?.thumbPath?.trim() ||
+                        replyTo.meta?.image?.path?.trim() ||
+                        ''
+                      ).trim()}
+                    />
+                  ) : null}
+                  <span>{truncateMessengerReplySnippet(replyTo.body)}</span>
+                </>
+              ) : (
+                <span>{truncateMessengerReplySnippet(replyTo.body) || '…'}</span>
+              )}
+            </span>
           </div>
           <button
             type="button"
@@ -1553,6 +1742,15 @@ export function DashboardMessengerPage() {
           <div className="dashboard-topbar__messenger-controls">
             <button
               type="button"
+              className="dashboard-topbar__messenger-settings"
+              onClick={() => setMessengerSettingsOpen(true)}
+              title="Настройки мессенджера"
+              aria-label="Настройки мессенджера"
+            >
+              <FiRrIcon name="settings" className="dashboard-topbar__messenger-settings-fi" />
+            </button>
+            <button
+              type="button"
               className={`dashboard-topbar__sound${soundEnabled ? ' dashboard-topbar__sound--on' : ''}`}
               onClick={() => {
                 const next = !soundEnabled
@@ -1589,7 +1787,7 @@ export function DashboardMessengerPage() {
       }
     >
       <section
-        className={`dashboard-section dashboard-messenger dashboard-messenger--fill${
+        className={`dashboard-section dashboard-messenger dashboard-messenger--fill dashboard-messenger--font-${messengerFontPreset}${
           isMobileMessenger ? ' dashboard-messenger--mobile-chromeless' : ''
         }`}
       >
@@ -1937,17 +2135,46 @@ export function DashboardMessengerPage() {
                               const isOwn = Boolean(user?.id && message.senderUserId === user.id)
                               const reactions = reactionsByTargetId.get(message.id) ?? []
                               const rid = message.replyToMessageId?.trim()
-                              let replyPreview: { author: string; snippet: string } | null = null
+                              let replyPreview: MessengerReplyPreview | null = null
+                              let replyScrollTargetId: string | null = null
                               if (rid) {
                                 const src = messages.find((m) => m.id === rid)
                                 if (src) {
-                                  const snippet =
-                                    src.kind === 'image'
-                                      ? src.body.trim() || '📷 Фото'
-                                      : src.body.trim().slice(0, 140) || '…'
-                                  replyPreview = { author: src.senderNameSnapshot, snippet }
+                                  replyScrollTargetId = rid
+                                  const quotedAvatarUrl = resolveQuotedAvatarForDm(
+                                    src.senderUserId,
+                                    user?.id,
+                                    profile?.avatar_url,
+                                    threadHeadConversation,
+                                  )
+                                  const quotedName = src.senderNameSnapshot?.trim() || undefined
+                                  if (src.kind === 'image') {
+                                    const thumbPath =
+                                      src.meta?.image?.thumbPath?.trim() ||
+                                      src.meta?.image?.path?.trim() ||
+                                      ''
+                                    replyPreview = {
+                                      quotedAvatarUrl,
+                                      quotedName,
+                                      snippet: truncateMessengerReplySnippet(src.body),
+                                      kind: 'image',
+                                      ...(thumbPath ? { thumbPath } : {}),
+                                    }
+                                  } else {
+                                    replyPreview = {
+                                      quotedAvatarUrl,
+                                      quotedName,
+                                      snippet: truncateMessengerReplySnippet(src.body) || '…',
+                                      kind: 'text',
+                                    }
+                                  }
                                 } else {
-                                  replyPreview = { author: '…', snippet: 'Нет в загруженной истории' }
+                                  replyPreview = {
+                                    quotedAvatarUrl: null,
+                                    quotedName: undefined,
+                                    snippet: 'Нет в загруженной истории',
+                                    kind: 'text',
+                                  }
                                 }
                               }
                               return (
@@ -1958,6 +2185,9 @@ export function DashboardMessengerPage() {
                                   reactions={reactions}
                                   formatDt={formatDateTime}
                                   replyPreview={replyPreview}
+                                  replyScrollTargetId={replyScrollTargetId}
+                                  onReplyQuoteNavigate={scrollToQuotedMessage}
+                                  bindMessageAnchor={bindMessageAnchor}
                                   menuOpen={messageMenu?.message.id === message.id}
                                   onOpenImageLightbox={(url) => {
                                     closeMessageActionMenu()
@@ -1968,15 +2198,19 @@ export function DashboardMessengerPage() {
                                     const r = e.currentTarget.getBoundingClientRect()
                                     setMessageMenu((cur) => {
                                       if (cur?.message.id === message.id) return null
-                                      return { message, left: r.right, top: r.top }
+                                      return { message, mode: 'kebab', anchorX: r.right, anchorY: r.top }
                                     })
                                   }}
                                   onBubbleContextMenu={(e) => {
                                     e.preventDefault()
                                     setMessageMenu((cur) => {
                                       if (cur?.message.id === message.id) return null
-                                      return { message, left: e.clientX, top: e.clientY }
+                                      return { message, mode: 'context', anchorX: e.clientX, anchorY: e.clientY }
                                     })
+                                  }}
+                                  currentUserId={user?.id ?? null}
+                                  onReactionChipTap={(targetId, emoji) => {
+                                    void toggleMessengerReaction(targetId, emoji)
                                   }}
                                 />
                               )
@@ -1991,13 +2225,14 @@ export function DashboardMessengerPage() {
                     {messageMenu
                       ? createPortal(
                           <div
+                            ref={msgMenuWrapRef}
                             className="messenger-msg-menu-wrap"
                             style={{
                               position: 'fixed',
-                              left: Math.min(messageMenu.left, window.innerWidth - 16),
-                              top: messageMenu.top,
-                              transform: 'translate(-100%, calc(-100% - 6px))',
+                              left: 0,
+                              top: 0,
                               zIndex: 26500,
+                              visibility: 'hidden',
                             }}
                           >
                             <MessengerMessageMenuPopover
@@ -2093,17 +2328,6 @@ export function DashboardMessengerPage() {
                   </span>
                   <span className="dashboard-messenger-quick-menu__lbl">Комнаты</span>
                 </Link>
-                <Link to="/dashboard/messenger" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
-                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
-                    <ChatBubbleIcon />
-                  </span>
-                  <span className="dashboard-messenger-quick-menu__lbl">Мессенджер</span>
-                  {headerMessengerUnread > 0 ? (
-                    <span className="dashboard-messenger-quick-menu__badge">
-                      {headerMessengerUnread > 99 ? '99+' : headerMessengerUnread}
-                    </span>
-                  ) : null}
-                </Link>
                 <Link to="/dashboard/friends" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
                   <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
                     <ParticipantsBadgeIcon />
@@ -2122,43 +2346,17 @@ export function DashboardMessengerPage() {
                 </div>
                 <button
                   type="button"
-                  className={`dashboard-messenger-quick-menu__btn${soundEnabled ? ' dashboard-messenger-quick-menu__btn--active' : ''}`}
+                  className="dashboard-messenger-quick-menu__btn"
                   onClick={() => {
-                    const next = !soundEnabled
-                    setSoundEnabled(next)
-                    setMessengerSoundEnabled(next)
+                    closeMessengerMenu()
+                    setMessengerSettingsOpen(true)
                   }}
-                  aria-pressed={soundEnabled}
-                  title={soundEnabled ? 'Выключить звук' : 'Включить звук'}
                 >
                   <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
-                    {soundEnabled ? <BellIcon /> : <BellOffIcon />}
+                    <FiRrIcon name="settings" />
                   </span>
-                  <span className="dashboard-messenger-quick-menu__lbl">Звук</span>
+                  <span className="dashboard-messenger-quick-menu__lbl">Настройки мессенджера</span>
                 </button>
-                {pushUi !== 'absent' ? (
-                  <button
-                    type="button"
-                    className={`dashboard-messenger-quick-menu__btn${pushUi === 'on' ? ' dashboard-messenger-quick-menu__btn--active' : ''}${pushUi === 'denied' ? ' dashboard-messenger-quick-menu__btn--push-denied' : ''}${pushUi === 'unconfigured' ? ' dashboard-messenger-quick-menu__btn--push-unconfigured' : ''}`}
-                    disabled={pushUi === 'loading' || pushUi === 'unconfigured'}
-                    onClick={() => void toggleMessengerPush()}
-                    aria-pressed={pushUi === 'on'}
-                    title={
-                      pushUi === 'unconfigured'
-                        ? 'Нет VITE_VAPID_PUBLIC_KEY в сборке — добавьте и пересоберите'
-                        : pushUi === 'on'
-                          ? 'Отключить push'
-                          : pushUi === 'denied'
-                            ? 'Уведомления запрещены'
-                            : 'Включить push'
-                    }
-                  >
-                    <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
-                      <FiRrIcon name="megaphone" />
-                    </span>
-                    <span className="dashboard-messenger-quick-menu__lbl">Push</span>
-                  </button>
-                ) : null}
                 {canAccessAdmin ? (
                   <Link to="/admin" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
                     <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
@@ -2214,6 +2412,110 @@ export function DashboardMessengerPage() {
               </button>
               <div className="messenger-image-lightbox__frame" onClick={(e) => e.stopPropagation()}>
                 <img src={messengerImageLightboxUrl} className="messenger-image-lightbox__img" alt="" />
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+
+      {messengerSettingsOpen
+        ? createPortal(
+            <div
+              className="messenger-settings-modal-root"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="messenger-settings-title"
+            >
+              <button
+                type="button"
+                className="messenger-settings-modal-backdrop"
+                aria-label="Закрыть"
+                onClick={() => setMessengerSettingsOpen(false)}
+              />
+              <div className="messenger-settings-modal">
+                <h2 id="messenger-settings-title" className="messenger-settings-modal__title">
+                  Настройки мессенджера
+                </h2>
+                <div className="messenger-settings-modal__section">
+                  <span className="messenger-settings-modal__label">Размер шрифта в чате</span>
+                  <div className="messenger-settings-modal__segment" role="group" aria-label="Размер шрифта">
+                    {(
+                      [
+                        { id: 's' as const, label: 'Мелкий' },
+                        { id: 'm' as const, label: 'Обычный' },
+                        { id: 'l' as const, label: 'Крупный' },
+                      ] as const
+                    ).map(({ id, label }) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={`messenger-settings-modal__segment-btn${
+                          messengerFontPreset === id ? ' messenger-settings-modal__segment-btn--active' : ''
+                        }`}
+                        onClick={() => {
+                          setMessengerFontPreset(id)
+                          setMessengerFontPresetState(id)
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="messenger-settings-modal__section">
+                  <span className="messenger-settings-modal__label">Звук входящих</span>
+                  <button
+                    type="button"
+                    className={`messenger-settings-modal__row-btn${
+                      soundEnabled ? ' messenger-settings-modal__row-btn--on' : ''
+                    }`}
+                    onClick={() => {
+                      const next = !soundEnabled
+                      setSoundEnabled(next)
+                      setMessengerSoundEnabled(next)
+                    }}
+                    aria-pressed={soundEnabled}
+                  >
+                    <span className="messenger-settings-modal__row-ico" aria-hidden>
+                      {soundEnabled ? <BellIcon /> : <BellOffIcon />}
+                    </span>
+                    {soundEnabled ? 'Включён — нажмите, чтобы выключить' : 'Выключен — нажмите, чтобы включить'}
+                  </button>
+                </div>
+                {pushUi !== 'absent' ? (
+                  <div className="messenger-settings-modal__section">
+                    <span className="messenger-settings-modal__label">Push-уведомления</span>
+                    <button
+                      type="button"
+                      className={`messenger-settings-modal__row-btn${
+                        pushUi === 'on' ? ' messenger-settings-modal__row-btn--on' : ''
+                      }${pushUi === 'denied' ? ' messenger-settings-modal__row-btn--muted' : ''}`}
+                      disabled={pushUi === 'loading' || pushUi === 'unconfigured'}
+                      onClick={() => void toggleMessengerPush()}
+                      aria-pressed={pushUi === 'on'}
+                    >
+                      <span className="messenger-settings-modal__row-ico" aria-hidden>
+                        <FiRrIcon name="megaphone" />
+                      </span>
+                      {pushUi === 'unconfigured'
+                        ? 'Нет ключа в сборке — пересоберите с VITE_VAPID_PUBLIC_KEY'
+                        : pushUi === 'on'
+                          ? 'Включены — нажмите, чтобы отключить'
+                          : pushUi === 'denied'
+                            ? 'Браузер запретил уведомления'
+                            : 'Выключены — нажмите, чтобы включить'}
+                    </button>
+                  </div>
+                ) : null}
+                <div className="messenger-settings-modal__actions">
+                  <button
+                    type="button"
+                    className="messenger-settings-modal__done"
+                    onClick={() => setMessengerSettingsOpen(false)}
+                  >
+                    Готово
+                  </button>
+                </div>
               </div>
             </div>,
             document.body,

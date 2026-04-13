@@ -78,37 +78,39 @@ export function MessengerBubbleBody({
     return (
       <div className="messenger-bubble-stack">
         {previewUrl ? (
-          onOpenImageLightbox ? (
-            <button
-              type="button"
-              className="messenger-message-img-link messenger-message-img-trigger"
-              onClick={() => void openLightbox()}
-              aria-label="Открыть изображение"
-            >
-              <img
-                className="messenger-message-img messenger-message-img--preview"
-                src={previewUrl}
-                alt=""
-                loading="eager"
-                decoding="async"
-              />
-            </button>
-          ) : (
-            <a
-              href={hrefForNewTab || undefined}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="messenger-message-img-link"
-            >
-              <img
-                className="messenger-message-img messenger-message-img--preview"
-                src={previewUrl}
-                alt=""
-                loading="eager"
-                decoding="async"
-              />
-            </a>
-          )
+          <div className="messenger-bubble-thumb-box">
+            {onOpenImageLightbox ? (
+              <button
+                type="button"
+                className="messenger-message-img-link messenger-message-img-trigger"
+                onClick={() => void openLightbox()}
+                aria-label="Открыть изображение"
+              >
+                <img
+                  className="messenger-message-img messenger-message-img--preview"
+                  src={previewUrl}
+                  alt=""
+                  loading="eager"
+                  decoding="async"
+                />
+              </button>
+            ) : (
+              <a
+                href={hrefForNewTab || undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="messenger-message-img-link"
+              >
+                <img
+                  className="messenger-message-img messenger-message-img--preview"
+                  src={previewUrl}
+                  alt=""
+                  loading="eager"
+                  decoding="async"
+                />
+              </a>
+            )}
+          </div>
         ) : (
           <span className="messenger-message-img-missing">
             {imageErr ? 'Изображение недоступно' : 'Загрузка…'}
