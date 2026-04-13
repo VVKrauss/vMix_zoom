@@ -347,51 +347,59 @@ export function DashboardShell({
                 </span>
                 <span className="dashboard-messenger-quick-menu__lbl">Главная</span>
               </Link>
-              <Link
-                to="/dashboard"
-                className={`dashboard-messenger-quick-menu__btn${active === 'cabinet' ? ' dashboard-messenger-quick-menu__btn--active' : ''}`}
-                onClick={closeCabinetMenu}
-              >
-                <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
-                  <DashboardIcon />
-                </span>
-                <span className="dashboard-messenger-quick-menu__lbl">Кабинет</span>
-              </Link>
-              <Link
-                to="/dashboard/chats"
-                className={`dashboard-messenger-quick-menu__btn${active === 'chats' ? ' dashboard-messenger-quick-menu__btn--active' : ''}`}
-                onClick={closeCabinetMenu}
-              >
-                <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
-                  <RoomsIcon />
-                </span>
-                <span className="dashboard-messenger-quick-menu__lbl">Комнаты</span>
-              </Link>
-              <Link
-                to="/dashboard/messenger"
-                className={`dashboard-messenger-quick-menu__btn${active === 'messenger' ? ' dashboard-messenger-quick-menu__btn--active' : ''}`}
-                onClick={closeCabinetMenu}
-              >
-                <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
-                  <ChatBubbleIcon />
-                </span>
-                <span className="dashboard-messenger-quick-menu__lbl">Мессенджер</span>
-                {unreadCount > 0 ? (
-                  <span className="dashboard-messenger-quick-menu__badge">
-                    {unreadCount > 99 ? '99+' : unreadCount}
+              {active !== 'cabinet' ? (
+                <Link
+                  to="/dashboard"
+                  className="dashboard-messenger-quick-menu__btn"
+                  onClick={closeCabinetMenu}
+                >
+                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                    <DashboardIcon />
                   </span>
-                ) : null}
-              </Link>
-              <Link
-                to="/dashboard/friends"
-                className={`dashboard-messenger-quick-menu__btn${active === 'friends' ? ' dashboard-messenger-quick-menu__btn--active' : ''}`}
-                onClick={closeCabinetMenu}
-              >
-                <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
-                  <ParticipantsBadgeIcon />
-                </span>
-                <span className="dashboard-messenger-quick-menu__lbl">Друзья</span>
-              </Link>
+                  <span className="dashboard-messenger-quick-menu__lbl">Кабинет</span>
+                </Link>
+              ) : null}
+              {active !== 'chats' ? (
+                <Link
+                  to="/dashboard/chats"
+                  className="dashboard-messenger-quick-menu__btn"
+                  onClick={closeCabinetMenu}
+                >
+                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                    <RoomsIcon />
+                  </span>
+                  <span className="dashboard-messenger-quick-menu__lbl">Комнаты</span>
+                </Link>
+              ) : null}
+              {active !== 'messenger' ? (
+                <Link
+                  to="/dashboard/messenger"
+                  className="dashboard-messenger-quick-menu__btn"
+                  onClick={closeCabinetMenu}
+                >
+                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                    <ChatBubbleIcon />
+                  </span>
+                  <span className="dashboard-messenger-quick-menu__lbl">Мессенджер</span>
+                  {unreadCount > 0 ? (
+                    <span className="dashboard-messenger-quick-menu__badge">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  ) : null}
+                </Link>
+              ) : null}
+              {active !== 'friends' ? (
+                <Link
+                  to="/dashboard/friends"
+                  className="dashboard-messenger-quick-menu__btn"
+                  onClick={closeCabinetMenu}
+                >
+                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                    <ParticipantsBadgeIcon />
+                  </span>
+                  <span className="dashboard-messenger-quick-menu__lbl">Друзья</span>
+                </Link>
+              ) : null}
               <button type="button" className="dashboard-messenger-quick-menu__btn" onClick={goCreateRoomFromMenu}>
                 <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
                   <PlusIcon />
