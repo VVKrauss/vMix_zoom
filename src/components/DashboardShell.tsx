@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import { listMyContacts } from '../lib/socialGraph'
 import { setPendingHostClaim } from '../lib/spaceRoom'
@@ -10,7 +11,9 @@ import {
   AdminPanelIcon,
   ChatBubbleIcon,
   DashboardIcon,
+  HomeIcon,
   LogOutIcon,
+  MenuBurgerIcon,
   ParticipantsBadgeIcon,
   PlusIcon,
   RoomsIcon,
@@ -91,8 +94,12 @@ export function DashboardShell({
   headerExtra,
 }: DashboardShellProps) {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
   const unreadCount = useMessengerUnreadCount()
+  const isMobileCabinetNav = useMediaQuery('(max-width: 900px)')
+  const useBurgerNav = Boolean(isMobileCabinetNav && !chromeless)
+  const [cabinetMenuOpen, setCabinetMenuOpen] = useState(false)
   const [incomingFavSig, setIncomingFavSig] = useState<string | null>(null)
   const [dismissedIncomingFavSig, setDismissedIncomingFavSig] = useState<string | null>(null)
   useEffect(() => {
@@ -157,14 +164,36 @@ export function DashboardShell({
     navigate(`/r/${encodeURIComponent(id)}`)
   }
 
+  const closeCabinetMenu = useCallback(() => setCabinetMenuOpen(false), [])
+
+  useEffect(() => {
+    closeCabinetMenu()
+  }, [location.pathname, closeCabinetMenu])
+
+  useEffect(() => {
+    if (!cabinetMenuOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeCabinetMenu()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [cabinetMenuOpen, closeCabinetMenu])
+
+  const goCreateRoomFromMenu = () => {
+    closeCabinetMenu()
+    goCreateRoom()
+  }
+
   return (
-    <div className={`dashboard-page${chromeless ? ' dashboard-page--messenger-chromeless' : ''}`}>
+    <div
+      className={`dashboard-page${chromeless ? ' dashboard-page--messenger-chromeless' : ''}${useBurgerNav ? ' dashboard-page--cabinet-mobile-burger' : ''}`}
+    >
       <header className="dashboard-topbar">
         <div className="dashboard-topbar__start">
           <Link to="/" className="dashboard-topbar__logo" title="На главную">
             <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
           </Link>
-          {canAccessAdmin ? (
+          {canAccessAdmin && !useBurgerNav ? (
             <Link to="/admin" className="dashboard-topbar__admin" title="Админка" aria-label="Админка">
               <AdminPanelIcon />
             </Link>
@@ -173,37 +202,52 @@ export function DashboardShell({
 
         <div className="dashboard-topbar__actions">
           {headerExtra}
-          <ThemeToggle variant="inline" className="theme-toggle--dashboard" />
-          <Link
-            to="/dashboard/messenger"
-            className="dashboard-topbar__messenger"
-            title={SIDEBAR_TAB_HINTS.messenger}
-          >
-            <ChatBubbleIcon />
-            {unreadCount > 0 ? (
-              <span className="dashboard-topbar__messenger-badge">
-                {unreadCount > 99 ? '99+' : unreadCount}
-              </span>
-            ) : null}
-          </Link>
-          <button
-            type="button"
-            className="dashboard-topbar__circle-action dashboard-topbar__circle-action--primary"
-            onClick={goCreateRoom}
-            title="Новая комната"
-            aria-label="Новая комната"
-          >
-            <PlusIcon />
-          </button>
-          <button
-            type="button"
-            className="dashboard-topbar__circle-action"
-            onClick={onSignOut}
-            title="Выход"
-            aria-label="Выход"
-          >
-            <LogOutIcon />
-          </button>
+          {!useBurgerNav ? (
+            <>
+              <ThemeToggle variant="inline" className="theme-toggle--dashboard" />
+              <Link
+                to="/dashboard/messenger"
+                className="dashboard-topbar__messenger"
+                title={SIDEBAR_TAB_HINTS.messenger}
+              >
+                <ChatBubbleIcon />
+                {unreadCount > 0 ? (
+                  <span className="dashboard-topbar__messenger-badge">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                ) : null}
+              </Link>
+              <button
+                type="button"
+                className="dashboard-topbar__circle-action dashboard-topbar__circle-action--primary"
+                onClick={goCreateRoom}
+                title="Новая комната"
+                aria-label="Новая комната"
+              >
+                <PlusIcon />
+              </button>
+              <button
+                type="button"
+                className="dashboard-topbar__circle-action"
+                onClick={onSignOut}
+                title="Выход"
+                aria-label="Выход"
+              >
+                <LogOutIcon />
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className={`dashboard-messenger__list-head-btn dashboard-topbar__cabinet-burger${cabinetMenuOpen ? ' dashboard-messenger__list-head-btn--open' : ''}`}
+              onClick={() => setCabinetMenuOpen((v) => !v)}
+              aria-label={cabinetMenuOpen ? 'Закрыть меню' : 'Меню'}
+              aria-expanded={cabinetMenuOpen}
+              aria-haspopup="true"
+            >
+              <MenuBurgerIcon />
+            </button>
+          )}
         </div>
       </header>
 
@@ -278,6 +322,116 @@ export function DashboardShell({
           <div className="dashboard-content dashboard-content--cabinet">{children}</div>
         </main>
       </div>
+
+      {useBurgerNav ? (
+        <>
+          <div
+            className={`dashboard-messenger-quick-menu-backdrop${
+              cabinetMenuOpen ? ' dashboard-messenger-quick-menu-backdrop--open' : ''
+            }`}
+            aria-hidden={!cabinetMenuOpen}
+            onClick={closeCabinetMenu}
+            role="presentation"
+          />
+          <nav
+            className={`dashboard-messenger-quick-menu${
+              cabinetMenuOpen ? ' dashboard-messenger-quick-menu--open' : ''
+            } dashboard-messenger-quick-menu--anchor-head`}
+            aria-hidden={!cabinetMenuOpen}
+            aria-label="Навигация по кабинету"
+          >
+            <div className="dashboard-messenger-quick-menu__grid" role="toolbar">
+              <Link to="/" className="dashboard-messenger-quick-menu__btn" onClick={closeCabinetMenu}>
+                <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                  <HomeIcon />
+                </span>
+                <span className="dashboard-messenger-quick-menu__lbl">Главная</span>
+              </Link>
+              <Link
+                to="/dashboard"
+                className={`dashboard-messenger-quick-menu__btn${active === 'cabinet' ? ' dashboard-messenger-quick-menu__btn--active' : ''}`}
+                onClick={closeCabinetMenu}
+              >
+                <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                  <DashboardIcon />
+                </span>
+                <span className="dashboard-messenger-quick-menu__lbl">Кабинет</span>
+              </Link>
+              <Link
+                to="/dashboard/chats"
+                className={`dashboard-messenger-quick-menu__btn${active === 'chats' ? ' dashboard-messenger-quick-menu__btn--active' : ''}`}
+                onClick={closeCabinetMenu}
+              >
+                <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                  <RoomsIcon />
+                </span>
+                <span className="dashboard-messenger-quick-menu__lbl">Комнаты</span>
+              </Link>
+              <Link
+                to="/dashboard/messenger"
+                className={`dashboard-messenger-quick-menu__btn${active === 'messenger' ? ' dashboard-messenger-quick-menu__btn--active' : ''}`}
+                onClick={closeCabinetMenu}
+              >
+                <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                  <ChatBubbleIcon />
+                </span>
+                <span className="dashboard-messenger-quick-menu__lbl">Мессенджер</span>
+                {unreadCount > 0 ? (
+                  <span className="dashboard-messenger-quick-menu__badge">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                ) : null}
+              </Link>
+              <Link
+                to="/dashboard/friends"
+                className={`dashboard-messenger-quick-menu__btn${active === 'friends' ? ' dashboard-messenger-quick-menu__btn--active' : ''}`}
+                onClick={closeCabinetMenu}
+              >
+                <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                  <ParticipantsBadgeIcon />
+                </span>
+                <span className="dashboard-messenger-quick-menu__lbl">Друзья</span>
+              </Link>
+              <button type="button" className="dashboard-messenger-quick-menu__btn" onClick={goCreateRoomFromMenu}>
+                <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                  <PlusIcon />
+                </span>
+                <span className="dashboard-messenger-quick-menu__lbl">Новая комната</span>
+              </button>
+              <div className="dashboard-messenger-quick-menu__cell">
+                <span className="dashboard-messenger-quick-menu__lbl">Тема</span>
+                <ThemeToggle variant="inline" className="theme-toggle--dashboard" />
+              </div>
+              {canAccessAdmin ? (
+                <Link to="/admin" className="dashboard-messenger-quick-menu__btn" onClick={closeCabinetMenu}>
+                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                    <AdminPanelIcon />
+                  </span>
+                  <span className="dashboard-messenger-quick-menu__lbl">Админка</span>
+                </Link>
+              ) : (
+                <div
+                  className="dashboard-messenger-quick-menu__cell dashboard-messenger-quick-menu__cell--filler"
+                  aria-hidden
+                />
+              )}
+              <button
+                type="button"
+                className="dashboard-messenger-quick-menu__btn dashboard-messenger-quick-menu__btn--danger dashboard-messenger-quick-menu__btn--span"
+                onClick={() => {
+                  closeCabinetMenu()
+                  onSignOut()
+                }}
+              >
+                <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                  <LogOutIcon />
+                </span>
+                <span className="dashboard-messenger-quick-menu__lbl">Выход</span>
+              </button>
+            </div>
+          </nav>
+        </>
+      ) : null}
 
     </div>
   )
