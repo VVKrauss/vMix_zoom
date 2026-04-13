@@ -4483,6 +4483,11 @@ button.dashboard-messenger__row-avatar {
   color: #ffe0e0;
 }
 
+/* Мобилка: свайп влево для ответа; вертикальная прокрутка ленты не перехватываем. */
+.dashboard-messenger__message--swipe-reply {
+  touch-action: pan-y;
+}
+
 .dashboard-messenger__message-reactions {
   display: flex;
   flex-wrap: wrap;
@@ -4978,6 +4983,7 @@ button.messenger-message-img-trigger:focus-visible {
   align-items: center;
   justify-content: center;
   width: 100%;
+  touch-action: pan-x pan-y;
 }
 
 .messenger-image-lightbox__img {

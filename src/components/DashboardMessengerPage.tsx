@@ -48,7 +48,7 @@ import {
   type MessengerFontPreset,
 } from '../lib/messengerUi'
 import { MESSENGER_COMPOSER_EMOJIS } from '../lib/messengerComposerEmojis'
-import { setPendingHostClaim } from '../lib/spaceRoom'
+import { setPendingHostClaim, stashSpaceRoomCreateOptions } from '../lib/spaceRoom'
 import { getContactStatuses, setUserFavorite, type ContactStatus } from '../lib/socialGraph'
 import { supabase } from '../lib/supabase'
 import { newRoomId } from '../utils/roomId'
@@ -189,6 +189,11 @@ function resolveQuotedAvatarForDm(
   return null
 }
 
+const SWIPE_REPLY_THRESHOLD_PX = 52
+const SWIPE_REPLY_AXIS_RATIO = 1.18
+const SWIPE_REPLY_DECIDE_PX = 14
+const SWIPE_REPLY_MAX_SHIFT_PX = 80
+
 type MessengerDmBubbleProps = {
   message: DirectMessage
   isOwn: boolean
@@ -201,6 +206,9 @@ type MessengerDmBubbleProps = {
   bindMessageAnchor: (messageId: string, el: HTMLElement | null) => void
   currentUserId: string | null
   onReactionChipTap?: (targetMessageId: string, emoji: ReactionEmoji) => void
+  /** Мобилка: свайп пузыря влево — ответить на сообщение. */
+  swipeReplyEnabled?: boolean
+  onSwipeReply?: (message: DirectMessage) => void
   menuOpen: boolean
   onMenuButtonClick: (e: React.MouseEvent<HTMLButtonElement>) => void
   onBubbleContextMenu: (e: React.MouseEvent<HTMLElement>) => void
@@ -218,11 +226,32 @@ function MessengerDmBubble({
   bindMessageAnchor,
   currentUserId,
   onReactionChipTap,
+  swipeReplyEnabled,
+  onSwipeReply,
   menuOpen,
   onMenuButtonClick,
   onBubbleContextMenu,
   onOpenImageLightbox,
 }: MessengerDmBubbleProps) {
+  const [swipeTx, setSwipeTx] = useState(0)
+  const swipeRef = useRef<{
+    pointerId: number | null
+    x0: number
+    y0: number
+    active: boolean
+    decided: boolean
+    cancelled: boolean
+    captured: boolean
+  }>({
+    pointerId: null,
+    x0: 0,
+    y0: 0,
+    active: false,
+    decided: false,
+    cancelled: false,
+    captured: false,
+  })
+
   const reactionCounts = new Map<string, number>()
   for (const r of reactions) {
     const key = r.body.trim() || r.body
@@ -230,6 +259,41 @@ function MessengerDmBubble({
   }
 
   const quoteNavigable = Boolean(replyScrollTargetId && onReplyQuoteNavigate)
+
+  const canSwipeReply =
+    Boolean(swipeReplyEnabled && onSwipeReply) &&
+    (message.kind === 'text' || message.kind === 'image') &&
+    !message.id.startsWith('local-')
+
+  const endSwipeGesture = useCallback(
+    (e: React.PointerEvent<HTMLElement>, el: HTMLElement) => {
+      const s = swipeRef.current
+      if (!s.active || e.pointerId !== s.pointerId) return
+      const dx = e.clientX - s.x0
+      s.active = false
+      if (s.captured) {
+        try {
+          el.releasePointerCapture(e.pointerId)
+        } catch {
+          /* already released */
+        }
+      }
+      swipeRef.current = {
+        pointerId: null,
+        x0: 0,
+        y0: 0,
+        active: false,
+        decided: false,
+        cancelled: false,
+        captured: false,
+      }
+      setSwipeTx(0)
+      if (!s.cancelled && dx <= -SWIPE_REPLY_THRESHOLD_PX) {
+        onSwipeReply?.(message)
+      }
+    },
+    [message, onSwipeReply],
+  )
 
   const replyQuoteInner =
     replyPreview ? (
@@ -263,7 +327,60 @@ function MessengerDmBubble({
       ref={(el) => {
         bindMessageAnchor(message.id, el)
       }}
-      className={`dashboard-messenger__message${isOwn ? ' dashboard-messenger__message--own' : ''}`}
+      className={`dashboard-messenger__message${isOwn ? ' dashboard-messenger__message--own' : ''}${
+        canSwipeReply ? ' dashboard-messenger__message--swipe-reply' : ''
+      }`}
+      style={
+        swipeTx !== 0
+          ? { transform: `translateX(${swipeTx}px)`, transition: 'none' }
+          : { transform: undefined, transition: 'transform 0.18s ease-out' }
+      }
+      onPointerDown={(e) => {
+        if (!canSwipeReply || e.button !== 0) return
+        const t = e.target as HTMLElement
+        if (
+          t.closest(
+            'button, a, .messenger-message-img-trigger, .dashboard-messenger__reaction-chip, .messenger-message-link',
+          )
+        ) {
+          return
+        }
+        swipeRef.current = {
+          pointerId: e.pointerId,
+          x0: e.clientX,
+          y0: e.clientY,
+          active: true,
+          decided: false,
+          cancelled: false,
+          captured: false,
+        }
+      }}
+      onPointerMove={(e) => {
+        const s = swipeRef.current
+        if (!canSwipeReply || !s.active || e.pointerId !== s.pointerId) return
+        const dx = e.clientX - s.x0
+        const dy = e.clientY - s.y0
+        if (!s.decided && (Math.abs(dx) > SWIPE_REPLY_DECIDE_PX || Math.abs(dy) > SWIPE_REPLY_DECIDE_PX)) {
+          s.decided = true
+          if (Math.abs(dy) > Math.abs(dx) * SWIPE_REPLY_AXIS_RATIO) {
+            s.cancelled = true
+            setSwipeTx(0)
+            return
+          }
+          if (dx >= -SWIPE_REPLY_DECIDE_PX) {
+            s.cancelled = true
+            setSwipeTx(0)
+            return
+          }
+          s.captured = true
+          ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+        }
+        if (s.cancelled || !s.decided) return
+        const tx = Math.max(-SWIPE_REPLY_MAX_SHIFT_PX, Math.min(0, dx))
+        setSwipeTx(tx)
+      }}
+      onPointerUp={(e) => endSwipeGesture(e, e.currentTarget)}
+      onPointerCancel={(e) => endSwipeGesture(e, e.currentTarget)}
       onContextMenu={onBubbleContextMenu}
     >
       <div className="dashboard-messenger__message-meta">
@@ -453,6 +570,12 @@ export function DashboardMessengerPage() {
   } | null>(null)
   const msgMenuWrapRef = useRef<HTMLDivElement | null>(null)
   const [messengerImageLightboxUrl, setMessengerImageLightboxUrl] = useState<string | null>(null)
+  const messengerLightboxSwipeRef = useRef<{
+    pointerId: number | null
+    x0: number
+    y0: number
+    active: boolean
+  }>({ pointerId: null, x0: 0, y0: 0, active: false })
   const [senderContactByUserId, setSenderContactByUserId] = useState<Record<string, ContactStatus>>({})
   const [favoriteBusyUserId, setFavoriteBusyUserId] = useState<string | null>(null)
   /** Снятие реакции уже отразили в списке диалогов после RPC — пропускаем дубль из realtime DELETE. */
@@ -1567,8 +1690,29 @@ export function DashboardMessengerPage() {
   const goCreateRoomFromMessenger = useCallback(() => {
     const id = newRoomId()
     setPendingHostClaim(id)
+    stashSpaceRoomCreateOptions(id, { lifecycle: 'permanent', chatVisibility: 'everyone' })
+    const otherId = threadHeadConversation?.otherUserId?.trim()
+    const activeId = activeConversationId.trim()
+    if (otherId && user?.id && otherId !== user.id) {
+      const peerTitle = threadHeadConversation?.title?.trim() || null
+      const body = `Приглашаю в комнату: [${id}]`
+      const sameOpenDm =
+        Boolean(activeId) &&
+        threadHeadConversation?.id === activeId &&
+        threadHeadConversation?.otherUserId?.trim() === otherId
+      void (async () => {
+        if (sameOpenDm) {
+          await appendDirectMessage(activeId, body)
+          return
+        }
+        const ensured = await ensureDirectConversationWithUser(otherId, peerTitle)
+        if (!ensured.error && ensured.data) {
+          await appendDirectMessage(ensured.data, body)
+        }
+      })()
+    }
     navigate(`/r/${encodeURIComponent(id)}`)
-  }, [navigate])
+  }, [navigate, threadHeadConversation, user?.id, activeConversationId])
 
   const goCreateRoomFromMenu = useCallback(() => {
     closeMessengerMenu()
@@ -2212,6 +2356,12 @@ export function DashboardMessengerPage() {
                                   onReactionChipTap={(targetId, emoji) => {
                                     void toggleMessengerReaction(targetId, emoji)
                                   }}
+                                  swipeReplyEnabled={isMobileMessenger}
+                                  onSwipeReply={(m) => {
+                                    setReplyTo(m)
+                                    closeMessageActionMenu()
+                                    queueMicrotask(() => composerTextareaRef.current?.focus())
+                                  }}
                                 />
                               )
                             })
@@ -2410,8 +2560,41 @@ export function DashboardMessengerPage() {
               >
                 <XCloseIcon />
               </button>
-              <div className="messenger-image-lightbox__frame" onClick={(e) => e.stopPropagation()}>
-                <img src={messengerImageLightboxUrl} className="messenger-image-lightbox__img" alt="" />
+              <div
+                className="messenger-image-lightbox__frame"
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => {
+                  if (e.button !== 0) return
+                  messengerLightboxSwipeRef.current = {
+                    pointerId: e.pointerId,
+                    x0: e.clientX,
+                    y0: e.clientY,
+                    active: true,
+                  }
+                }}
+                onPointerUp={(e) => {
+                  const s = messengerLightboxSwipeRef.current
+                  if (!s.active || e.pointerId !== s.pointerId) return
+                  s.active = false
+                  const dx = e.clientX - s.x0
+                  const dy = e.clientY - s.y0
+                  const ax = Math.abs(dx)
+                  const ay = Math.abs(dy)
+                  const thr = 56
+                  const ratio = 1.12
+                  if (ay >= thr && ay >= ax * ratio) {
+                    setMessengerImageLightboxUrl(null)
+                    return
+                  }
+                  if (ax >= thr && ax >= ay * ratio) {
+                    setMessengerImageLightboxUrl(null)
+                  }
+                }}
+                onPointerCancel={() => {
+                  messengerLightboxSwipeRef.current.active = false
+                }}
+              >
+                <img src={messengerImageLightboxUrl} className="messenger-image-lightbox__img" alt="" draggable={false} />
               </div>
             </div>,
             document.body,
