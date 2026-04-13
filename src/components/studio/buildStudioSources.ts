@@ -14,6 +14,7 @@ export function buildStudioSources(
   localStream: MediaStream | null,
   localScreenStream: MediaStream | null,
   localDisplayName: string,
+  localAuthUserId: string | null,
 ): StudioSourceOption[] {
   const out: StudioSourceOption[] = []
   const localLabel = localDisplayName.trim() || 'Вы'
@@ -24,6 +25,7 @@ export function buildStudioSources(
       label: `${localLabel} — камера`,
       kind: 'camera',
       peerId: localPeerId,
+      authUserId: localAuthUserId,
       displayName: localLabel,
       stream: liveVideoStream(localStream),
       meterStream: localStream?.getAudioTracks().length ? localStream : undefined,
@@ -37,6 +39,7 @@ export function buildStudioSources(
         label: `${localLabel} — экран`,
         kind: 'screen',
         peerId: localPeerId,
+        authUserId: localAuthUserId,
         displayName: localLabel,
         stream: liveScreen,
         meterStream: localScreenStream.getAudioTracks().length ? localScreenStream : undefined,
@@ -55,6 +58,7 @@ export function buildStudioSources(
       label: `${name} — камера`,
       kind: 'camera',
       peerId: p.peerId,
+      authUserId: p.authUserId ?? null,
       displayName: name,
       avatarUrl: p.avatarUrl,
       stream: cam,
@@ -68,6 +72,7 @@ export function buildStudioSources(
         label: `${name} — экран`,
         kind: 'screen',
         peerId: p.peerId,
+        authUserId: p.authUserId ?? null,
         displayName: name,
         avatarUrl: p.avatarUrl,
         stream: liveScreen,

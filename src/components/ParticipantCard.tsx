@@ -9,6 +9,7 @@ import { AudioMeter } from './AudioMeter'
 import { useBindPlayout } from '../hooks/useMediaPlayout'
 import { SrtCopySurface, type SrtCopyMenuExtraItem } from './SrtCopyMenu'
 import { VideoInfoOverlay } from './VideoInfoOverlay'
+import { StarIcon } from './icons'
 import { RemoteVideoSignalBars, useInboundVideoQualityPoll } from './RemoteVideoSignalBars'
 
 interface Props {
@@ -167,7 +168,23 @@ export function ParticipantCard({
         </SrtCopySurface>
       </div>
       <div className="card-bar">
-        <span className="card-name">{participant.name}</span>
+        <div className="card-bar-title">
+          <span className="card-name">{participant.name}</span>
+          {onToggleFavorite &&
+          participant.authUserId?.trim() &&
+          currentUserId?.trim() &&
+          participant.authUserId.trim() !== currentUserId.trim() ? (
+            <button
+              type="button"
+              className={`card-bar-fav${contactStatus?.isFavorite ? ' card-bar-fav--on' : ''}`}
+              onClick={onToggleFavorite}
+              title={contactStatus?.isFavorite ? 'Убрать из избранного' : 'В избранное'}
+              aria-label={contactStatus?.isFavorite ? 'Убрать из избранного' : 'В избранное'}
+            >
+              <StarIcon filled={contactStatus?.isFavorite ?? false} />
+            </button>
+          ) : null}
+        </div>
         {badge && <span className="card-badge">{badge}</span>}
       </div>
     </div>

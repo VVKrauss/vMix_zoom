@@ -3528,6 +3528,13 @@ button.admin-stat-card--interactive:disabled {
   margin-bottom: 2px;
 }
 
+.dashboard-section__lead {
+  margin: -6px 0 4px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
 .dashboard-section__hint {
   margin: -8px 0 0;
   font-size: 13px;
@@ -6626,6 +6633,30 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   line-height: 1.35;
 }
 
+.dashboard-field__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dashboard-field__sublabel {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.dashboard-field__inline--toggle .dashboard-field__sublabel {
+  flex: 1 1 auto;
+}
+
+.dashboard-field__note {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
 /* Одна строка: подпись + контрол (внутренний ряд, не борется с column у .dashboard-field). */
 .dashboard-field__inline {
   display: flex;
@@ -6837,6 +6868,39 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
 .dashboard-meta-item__empty {
   font-size: 13px;
   color: var(--text-dim);
+}
+
+.dashboard-meta-item--block {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.dashboard-meta-item__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+.dashboard-account-delete {
+  margin-top: 8px;
+  align-self: flex-start;
+  padding: 9px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(229, 57, 53, 0.45);
+  background: rgba(120, 20, 20, 0.28);
+  color: #ffcdd2;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.dashboard-account-delete:hover {
+  background: rgba(160, 30, 30, 0.4);
+  border-color: rgba(229, 57, 53, 0.65);
 }
 
 .dashboard-badge--role {
@@ -9387,12 +9451,51 @@ button.vio-row--peer:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   padding: 6px 10px;
   background: rgba(0,0,0,.55);
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
+}
+
+.card-bar-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.card-bar-fav {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.card-bar-fav svg {
+  width: 15px;
+  height: 15px;
+}
+
+.card-bar-fav:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.card-bar-fav--on {
+  color: #ffd54f;
 }
 
 .card-name {
@@ -9426,6 +9529,16 @@ html[data-theme="light"] .card-name {
   color: var(--text);
   text-shadow: none;
   font-weight: 600;
+}
+
+html[data-theme="light"] .card-bar-fav {
+  background: color-mix(in srgb, var(--surface2) 88%, transparent);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+
+html[data-theme="light"] .card-bar-fav--on {
+  color: #c9a227;
 }
 
 /* Подпись под эфирной плиткой студии (источник / метка) */
@@ -14467,6 +14580,51 @@ html[data-theme="light"] .room-chat-panel__input:focus {
   display: flex !important;
   gap: 8px !important;
   align-items: center !important;
+}
+
+.studio-source-strip__name-fav {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.studio-source-strip__cap--grow {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-source-strip__fav-ico {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: #38363a;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+}
+
+.studio-source-strip__fav-ico svg {
+  width: 16px;
+  height: 16px;
+}
+
+.studio-source-strip__fav-ico--on {
+  color: #ffd54f;
+  border-color: rgba(255, 213, 79, 0.35);
+}
+
+.studio-source-strip__fav-ico:hover {
+  filter: brightness(1.12);
 }
 
 .studio-source-strip__cap {

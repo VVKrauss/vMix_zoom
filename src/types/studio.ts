@@ -60,6 +60,8 @@ export type StudioSourceOption = {
   label: string
   kind: 'camera' | 'screen'
   peerId: string
+  /** Зарегистрированный пользователь-владелец источника; для избранного и т.п. */
+  authUserId?: string | null
   displayName: string
   avatarUrl?: string | null
   /** Видео для превью и канваса. Если null, источник рисуется как заглушка участника. */

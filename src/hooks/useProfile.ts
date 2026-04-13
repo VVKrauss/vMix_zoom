@@ -21,6 +21,11 @@ export interface UserProfile {
   /** jsonb с сервера; парсить через mergeRoomUiPrefs */
   room_ui_preferences: unknown | null
   global_roles: UserGlobalRole[]
+  /** true — профиль не показывается в глобальном поиске */
+  profile_search_closed: boolean
+  profile_search_allow_by_name: boolean
+  profile_search_allow_by_email: boolean
+  profile_search_allow_by_slug: boolean
 }
 
 export interface PlanInfo {
@@ -38,6 +43,13 @@ interface UseProfileReturn {
   uploadingAvatar: boolean
   error: string | null
   saveProfile: (displayName: string, profileSlugRaw?: string) => Promise<{ error: string | null }>
+  searchPrivacySaving: boolean
+  saveSearchPrivacy: (patch: {
+    profile_search_closed: boolean
+    profile_search_allow_by_name: boolean
+    profile_search_allow_by_email: boolean
+    profile_search_allow_by_slug: boolean
+  }) => Promise<{ error: string | null }>
   uploadAvatar: (file: File) => Promise<{ error: string | null }>
   removeAvatar: () => Promise<{ error: string | null }>
 }
@@ -48,6 +60,7 @@ export function useProfile(): UseProfileReturn {
   const [plan, setPlan]                     = useState<PlanInfo | null>(null)
   const [loading, setLoading]               = useState(true)
   const [saving, setSaving]                 = useState(false)
+  const [searchPrivacySaving, setSearchPrivacySaving] = useState(false)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [error, setError]                   = useState<string | null>(null)
 
@@ -61,7 +74,9 @@ export function useProfile(): UseProfileReturn {
       const [{ data: userData, error: userError }, { data: roleRows, error: rolesError }] = await Promise.all([
         supabase
           .from('users')
-          .select('id, display_name, profile_slug, email, avatar_url, status, room_ui_preferences')
+          .select(
+            'id, display_name, profile_slug, email, avatar_url, status, room_ui_preferences, profile_search_closed, profile_search_allow_by_name, profile_search_allow_by_email, profile_search_allow_by_slug',
+          )
           .eq('id', user.id)
           .single(),
         supabase
@@ -110,6 +125,10 @@ export function useProfile(): UseProfileReturn {
         status: userData.status,
         room_ui_preferences: userData.room_ui_preferences ?? null,
         global_roles: globalRoles,
+        profile_search_closed: userData.profile_search_closed === true,
+        profile_search_allow_by_name: userData.profile_search_allow_by_name !== false,
+        profile_search_allow_by_email: userData.profile_search_allow_by_email === true,
+        profile_search_allow_by_slug: userData.profile_search_allow_by_slug !== false,
       })
 
       // Подписка: берём через аккаунт владельца
@@ -237,6 +256,41 @@ export function useProfile(): UseProfileReturn {
     return { error: null }
   }, [user])
 
+  const saveSearchPrivacy = useCallback(
+    async (patch: {
+      profile_search_closed: boolean
+      profile_search_allow_by_name: boolean
+      profile_search_allow_by_email: boolean
+      profile_search_allow_by_slug: boolean
+    }): Promise<{ error: string | null }> => {
+      if (!user || !profile) return { error: 'Нет пользователя' }
+      setSearchPrivacySaving(true)
+      const body = {
+        profile_search_closed: patch.profile_search_closed,
+        profile_search_allow_by_name: patch.profile_search_allow_by_name,
+        profile_search_allow_by_email: patch.profile_search_allow_by_email,
+        profile_search_allow_by_slug: patch.profile_search_allow_by_slug,
+        updated_at: new Date().toISOString(),
+      }
+      const { error: dbErr } = await supabase.from('users').update(body).eq('id', user.id)
+      setSearchPrivacySaving(false)
+      if (dbErr) return { error: dbErr.message }
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              profile_search_closed: patch.profile_search_closed,
+              profile_search_allow_by_name: patch.profile_search_allow_by_name,
+              profile_search_allow_by_email: patch.profile_search_allow_by_email,
+              profile_search_allow_by_slug: patch.profile_search_allow_by_slug,
+            }
+          : prev,
+      )
+      return { error: null }
+    },
+    [user, profile],
+  )
+
   const removeAvatar = useCallback(async (): Promise<{ error: string | null }> => {
     if (!user || !profile?.avatar_url) return { error: null }
     setUploadingAvatar(true)
@@ -262,5 +316,17 @@ export function useProfile(): UseProfileReturn {
     return { error: null }
   }, [user, profile])
 
-  return { profile, plan, loading, saving, uploadingAvatar, error, saveProfile, uploadAvatar, removeAvatar }
+  return {
+    profile,
+    plan,
+    loading,
+    saving,
+    searchPrivacySaving,
+    uploadingAvatar,
+    error,
+    saveProfile,
+    saveSearchPrivacy,
+    uploadAvatar,
+    removeAvatar,
+  }
 }

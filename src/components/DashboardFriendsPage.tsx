@@ -191,7 +191,7 @@ export function DashboardFriendsPage() {
             <input
               type="search"
               className="dashboard-chat-filters__input"
-              placeholder="Имя или @slug (от 2 симв. — поиск по всем)"
+              placeholder="Имя, @slug или email (от 2 симв. — глобальный поиск)"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />

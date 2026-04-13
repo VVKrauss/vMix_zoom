@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { useUserPeek } from '../context/UserPeekContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useProfile } from '../hooks/useProfile'
+import { deleteMyAccount } from '../lib/accountLifecycle'
 import { supabase } from '../lib/supabase'
 import type { StoredLayoutMode } from '../config/roomUiStorage'
 import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
@@ -10,6 +11,7 @@ import { DashboardProfileModal } from './DashboardProfileModal'
 import { DashboardLayoutPicker } from './DashboardLayoutPicker'
 import { PillToggle } from './PillToggle'
 import { DashboardShell } from './DashboardShell'
+import { ConfirmDialog } from './ConfirmDialog'
 
 const STATUS_LABEL: Record<string, string> = {
   active: 'Активен',
@@ -46,8 +48,19 @@ export function DashboardPage() {
   const { signOut, user } = useAuth()
   const { openUserPeek } = useUserPeek()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
-  const { profile, plan, loading, saving, uploadingAvatar, error, saveProfile, uploadAvatar, removeAvatar } =
-    useProfile()
+  const {
+    profile,
+    plan,
+    loading,
+    saving,
+    searchPrivacySaving,
+    uploadingAvatar,
+    error,
+    saveProfile,
+    saveSearchPrivacy,
+    uploadAvatar,
+    removeAvatar,
+  } = useProfile()
 
   const [displayName, setDisplayName] = useState('')
   const [profileSlug, setProfileSlug] = useState('')
@@ -62,6 +75,15 @@ export function DashboardPage() {
   const [roomSaveErr, setRoomSaveErr] = useState<string | null>(null)
   const [roomSaving, setRoomSaving] = useState(false)
   const [profileEditOpen, setProfileEditOpen] = useState(false)
+  const [searchClosed, setSearchClosed] = useState(true)
+  const [allowSearchName, setAllowSearchName] = useState(true)
+  const [allowSearchEmail, setAllowSearchEmail] = useState(false)
+  const [allowSearchSlug, setAllowSearchSlug] = useState(true)
+  const [searchPrivacyMsg, setSearchPrivacyMsg] = useState<string | null>(null)
+  const [searchPrivacyErr, setSearchPrivacyErr] = useState<string | null>(null)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteErr, setDeleteErr] = useState<string | null>(null)
 
   useEffect(() => {
     if (!profile) return
@@ -69,6 +91,16 @@ export function DashboardPage() {
     setRoomLayout(merged.layout_mode)
     setRoomShowLayoutToggle(merged.show_layout_toggle)
     setRoomHideVideoLetterboxing(merged.hide_video_letterboxing)
+  }, [profile])
+
+  useEffect(() => {
+    if (!profile) return
+    setSearchClosed(profile.profile_search_closed)
+    setAllowSearchName(profile.profile_search_allow_by_name)
+    setAllowSearchEmail(profile.profile_search_allow_by_email)
+    setAllowSearchSlug(profile.profile_search_allow_by_slug)
+    setSearchPrivacyMsg(null)
+    setSearchPrivacyErr(null)
   }, [profile])
 
   useEffect(() => {
@@ -123,6 +155,20 @@ export function DashboardPage() {
     setProfileEditOpen(false)
     setSaveMsg(null)
     setSaveErr(null)
+  }
+
+  const handleSaveSearchPrivacy = async (event: FormEvent) => {
+    event.preventDefault()
+    setSearchPrivacyErr(null)
+    setSearchPrivacyMsg(null)
+    const { error: err } = await saveSearchPrivacy({
+      profile_search_closed: searchClosed,
+      profile_search_allow_by_name: allowSearchName,
+      profile_search_allow_by_email: allowSearchEmail,
+      profile_search_allow_by_slug: allowSearchSlug,
+    })
+    if (err) setSearchPrivacyErr(err)
+    else setSearchPrivacyMsg('Сохранено')
   }
 
   const handleSaveRoomPrefs = async (event: FormEvent) => {
@@ -180,8 +226,45 @@ export function DashboardPage() {
 
   const initials = profile.display_name.charAt(0).toUpperCase()
 
+  const searchOpen = !searchClosed
+  const noSearchAxes = searchOpen && !allowSearchName && !allowSearchEmail && !allowSearchSlug
+
   return (
     <DashboardShell active="cabinet" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title="Удалить аккаунт?"
+        message={
+          <>
+            <p>
+              Аккаунт и связанные данные будут удалены без возможности восстановления: комнаты, материалы, переписки и
+              подписки в рамках этого профиля.
+            </p>
+            <p style={{ marginTop: '0.75rem' }}>Продолжить?</p>
+          </>
+        }
+        confirmLabel="Удалить навсегда"
+        cancelLabel="Отмена"
+        confirmLoading={deleteBusy}
+        onCancel={() => {
+          if (!deleteBusy) setDeleteConfirmOpen(false)
+        }}
+        onConfirm={() => {
+          void (async () => {
+            setDeleteErr(null)
+            setDeleteBusy(true)
+            const res = await deleteMyAccount()
+            setDeleteBusy(false)
+            if (!res.ok) {
+              setDeleteErr(res.error ?? 'Не удалось удалить аккаунт')
+              return
+            }
+            setDeleteConfirmOpen(false)
+            await signOut()
+          })()
+        }}
+      />
+
       <DashboardProfileModal
         open={profileEditOpen}
         onClose={closeProfileModal}
@@ -291,9 +374,120 @@ export function DashboardPage() {
                 ) : null}
               </div>
             </div>
+
+            <div className="dashboard-meta-item dashboard-meta-item--block">
+              <span className="dashboard-meta-item__label">Опасная зона</span>
+              <p className="dashboard-meta-item__hint">
+                Удаление аккаунта необратимо: восстановить доступ к материалам и перепискам будет нельзя.
+              </p>
+              {deleteErr ? <p className="join-error">{deleteErr}</p> : null}
+              <button
+                type="button"
+                className="dashboard-account-delete"
+                onClick={() => {
+                  setDeleteErr(null)
+                  setDeleteConfirmOpen(true)
+                }}
+              >
+                Удалить аккаунт
+              </button>
+            </div>
           </div>
         </section>
       </div>
+
+      <section className="dashboard-section">
+        <h2 className="dashboard-section__title">Поиск по профилю</h2>
+        <p className="dashboard-section__lead">
+          Другие пользователи могут находить вас на странице «Друзья» по глобальному поиску только если вы разрешите это
+          явно.
+        </p>
+        <form onSubmit={handleSaveSearchPrivacy} className="dashboard-form">
+          <div className="dashboard-field">
+            <div className="dashboard-field__inline dashboard-field__inline--toggle">
+              <span className="dashboard-field__label">Участвовать в глобальном поиске</span>
+              <PillToggle
+                checked={searchOpen}
+                onCheckedChange={(next) => {
+                  setSearchClosed(!next)
+                  setSearchPrivacyMsg(null)
+                  setSearchPrivacyErr(null)
+                }}
+                offLabel="Закрыт"
+                onLabel="Открыт"
+                ariaLabel="Профиль в глобальном поиске пользователей"
+              />
+            </div>
+          </div>
+          <div className="dashboard-field">
+            <span className="dashboard-field__label">Разрешить находить по</span>
+            <div className="dashboard-field__stack">
+              <div className="dashboard-field__inline dashboard-field__inline--toggle">
+                <span className="dashboard-field__sublabel">Имени</span>
+                <PillToggle
+                  compact
+                  checked={allowSearchName}
+                  onCheckedChange={(v) => {
+                    setAllowSearchName(v)
+                    setSearchPrivacyMsg(null)
+                    setSearchPrivacyErr(null)
+                  }}
+                  offLabel="Нет"
+                  onLabel="Да"
+                  ariaLabel="Поиск по имени"
+                  disabled={searchClosed}
+                />
+              </div>
+              <div className="dashboard-field__inline dashboard-field__inline--toggle">
+                <span className="dashboard-field__sublabel">Электронной почте</span>
+                <PillToggle
+                  compact
+                  checked={allowSearchEmail}
+                  onCheckedChange={(v) => {
+                    setAllowSearchEmail(v)
+                    setSearchPrivacyMsg(null)
+                    setSearchPrivacyErr(null)
+                  }}
+                  offLabel="Нет"
+                  onLabel="Да"
+                  ariaLabel="Поиск по email"
+                  disabled={searchClosed}
+                />
+              </div>
+              <div className="dashboard-field__inline dashboard-field__inline--toggle">
+                <span className="dashboard-field__sublabel">Slug (@ник)</span>
+                <PillToggle
+                  compact
+                  checked={allowSearchSlug}
+                  onCheckedChange={(v) => {
+                    setAllowSearchSlug(v)
+                    setSearchPrivacyMsg(null)
+                    setSearchPrivacyErr(null)
+                  }}
+                  offLabel="Нет"
+                  onLabel="Да"
+                  ariaLabel="Поиск по slug"
+                  disabled={searchClosed}
+                />
+              </div>
+            </div>
+            {searchClosed ? (
+              <p className="dashboard-field__note">Пока профиль закрыт, вы не отображаетесь в поиске.</p>
+            ) : null}
+            {noSearchAxes ? (
+              <p className="join-error">
+                Включён открытый режим, но не выбран ни один способ поиска — вас никто не найдёт, пока не включите хотя бы
+                один пункт.
+              </p>
+            ) : null}
+          </div>
+          {searchPrivacyErr ? <p className="join-error">{searchPrivacyErr}</p> : null}
+          {searchPrivacyMsg ? <p className="dashboard-save-ok">{searchPrivacyMsg}</p> : null}
+          <button type="submit" className="join-btn dashboard-form__save" disabled={searchPrivacySaving}>
+            {searchPrivacySaving ? 'Сохранение…' : 'Сохранить настройки поиска'}
+          </button>
+        </form>
+      </section>
 
       <section className="dashboard-section">
         <h2 className="dashboard-section__title">Настройки комнаты</h2>

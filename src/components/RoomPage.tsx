@@ -2585,6 +2585,11 @@ export function RoomPage({
             studioBroadcastHealth={studioBroadcastHealth}
             studioBroadcastHealthDetail={studioBroadcastHealthDetail}
             studioServerLogLines={studioServerLogLines}
+            currentUserId={user?.id ?? null}
+            contactStatuses={chatContactStatuses}
+            onToggleFavoriteUser={(targetUserId, nextFavorite) => {
+              void toggleFavoriteFromChat(targetUserId, nextFavorite)
+            }}
           />
         </Suspense>
       ) : null}

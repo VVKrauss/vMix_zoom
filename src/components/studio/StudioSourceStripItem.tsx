@@ -3,6 +3,7 @@ import { memo, useEffect, useRef } from 'react'
 import { AudioMeter } from '../AudioMeter'
 import { ParticipantTileIdle } from '../ParticipantTileIdle'
 import type { StudioSourceOption } from '../../types/studio'
+import { StarIcon } from '../icons'
 
 interface Props {
   source: StudioSourceOption
@@ -13,6 +14,9 @@ interface Props {
   onToggleMute: (sourceKey: string) => void
   onAddToPreview: (sourceKey: string) => void
   onSendToProgram: (sourceKey: string) => void
+  favoriteShow?: boolean
+  favoriteActive?: boolean
+  onToggleFavorite?: () => void
 }
 
 function getSourceKindLabel(source: StudioSourceOption): string {
@@ -31,6 +35,9 @@ const StudioSourceStripItem = memo(function StudioSourceStripItem({
   onToggleMute,
   onAddToPreview,
   onSendToProgram,
+  favoriteShow = false,
+  favoriteActive = false,
+  onToggleFavorite,
 }: Props) {
   const thumbRef = useRef<HTMLVideoElement>(null)
   const primaryLabel = source.label.split(' - ')[0].split(' — ')[0]
@@ -102,7 +109,20 @@ const StudioSourceStripItem = memo(function StudioSourceStripItem({
       </div>
 
       <div className="studio-source-strip__bottom-row">
-        <span className="studio-source-strip__cap">{primaryLabel}</span>
+        <div className="studio-source-strip__name-fav">
+          <span className="studio-source-strip__cap studio-source-strip__cap--grow">{primaryLabel}</span>
+          {favoriteShow && onToggleFavorite ? (
+            <button
+              type="button"
+              className={`studio-source-strip__fav-ico${favoriteActive ? ' studio-source-strip__fav-ico--on' : ''}`}
+              onClick={onToggleFavorite}
+              title={favoriteActive ? 'Убрать из избранного' : 'В избранное'}
+              aria-label={favoriteActive ? 'Убрать из избранного' : 'В избранное'}
+            >
+              <StarIcon filled={favoriteActive} />
+            </button>
+          ) : null}
+        </div>
         <div className="studio-source-strip__meta-actions">
           <button
             type="button"

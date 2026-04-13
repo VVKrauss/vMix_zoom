@@ -16,6 +16,7 @@ import { StudioBoardPanel } from './StudioBoardPanel'
 import StudioSourceStripItem from './StudioSourceStripItem'
 import { AudioMeter } from '../AudioMeter'
 import { ConfirmDialog } from '../ConfirmDialog'
+import type { ContactStatus } from '../../lib/socialGraph'
 
 type LogLevel = 'info' | 'ok' | 'warn' | 'error' | 'server'
 interface LogEntry { ts: string; level: LogLevel; text: string }
@@ -43,6 +44,9 @@ const StudioSourcesStrip = memo(function StudioSourcesStrip({
   toggleSourceMute,
   onAddToPreview,
   onSendToProgram,
+  currentUserId,
+  contactStatuses,
+  onToggleFavoriteUser,
 }: {
   sources: StudioSourceOption[]
   sourceMix: StudioSourceMixMap
@@ -50,22 +54,40 @@ const StudioSourcesStrip = memo(function StudioSourcesStrip({
   toggleSourceMute: (key: string) => void
   onAddToPreview: (key: string) => void
   onSendToProgram: (key: string) => void
+  currentUserId: string | null
+  contactStatuses: Record<string, ContactStatus>
+  onToggleFavoriteUser: (targetUserId: string, nextFavorite: boolean) => void
 }) {
   return (
     <div className="studio-source-strip" role="region" aria-label="Источники">
-      {sources.map((s) => (
-        <StudioSourceStripItem
-          key={s.key}
-          source={s}
-          meterStream={sourceMeterStream(s)}
-          volume={sourceMix[s.key]?.volume ?? 1}
-          muted={sourceMix[s.key]?.muted === true}
-          setVolume={setSourceVolume}
-          onToggleMute={toggleSourceMute}
-          onAddToPreview={onAddToPreview}
-          onSendToProgram={onSendToProgram}
-        />
-      ))}
+      {sources.map((s) => {
+        const uid = s.authUserId?.trim() ?? ''
+        const me = currentUserId?.trim() ?? ''
+        const showFavorite = Boolean(uid && me && uid !== me)
+        const fav = showFavorite ? (contactStatuses[uid]?.isFavorite ?? false) : false
+        return (
+          <StudioSourceStripItem
+            key={s.key}
+            source={s}
+            meterStream={sourceMeterStream(s)}
+            volume={sourceMix[s.key]?.volume ?? 1}
+            muted={sourceMix[s.key]?.muted === true}
+            setVolume={setSourceVolume}
+            onToggleMute={toggleSourceMute}
+            onAddToPreview={onAddToPreview}
+            onSendToProgram={onSendToProgram}
+            favoriteShow={showFavorite}
+            favoriteActive={fav}
+            onToggleFavorite={
+              showFavorite
+                ? () => {
+                    onToggleFavoriteUser(uid, !fav)
+                  }
+                : undefined
+            }
+          />
+        )
+      })}
     </div>
   )
 })
@@ -92,6 +114,9 @@ interface Props {
   studioBroadcastHealth: 'idle' | 'connecting' | 'live' | 'warning'
   studioBroadcastHealthDetail?: string | null
   studioServerLogLines?: readonly string[]
+  currentUserId?: string | null
+  contactStatuses?: Record<string, ContactStatus>
+  onToggleFavoriteUser?: (targetUserId: string, nextFavorite: boolean) => void
 }
 
 export function StudioModeWorkspace({
@@ -110,6 +135,9 @@ export function StudioModeWorkspace({
   studioBroadcastHealth,
   studioBroadcastHealthDetail = null,
   studioServerLogLines = [],
+  currentUserId = null,
+  contactStatuses = {},
+  onToggleFavoriteUser,
 }: Props) {
   const [boards, setBoards] = useState(() => ({
     preview: emptyStudioBoard(),
@@ -189,8 +217,9 @@ export function StudioModeWorkspace({
         localStream,
         localScreenStream,
         localDisplayName,
+        currentUserId,
       ),
-    [participants, localPeerId, localStream, localScreenStream, localDisplayName],
+    [participants, localPeerId, localStream, localScreenStream, localDisplayName, currentUserId],
   )
 
   useEffect(() => {
@@ -716,6 +745,11 @@ export function StudioModeWorkspace({
           toggleSourceMute={toggleSourceMute}
           onAddToPreview={(key) => placeSourceOnBoard('preview', key)}
           onSendToProgram={(key) => placeSourceOnBoard('program', key, true)}
+          currentUserId={currentUserId}
+          contactStatuses={contactStatuses}
+          onToggleFavoriteUser={(targetUserId, nextFavorite) => {
+            onToggleFavoriteUser?.(targetUserId, nextFavorite)
+          }}
         />
       </div>
 
