@@ -3,10 +3,13 @@ import type { JoinRoomMediaOptions } from '../hooks/useRoom'
 import type { VideoPreset } from '../types'
 import { VIDEO_PRESETS } from '../types'
 import { getStoredVideoPreset, persistVideoPreset } from '../config/roomUiStorage'
-import { MicIcon, MicOffIcon, CamIcon, CamOffIcon } from './icons'
+import { MicIcon, MicOffIcon, CamIcon, CamOffIcon, ChevronLeftIcon } from './icons'
 import { useAuth } from '../context/AuthContext'
 import type { SpaceRoomChatVisibility, SpaceRoomCreateOptions } from '../lib/spaceRoom'
 import { SPACE_ROOM_HOST_CREATE_CHAT_OPTIONS } from '../lib/spaceRoom'
+
+/** Подписи уровня качества при создании комнаты (индексы = `VIDEO_PRESETS`). */
+const HOST_CREATE_VIDEO_QUALITY_LABELS = ['Низкое', 'Среднее', 'Хорошее', 'Лучшее'] as const
 
 interface Props {
   roomId: string
@@ -74,10 +77,28 @@ export function JoinPage({ roomId, hostCreateFlow = false, onJoin, onBackToHome,
 
   return (
     <div className="join-screen">
-      <div className="join-card">
-        <button type="button" className="join-logo-btn" onClick={goMain} title="Главная" aria-label="Главная">
-          <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
-        </button>
+      <div className={`join-card${hostCreateFlow ? ' join-card--host-create' : ''}`}>
+        {hostCreateFlow ? (
+          <div className="join-host-create__head">
+            <button
+              type="button"
+              className="join-back-arrow"
+              onClick={onBackToHome}
+              title="Назад"
+              aria-label="Назад"
+            >
+              <ChevronLeftIcon />
+            </button>
+            <button type="button" className="join-logo-btn" onClick={goMain} title="Главная" aria-label="Главная">
+              <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
+            </button>
+            <span className="join-host-create__head-slot" aria-hidden />
+          </div>
+        ) : (
+          <button type="button" className="join-logo-btn" onClick={goMain} title="Главная" aria-label="Главная">
+            <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
+          </button>
+        )}
 
         <form onSubmit={handleSubmit} className="join-form">
           <label className="join-label">Ваше имя</label>
@@ -141,7 +162,7 @@ export function JoinPage({ roomId, hostCreateFlow = false, onJoin, onBackToHome,
               >
                 {VIDEO_PRESETS.map((p, idx) => (
                   <option key={`${p.width}x${p.height}-${p.maxBitrate}`} value={idx}>
-                    {p.label}
+                    {HOST_CREATE_VIDEO_QUALITY_LABELS[idx] ?? p.label}
                   </option>
                 ))}
               </select>

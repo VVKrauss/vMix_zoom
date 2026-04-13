@@ -1,16 +1,49 @@
 export const LS_APP_THEME = 'vmix_ui_theme'
 
-export type AppTheme = 'dark' | 'light'
+export type AppTheme = 'dark' | 'light' | 'auto'
+
+let mediaListener: ((this: MediaQueryList, ev: MediaQueryListEvent) => void) | null = null
+let boundMql: MediaQueryList | null = null
+
+function clearSystemThemeListener(): void {
+  if (boundMql && mediaListener) {
+    boundMql.removeEventListener('change', mediaListener)
+  }
+  boundMql = null
+  mediaListener = null
+}
+
+function prefersDarkScheme(): boolean {
+  if (typeof window === 'undefined') return true
+  return window.matchMedia('(prefers-color-scheme: dark)').matches
+}
+
+/** Эффективная светлая/тёмная тема с учётом режима «авто». */
+export function resolveAppTheme(theme: AppTheme): 'light' | 'dark' {
+  if (theme === 'light') return 'light'
+  if (theme === 'dark') return 'dark'
+  return prefersDarkScheme() ? 'dark' : 'light'
+}
+
+function applyResolved(lightOrDark: 'light' | 'dark'): void {
+  if (typeof document === 'undefined') return
+  const root = document.documentElement
+  if (lightOrDark === 'light') {
+    root.dataset.theme = 'light'
+  } else {
+    delete root.dataset.theme
+  }
+}
 
 export function getStoredTheme(): AppTheme {
-  if (typeof window === 'undefined') return 'dark'
+  if (typeof window === 'undefined') return 'auto'
   try {
     const v = localStorage.getItem(LS_APP_THEME)
-    if (v === 'light' || v === 'dark') return v
+    if (v === 'light' || v === 'dark' || v === 'auto') return v
   } catch {
     /* noop */
   }
-  return 'dark'
+  return 'auto'
 }
 
 export function setStoredTheme(theme: AppTheme): void {
@@ -21,13 +54,17 @@ export function setStoredTheme(theme: AppTheme): void {
   }
 }
 
-/** Синхронизирует `data-theme` на `<html>` с выбранной темой. */
+/** Синхронизирует `data-theme` на `<html>` с выбранной темой; в режиме `auto` подписывается на смену системной темы. */
 export function applyTheme(theme: AppTheme): void {
   if (typeof document === 'undefined') return
-  const root = document.documentElement
-  if (theme === 'light') {
-    root.dataset.theme = 'light'
-  } else {
-    delete root.dataset.theme
+  clearSystemThemeListener()
+  applyResolved(resolveAppTheme(theme))
+  if (theme !== 'auto' || typeof window === 'undefined') return
+  const mql = window.matchMedia('(prefers-color-scheme: dark)')
+  const onChange = () => {
+    applyResolved(resolveAppTheme('auto'))
   }
+  mediaListener = onChange
+  boundMql = mql
+  mql.addEventListener('change', onChange)
 }

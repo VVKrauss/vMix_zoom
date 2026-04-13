@@ -82,16 +82,18 @@ html[data-theme="light"] {
   z-index: 2;
 }
 
-.theme-toggle--fab {
-  position: fixed;
-  bottom: max(16px, env(safe-area-inset-bottom, 0px));
-  left: max(16px, env(safe-area-inset-left, 0px));
-  z-index: 6000;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+.join-card--home {
+  position: relative;
+  gap: 20px;
+  /* место под переключатель темы в углу карточки */
+  padding-top: 56px;
 }
 
-html[data-theme="light"] .theme-toggle--fab {
-  box-shadow: 0 4px 20px rgba(80, 45, 45, 0.12);
+.theme-toggle--home-card-corner {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
 }
 
 .theme-toggle--dashboard {
@@ -860,7 +862,54 @@ html.app-root--room #root {
   border-color: var(--red);
 }
 
-.join-card--home { gap: 20px; }
+.join-host-create__head {
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  align-items: center;
+  width: 100%;
+  column-gap: 8px;
+}
+
+.join-host-create__head .join-logo-btn {
+  justify-self: center;
+}
+
+.join-host-create__head-slot {
+  width: 44px;
+  height: 1px;
+}
+
+.join-back-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.join-back-arrow:hover {
+  border-color: rgba(158, 92, 92, 0.45);
+  color: var(--red);
+  background: var(--surface);
+}
+
+.join-back-arrow:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.join-back-arrow svg {
+  display: block;
+  width: 22px;
+  height: 22px;
+}
 
 .join-card--room-closed {
   text-align: center;

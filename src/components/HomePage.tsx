@@ -37,8 +37,8 @@ export function HomePage() {
 
   return (
     <div className="join-screen join-screen--themed">
-      <ThemeToggle variant="inline" className="theme-toggle--join-corner" />
       <div className="join-card join-card--home">
+        <ThemeToggle variant="inline" className="theme-toggle--home-card-corner" />
         <div className="join-logo-static" aria-hidden>
           <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
         </div>

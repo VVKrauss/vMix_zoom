@@ -1,7 +1,12 @@
 import { useCallback, useState } from 'react'
-import { applyTheme, getStoredTheme, setStoredTheme, type AppTheme } from '../config/themeStorage'
+import {
+  applyTheme,
+  getStoredTheme,
+  setStoredTheme,
+  type AppTheme,
+} from '../config/themeStorage'
 
-type Variant = 'inline' | 'fab'
+type Variant = 'inline'
 
 function SunIcon() {
   return (
@@ -20,34 +25,53 @@ function MoonIcon() {
   )
 }
 
+/** Режим «как в системе» — монитор. */
+function AutoThemeIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="3" y="4" width="18" height="12" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </svg>
+  )
+}
+
 type Props = {
   variant?: Variant
   className?: string
 }
 
+const cycle: Record<AppTheme, AppTheme> = {
+  auto: 'light',
+  light: 'dark',
+  dark: 'auto',
+}
+
+const labelByTheme: Record<AppTheme, string> = {
+  auto: 'Автотема (как в системе). Нажмите — светлая',
+  light: 'Светлая тема. Нажмите — тёмная',
+  dark: 'Тёмная тема. Нажмите — автотема',
+}
+
 export function ThemeToggle({ variant = 'inline', className = '' }: Props) {
   const [theme, setTheme] = useState<AppTheme>(() => getStoredTheme())
 
-  const toggle = useCallback(() => {
-    const next: AppTheme = theme === 'dark' ? 'light' : 'dark'
+  const advance = useCallback(() => {
+    const next = cycle[theme]
     setStoredTheme(next)
     applyTheme(next)
     setTheme(next)
   }, [theme])
 
-  const isLight = theme === 'light'
-  const label = isLight ? 'Тёмная тема' : 'Светлая тема'
-
   return (
     <button
       type="button"
       className={`theme-toggle theme-toggle--${variant} ${className}`.trim()}
-      onClick={toggle}
-      title={label}
-      aria-label={label}
-      aria-pressed={isLight}
+      onClick={advance}
+      title={labelByTheme[theme]}
+      aria-label={labelByTheme[theme]}
+      aria-pressed={theme === 'light'}
     >
-      {isLight ? <MoonIcon /> : <SunIcon />}
+      {theme === 'auto' ? <AutoThemeIcon /> : theme === 'light' ? <SunIcon /> : <MoonIcon />}
     </button>
   )
 }
