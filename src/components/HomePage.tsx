@@ -5,7 +5,7 @@ import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import { setPendingHostClaim } from '../lib/spaceRoom'
 import { newRoomId } from '../utils/roomId'
-import { ChatBubbleIcon, DashboardIcon } from './icons'
+import { ChatBubbleIcon, ChevronRightIcon, DashboardIcon } from './icons'
 import { ThemeToggle } from './ThemeToggle'
 
 export function HomePage() {
@@ -37,7 +37,8 @@ export function HomePage() {
 
   return (
     <div className="join-screen join-screen--themed">
-      <div className="join-card join-card--home">
+      <div className="join-home-stack">
+        <div className="join-card join-card--home">
         <ThemeToggle variant="inline" className="theme-toggle--home-card-corner" />
         <div className="join-logo-static" aria-hidden>
           <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
@@ -141,6 +142,20 @@ export function HomePage() {
             Перейти в комнату
           </button>
         </form>
+      </div>
+
+      <Link to="/news" className="home-alpha-notice">
+        <span className="home-alpha-notice__badge" aria-hidden>
+          α
+        </span>
+        <span className="home-alpha-notice__text">
+          Сейчас проект работает в тестовом режиме. После окончания тестового периода могут измениться уровни доступа к
+          функциям.
+        </span>
+        <span className="home-alpha-notice__arrow" aria-hidden>
+          <ChevronRightIcon />
+        </span>
+      </Link>
       </div>
     </div>
   )

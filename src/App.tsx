@@ -76,6 +76,11 @@ const EmailConfirmedPage = lazy(async () => {
   return { default: mod.EmailConfirmedPage }
 })
 
+const NewsPage = lazy(async () => {
+  const mod = await import('./components/NewsPage')
+  return { default: mod.NewsPage }
+})
+
 function RouteLoadingFallback() {
   return (
     <div className="join-screen">
@@ -133,6 +138,7 @@ export function App() {
       <Suspense fallback={<RouteLoadingFallback />}>
       <Routes>
         <Route path="/" element={<HomeRoute />} />
+        <Route path="/news" element={<NewsPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/auth/email-confirmed" element={<EmailConfirmedPage />} />
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />

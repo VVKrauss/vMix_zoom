@@ -190,9 +190,9 @@ function resolveQuotedAvatarForDm(
 }
 
 const SWIPE_REPLY_THRESHOLD_PX = 52
-const SWIPE_REPLY_AXIS_RATIO = 1.18
-const SWIPE_REPLY_DECIDE_PX = 14
+const SWIPE_REPLY_DECIDE_PX = 26
 const SWIPE_REPLY_MAX_SHIFT_PX = 80
+const LIGHTBOX_SWIPE_CLOSE_PX = 52
 
 type MessengerDmBubbleProps = {
   message: DirectMessage
@@ -270,6 +270,7 @@ function MessengerDmBubble({
       const s = swipeRef.current
       if (!s.active || e.pointerId !== s.pointerId) return
       const dx = e.clientX - s.x0
+      const dy = e.clientY - s.y0
       s.active = false
       if (s.captured) {
         try {
@@ -288,7 +289,11 @@ function MessengerDmBubble({
         captured: false,
       }
       setSwipeTx(0)
-      if (!s.cancelled && dx <= -SWIPE_REPLY_THRESHOLD_PX) {
+      const horizontalIntent =
+        Math.abs(dx) > Math.abs(dy) &&
+        dx <= -SWIPE_REPLY_THRESHOLD_PX &&
+        Math.abs(dx) >= SWIPE_REPLY_THRESHOLD_PX
+      if (!s.cancelled && horizontalIntent) {
         onSwipeReply?.(message)
       }
     },
@@ -362,12 +367,8 @@ function MessengerDmBubble({
         const dy = e.clientY - s.y0
         if (!s.decided && (Math.abs(dx) > SWIPE_REPLY_DECIDE_PX || Math.abs(dy) > SWIPE_REPLY_DECIDE_PX)) {
           s.decided = true
-          if (Math.abs(dy) > Math.abs(dx) * SWIPE_REPLY_AXIS_RATIO) {
-            s.cancelled = true
-            setSwipeTx(0)
-            return
-          }
-          if (dx >= -SWIPE_REPLY_DECIDE_PX) {
+          /* Вертикаль (скролл ленты) или без явного смещения влево — не ответ */
+          if (Math.abs(dy) >= Math.abs(dx) || dx > -SWIPE_REPLY_DECIDE_PX) {
             s.cancelled = true
             setSwipeTx(0)
             return
@@ -576,6 +577,7 @@ export function DashboardMessengerPage() {
     y0: number
     active: boolean
   }>({ pointerId: null, x0: 0, y0: 0, active: false })
+  const messengerLightboxFrameRef = useRef<HTMLDivElement | null>(null)
   const [senderContactByUserId, setSenderContactByUserId] = useState<Record<string, ContactStatus>>({})
   const [favoriteBusyUserId, setFavoriteBusyUserId] = useState<string | null>(null)
   /** Снятие реакции уже отразили в списке диалогов после RPC — пропускаем дубль из realtime DELETE. */
@@ -1427,6 +1429,7 @@ export function DashboardMessengerPage() {
         el.scrollTop = el.scrollHeight
         messengerPinnedToBottomRef.current = true
       }
+      refocusMessengerComposer()
     })
   }
 
@@ -1626,14 +1629,80 @@ export function DashboardMessengerPage() {
     place()
   }, [messageMenu])
 
+  const refocusMessengerComposer = useCallback(() => {
+    if (!isMobileMessenger) return
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const ta = composerTextareaRef.current
+        if (!ta || ta.disabled) return
+        ta.focus()
+        const len = ta.value.length
+        try {
+          ta.setSelectionRange(len, len)
+        } catch {
+          /* некоторые мобильные WebView */
+        }
+      })
+    })
+  }, [isMobileMessenger])
+
+  const closeMessengerImageLightbox = useCallback(() => {
+    setMessengerImageLightboxUrl(null)
+    refocusMessengerComposer()
+  }, [refocusMessengerComposer])
+
   useEffect(() => {
     if (!messengerImageLightboxUrl) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMessengerImageLightboxUrl(null)
+      if (e.key === 'Escape') closeMessengerImageLightbox()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [messengerImageLightboxUrl])
+  }, [messengerImageLightboxUrl, closeMessengerImageLightbox])
+
+  /** Android/WebView: надёжное закрытие свайпом (pointer + touch). */
+  useLayoutEffect(() => {
+    if (!messengerImageLightboxUrl) return
+    const el = messengerLightboxFrameRef.current
+    if (!el) return
+    const start = { x: 0, y: 0, tracking: false }
+    const closeIfSwipe = (dx: number, dy: number) => {
+      const ax = Math.abs(dx)
+      const ay = Math.abs(dy)
+      const thr = LIGHTBOX_SWIPE_CLOSE_PX
+      if (ax < thr && ay < thr) return
+      if (ay >= ax && ay >= thr) {
+        closeMessengerImageLightbox()
+        return
+      }
+      if (ax > ay && ax >= thr) {
+        closeMessengerImageLightbox()
+      }
+    }
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return
+      start.tracking = true
+      start.x = e.touches[0].clientX
+      start.y = e.touches[0].clientY
+    }
+    const onTouchEnd = (e: TouchEvent) => {
+      if (!start.tracking || e.changedTouches.length !== 1) return
+      start.tracking = false
+      const t = e.changedTouches[0]
+      closeIfSwipe(t.clientX - start.x, t.clientY - start.y)
+    }
+    const onTouchCancel = () => {
+      start.tracking = false
+    }
+    el.addEventListener('touchstart', onTouchStart, { passive: true })
+    el.addEventListener('touchend', onTouchEnd, { passive: true })
+    el.addEventListener('touchcancel', onTouchCancel, { passive: true })
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart)
+      el.removeEventListener('touchend', onTouchEnd)
+      el.removeEventListener('touchcancel', onTouchCancel)
+    }
+  }, [messengerImageLightboxUrl, closeMessengerImageLightbox])
 
   /** Шапка треда: сразу из списка по URL, пока грузится полная карточка с сервера */
   const threadHeadConversation =
@@ -2546,7 +2615,7 @@ export function DashboardMessengerPage() {
               role="dialog"
               aria-modal="true"
               aria-label="Просмотр изображения"
-              onClick={() => setMessengerImageLightboxUrl(null)}
+              onClick={() => closeMessengerImageLightbox()}
             >
               <button
                 type="button"
@@ -2555,12 +2624,13 @@ export function DashboardMessengerPage() {
                 title="Закрыть"
                 onClick={(e) => {
                   e.stopPropagation()
-                  setMessengerImageLightboxUrl(null)
+                  closeMessengerImageLightbox()
                 }}
               >
                 <XCloseIcon />
               </button>
               <div
+                ref={messengerLightboxFrameRef}
                 className="messenger-image-lightbox__frame"
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => {
@@ -2580,14 +2650,14 @@ export function DashboardMessengerPage() {
                   const dy = e.clientY - s.y0
                   const ax = Math.abs(dx)
                   const ay = Math.abs(dy)
-                  const thr = 56
-                  const ratio = 1.12
-                  if (ay >= thr && ay >= ax * ratio) {
-                    setMessengerImageLightboxUrl(null)
+                  const thr = LIGHTBOX_SWIPE_CLOSE_PX
+                  if (ax < thr && ay < thr) return
+                  if (ay >= ax && ay >= thr) {
+                    closeMessengerImageLightbox()
                     return
                   }
-                  if (ax >= thr && ax >= ay * ratio) {
-                    setMessengerImageLightboxUrl(null)
+                  if (ax > ay && ax >= thr) {
+                    closeMessengerImageLightbox()
                   }
                 }}
                 onPointerCancel={() => {

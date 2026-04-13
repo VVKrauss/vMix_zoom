@@ -7,8 +7,9 @@ import { AdminRegisteredUsersTable } from './AdminRegisteredUsersTable'
 import { ServerSettingsModal } from './ServerSettingsModal'
 import { TelegramNotificationsPanel } from './TelegramNotificationsPanel'
 import { AdminRoomChatsCleanupPanel } from './AdminRoomChatsCleanupPanel'
+import { AdminSiteNewsPanel } from './AdminSiteNewsPanel'
 
-type AdminTab = 'dashboard' | 'users' | 'server' | 'notifications' | 'roomChats'
+type AdminTab = 'dashboard' | 'users' | 'server' | 'notifications' | 'roomChats' | 'news'
 
 export function AdminPage() {
   const { signOut } = useAuth()
@@ -70,6 +71,13 @@ export function AdminPage() {
             >
               Telegram
             </button>
+            <button
+              type="button"
+              className={`admin-sidebar__link${tab === 'news' ? ' admin-sidebar__link--active' : ''}`}
+              onClick={() => setTab('news')}
+            >
+              Новости
+            </button>
           </nav>
         </aside>
 
@@ -88,6 +96,8 @@ export function AdminPage() {
           {tab === 'notifications' ? <TelegramNotificationsPanel /> : null}
 
           {tab === 'roomChats' ? <AdminRoomChatsCleanupPanel /> : null}
+
+          {tab === 'news' ? <AdminSiteNewsPanel /> : null}
         </div>
       </div>
     </div>

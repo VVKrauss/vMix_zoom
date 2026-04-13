@@ -17,6 +17,8 @@ export function useVisualViewport(): void {
 
     const scrollLockMessengerChromeless = () => {
       if (!document.querySelector('.dashboard-page--messenger-chromeless')) return
+      /* Полноэкранное фото в мессенджере: принудительный scrollTo на Android ломает фокус/клавиатуру. */
+      if (document.querySelector('.messenger-image-lightbox-backdrop')) return
       const lock = () => {
         window.scrollTo(0, 0)
         document.documentElement.scrollTop = 0
