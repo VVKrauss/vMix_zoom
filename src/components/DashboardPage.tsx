@@ -299,13 +299,13 @@ export function DashboardPage() {
         <h2 className="dashboard-section__title">Настройки комнаты</h2>
         <form onSubmit={handleSaveRoomPrefs} className="dashboard-form">
           <div className="dashboard-field">
-            <div className="dashboard-field__inline dashboard-field__inline--stripe">
+            <div className="dashboard-field__inline">
               <span className="dashboard-field__label">Вид по умолчанию</span>
               <DashboardLayoutPicker value={roomLayout} onChange={setRoomLayout} />
             </div>
           </div>
           <div className="dashboard-field">
-            <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-field__inline--stripe">
+            <div className="dashboard-field__inline dashboard-field__inline--toggle">
               <span className="dashboard-field__label">Кнопка смены вида в комнате</span>
               <PillToggle
                 checked={roomShowLayoutToggle}
@@ -317,7 +317,7 @@ export function DashboardPage() {
             </div>
           </div>
           <div className="dashboard-field">
-            <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-field__inline--stripe">
+            <div className="dashboard-field__inline dashboard-field__inline--toggle">
               <span className="dashboard-field__label">Скрывать поля у камеры</span>
               <PillToggle
                 checked={roomHideVideoLetterboxing}

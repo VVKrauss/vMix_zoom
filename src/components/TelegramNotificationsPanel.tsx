@@ -137,7 +137,7 @@ export function TelegramNotificationsPanel() {
       ) : (
         <form onSubmit={handleSaveTelegramPrefs} className="dashboard-form">
           <div className="dashboard-field">
-            <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-field__inline--stripe">
+            <div className="dashboard-field__inline dashboard-field__inline--toggle">
               <span className="dashboard-field__label">Уведомления включены</span>
               <PillToggle
                 checked={settings.enabled}
@@ -157,7 +157,7 @@ export function TelegramNotificationsPanel() {
             const checked = settings.immediateEvents.includes(option.key)
             return (
               <div className="dashboard-field" key={option.key}>
-                <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-field__inline--stripe">
+                <div className="dashboard-field__inline dashboard-field__inline--toggle">
                   <span className="dashboard-field__label">{option.label}</span>
                   <PillToggle
                     checked={checked}
@@ -181,7 +181,7 @@ export function TelegramNotificationsPanel() {
           })}
 
           <div className="dashboard-field">
-            <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-field__inline--stripe">
+            <div className="dashboard-field__inline dashboard-field__inline--toggle">
               <span className="dashboard-field__label">Отладка жизни комнаты</span>
               <PillToggle
                 checked={settings.immediateEvents.includes(ROOM_DEBUG_EVENT)}
@@ -203,7 +203,7 @@ export function TelegramNotificationsPanel() {
           </div>
 
           <div className="dashboard-field">
-            <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-field__inline--stripe">
+            <div className="dashboard-field__inline dashboard-field__inline--toggle">
               <span className="dashboard-field__label">Сводка за 4 часа</span>
               <PillToggle
                 checked={settings.summary4h}
@@ -219,7 +219,7 @@ export function TelegramNotificationsPanel() {
             </div>
           </div>
           <div className="dashboard-field">
-            <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-field__inline--stripe">
+            <div className="dashboard-field__inline dashboard-field__inline--toggle">
               <span className="dashboard-field__label">Сводка за 8 часов</span>
               <PillToggle
                 checked={settings.summary8h}
@@ -235,7 +235,7 @@ export function TelegramNotificationsPanel() {
             </div>
           </div>
           <div className="dashboard-field">
-            <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-field__inline--stripe">
+            <div className="dashboard-field__inline dashboard-field__inline--toggle">
               <span className="dashboard-field__label">Сводка за день</span>
               <PillToggle
                 checked={settings.summary24h}
@@ -252,7 +252,7 @@ export function TelegramNotificationsPanel() {
           </div>
 
           <div className="dashboard-field">
-            <div className="dashboard-field__inline dashboard-field__inline--stripe">
+            <div className="dashboard-field__inline">
               <span className="dashboard-field__label">Состояние бота</span>
               <span
                 className={`dashboard-badge ${

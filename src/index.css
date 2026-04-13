@@ -92,15 +92,7 @@ html[data-theme="light"] {
 .join-card--home {
   position: relative;
   gap: 20px;
-  /* место под переключатель темы в углу карточки */
-  padding-top: 56px;
-}
-
-.theme-toggle--home-card-corner {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  z-index: 2;
+  padding-top: 40px;
 }
 
 .theme-toggle--dashboard {
@@ -618,6 +610,7 @@ html[data-theme="light"] .dashboard-messenger__list-scroll::-webkit-scrollbar-th
 html[data-theme="light"] .dashboard-topbar__messenger,
 html[data-theme="light"] .dashboard-topbar__sound,
 html[data-theme="light"] .dashboard-topbar__push,
+html[data-theme="light"] .dashboard-topbar__push-toggle-wrap,
 html[data-theme="light"] .dashboard-topbar__messenger-settings,
 html[data-theme="light"] .dashboard-topbar__circle-action,
 html[data-theme="light"] .dashboard-topbar__admin,
@@ -629,6 +622,7 @@ html[data-theme="light"] .dashboard-topbar__action {
 html[data-theme="light"] .dashboard-topbar__messenger:hover,
 html[data-theme="light"] .dashboard-topbar__sound:hover,
 html[data-theme="light"] .dashboard-topbar__push:hover,
+html[data-theme="light"] .dashboard-topbar__push-toggle-wrap:hover,
 html[data-theme="light"] .dashboard-topbar__messenger-settings:hover,
 html[data-theme="light"] .dashboard-topbar__circle-action:hover,
 html[data-theme="light"] .dashboard-topbar__admin:hover,
@@ -886,6 +880,12 @@ html.app-root--room #root {
 .join-host-create__head-slot {
   width: 44px;
   height: 1px;
+}
+
+.join-host-create__head--room-closed {
+  align-self: stretch;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .join-back-arrow {
@@ -2197,6 +2197,14 @@ html.app-root--room #root {
   gap: 8px;
 }
 
+.dashboard-topbar__push-toggle-wrap {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+}
+
 .dashboard-topbar__push {
   flex-shrink: 0;
   width: 42px;
@@ -2317,6 +2325,24 @@ html.app-root--room #root {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.messenger-settings-modal__push-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.messenger-settings-modal__push-row .messenger-settings-modal__label {
+  margin: 0;
+}
+
+.messenger-settings-modal__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-dim);
 }
 
 .messenger-settings-modal__label {
@@ -2838,6 +2864,7 @@ html.app-root--room #root {
   .dashboard-topbar__messenger-controls,
   .dashboard-topbar__sound,
   .dashboard-topbar__push,
+  .dashboard-topbar__push-toggle-wrap,
   .dashboard-topbar__messenger-settings,
   .dashboard-topbar__circle-action,
   .dashboard-topbar__action {
@@ -6614,25 +6641,6 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   gap: 12px;
 }
 
-/* Полоска слева у строки, как вкладки админки (видно без открытия выпадающего списка). */
-.dashboard-field__inline--stripe {
-  position: relative;
-  padding-left: 14px;
-  box-sizing: border-box;
-}
-
-.dashboard-field__inline--stripe::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 2px;
-  height: 1.15em;
-  border-radius: 1px;
-  background: #fff;
-}
-
 .dashboard-field__inline .dashboard-field__label {
   margin: 0;
   flex: 0 0 auto;
@@ -8517,6 +8525,15 @@ html[data-theme="light"] .room-chat-preview-toast__text {
 .pill-toggle__switch:focus-visible {
   outline: 2px solid var(--red);
   outline-offset: 2px;
+}
+
+.pill-toggle__switch:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pill-toggle__switch:disabled:hover {
+  border-color: var(--border);
 }
 
 /* Компактный тумблер в попапах */

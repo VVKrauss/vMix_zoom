@@ -1,8 +1,10 @@
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import type { RoomClosedReason } from '../hooks/useRoom'
+import { ChevronLeftIcon } from './icons'
 
 export function RoomClosedPage() {
+  const navigate = useNavigate()
   const location = useLocation()
   const state =
     (location.state as {
@@ -50,6 +52,19 @@ export function RoomClosedPage() {
   return (
     <div className="join-screen room-closed-screen">
       <div className="join-card join-card--room-closed">
+        <div className="join-host-create__head join-host-create__head--room-closed">
+          <button
+            type="button"
+            className="join-back-arrow"
+            onClick={() => navigate(-1)}
+            title="Назад"
+            aria-label="Назад"
+          >
+            <ChevronLeftIcon />
+          </button>
+          <span className="join-host-create__head-slot" aria-hidden />
+          <span className="join-host-create__head-slot" aria-hidden />
+        </div>
         <div className="room-closed-loader-wrap">
           <BrandLogoLoader size={56} />
         </div>
@@ -59,8 +74,8 @@ export function RoomClosedPage() {
           {roomId ? <span className="room-closed-id">ID: {roomId}</span> : null}
         </p>
         <div className="room-closed-actions">
-          <Link to="/" className="join-btn join-btn--block">
-            На главную
+          <Link to="/dashboard" className="join-btn join-btn--block">
+            Домой
           </Link>
           {!isBanned && !isKicked ? (
             <Link to="/" className="join-btn join-btn--secondary join-btn--block">

@@ -9,6 +9,7 @@ interface Props {
   /** Уменьшенный вид для попапов настроек / камеры. */
   compact?: boolean
   className?: string
+  disabled?: boolean
 }
 
 export function PillToggle({
@@ -19,6 +20,7 @@ export function PillToggle({
   ariaLabel,
   compact = false,
   className = '',
+  disabled = false,
 }: Props) {
   const hasLabels = offLabel != null && onLabel != null
   const root =
@@ -34,6 +36,7 @@ export function PillToggle({
         role="switch"
         aria-checked={checked}
         aria-label={ariaLabel}
+        disabled={disabled}
         onClick={() => onCheckedChange(!checked)}
       >
         <span className="pill-toggle__thumb" />

@@ -71,10 +71,10 @@ import {
   RoomsIcon,
 } from './icons'
 import { DashboardShell } from './DashboardShell'
-import { ThemeToggle } from './ThemeToggle'
 import { MessengerBubbleBody } from './MessengerBubbleBody'
 import { MessengerReplyMiniThumb } from './MessengerReplyMiniThumb'
 import { MessengerMessageMenuPopover } from './MessengerMessageMenuPopover'
+import { PillToggle } from './PillToggle'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
 import type { ReactionEmoji } from '../types/roomComms'
 
@@ -495,9 +495,8 @@ export function DashboardMessengerPage() {
   /** Мобильный режим «только дерево чатов» — не подставлять chat в URL и не грузить тред */
   const listOnlyMobile = isMobileMessenger && searchParams.get('view') === 'list'
 
-  const [pushUi, setPushUi] = useState<
-    'absent' | 'unconfigured' | 'off' | 'on' | 'denied' | 'loading'
-  >('absent')
+  const [pushUi, setPushUi] = useState<'absent' | 'unconfigured' | 'off' | 'on' | 'denied'>('absent')
+  const [pushBusy, setPushBusy] = useState(false)
 
   const refreshPushUi = useCallback(async () => {
     if (!user?.id || !isWebPushApiSupported()) {
@@ -521,30 +520,38 @@ export function DashboardMessengerPage() {
   }, [refreshPushUi])
 
   const toggleMessengerPush = useCallback(async () => {
-    if (!user?.id || pushUi === 'absent' || pushUi === 'unconfigured' || pushUi === 'loading') return
+    if (!user?.id || pushUi === 'absent' || pushUi === 'unconfigured' || pushBusy) return
     unlockAudioContext()
     if (pushUi === 'denied') return
     if (pushUi === 'on') {
-      setPushUi('loading')
-      const res = await disableMessengerPush(user.id)
+      setPushBusy(true)
+      try {
+        const res = await disableMessengerPush(user.id)
+        if (!res.ok) {
+          setError(res.error ?? 'Не удалось отключить push')
+          await refreshPushUi()
+          return
+        }
+        setPushUi('off')
+      } finally {
+        setPushBusy(false)
+      }
+      return
+    }
+    setPushBusy(true)
+    try {
+      const res = await enableMessengerPush(user.id)
       if (!res.ok) {
-        setError(res.error ?? 'Не удалось отключить push')
-        void refreshPushUi()
+        if (res.error === 'permission_denied') setPushUi('denied')
+        else setError(res.error ?? 'Не удалось включить push')
+        await refreshPushUi()
         return
       }
-      setPushUi('off')
-      return
+      setPushUi('on')
+    } finally {
+      setPushBusy(false)
     }
-    setPushUi('loading')
-    const res = await enableMessengerPush(user.id)
-    if (!res.ok) {
-      if (res.error === 'permission_denied') setPushUi('denied')
-      else setError(res.error ?? 'Не удалось включить push')
-      void refreshPushUi()
-      return
-    }
-    setPushUi('on')
-  }, [user?.id, pushUi, refreshPushUi])
+  }, [user?.id, pushUi, pushBusy, refreshPushUi])
 
   const [loading, setLoading] = useState(true)
   const [threadLoading, setThreadLoading] = useState(false)
@@ -1976,12 +1983,8 @@ export function DashboardMessengerPage() {
               {soundEnabled ? <BellIcon /> : <BellOffIcon />}
             </button>
             {pushUi !== 'absent' ? (
-              <button
-                type="button"
-                className={`dashboard-topbar__push${pushUi === 'on' ? ' dashboard-topbar__push--on' : ''}${pushUi === 'denied' ? ' dashboard-topbar__push--denied' : ''}${pushUi === 'unconfigured' ? ' dashboard-topbar__push--unconfigured' : ''}`}
-                disabled={pushUi === 'loading' || pushUi === 'unconfigured'}
-                onClick={() => void toggleMessengerPush()}
-                aria-pressed={pushUi === 'on'}
+              <span
+                className="dashboard-topbar__push-toggle-wrap"
                 title={
                   pushUi === 'unconfigured'
                     ? 'В сборке нет VITE_VAPID_PUBLIC_KEY — добавьте в Timeweb / .env и пересоберите'
@@ -1992,8 +1995,14 @@ export function DashboardMessengerPage() {
                         : 'Включить push-уведомления'
                 }
               >
-                <FiRrIcon name="megaphone" className="dashboard-topbar__push-fi" />
-              </button>
+                <PillToggle
+                  compact
+                  checked={pushUi === 'on'}
+                  onCheckedChange={() => void toggleMessengerPush()}
+                  ariaLabel="Push-уведомления о личных сообщениях"
+                  disabled={pushBusy || pushUi === 'unconfigured' || pushUi === 'denied'}
+                />
+              </span>
             ) : null}
           </div>
         ) : null
@@ -2559,10 +2568,10 @@ export function DashboardMessengerPage() {
                   </span>
                   <span className="dashboard-messenger-quick-menu__lbl">Новая комната</span>
                 </button>
-                <div className="dashboard-messenger-quick-menu__cell">
-                  <span className="dashboard-messenger-quick-menu__lbl">Тема</span>
-                  <ThemeToggle variant="inline" className="theme-toggle--dashboard" />
-                </div>
+                <div
+                  className="dashboard-messenger-quick-menu__cell dashboard-messenger-quick-menu__cell--filler"
+                  aria-hidden
+                />
                 <button
                   type="button"
                   className="dashboard-messenger-quick-menu__btn"
@@ -2737,27 +2746,28 @@ export function DashboardMessengerPage() {
                 </div>
                 {pushUi !== 'absent' ? (
                   <div className="messenger-settings-modal__section">
-                    <span className="messenger-settings-modal__label">Push-уведомления</span>
-                    <button
-                      type="button"
-                      className={`messenger-settings-modal__row-btn${
-                        pushUi === 'on' ? ' messenger-settings-modal__row-btn--on' : ''
-                      }${pushUi === 'denied' ? ' messenger-settings-modal__row-btn--muted' : ''}`}
-                      disabled={pushUi === 'loading' || pushUi === 'unconfigured'}
-                      onClick={() => void toggleMessengerPush()}
-                      aria-pressed={pushUi === 'on'}
-                    >
-                      <span className="messenger-settings-modal__row-ico" aria-hidden>
-                        <FiRrIcon name="megaphone" />
-                      </span>
-                      {pushUi === 'unconfigured'
-                        ? 'Нет ключа в сборке — пересоберите с VITE_VAPID_PUBLIC_KEY'
-                        : pushUi === 'on'
-                          ? 'Включены — нажмите, чтобы отключить'
-                          : pushUi === 'denied'
-                            ? 'Браузер запретил уведомления'
-                            : 'Выключены — нажмите, чтобы включить'}
-                    </button>
+                    <div className="messenger-settings-modal__push-row">
+                      <span className="messenger-settings-modal__label">Push-уведомления</span>
+                      <PillToggle
+                        compact
+                        checked={pushUi === 'on'}
+                        onCheckedChange={() => void toggleMessengerPush()}
+                        offLabel="Выкл"
+                        onLabel="Вкл"
+                        ariaLabel="Push-уведомления о личных сообщениях"
+                        disabled={pushBusy || pushUi === 'unconfigured' || pushUi === 'denied'}
+                      />
+                    </div>
+                    {pushUi === 'unconfigured' ? (
+                      <p className="messenger-settings-modal__hint">
+                        Нет ключа в сборке — пересоберите с VITE_VAPID_PUBLIC_KEY
+                      </p>
+                    ) : null}
+                    {pushUi === 'denied' ? (
+                      <p className="messenger-settings-modal__hint">
+                        Разрешите уведомления в настройках браузера.
+                      </p>
+                    ) : null}
                   </div>
                 ) : null}
                 <div className="messenger-settings-modal__actions">

@@ -6,7 +6,6 @@ import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import { setPendingHostClaim } from '../lib/spaceRoom'
 import { newRoomId } from '../utils/roomId'
 import { ChatBubbleIcon, ChevronRightIcon, DashboardIcon } from './icons'
-import { ThemeToggle } from './ThemeToggle'
 
 export function HomePage() {
   const navigate = useNavigate()
@@ -39,7 +38,6 @@ export function HomePage() {
     <div className="join-screen join-screen--themed">
       <div className="join-home-stack">
         <div className="join-card join-card--home">
-        <ThemeToggle variant="inline" className="theme-toggle--home-card-corner" />
         <div className="join-logo-static" aria-hidden>
           <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
         </div>

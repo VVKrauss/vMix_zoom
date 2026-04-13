@@ -1,8 +1,6 @@
 import { FormEvent, useState } from 'react'
 import { useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { ThemeToggle } from './ThemeToggle'
-
 type Mode = 'login' | 'register'
 
 export function LoginPage() {
@@ -55,7 +53,6 @@ export function LoginPage() {
   if (confirmSentTo) {
     return (
       <div className="join-screen join-screen--themed">
-        <ThemeToggle variant="inline" className="theme-toggle--join-corner" />
         <div className="join-card">
           <Link to="/" className="join-logo-btn" aria-label="Главная">
             <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
@@ -81,7 +78,6 @@ export function LoginPage() {
 
   return (
     <div className="join-screen join-screen--themed">
-      <ThemeToggle variant="inline" className="theme-toggle--join-corner" />
       <div className="join-card">
         <Link to="/" className="join-logo-btn" aria-label="Главная">
           <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
