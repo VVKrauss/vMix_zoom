@@ -2,3 +2,7 @@ node_modules/
 .env
 dist/
 supabase/.temp/
+
+# Локальные артефакты агента / архивы — не коммитить
+agent-tools-deploy-payload.json
+vMix replacer.zip
