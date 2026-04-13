@@ -520,12 +520,12 @@ export function ControlsBar({
     <div
       className={`ctrl-vmix-audio ctrl-vmix-audio--${vmixPhase === 'live' ? 'live' : 'waiting'}`}
       role="group"
-      aria-label="Звук программы vMix"
+      aria-label="Звук программы SRT"
     >
       <button
         type="button"
         className={`ctrl-vmix-audio__mute${vmixProgramMuted ? ' ctrl-vmix-audio__mute--off' : ''}`}
-        title={vmixProgramMuted ? 'Включить звук программы vMix' : 'Отключить звук программы vMix'}
+        title={vmixProgramMuted ? 'Включить звук программы SRT' : 'Отключить звук программы SRT'}
         aria-pressed={vmixProgramMuted}
         disabled={vmixIngressLoading}
         onClick={onToggleVmixProgramMuted}
@@ -540,8 +540,8 @@ export function ControlsBar({
         value={Math.round(vmixProgramVolume * 100)}
         onChange={(e) => onVmixProgramVolumeChange(Number(e.target.value) / 100)}
         disabled={vmixIngressLoading}
-        title="Громкость программы vMix"
-        aria-label="Громкость программы vMix"
+        title="Громкость программы SRT"
+        aria-label="Громкость программы SRT"
       />
     </div>
   )
@@ -558,7 +558,7 @@ export function ControlsBar({
         <button
           type="button"
           className={`ctrl-btn ctrl-btn--source-ingest ctrl-btn--source-ingest--vmix${vmixIngressLoading ? ' ctrl-btn--loading' : ''}`}
-          title={vmixIngressLoading ? 'Подключение…' : 'Добавить источник vMix / SRT'}
+          title={vmixIngressLoading ? 'Подключение…' : 'Добавить источник SRT'}
           disabled={vmixIngressLoading}
           aria-busy={vmixIngressLoading}
           onClick={onStartVmixIngress}
@@ -582,8 +582,8 @@ export function ControlsBar({
       vmixPhase === 'live' ? 'ctrl-chevron--vmix-live' : 'ctrl-chevron--vmix-waiting'
     const mainTitle =
       vmixPhase === 'live'
-        ? 'Поток vMix активен. Нажмите, чтобы остановить'
-        : 'Ожидание подключения vMix. Нажмите, чтобы остановить'
+        ? 'Поток SRT активен. Нажмите, чтобы остановить'
+        : 'Ожидание подключения SRT. Нажмите, чтобы остановить'
     if (!canManageVmixProgramIngress) {
       return <div className={shClass}>{vmixProgramAudioControls()}</div>
     }
@@ -612,7 +612,7 @@ export function ControlsBar({
           className={`ctrl-chevron ${chevronPhase}`}
           disabled={vmixIngressLoading}
           onClick={() => onOpenVmixSettings()}
-          title="Параметры подключения vMix"
+          title="Параметры подключения SRT"
         >
           <ChevronIcon />
         </button>

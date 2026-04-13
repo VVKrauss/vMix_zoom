@@ -49,7 +49,7 @@ export function VideoInfoOverlay({
   videoRef: React.RefObject<HTMLVideoElement>
   roomId?: string
   peerId?: string
-  /** connectUrlPublic для vMix SRT Caller */
+  /** connectUrlPublic для SRT Caller */
   srtConnectUrl?: string
   /** Приём входящего видео (getStats), только в режиме инфо для удалённых плиток. */
   linkQuality?: InboundVideoQuality | null
@@ -178,7 +178,7 @@ export function VideoInfoOverlay({
           type="button"
           className="vio-row vio-row--peer"
           onClick={e => { e.stopPropagation(); copySrtUrl() }}
-          title="Скопировать SRT URL (vMix Caller)"
+          title="Скопировать SRT URL (SRT Caller)"
         >
           <span className="vio-key">SRT</span>
           <span className="vio-val vio-val--mono vio-val--id">

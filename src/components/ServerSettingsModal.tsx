@@ -281,7 +281,7 @@ export function ServerSettingsModal({ open, onClose, variant = 'modal' }: Props)
           </section>
 
           <section className="server-settings-section">
-            <h3 className="server-settings-section__title">Поток vMix → комната</h3>
+            <h3 className="server-settings-section__title">Поток SRT → комната</h3>
             <p className="server-settings-section__hint">
               <code>vmixIngress</code> на сервере и в localStorage для <code>startVmixIngress</code>. Контракт — docs/SERVER_SETTINGS_PLAN.md.
             </p>

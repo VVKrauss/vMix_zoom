@@ -1919,7 +1919,7 @@ export function RoomPage({
 
       <ConfirmDialog
         open={vmixStopDialogOpen}
-        title="Остановить vMix?"
+        title="Остановить SRT?"
         message="Программный вход отключится, слушатель SRT закроется. Участники перестанут видеть поток программы."
         cancelLabel="Отмена"
         confirmLabel="Остановить"
@@ -2201,7 +2201,7 @@ export function RoomPage({
 
       {vmixError && (
         <div className="room-invite-toast room-invite-toast--visible room-invite-toast--error" role="alert">
-          <span className="room-invite-toast__title">vMix ошибка</span>
+          <span className="room-invite-toast__title">SRT ошибка</span>
           <span className="room-invite-toast__text">{vmixError}</span>
           <button type="button" className="room-invite-toast__close" onClick={() => setVmixError(null)}>✕</button>
         </div>

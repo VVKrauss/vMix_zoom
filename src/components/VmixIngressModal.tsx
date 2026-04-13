@@ -49,13 +49,13 @@ export function VmixIngressModal({ open, info, onClose, mode = 'setup' }: Props)
       <button type="button" className="confirm-dialog-backdrop" aria-label="Закрыть" onClick={onClose} />
       <div className="confirm-dialog vmix-modal" role="dialog" aria-modal="true" aria-labelledby="vmix-modal-title">
         <h2 id="vmix-modal-title" className="confirm-dialog__title">
-          {mode === 'reference' ? 'Параметры подключения vMix' : 'Настройки vMix (Caller)'}
+          {mode === 'reference' ? 'Параметры подключения SRT' : 'Настройки SRT (Caller)'}
         </h2>
         <p className="confirm-dialog__msg">
           {mode === 'reference' ? (
-            <>Текущие параметры <strong>SRT (Caller)</strong> в vMix (H.264&nbsp;+&nbsp;AAC):</>
+            <>Текущие параметры <strong>SRT (Caller)</strong> в SRT-источнике (H.264&nbsp;+&nbsp;AAC):</>
           ) : (
-            <>В vMix выберите <strong>SRT (Caller)</strong>, кодеки H.264&nbsp;+&nbsp;AAC, и укажите параметры ниже:</>
+            <>Выберите <strong>SRT (Caller)</strong>, кодеки H.264&nbsp;+&nbsp;AAC, и укажите параметры ниже:</>
           )}
         </p>
         <table className="vmix-modal__table">
