@@ -188,8 +188,6 @@ export async function reconcileMessengerPushSubscription(
  * Жёсткий reset:
  * - удаляет текущую subscription
  * - удаляет её из БД
- * - unregister service workers
- * - перерегистрирует SW
  * - создаёт новую subscription
  */
 export async function hardResetMessengerPush(
@@ -200,6 +198,14 @@ export async function hardResetMessengerPush(
   }
 
   try {
+    let perm = Notification.permission
+    if (perm === 'default') {
+      perm = await Notification.requestPermission()
+    }
+    if (perm !== 'granted') {
+      return { ok: false, error: perm === 'denied' ? 'permission_denied' : 'permission_blocked' }
+    }
+
     const regs = await navigator.serviceWorker.getRegistrations()
 
     for (const reg of regs) {
@@ -219,35 +225,16 @@ export async function hardResetMessengerPush(
       }
     }
 
-    for (const reg of regs) {
-      try {
-        await reg.unregister()
-      } catch {
-        // ignore
-      }
+    const readyReg = await navigator.serviceWorker.ready
+
+    let sub = await readyReg.pushManager.getSubscription()
+    if (!sub) {
+      const keyBytes = urlBase64ToUint8Array(VAPID())
+      sub = await readyReg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: keyBytes as BufferSource,
+      })
     }
-
-    // даём браузеру шанс завершить unregister
-    await new Promise((resolve) => setTimeout(resolve, 300))
-
-    // путь тот же, что регистрирует vite-plugin-pwa
-    const reg = await navigator.serviceWorker.register('/sw.js')
-    await navigator.serviceWorker.ready
-
-    const key = VAPID()
-    let perm = Notification.permission
-    if (perm === 'default') {
-      perm = await Notification.requestPermission()
-    }
-    if (perm !== 'granted') {
-      return { ok: false, error: perm === 'denied' ? 'permission_denied' : 'permission_blocked' }
-    }
-
-    const keyBytes = urlBase64ToUint8Array(key)
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: keyBytes as BufferSource,
-    })
 
     const json = sub.toJSON()
     const { error } = await supabase.from('push_subscriptions').upsert(
