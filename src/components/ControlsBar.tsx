@@ -670,9 +670,7 @@ export function ControlsBar({
           onClick={onStudioToggle}
           title={studioOpen ? 'Закрыть студию' : 'Режим «Студия»'}
         >
-          <span className="ctrl-btn__studio-mark" aria-hidden>
-            СТ
-          </span>
+          <FiRrIcon name="clapperboard" className="ctrl-btn__studio-fi" aria-hidden />
         </button>
       ) : null
     if (!ndi && !vmixStrip && !studioBtn) return null
@@ -845,6 +843,17 @@ export function ControlsBar({
               </button>
             </div>
             <div className="ctrl-mobile-bottom-bar__edge ctrl-mobile-bottom-bar__edge--right">
+              {showStudioEntry && onStudioToggle ? (
+                <button
+                  type="button"
+                  className={`ctrl-mobile-bottom-bar__btn ctrl-mobile-bottom-bar__btn--compact${studioOpen ? ' ctrl-mobile-bottom-bar__btn--studio-on' : ''}`}
+                  onClick={onStudioToggle}
+                  title={studioOpen ? 'Закрыть студию' : 'Режим «Студия»'}
+                  aria-label={studioOpen ? 'Закрыть студию' : 'Открыть режим «Студия»'}
+                >
+                  <FiRrIcon name="clapperboard" className="ctrl-mobile-studio-fi" />
+                </button>
+              ) : null}
               {showMobileLayoutCycle ? (
                 <button
                   type="button"

@@ -2144,8 +2144,46 @@ html.app-root--room #root {
   min-width: 0;
 }
 
+/* Кабинет / мессенджер / друзья: одна линия как у моб. list-head — лого, блок действий, бургер */
+.dashboard-topbar--unified {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding-left: max(14px, env(safe-area-inset-left, 0px));
+  padding-right: max(14px, env(safe-area-inset-right, 0px));
+}
+
+.dashboard-topbar--unified .dashboard-topbar__start {
+  flex-wrap: nowrap;
+}
+
+.dashboard-topbar__fill {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dashboard-topbar--unified .dashboard-topbar__actions {
+  justify-self: end;
+  margin-left: 0;
+}
+
+@media (min-width: 901px) {
+  .dashboard-page--unified-top-nav .dashboard-friends-page__head .dashboard-page-back {
+    display: none;
+  }
+}
+
 .dashboard-topbar__cabinet-burger {
   margin-left: auto;
+}
+
+.dashboard-topbar--unified .dashboard-topbar__cabinet-burger {
+  margin-left: 0;
 }
 
 .dashboard-topbar__messenger {
@@ -7796,6 +7834,9 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
 }
 
 /* Диалог выхода: только модалка, без мобильных контролов поверх */
+.room-page--leave-dialog .room-page__mobile-chrome,
+.room-page--leave-dialog .room-mobile-chrome-menu,
+.room-page--leave-dialog .room-mobile-chrome-menu-backdrop,
 .room-page--leave-dialog .ctrl-mobile-bottom-bar,
 .room-page--leave-dialog .ctrl-mobile-pip-chrome,
 .room-page--leave-dialog .ctrl-mobile-fab-dock,
@@ -8112,7 +8153,21 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
 }
 
 .ctrl-mobile-bottom-bar__edge--right {
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: center;
+  align-items: flex-end;
+}
+
+.ctrl-mobile-bottom-bar__btn--studio-on {
+  border-color: rgba(140, 180, 255, 0.55);
+  background: rgba(100, 140, 255, 0.2);
+  color: #e8eeff;
+}
+
+.ctrl-mobile-studio-fi {
+  font-size: 16px;
+  line-height: 1;
 }
 
 .ctrl-mobile-bottom-bar__center {
@@ -8812,6 +8867,210 @@ html[data-theme="light"] .room-page--viewport-mobile .room-mobile-invite-sheet.d
   padding: 0 20px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+}
+
+.room-header__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: start;
+  min-width: 0;
+}
+
+.room-header-logo-static {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.room-header-logo-static .brand-logo--header-h {
+  display: block;
+  height: 42px;
+  width: auto;
+  max-width: min(160px, 28vw);
+  object-fit: contain;
+}
+
+.room-header-back-btn i.fi {
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* Мобильная шапка комнаты: назад, лого, бургер */
+.room-page__mobile-chrome {
+  flex: 0 0 auto;
+  z-index: 8250;
+}
+
+.room-mobile-chrome-head {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: calc(8px + env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 10px
+    max(12px, env(safe-area-inset-left, 0px));
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.room-mobile-chrome-head__logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.room-mobile-chrome-head__logo .brand-logo--header-h {
+  display: block;
+  height: 36px;
+  width: auto;
+  max-width: min(200px, 50vw);
+  object-fit: contain;
+}
+
+.room-mobile-chrome-head__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.room-mobile-chrome-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 8390;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.room-mobile-chrome-menu-backdrop--open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.room-mobile-chrome-menu {
+  position: fixed;
+  left: max(12px, env(safe-area-inset-left, 0px));
+  right: max(12px, env(safe-area-inset-right, 0px));
+  top: calc(env(safe-area-inset-top, 0px) + 56px);
+  z-index: 8400;
+  max-height: min(78vh, 560px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+  pointer-events: none;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+
+.room-mobile-chrome-menu--open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.room-mobile-chrome-menu__scroll {
+  overflow-y: auto;
+  padding: 12px 14px 16px;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.room-mobile-chrome-menu__section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin: 4px 0 0;
+}
+
+.room-mobile-chrome-menu__section .room-space-settings-popover {
+  margin-top: 4px;
+}
+
+.room-mobile-chrome-menu__section--pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.room-mobile-chrome-menu__pill-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.room-mobile-chrome-menu__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  padding: 8px 4px;
+}
+
+.room-mobile-chrome-menu__row--muted {
+  color: var(--text-dim);
+}
+
+.room-mobile-chrome-menu__row svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.room-mobile-chrome-menu__btn {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.room-mobile-chrome-menu__btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.room-mobile-chrome-menu__btn--accent {
+  border-color: rgba(140, 180, 255, 0.45);
+  background: rgba(80, 120, 255, 0.12);
+  color: #cfe0ff;
+}
+
+.room-mobile-chrome-menu__link {
+  display: block;
+}
+
+.room-mobile-chrome-menu__btn--danger {
+  border-color: rgba(229, 57, 53, 0.35);
+  background: rgba(229, 57, 53, 0.12);
+  color: #ffb4b0;
 }
 
 .room-logo {
@@ -12973,11 +13232,10 @@ html[data-theme="light"] .room-chat-panel__input:focus {
   box-shadow: 0 0 0 1px rgba(140, 180, 255, 0.2);
 }
 
-.ctrl-btn__studio-mark {
-  font-weight: 800;
-  font-size: 12px;
-  letter-spacing: 0.08em;
+.ctrl-btn__studio-fi {
+  font-size: 17px;
   line-height: 1;
+  display: block;
 }
 
 /* ── Режим «Студия» (полноэкранная раскладка) ──────────────────── */

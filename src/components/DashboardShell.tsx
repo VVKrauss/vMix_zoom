@@ -55,7 +55,12 @@ export function DashboardShell({
   const { user } = useAuth()
   const unreadCount = useMessengerUnreadCount()
   const isMobileCabinetNav = useMediaQuery('(max-width: 900px)')
-  const useBurgerNav = Boolean(isMobileCabinetNav && !chromeless)
+  /** Единая шапка с бургером (как в моб. быстром меню), кроме раздела «Комнаты». */
+  const unifiedCabinetNav = Boolean(!chromeless && active !== 'chats')
+  /** Бургер в шапке: всегда для unified; для «Комнаты» только на узкой ширине. */
+  const showCabinetBurger = Boolean(!chromeless && (unifiedCabinetNav || isMobileCabinetNav))
+  /** Круглые кнопки мессенджер / новая комната / выход — только у «Комнаты» на десктопе. */
+  const showCabinetQuickCircleActions = Boolean(!chromeless && active === 'chats' && !isMobileCabinetNav)
   const [cabinetMenuOpen, setCabinetMenuOpen] = useState(false)
   const [incomingFavSig, setIncomingFavSig] = useState<string | null>(null)
   const [dismissedIncomingFavSig, setDismissedIncomingFavSig] = useState<string | null>(null)
@@ -143,23 +148,31 @@ export function DashboardShell({
 
   return (
     <div
-      className={`dashboard-page${chromeless ? ' dashboard-page--messenger-chromeless' : ''}${useBurgerNav ? ' dashboard-page--cabinet-mobile-burger' : ''}`}
+      className={`dashboard-page${chromeless ? ' dashboard-page--messenger-chromeless' : ''}${
+        showCabinetBurger ? ' dashboard-page--cabinet-mobile-burger' : ''
+      }${unifiedCabinetNav ? ' dashboard-page--unified-top-nav' : ''}`}
     >
-      <header className="dashboard-topbar">
+      <header
+        className={`dashboard-topbar${unifiedCabinetNav ? ' dashboard-topbar--unified' : ''}`}
+      >
         <div className="dashboard-topbar__start">
           <Link to="/" className="dashboard-topbar__logo" title="На главную">
             <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
           </Link>
-          {canAccessAdmin && !useBurgerNav ? (
+          {canAccessAdmin && showCabinetQuickCircleActions ? (
             <Link to="/admin" className="dashboard-topbar__admin" title="Админка" aria-label="Админка">
               <AdminPanelIcon />
             </Link>
           ) : null}
         </div>
 
+        {unifiedCabinetNav ? (
+          <div className="dashboard-topbar__fill">{headerExtra}</div>
+        ) : null}
+
         <div className="dashboard-topbar__actions">
-          {headerExtra}
-          {!useBurgerNav ? (
+          {!unifiedCabinetNav ? headerExtra : null}
+          {showCabinetQuickCircleActions ? (
             <>
               <Link
                 to="/dashboard/messenger"
@@ -192,7 +205,8 @@ export function DashboardShell({
                 <LogOutIcon />
               </button>
             </>
-          ) : (
+          ) : null}
+          {showCabinetBurger ? (
             <button
               type="button"
               className={`dashboard-messenger__list-head-btn dashboard-topbar__cabinet-burger${cabinetMenuOpen ? ' dashboard-messenger__list-head-btn--open' : ''}`}
@@ -203,7 +217,7 @@ export function DashboardShell({
             >
               <MenuBurgerIcon />
             </button>
-          )}
+          ) : null}
         </div>
       </header>
 
@@ -235,7 +249,7 @@ export function DashboardShell({
         </main>
       </div>
 
-      {useBurgerNav ? (
+      {showCabinetBurger ? (
         <>
           <div
             className={`dashboard-messenger-quick-menu-backdrop${

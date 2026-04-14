@@ -14,6 +14,8 @@ import {
     JoinRequestsIcon,
     ParticipantsBadgeIcon,
     ChatBubbleIcon,
+    ChevronLeftIcon,
+    MenuBurgerIcon,
     FiRrIcon,
   } from './icons'
 import { useAuth } from '../context/AuthContext'
@@ -801,6 +803,7 @@ export function RoomPage({
   const { openUserPeek } = useUserPeek()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
+  const [roomMobileChromeMenuOpen, setRoomMobileChromeMenuOpen] = useState(false)
 
   useEffect(() => {
     if (!userMenuOpen) return
@@ -812,6 +815,15 @@ export function RoomPage({
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [userMenuOpen])
+
+  useEffect(() => {
+    if (!roomMobileChromeMenuOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setRoomMobileChromeMenuOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [roomMobileChromeMenuOpen])
 
   useRoomUiSync({
     user: user ?? null,
@@ -844,6 +856,7 @@ export function RoomPage({
       screenStopDialogOpen ||
       vmixStopDialogOpen ||
       studioOpen ||
+      roomMobileChromeMenuOpen ||
       (chatOpen && !chatEmbed),
     [
       leaveDialog,
@@ -851,6 +864,7 @@ export function RoomPage({
       screenStopDialogOpen,
       vmixStopDialogOpen,
       studioOpen,
+      roomMobileChromeMenuOpen,
       chatOpen,
       chatEmbed,
     ],
@@ -1855,13 +1869,232 @@ export function RoomPage({
       />
 
       <div className="room-page__column">
-      {/* ── Шапка: только десктоп; на мобильных без исключения не показываем ── */}
+      {isViewportMobile ? (
+        <>
+          <div className="room-page__mobile-chrome">
+            <header className="room-mobile-chrome-head">
+              <button
+                type="button"
+                className="dashboard-messenger__list-head-btn room-mobile-chrome-head__back"
+                onClick={onLogoHomeClick}
+                title="Назад из комнаты"
+                aria-label="Назад из комнаты"
+              >
+                <ChevronLeftIcon />
+              </button>
+              <div className="room-mobile-chrome-head__logo" aria-hidden>
+                <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
+              </div>
+              <div className="room-mobile-chrome-head__actions">
+                <button
+                  type="button"
+                  className={`dashboard-messenger__list-head-btn${roomMobileChromeMenuOpen ? ' dashboard-messenger__list-head-btn--open' : ''}`}
+                  onClick={() => setRoomMobileChromeMenuOpen((v) => !v)}
+                  aria-expanded={roomMobileChromeMenuOpen}
+                  aria-haspopup="true"
+                  aria-label={roomMobileChromeMenuOpen ? 'Закрыть меню комнаты' : 'Меню комнаты'}
+                  title="Управление комнатой"
+                >
+                  <MenuBurgerIcon />
+                </button>
+              </div>
+            </header>
+          </div>
+          <div
+            className={`room-mobile-chrome-menu-backdrop${roomMobileChromeMenuOpen ? ' room-mobile-chrome-menu-backdrop--open' : ''}`}
+            aria-hidden={!roomMobileChromeMenuOpen}
+            onClick={() => setRoomMobileChromeMenuOpen(false)}
+            role="presentation"
+          />
+          <nav
+            className={`room-mobile-chrome-menu${roomMobileChromeMenuOpen ? ' room-mobile-chrome-menu--open' : ''}`}
+            aria-hidden={!roomMobileChromeMenuOpen}
+            aria-label="Управление комнатой"
+          >
+            <div className="room-mobile-chrome-menu__scroll">
+              {canManageRoomSpace ? (
+                <div className="room-mobile-chrome-menu__section">
+                  <div className="room-mobile-chrome-menu__section-title">Комната</div>
+                  <RoomSpaceSettingsPopover
+                    embedded
+                    showInfo={showInfo}
+                    onToggleInfo={() => setShowInfo((v) => !v)}
+                    roomChatVisibility={roomChatVisibility}
+                    onRoomChatVisibilityChange={(v) => void handleRoomChatVisibilityChange(v)}
+                    canEditPolicies={canEditSpaceRoomPolicies}
+                    roomAccessMode={roomAccessMode}
+                    onRoomAccessModeChange={(v) => void handleRoomAccessModeChange(v)}
+                    onClose={() => {}}
+                  />
+                </div>
+              ) : null}
+              {canManageRoomSpace ? (
+                <button
+                  type="button"
+                  className="room-mobile-chrome-menu__btn"
+                  onClick={() => {
+                    setRoomMobileChromeMenuOpen(false)
+                    setRoomManageModalOpen(true)
+                  }}
+                >
+                  Управление участниками
+                </button>
+              ) : null}
+              <div className="room-mobile-chrome-menu__row room-mobile-chrome-menu__row--muted" role="status">
+                <ParticipantsBadgeIcon />
+                <span>
+                  {rosterCount} {ruParticipantsWord(rosterCount)}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="room-mobile-chrome-menu__btn"
+                onClick={() => {
+                  setRoomMobileChromeMenuOpen(false)
+                  handleCopyInviteUrl()
+                }}
+              >
+                Скопировать ссылку-приглашение
+              </button>
+              <button
+                type="button"
+                className="room-mobile-chrome-menu__btn"
+                onClick={() => {
+                  setRoomMobileChromeMenuOpen(false)
+                  handleCopyInviteId()
+                }}
+              >
+                Скопировать ID комнаты
+              </button>
+              {user ? (
+                <button
+                  type="button"
+                  className="room-mobile-chrome-menu__btn"
+                  onClick={() => {
+                    setRoomMobileChromeMenuOpen(false)
+                    setInviteFriendsModalOpen(true)
+                  }}
+                >
+                  Пригласить из контактов
+                </button>
+              ) : null}
+              {isDbSpaceRoomHost ? (
+                <button
+                  type="button"
+                  className="room-mobile-chrome-menu__btn"
+                  onClick={() => {
+                    setRoomMobileChromeMenuOpen(false)
+                    setJoinRequestsOpen(true)
+                    setJoinRequestToast(null)
+                  }}
+                >
+                  Запросы на вход
+                  {joinRequests.length > 0 ? ` (${joinRequests.length})` : ''}
+                </button>
+              ) : null}
+              {canUseElevatedRoomTools ? (
+                <div className="room-mobile-chrome-menu__section room-mobile-chrome-menu__section--pill">
+                  <span className="room-mobile-chrome-menu__pill-label">Режим стримера</span>
+                  <PillToggle
+                    compact
+                    checked={streamerMode}
+                    onCheckedChange={(v) => setStreamerMode(v)}
+                    offLabel="Обычный"
+                    onLabel="Стример"
+                    ariaLabel={streamerMode ? 'Режим стримера включён' : 'Режим стримера выключен'}
+                  />
+                </div>
+              ) : null}
+              {streamerMode && canUseElevatedRoomTools ? (
+                <button
+                  type="button"
+                  className="room-mobile-chrome-menu__btn room-mobile-chrome-menu__btn--accent"
+                  onClick={() => {
+                    setRoomMobileChromeMenuOpen(false)
+                    setStudioOpen(true)
+                  }}
+                >
+                  Режим «Студия»
+                </button>
+              ) : null}
+              {user ? (
+                <a
+                  href="/dashboard/messenger"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="room-mobile-chrome-menu__btn room-mobile-chrome-menu__link"
+                  onClick={() => setRoomMobileChromeMenuOpen(false)}
+                >
+                  Мессенджер
+                  {messengerUnreadCount > 0 ? ` (${messengerUnreadCount > 99 ? '99+' : messengerUnreadCount})` : ''}
+                </a>
+              ) : null}
+              {user ? (
+                <a
+                  href="/dashboard"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="room-mobile-chrome-menu__btn room-mobile-chrome-menu__link"
+                  onClick={() => setRoomMobileChromeMenuOpen(false)}
+                >
+                  Личный кабинет
+                </a>
+              ) : null}
+              {isPlatformAdminish ? (
+                <a
+                  href="/admin"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="room-mobile-chrome-menu__btn room-mobile-chrome-menu__link"
+                  onClick={() => setRoomMobileChromeMenuOpen(false)}
+                >
+                  Админка
+                </a>
+              ) : null}
+              <button
+                type="button"
+                className="room-mobile-chrome-menu__btn"
+                onClick={() => {
+                  setRoomMobileChromeMenuOpen(false)
+                  openLeaveDialog('leave', remoteHumanPeers.length)
+                }}
+              >
+                Выйти из комнаты
+              </button>
+              {user ? (
+                <button
+                  type="button"
+                  className="room-mobile-chrome-menu__btn room-mobile-chrome-menu__btn--danger"
+                  onClick={() => {
+                    setRoomMobileChromeMenuOpen(false)
+                    void signOut()
+                  }}
+                >
+                  Выйти из аккаунта
+                </button>
+              ) : null}
+            </div>
+          </nav>
+        </>
+      ) : null}
+      {/* ── Шапка: десктоп ── */}
       {!isViewportMobile ? (
         <div className="room-page__top-chrome">
           <header className="room-header">
-            <button type="button" className="room-logo-btn" onClick={onLogoHomeClick} title="На главную" aria-label="На главную">
-              <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
-            </button>
+            <div className="room-header__brand">
+              <button
+                type="button"
+                className="dashboard-messenger__list-head-btn room-header-back-btn"
+                onClick={onLogoHomeClick}
+                title="Назад из комнаты"
+                aria-label="Назад из комнаты"
+              >
+                <ChevronLeftIcon />
+              </button>
+              <div className="room-header-logo-static" aria-hidden>
+                <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
+              </div>
+            </div>
 
             <div className="room-center">
               <div className="room-center__row">
@@ -2398,7 +2631,7 @@ export function RoomPage({
         onHideVideoLetterboxingChange={setHideVideoLetterboxing}
         canManageVmixProgramIngress={canUseElevatedRoomTools}
         showMobileLayoutCycle={showLayoutToggle}
-        showStudioEntry={streamerMode && canUseElevatedRoomTools && !isViewportMobile}
+        showStudioEntry={streamerMode && canUseElevatedRoomTools}
         studioOpen={studioOpen}
         onStudioToggle={() => setStudioOpen((v) => !v)}
       />
