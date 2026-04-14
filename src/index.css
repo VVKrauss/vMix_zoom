@@ -12456,7 +12456,7 @@ button.participant-tile-idle--peek:focus-visible {
   border: none;
   border-radius: 6px;
   background: transparent;
-  font-size: 1em;
+  font-size: 1.35em;
   line-height: 1.2;
   cursor: pointer;
   transition: background .12s, transform .12s;
