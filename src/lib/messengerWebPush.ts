@@ -116,9 +116,8 @@ export async function disableMessengerPush(userId: string): Promise<{ ok: boolea
 }
 
 /**
- * Сверяет браузерную подписку с записью в БД.
- * Если подписка в браузере есть, а записи в БД нет — восстанавливает её.
- * Если подписки в браузере нет — ничего не включает автоматически.
+ * Если в браузере уже есть push-подписка, а строки в БД нет — восстанавливает upsert.
+ * Не включает push сама по себе (нет подписки в браузере → state off).
  */
 export async function reconcileMessengerPushSubscription(
   userId: string,
@@ -181,78 +180,5 @@ export async function reconcileMessengerPushSubscription(
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'reconcile_failed'
     return { ok: false, state: 'off', error: msg }
-  }
-}
-
-/**
- * Жёсткий reset:
- * - удаляет текущую subscription
- * - удаляет её из БД
- * - создаёт новую subscription
- */
-export async function hardResetMessengerPush(
-  userId: string,
-): Promise<{ ok: boolean; error?: string }> {
-  if (!userId || !isWebPushApiSupported() || !isMessengerWebPushConfigured()) {
-    return { ok: false, error: 'push_not_configured' }
-  }
-
-  try {
-    let perm = Notification.permission
-    if (perm === 'default') {
-      perm = await Notification.requestPermission()
-    }
-    if (perm !== 'granted') {
-      return { ok: false, error: perm === 'denied' ? 'permission_denied' : 'permission_blocked' }
-    }
-
-    const regs = await navigator.serviceWorker.getRegistrations()
-
-    for (const reg of regs) {
-      try {
-        const sub = await reg.pushManager.getSubscription()
-        if (sub) {
-          await supabase
-            .from('push_subscriptions')
-            .delete()
-            .eq('user_id', userId)
-            .eq('endpoint', sub.endpoint)
-
-          await sub.unsubscribe()
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    const readyReg = await navigator.serviceWorker.ready
-
-    let sub = await readyReg.pushManager.getSubscription()
-    if (!sub) {
-      const keyBytes = urlBase64ToUint8Array(VAPID())
-      sub = await readyReg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: keyBytes as BufferSource,
-      })
-    }
-
-    const json = sub.toJSON()
-    const { error } = await supabase.from('push_subscriptions').upsert(
-      {
-        user_id: userId,
-        endpoint: sub.endpoint,
-        subscription: json,
-        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id,endpoint' },
-    )
-
-    if (error) return { ok: false, error: error.message }
-
-    return { ok: true }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'hard_reset_failed'
-    return { ok: false, error: msg }
   }
 }

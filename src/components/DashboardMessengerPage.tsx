@@ -18,7 +18,6 @@ import {
 import {
   disableMessengerPush,
   enableMessengerPush,
-  hardResetMessengerPush,
   isMessengerPushSubscribed,
   isMessengerWebPushConfigured,
   isWebPushApiSupported,
@@ -517,7 +516,6 @@ export function DashboardMessengerPage() {
     if (!reconciled.ok && reconciled.error) {
       setError(reconciled.error)
     }
-
     if (reconciled.state === 'denied') {
       setPushUi('denied')
       return
@@ -564,23 +562,6 @@ export function DashboardMessengerPage() {
       setPushBusy(false)
     }
   }, [user?.id, pushUi, pushBusy, refreshPushUi])
-
-  const resetMessengerPush = useCallback(async () => {
-    if (!user?.id || pushBusy || pushUi === 'absent' || pushUi === 'unconfigured') return
-
-    setPushBusy(true)
-    try {
-      const res = await hardResetMessengerPush(user.id)
-      if (!res.ok) {
-        setError(res.error ?? 'Не удалось сбросить push')
-        await refreshPushUi()
-        return
-      }
-      await refreshPushUi()
-    } finally {
-      setPushBusy(false)
-    }
-  }, [user?.id, pushBusy, pushUi, refreshPushUi])
 
   const [loading, setLoading] = useState(true)
   const [threadLoading, setThreadLoading] = useState(false)
@@ -2725,30 +2706,16 @@ export function DashboardMessengerPage() {
                   <div className="messenger-settings-modal__section">
                     <div className="messenger-settings-modal__push-row">
                       <span className="messenger-settings-modal__label">Push-уведомления</span>
-                      <div className="messenger-push-controls" role="group" aria-label="Управление push-уведомлениями">
-                        <PillToggle
-                          compact
-                          checked={pushUi === 'on'}
-                          onCheckedChange={() => void toggleMessengerPush()}
-                          offLabel="Выкл"
-                          onLabel="Вкл"
-                          ariaLabel="Push-уведомления о личных сообщениях"
-                          disabled={pushBusy || pushUi === 'unconfigured' || pushUi === 'denied'}
-                        />
-                        <button
-                          type="button"
-                          className="messenger-settings-reset-btn"
-                          onClick={() => { void resetMessengerPush() }}
-                          disabled={pushBusy || !user?.id || pushUi === 'unconfigured'}
-                          title="Жёсткий сброс: удалить подписку, unregister SW и переподключить push"
-                        >
-                          Сбросить и переподключить push
-                        </button>
-                      </div>
+                      <PillToggle
+                        compact
+                        checked={pushUi === 'on'}
+                        onCheckedChange={() => void toggleMessengerPush()}
+                        offLabel="Выкл"
+                        onLabel="Вкл"
+                        ariaLabel="Push-уведомления о личных сообщениях"
+                        disabled={pushBusy || pushUi === 'unconfigured' || pushUi === 'denied'}
+                      />
                     </div>
-                    <p className="messenger-settings-modal__hint">
-                      Если уведомления перестали приходить, выключите и включите их снова
-                    </p>
                     {pushUi === 'unconfigured' ? (
                       <p className="messenger-settings-modal__hint">
                         Нет ключа в сборке — пересоберите с VITE_VAPID_PUBLIC_KEY
