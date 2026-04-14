@@ -127,6 +127,11 @@ const StudioModeWorkspace = lazy(async () => {
   return { default: mod.StudioModeWorkspace }
 })
 
+const CouchModeWorkspace = lazy(async () => {
+  const mod = await import('./CouchModeWorkspace')
+  return { default: mod.CouchModeWorkspace }
+})
+
 function LayoutCycleFabButton({
   className = '',
   onPickNextLayout,
@@ -842,11 +847,16 @@ export function RoomPage({
 
   const [streamerMode, setStreamerMode] = useLocalStorageBool('vmix_streamer_mode', false)
   const [studioOpen, setStudioOpen] = useState(false)
+  const [couchOpen, setCouchOpen] = useState(false)
   /** Только локальное превью; отправляемый поток без отражения. */
   const [mirrorLocalCamera, setMirrorLocalCamera] = useLocalStorageBool('vmix_local_camera_mirror', true)
 
   useEffect(() => {
     if (!streamerMode) setStudioOpen(false)
+  }, [streamerMode])
+
+  useEffect(() => {
+    if (streamerMode) setCouchOpen(false)
   }, [streamerMode])
 
   const blockImmersiveChromeHide = useMemo(
@@ -856,6 +866,7 @@ export function RoomPage({
       screenStopDialogOpen ||
       vmixStopDialogOpen ||
       studioOpen ||
+      couchOpen ||
       roomMobileChromeMenuOpen ||
       (chatOpen && !chatEmbed),
     [
@@ -864,6 +875,7 @@ export function RoomPage({
       screenStopDialogOpen,
       vmixStopDialogOpen,
       studioOpen,
+      couchOpen,
       roomMobileChromeMenuOpen,
       chatOpen,
       chatEmbed,
@@ -2634,6 +2646,9 @@ export function RoomPage({
         showStudioEntry={streamerMode && canUseElevatedRoomTools}
         studioOpen={studioOpen}
         onStudioToggle={() => setStudioOpen((v) => !v)}
+        showCouchEntry={!streamerMode && canUseElevatedRoomTools}
+        couchOpen={couchOpen}
+        onCouchToggle={() => setCouchOpen((v) => !v)}
       />
       </div>
 
@@ -2681,6 +2696,12 @@ export function RoomPage({
               void toggleFavoriteFromChat(targetUserId, nextFavorite)
             }}
           />
+        </Suspense>
+      ) : null}
+
+      {couchOpen ? (
+        <Suspense fallback={<div className="join-screen"><div className="auth-loading" aria-label="Загрузка…" /></div>}>
+          <CouchModeWorkspace open={couchOpen} onClose={() => setCouchOpen(false)} />
         </Suspense>
       ) : null}
 

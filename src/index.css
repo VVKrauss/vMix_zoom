@@ -223,7 +223,7 @@ html[data-theme="light"] .ctrl-chevron:disabled:hover {
   color: var(--text-dim);
 }
 
-html[data-theme="light"] .controls-bar .ctrl-btn:hover:not(:disabled):not(.ctrl-btn--leave):not(.ctrl-btn--screen):not(.ctrl-btn--off):not(.ctrl-btn--source-ingest):not(.ctrl-btn--studio) {
+html[data-theme="light"] .controls-bar .ctrl-btn:hover:not(:disabled):not(.ctrl-btn--leave):not(.ctrl-btn--screen):not(.ctrl-btn--off):not(.ctrl-btn--source-ingest):not(.ctrl-btn--studio):not(.ctrl-btn--couch) {
   background: color-mix(in srgb, var(--surface2) 55%, var(--border));
 }
 
@@ -260,6 +260,25 @@ html[data-theme="light"] .ctrl-btn.ctrl-btn--studio.ctrl-btn--studio--open {
   border-color: color-mix(in srgb, #4a6fc4 55%, var(--border));
   background: rgba(70, 110, 220, 0.22);
   box-shadow: 0 0 0 1px color-mix(in srgb, #6b8cce 35%, transparent);
+}
+
+html[data-theme="light"] .ctrl-btn.ctrl-btn--couch {
+  color: color-mix(in srgb, #8a4a1a 50%, var(--text));
+  border-color: color-mix(in srgb, #c98a4a 38%, var(--border));
+  background: rgba(200, 120, 40, 0.1);
+}
+
+html[data-theme="light"] .ctrl-btn.ctrl-btn--couch:hover:not(:disabled) {
+  color: #5c3010;
+  border-color: color-mix(in srgb, #b87a38 48%, var(--border));
+  background: rgba(200, 120, 40, 0.16);
+}
+
+html[data-theme="light"] .ctrl-btn.ctrl-btn--couch.ctrl-btn--couch--open {
+  color: #4a2808;
+  border-color: color-mix(in srgb, #a86a28 52%, var(--border));
+  background: rgba(200, 120, 40, 0.22);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #c98a4a 32%, transparent);
 }
 
 html[data-theme="light"] .reaction-emoji-btn:hover {
@@ -8165,7 +8184,18 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   color: #e8eeff;
 }
 
+.ctrl-mobile-bottom-bar__btn--couch-on {
+  border-color: rgba(220, 160, 90, 0.55);
+  background: rgba(180, 110, 40, 0.22);
+  color: #fff0e0;
+}
+
 .ctrl-mobile-studio-fi {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.ctrl-mobile-couch-fi {
   font-size: 16px;
   line-height: 1;
 }
@@ -13236,6 +13266,99 @@ html[data-theme="light"] .room-chat-panel__input:focus {
   font-size: 17px;
   line-height: 1;
   display: block;
+}
+
+/* ── Кнопка «Диван» (то же место, что «Студия», в обычной раскладке) ─ */
+.ctrl-btn.ctrl-btn--couch {
+  min-width: 52px;
+  padding: 8px 10px;
+  color: rgba(255, 210, 170, 0.95);
+  border-color: rgba(200, 140, 80, 0.4);
+  background: rgba(160, 90, 30, 0.12);
+}
+
+.ctrl-btn.ctrl-btn--couch:hover:not(:disabled) {
+  color: #fff4e8;
+  border-color: rgba(230, 170, 100, 0.55);
+  background: rgba(190, 110, 40, 0.2);
+}
+
+.ctrl-btn.ctrl-btn--couch.ctrl-btn--couch--open {
+  color: #fff;
+  border-color: rgba(240, 180, 110, 0.65);
+  background: rgba(200, 120, 50, 0.28);
+  box-shadow: 0 0 0 1px rgba(220, 150, 80, 0.22);
+}
+
+.ctrl-btn__couch-fi {
+  font-size: 17px;
+  line-height: 1;
+  display: block;
+}
+
+/* ── Режим «Диван» (полноэкранная раскладка) ───────────────────── */
+.couch-mode-workspace {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: flex;
+  flex-direction: column;
+  background: #0c0b0a;
+  color: var(--text);
+}
+
+.couch-mode-workspace__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: #141210;
+}
+
+.couch-mode-workspace__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.couch-mode-workspace__title-fi {
+  font-size: 1.15rem;
+  opacity: 0.9;
+}
+
+.couch-mode-workspace__close {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.couch-mode-workspace__close:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: #2a2622;
+}
+
+.couch-mode-workspace__body {
+  flex: 1;
+  overflow: auto;
+  padding: 20px 16px;
+}
+
+.couch-mode-workspace__hint {
+  margin: 0;
+  max-width: 42rem;
+  line-height: 1.5;
+  color: var(--text-dim);
+  font-size: 0.95rem;
 }
 
 /* ── Режим «Студия» (полноэкранная раскладка) ──────────────────── */

@@ -172,6 +172,17 @@ export function DashboardShell({
 
         <div className="dashboard-topbar__actions">
           {!unifiedCabinetNav ? headerExtra : null}
+          {unifiedCabinetNav ? (
+            <button
+              type="button"
+              className="dashboard-topbar__circle-action dashboard-topbar__circle-action--primary"
+              onClick={goCreateRoom}
+              title="Новая комната"
+              aria-label="Новая комната"
+            >
+              <FiRrIcon name="circle-phone" className="dashboard-topbar__new-room-fi" />
+            </button>
+          ) : null}
           {showCabinetQuickCircleActions ? (
             <>
               <Link
@@ -326,12 +337,14 @@ export function DashboardShell({
                   <span className="dashboard-messenger-quick-menu__lbl">Друзья</span>
                 </Link>
               ) : null}
-              <button type="button" className="dashboard-messenger-quick-menu__btn" onClick={goCreateRoomFromMenu}>
-                <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
-                  <FiRrIcon name="circle-phone" />
-                </span>
-                <span className="dashboard-messenger-quick-menu__lbl">Новая комната</span>
-              </button>
+              {!unifiedCabinetNav ? (
+                <button type="button" className="dashboard-messenger-quick-menu__btn" onClick={goCreateRoomFromMenu}>
+                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                    <FiRrIcon name="circle-phone" />
+                  </span>
+                  <span className="dashboard-messenger-quick-menu__lbl">Новая комната</span>
+                </button>
+              ) : null}
               {canAccessAdmin ? (
                 <Link to="/admin" className="dashboard-messenger-quick-menu__btn" onClick={closeCabinetMenu}>
                   <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
