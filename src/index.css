@@ -2324,6 +2324,32 @@ html.app-root--room #root {
   cursor: not-allowed;
 }
 
+.messenger-push-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.messenger-settings-reset-btn {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  border-radius: 999px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.messenger-settings-reset-btn:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.messenger-settings-reset-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .dashboard-topbar__push:disabled {
   opacity: 0.55;
   cursor: wait;

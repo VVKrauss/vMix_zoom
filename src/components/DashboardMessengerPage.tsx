@@ -18,9 +18,11 @@ import {
 import {
   disableMessengerPush,
   enableMessengerPush,
+  hardResetMessengerPush,
   isMessengerPushSubscribed,
   isMessengerWebPushConfigured,
   isWebPushApiSupported,
+  reconcileMessengerPushSubscription,
 } from '../lib/messengerWebPush'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useProfile } from '../hooks/useProfile'
@@ -510,6 +512,17 @@ export function DashboardMessengerPage() {
       setPushUi('denied')
       return
     }
+
+    const reconciled = await reconcileMessengerPushSubscription(user.id)
+    if (!reconciled.ok && reconciled.error) {
+      setError(reconciled.error)
+    }
+
+    if (reconciled.state === 'denied') {
+      setPushUi('denied')
+      return
+    }
+
     const subbed = await isMessengerPushSubscribed()
     setPushUi(subbed ? 'on' : 'off')
   }, [user?.id])
@@ -551,6 +564,23 @@ export function DashboardMessengerPage() {
       setPushBusy(false)
     }
   }, [user?.id, pushUi, pushBusy, refreshPushUi])
+
+  const resetMessengerPush = useCallback(async () => {
+    if (!user?.id || pushBusy || pushUi === 'absent' || pushUi === 'unconfigured') return
+
+    setPushBusy(true)
+    try {
+      const res = await hardResetMessengerPush(user.id)
+      if (!res.ok) {
+        setError(res.error ?? 'Не удалось сбросить push')
+        await refreshPushUi()
+        return
+      }
+      await refreshPushUi()
+    } finally {
+      setPushBusy(false)
+    }
+  }, [user?.id, pushBusy, pushUi, refreshPushUi])
 
   const [loading, setLoading] = useState(true)
   const [threadLoading, setThreadLoading] = useState(false)
@@ -1956,61 +1986,22 @@ export function DashboardMessengerPage() {
       canAccessAdmin={canAccessAdmin}
       onSignOut={() => signOut()}
       chromeless={isMobileMessenger}
+      suppressBurger={!isMobileMessenger}
       headerExtra={
         !isMobileMessenger ? (
           <div className="dashboard-topbar__messenger-controls">
-            <Link
-              to="/dashboard"
-              className="dashboard-topbar__messenger-back"
-              title="Назад в кабинет"
-              aria-label="Назад в кабинет"
-            >
-              <ChevronLeftIcon />
-            </Link>
             <button
               type="button"
-              className="dashboard-topbar__messenger-settings"
-              onClick={() => setMessengerSettingsOpen(true)}
-              title="Настройки мессенджера"
-              aria-label="Настройки мессенджера"
+              className={`dashboard-messenger__list-head-btn${
+                messengerMenuOpen ? ' dashboard-messenger__list-head-btn--open' : ''
+              }`}
+              onClick={() => setMessengerMenuOpen((v) => !v)}
+              aria-label={messengerMenuOpen ? 'Закрыть меню' : 'Меню'}
+              title="Меню"
+              aria-expanded={messengerMenuOpen}
             >
-              <FiRrIcon name="settings" className="dashboard-topbar__messenger-settings-fi" />
+              <MenuBurgerIcon />
             </button>
-            <button
-              type="button"
-              className={`dashboard-topbar__sound${soundEnabled ? ' dashboard-topbar__sound--on' : ''}`}
-              onClick={() => {
-                const next = !soundEnabled
-                setSoundEnabled(next)
-                setMessengerSoundEnabled(next)
-              }}
-              aria-pressed={soundEnabled}
-              title={soundEnabled ? 'Выключить звук уведомлений' : 'Включить звук уведомлений'}
-            >
-              {soundEnabled ? <BellIcon /> : <BellOffIcon />}
-            </button>
-            {pushUi !== 'absent' ? (
-              <span
-                className="dashboard-topbar__push-toggle-wrap"
-                title={
-                  pushUi === 'unconfigured'
-                    ? 'В сборке нет VITE_VAPID_PUBLIC_KEY — добавьте в Timeweb / .env и пересоберите'
-                    : pushUi === 'on'
-                      ? 'Отключить push-уведомления'
-                      : pushUi === 'denied'
-                        ? 'Браузер запретил уведомления'
-                        : 'Включить push-уведомления'
-                }
-              >
-                <PillToggle
-                  compact
-                  checked={pushUi === 'on'}
-                  onCheckedChange={() => void toggleMessengerPush()}
-                  ariaLabel="Push-уведомления о личных сообщениях"
-                  disabled={pushBusy || pushUi === 'unconfigured' || pushUi === 'denied'}
-                />
-              </span>
-            ) : null}
           </div>
         ) : null
       }
@@ -2514,7 +2505,7 @@ export function DashboardMessengerPage() {
           </>
         ) : null}
 
-        {isMobileMessenger ? (
+        {messengerMenuOpen ? (
           <>
             <div
               className={`dashboard-messenger-quick-menu-backdrop${
@@ -2734,16 +2725,30 @@ export function DashboardMessengerPage() {
                   <div className="messenger-settings-modal__section">
                     <div className="messenger-settings-modal__push-row">
                       <span className="messenger-settings-modal__label">Push-уведомления</span>
-                      <PillToggle
-                        compact
-                        checked={pushUi === 'on'}
-                        onCheckedChange={() => void toggleMessengerPush()}
-                        offLabel="Выкл"
-                        onLabel="Вкл"
-                        ariaLabel="Push-уведомления о личных сообщениях"
-                        disabled={pushBusy || pushUi === 'unconfigured' || pushUi === 'denied'}
-                      />
+                      <div className="messenger-push-controls" role="group" aria-label="Управление push-уведомлениями">
+                        <PillToggle
+                          compact
+                          checked={pushUi === 'on'}
+                          onCheckedChange={() => void toggleMessengerPush()}
+                          offLabel="Выкл"
+                          onLabel="Вкл"
+                          ariaLabel="Push-уведомления о личных сообщениях"
+                          disabled={pushBusy || pushUi === 'unconfigured' || pushUi === 'denied'}
+                        />
+                        <button
+                          type="button"
+                          className="messenger-settings-reset-btn"
+                          onClick={() => { void resetMessengerPush() }}
+                          disabled={pushBusy || !user?.id || pushUi === 'unconfigured'}
+                          title="Жёсткий сброс: удалить подписку, unregister SW и переподключить push"
+                        >
+                          Сбросить и переподключить push
+                        </button>
+                      </div>
                     </div>
+                    <p className="messenger-settings-modal__hint">
+                      Если уведомления перестали приходить, выключите и включите их снова
+                    </p>
                     {pushUi === 'unconfigured' ? (
                       <p className="messenger-settings-modal__hint">
                         Нет ключа в сборке — пересоберите с VITE_VAPID_PUBLIC_KEY

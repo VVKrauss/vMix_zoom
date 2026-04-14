@@ -28,6 +28,8 @@ type DashboardShellProps = {
   children: ReactNode
   /** Мобильный мессенджер: без топбара и вкладок — навигация в FAB на странице. */
   chromeless?: boolean
+  /** Скрыть бургер в шапке (для страниц с собственным меню). */
+  suppressBurger?: boolean
   /** Доп. элементы в правой части шапки (например, переключатель звука на странице мессенджера). */
   headerExtra?: ReactNode
 }
@@ -48,6 +50,7 @@ export function DashboardShell({
   onSignOut,
   children,
   chromeless,
+  suppressBurger = false,
   headerExtra,
 }: DashboardShellProps) {
   const navigate = useNavigate()
@@ -58,7 +61,7 @@ export function DashboardShell({
   /** Единая шапка с бургером (как в моб. быстром меню), кроме раздела «Комнаты». */
   const unifiedCabinetNav = Boolean(!chromeless && active !== 'chats')
   /** Бургер в шапке: всегда для unified; для «Комнаты» только на узкой ширине. */
-  const showCabinetBurger = Boolean(!chromeless && (unifiedCabinetNav || isMobileCabinetNav))
+  const showCabinetBurger = Boolean(!chromeless && !suppressBurger && (unifiedCabinetNav || isMobileCabinetNav))
   /** Круглые кнопки мессенджер / новая комната / выход — только у «Комнаты» на десктопе. */
   const showCabinetQuickCircleActions = Boolean(!chromeless && active === 'chats' && !isMobileCabinetNav)
   const [cabinetMenuOpen, setCabinetMenuOpen] = useState(false)
