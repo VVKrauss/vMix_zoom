@@ -1,17 +1,32 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useUserPeek } from '../context/UserPeekContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useProfile } from '../hooks/useProfile'
 import { deleteMyAccount } from '../lib/accountLifecycle'
+import {
+  type RoomChatConversationSummary,
+  ROOM_CHAT_PAGE_SIZE,
+  listRoomChatConversationsForUser,
+} from '../lib/chatArchive'
+import { readHiddenIncomingFavoriteIds } from '../lib/dashboardIncomingFavoritesHidden'
+import { listMessengerPeersByMessageCount } from '../lib/messenger'
+import { normalizeProfileSlug, validateProfileSlugInput } from '../lib/profileSlug'
+import type { ContactCard } from '../lib/socialGraph'
+import { listMyContacts } from '../lib/socialGraph'
+import { fetchPersistentSpaceRoomsForUser, type PersistentSpaceRoomRow } from '../lib/spaceRoom'
 import { supabase } from '../lib/supabase'
 import type { StoredLayoutMode } from '../config/roomUiStorage'
 import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
-import { DashboardProfileModal } from './DashboardProfileModal'
+import { DashboardFriendsIncomingModal } from './DashboardFriendsIncomingModal'
 import { DashboardLayoutPicker } from './DashboardLayoutPicker'
+import type { ProfileSlugAvailability } from './DashboardProfileModal'
+import { DashboardProfileModal } from './DashboardProfileModal'
 import { PillToggle } from './PillToggle'
 import { DashboardShell } from './DashboardShell'
 import { ConfirmDialog } from './ConfirmDialog'
+import { SettingsGearIcon } from './icons'
 
 const STATUS_LABEL: Record<string, string> = {
   active: 'Активен',
@@ -44,6 +59,40 @@ function globalRoleBadgeClass(code: string): string {
   return 'dashboard-badge dashboard-badge--role'
 }
 
+function formatRoomTileDate(value: string | null): string {
+  if (!value) return '—'
+  const dt = new Date(value)
+  if (Number.isNaN(dt.getTime())) return '—'
+  return dt.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+/** Время последней активности в личке (для тайла «Друзья»). */
+function formatPeerGuestTime(iso: string | null): string {
+  if (!iso) return '—'
+  const dt = new Date(iso)
+  if (Number.isNaN(dt.getTime())) return '—'
+  const now = new Date()
+  const sameDay =
+    dt.getDate() === now.getDate() &&
+    dt.getMonth() === now.getMonth() &&
+    dt.getFullYear() === now.getFullYear()
+  if (sameDay) {
+    return `Сегодня, ${dt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
+  }
+  return dt.toLocaleString('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 export function DashboardPage() {
   const { signOut, user } = useAuth()
   const { openUserPeek } = useUserPeek()
@@ -60,6 +109,7 @@ export function DashboardPage() {
     saveSearchPrivacy,
     uploadAvatar,
     removeAvatar,
+    checkProfileSlugAvailable,
   } = useProfile()
 
   const [displayName, setDisplayName] = useState('')
@@ -84,6 +134,31 @@ export function DashboardPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteErr, setDeleteErr] = useState<string | null>(null)
+  const [slugAvailability, setSlugAvailability] = useState<ProfileSlugAvailability>('idle')
+  const [myRooms, setMyRooms] = useState<PersistentSpaceRoomRow[]>([])
+  const [myRoomsLoading, setMyRoomsLoading] = useState(false)
+  const [roomArchiveItems, setRoomArchiveItems] = useState<RoomChatConversationSummary[]>([])
+  const [roomArchiveLoading, setRoomArchiveLoading] = useState(false)
+  const [contacts, setContacts] = useState<ContactCard[]>([])
+  const [contactsTick, setContactsTick] = useState(0)
+  const [peerTop, setPeerTop] = useState<
+    { userId: string; messageCount: number; avatarUrl: string | null; lastMessageAt: string | null }[]
+  >([])
+  const [incomingModalOpen, setIncomingModalOpen] = useState(false)
+  const [hiddenIncomingIds, setHiddenIncomingIds] = useState<string[]>([])
+  const [showHiddenIncoming, setShowHiddenIncoming] = useState(false)
+
+  const refreshHiddenIncoming = useCallback(() => {
+    if (!user?.id) {
+      setHiddenIncomingIds([])
+      return
+    }
+    setHiddenIncomingIds(readHiddenIncomingFavoriteIds(user.id))
+  }, [user?.id])
+
+  useEffect(() => {
+    refreshHiddenIncoming()
+  }, [refreshHiddenIncoming, contactsTick])
 
   useEffect(() => {
     if (!profile) return
@@ -113,8 +188,83 @@ export function DashboardPage() {
     setSaveErr(null)
   }, [profileEditOpen, profile])
 
+  useEffect(() => {
+    let alive = true
+    void listMyContacts().then((r) => {
+      if (!alive) return
+      if (!r.error) setContacts(r.data ?? [])
+    })
+    return () => {
+      alive = false
+    }
+  }, [contactsTick])
+
+  useEffect(() => {
+    let alive = true
+    const uid = user?.id?.trim()
+    if (!uid) {
+      setMyRooms([])
+      setRoomArchiveItems([])
+      return
+    }
+    setMyRoomsLoading(true)
+    setRoomArchiveLoading(true)
+    void (async () => {
+      const [roomsRes, archRes] = await Promise.all([
+        fetchPersistentSpaceRoomsForUser(uid),
+        listRoomChatConversationsForUser(uid, { limit: ROOM_CHAT_PAGE_SIZE, offset: 0 }),
+      ])
+      if (!alive) return
+      if (!roomsRes.error) setMyRooms(roomsRes.data ?? [])
+      else setMyRooms([])
+      setMyRoomsLoading(false)
+      if (!archRes.error) setRoomArchiveItems(archRes.data ?? [])
+      else setRoomArchiveItems([])
+      setRoomArchiveLoading(false)
+    })()
+    return () => {
+      alive = false
+    }
+  }, [user?.id])
+
+  useEffect(() => {
+    void listMessengerPeersByMessageCount(6).then((r) => {
+      if (!r.error && r.data) setPeerTop(r.data)
+      else setPeerTop([])
+    })
+  }, [user?.id, contactsTick])
+
   const currentName = nameEdited ? displayName : (profile?.display_name ?? '')
   const currentSlug = slugEdited ? profileSlug : (profile?.profile_slug ?? '')
+
+  useEffect(() => {
+    if (!profileEditOpen || !profile) {
+      setSlugAvailability('idle')
+      return
+    }
+    const raw = currentSlug.trim()
+    if (!raw) {
+      setSlugAvailability('free')
+      return
+    }
+    const vErr = validateProfileSlugInput(raw)
+    if (vErr) {
+      setSlugAvailability('invalid')
+      return
+    }
+    const normalized = normalizeProfileSlug(raw)
+    if (normalized === (profile.profile_slug ?? '')) {
+      setSlugAvailability('free')
+      return
+    }
+    setSlugAvailability('checking')
+    const t = window.setTimeout(() => {
+      void checkProfileSlugAvailable(raw).then((ok) => {
+        setSlugAvailability(ok ? 'free' : 'taken')
+      })
+    }, 380)
+    return () => window.clearTimeout(t)
+  }, [profileEditOpen, profile, currentSlug, checkProfileSlugAvailable])
 
   const handleNameChange = (value: string) => {
     setDisplayName(value)
@@ -136,7 +286,11 @@ export function DashboardPage() {
     setSaveErr(null)
     const { error: err } = await saveProfile(currentName, currentSlug)
     if (err) setSaveErr(err)
-    else setSaveMsg('Сохранено')
+    else {
+      setSaveMsg('Сохранено')
+      setSlugEdited(false)
+      setNameEdited(false)
+    }
   }
 
   const handleModalAvatarUpload = async (file: File) => {
@@ -208,6 +362,27 @@ export function DashboardPage() {
     else setRoomSaveMsg('Сохранено')
   }
 
+  const persistentSlugs = useMemo(() => new Set(myRooms.map((r) => r.slug)), [myRooms])
+  const persistentPreview = useMemo(() => myRooms.slice(0, 3), [myRooms])
+  const temporaryPreview = useMemo(() => {
+    return roomArchiveItems
+      .filter((it) => it.roomSlug && !persistentSlugs.has(it.roomSlug))
+      .slice(0, 6)
+  }, [roomArchiveItems, persistentSlugs])
+
+  const hiddenIncomingSet = useMemo(() => new Set(hiddenIncomingIds), [hiddenIncomingIds])
+  const incomingRequests = useMemo(
+    () => contacts.filter((c) => c.favorsMe && !c.isFavorite),
+    [contacts],
+  )
+  const visibleIncomingCount = useMemo(
+    () => incomingRequests.filter((c) => !hiddenIncomingSet.has(c.targetUserId)).length,
+    [incomingRequests, hiddenIncomingSet],
+  )
+
+  const searchOpen = !searchClosed
+  const noSearchAxes = searchOpen && !allowSearchName && !allowSearchEmail && !allowSearchSlug
+
   if (loading) {
     return (
       <DashboardShell active="cabinet" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
@@ -226,11 +401,83 @@ export function DashboardPage() {
 
   const initials = profile.display_name.charAt(0).toUpperCase()
 
-  const searchOpen = !searchClosed
-  const noSearchAxes = searchOpen && !allowSearchName && !allowSearchEmail && !allowSearchSlug
-
   return (
     <DashboardShell active="cabinet" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
+      <DashboardFriendsIncomingModal
+        open={incomingModalOpen}
+        onClose={() => setIncomingModalOpen(false)}
+        userId={user?.id ?? ''}
+        items={contacts}
+        hiddenIds={hiddenIncomingIds}
+        showHidden={showHiddenIncoming}
+        onShowHiddenChange={setShowHiddenIncoming}
+        onHiddenChange={() => {
+          refreshHiddenIncoming()
+        }}
+        onContactsUpdated={() => {
+          setContactsTick((n) => n + 1)
+        }}
+      />
+
+      <DashboardProfileModal
+        open={profileEditOpen}
+        onClose={closeProfileModal}
+        displayName={currentName}
+        onDisplayNameChange={handleNameChange}
+        profileSlug={currentSlug}
+        onProfileSlugChange={handleSlugChange}
+        currentName={currentName}
+        email={profile.email ?? ''}
+        avatarUrl={profile.avatar_url}
+        avatarAlt={profile.display_name}
+        initials={initials}
+        saving={saving}
+        uploadingAvatar={uploadingAvatar}
+        saveErr={saveErr}
+        saveMsg={saveMsg}
+        onSave={handleSave}
+        onRemoveAvatar={() => {
+          void handleRemoveAvatar()
+        }}
+        onUploadAvatar={(file) => {
+          void handleModalAvatarUpload(file)
+        }}
+        searchOpen={searchOpen}
+        onSearchOpenChange={(next) => {
+          setSearchClosed(!next)
+          setSearchPrivacyMsg(null)
+          setSearchPrivacyErr(null)
+        }}
+        allowSearchName={allowSearchName}
+        onAllowSearchNameChange={(v) => {
+          setAllowSearchName(v)
+          setSearchPrivacyMsg(null)
+          setSearchPrivacyErr(null)
+        }}
+        allowSearchEmail={allowSearchEmail}
+        onAllowSearchEmailChange={(v) => {
+          setAllowSearchEmail(v)
+          setSearchPrivacyMsg(null)
+          setSearchPrivacyErr(null)
+        }}
+        allowSearchSlug={allowSearchSlug}
+        onAllowSearchSlugChange={(v) => {
+          setAllowSearchSlug(v)
+          setSearchPrivacyMsg(null)
+          setSearchPrivacyErr(null)
+        }}
+        searchPrivacySaving={searchPrivacySaving}
+        searchPrivacyMsg={searchPrivacyMsg}
+        searchPrivacyErr={searchPrivacyErr}
+        onSaveSearchPrivacy={handleSaveSearchPrivacy}
+        noSearchAxes={noSearchAxes}
+        slugAvailability={slugAvailability}
+        onDeleteAccountClick={() => {
+          setDeleteErr(null)
+          setDeleteConfirmOpen(true)
+        }}
+      />
+
       <ConfirmDialog
         open={deleteConfirmOpen}
         title="Удалить аккаунт?"
@@ -260,43 +507,20 @@ export function DashboardPage() {
               return
             }
             setDeleteConfirmOpen(false)
+            closeProfileModal()
             await signOut()
           })()
         }}
       />
 
-      <DashboardProfileModal
-        open={profileEditOpen}
-        onClose={closeProfileModal}
-        displayName={currentName}
-        onDisplayNameChange={handleNameChange}
-        profileSlug={currentSlug}
-        onProfileSlugChange={handleSlugChange}
-        currentName={currentName}
-        email={profile.email ?? ''}
-        avatarUrl={profile.avatar_url}
-        avatarAlt={profile.display_name}
-        initials={initials}
-        saving={saving}
-        uploadingAvatar={uploadingAvatar}
-        saveErr={saveErr}
-        saveMsg={saveMsg}
-        onSave={handleSave}
-        onRemoveAvatar={() => {
-          void handleRemoveAvatar()
-        }}
-        onUploadAvatar={(file) => {
-          void handleModalAvatarUpload(file)
-        }}
-      />
-
-      <div className="dashboard-profile-account-row">
-        <section className="dashboard-section">
-          <h2 className="dashboard-section__title">Профиль</h2>
-          <div className="dashboard-profile-summary">
+      <div className="dashboard-tiles-wrap">
+        <div className="dashboard-tiles">
+        <section className="dashboard-tile dashboard-tile--profile">
+          <h2 className="dashboard-tile__title">Профиль и аккаунт</h2>
+          <div className="dashboard-tile-profile">
             <button
               type="button"
-              className="dashboard-profile-summary__avatar"
+              className="dashboard-tile-profile__avatar"
               aria-label="Просмотр профиля"
               onClick={() => {
                 if (user?.id) {
@@ -311,224 +535,203 @@ export function DashboardPage() {
               {profile.avatar_url ? (
                 <img src={profile.avatar_url} alt={profile.display_name} />
               ) : (
-                <span className="dashboard-profile-summary__initials">{initials}</span>
+                <span className="dashboard-tile-profile__initials">{initials}</span>
               )}
             </button>
-            <div className="dashboard-profile-summary__text">
-              <span className="dashboard-profile-summary__name">{profile.display_name}</span>
-              <span className="dashboard-profile-summary__email" title={profile.email ?? undefined}>
+            <div className="dashboard-tile-profile__main">
+              <div className="dashboard-tile-profile__line">
+                <span className="dashboard-tile-profile__name">{profile.display_name}</span>
+                <button
+                  type="button"
+                  className="dashboard-tile-profile__settings"
+                  title="Настройки профиля"
+                  aria-label="Настройки профиля"
+                  onClick={() => setProfileEditOpen(true)}
+                >
+                  <SettingsGearIcon />
+                </button>
+              </div>
+              {profile.profile_slug ? (
+                <span className="dashboard-tile-profile__nick">@{profile.profile_slug}</span>
+              ) : null}
+              <span className="dashboard-tile-profile__email" title={profile.email ?? undefined}>
                 {profile.email ?? '—'}
               </span>
+              <div className="dashboard-tile-profile__badges">
+                <span className={`dashboard-badge ${STATUS_CLASS[profile.status] ?? ''}`}>
+                  {STATUS_LABEL[profile.status] ?? profile.status}
+                </span>
+                {profile.global_roles.length > 0 ? (
+                  <div className="dashboard-role-badges">
+                    {profile.global_roles.map((role) => (
+                      <span
+                        key={role.code}
+                        className={globalRoleBadgeClass(role.code)}
+                        title={role.title ? `${role.title} (${role.code})` : role.code}
+                      >
+                        {GLOBAL_ROLE_LABEL[role.code] ?? role.title ?? role.code}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                <span className="dashboard-plan dashboard-plan--inline">
+                  <span className="dashboard-plan__name">{plan?.plan_name ?? 'Free'}</span>
+                  {plan?.sub_status ? (
+                    <span className="dashboard-badge dashboard-badge--active">{plan.sub_status}</span>
+                  ) : null}
+                </span>
+              </div>
             </div>
-            <button
-              type="button"
-              className="dashboard-profile-summary__edit"
-              onClick={() => setProfileEditOpen(true)}
-            >
-              Изменить
+          </div>
+          <div className="dashboard-tile__flex-fill" aria-hidden />
+          {deleteErr ? <p className="join-error dashboard-tile__foot-err">{deleteErr}</p> : null}
+        </section>
+
+        <section className="dashboard-tile dashboard-tile--rooms">
+          <h2 className="dashboard-tile__title">Комнаты</h2>
+          <div className="dashboard-tile__grow">
+          {myRoomsLoading || roomArchiveLoading ? (
+            <p className="dashboard-tile__hint">Загрузка…</p>
+          ) : (
+            <>
+              <h3 className="dashboard-tile__subtitle">Постоянные</h3>
+              {persistentPreview.length === 0 ? (
+                <p className="dashboard-tile__hint">Пока нет постоянных комнат.</p>
+              ) : (
+                <ul className="dashboard-tile-rooms__list">
+                  {persistentPreview.map((r) => (
+                    <li key={r.slug} className="dashboard-tile-rooms__row">
+                      <span className="dashboard-tile-rooms__dt">{formatRoomTileDate(r.createdAt)}</span>
+                      <Link to={`/r/${encodeURIComponent(r.slug)}`} className="dashboard-tile-rooms__name">
+                        {r.displayName?.trim() || r.slug}
+                      </Link>
+                      <span className="dashboard-tile-rooms__meta">—</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <h3 className="dashboard-tile__subtitle">Недавние</h3>
+              {temporaryPreview.length === 0 ? (
+                <p className="dashboard-tile__hint">Временных комнат в списке пока нет.</p>
+              ) : (
+                <ul className="dashboard-tile-rooms__list">
+                  {temporaryPreview.map((it) => (
+                    <li key={it.id} className="dashboard-tile-rooms__row">
+                      <span className="dashboard-tile-rooms__dt">
+                        {formatRoomTileDate(it.lastMessageAt ?? it.createdAt)}
+                      </span>
+                      <span className="dashboard-tile-rooms__name" title={it.title}>
+                        {it.title}
+                      </span>
+                      <span className="dashboard-tile-rooms__meta">{it.messageCount} сообщ.</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+          </div>
+          <Link to="/dashboard/chats" className="dashboard-tile__more">
+            Подробнее
+          </Link>
+        </section>
+
+        <section className="dashboard-tile dashboard-tile--friends">
+          <h2 className="dashboard-tile__title">Друзья</h2>
+          <div className="dashboard-tile-friends__head">
+            <span className="dashboard-tile-friends__label">Запросы из избранного</span>
+            {visibleIncomingCount > 0 ? (
+              <span className="dashboard-tile-friends__count">{visibleIncomingCount}</span>
+            ) : (
+              <span className="dashboard-tile-friends__count dashboard-tile-friends__count--zero">0</span>
+            )}
+            <button type="button" className="dashboard-tile__more-btn" onClick={() => setIncomingModalOpen(true)}>
+              Подробнее
             </button>
           </div>
+          <div className="dashboard-tile-friends__grid" aria-label="Чаще всего в личных сообщениях">
+            {peerTop.length === 0 ? (
+              <p className="dashboard-tile__hint dashboard-tile-friends__grid-empty">Нет данных по перепискам.</p>
+            ) : (
+              peerTop.map((p) => {
+                const name = contacts.find((c) => c.targetUserId === p.userId)?.displayName ?? 'Гость'
+                return (
+                  <button
+                    key={p.userId}
+                    type="button"
+                    className="dashboard-tile-friends__card"
+                    title={`${p.messageCount} сообщ.`}
+                    onClick={() =>
+                      openUserPeek({
+                        userId: p.userId,
+                        displayName: name,
+                        avatarUrl: p.avatarUrl,
+                      })
+                    }
+                  >
+                    <div className="dashboard-tile-friends__card-avatar">
+                      {p.avatarUrl ? (
+                        <img src={p.avatarUrl} alt="" />
+                      ) : (
+                        <span>{name.charAt(0).toUpperCase()}</span>
+                      )}
+                    </div>
+                    <div className="dashboard-tile-friends__card-name" title={name}>
+                      {name}
+                    </div>
+                    <div className="dashboard-tile-friends__card-time">{formatPeerGuestTime(p.lastMessageAt)}</div>
+                  </button>
+                )
+              })
+            )}
+          </div>
+          <Link to="/dashboard/friends" className="dashboard-tile__more">
+            Подробнее — все друзья
+          </Link>
         </section>
 
-        <section className="dashboard-section">
-          <h2 className="dashboard-section__title">Аккаунт</h2>
-
-          <div className="dashboard-meta-grid">
-            <div className="dashboard-meta-item">
-              <span className="dashboard-meta-item__label">Статус</span>
-              <span className={`dashboard-badge ${STATUS_CLASS[profile.status] ?? ''}`}>
-                {STATUS_LABEL[profile.status] ?? profile.status}
-              </span>
-            </div>
-
-            <div className="dashboard-meta-item dashboard-meta-item--roles">
-              <span className="dashboard-meta-item__label">Роли на платформе</span>
-              {profile.global_roles.length > 0 ? (
-                <div className="dashboard-role-badges">
-                  {profile.global_roles.map((role) => (
-                    <span
-                      key={role.code}
-                      className={globalRoleBadgeClass(role.code)}
-                      title={role.title ? `${role.title} (${role.code})` : role.code}
-                    >
-                      {GLOBAL_ROLE_LABEL[role.code] ?? role.title ?? role.code}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <span className="dashboard-meta-item__empty">Стандартный доступ</span>
-              )}
-            </div>
-
-            <div className="dashboard-meta-item">
-              <span className="dashboard-meta-item__label">Тарифный план</span>
-              <div className="dashboard-plan">
-                <span className="dashboard-plan__name">{plan?.plan_name ?? 'Free'}</span>
-                {plan?.sub_status ? (
-                  <span className="dashboard-badge dashboard-badge--active">{plan.sub_status}</span>
-                ) : null}
-                {plan?.trial_ends_at ? (
-                  <span className="dashboard-plan__trial">
-                    Пробный до {new Date(plan.trial_ends_at).toLocaleDateString('ru-RU')}
-                  </span>
-                ) : null}
+        <section className="dashboard-tile dashboard-tile--room-prefs">
+          <h2 className="dashboard-tile__title">Настройки комнаты по умолчанию</h2>
+          <form onSubmit={handleSaveRoomPrefs} className="dashboard-form dashboard-form--compact">
+            <div className="dashboard-field">
+              <div className="dashboard-field__inline">
+                <span className="dashboard-field__label">Вид</span>
+                <DashboardLayoutPicker value={roomLayout} onChange={setRoomLayout} />
               </div>
             </div>
-
-            <div className="dashboard-meta-item dashboard-meta-item--block">
-              <span className="dashboard-meta-item__label">Опасная зона</span>
-              <p className="dashboard-meta-item__hint">
-                Удаление аккаунта необратимо: восстановить доступ к материалам и перепискам будет нельзя.
-              </p>
-              {deleteErr ? <p className="join-error">{deleteErr}</p> : null}
-              <button
-                type="button"
-                className="dashboard-account-delete"
-                onClick={() => {
-                  setDeleteErr(null)
-                  setDeleteConfirmOpen(true)
-                }}
-              >
-                Удалить аккаунт
-              </button>
+            <div className="dashboard-field">
+              <div className="dashboard-field__inline dashboard-field__inline--toggle">
+                <span className="dashboard-field__label">Кнопка смены вида</span>
+                <PillToggle
+                  checked={roomShowLayoutToggle}
+                  onCheckedChange={setRoomShowLayoutToggle}
+                  offLabel="Скрыта"
+                  onLabel="Показана"
+                  ariaLabel="Показывать круглую кнопку смены вида в комнате"
+                />
+              </div>
             </div>
-          </div>
+            <div className="dashboard-field">
+              <div className="dashboard-field__inline dashboard-field__inline--toggle">
+                <span className="dashboard-field__label">Скрывать поля у камеры</span>
+                <PillToggle
+                  checked={roomHideVideoLetterboxing}
+                  onCheckedChange={setRoomHideVideoLetterboxing}
+                  offLabel="Нет"
+                  onLabel="Да"
+                  ariaLabel="Обрезать видео камеры под плитку без чёрных полей"
+                />
+              </div>
+            </div>
+            {roomSaveErr ? <p className="join-error">{roomSaveErr}</p> : null}
+            {roomSaveMsg ? <p className="dashboard-save-ok">{roomSaveMsg}</p> : null}
+            <button type="submit" className="join-btn dashboard-form__save" disabled={roomSaving}>
+              {roomSaving ? 'Сохранение…' : 'Сохранить'}
+            </button>
+          </form>
         </section>
+        </div>
       </div>
-
-      <section className="dashboard-section">
-        <h2 className="dashboard-section__title">Поиск по профилю</h2>
-        <p className="dashboard-section__lead">
-          Другие пользователи могут находить вас на странице «Друзья» по глобальному поиску только если вы разрешите это
-          явно.
-        </p>
-        <form onSubmit={handleSaveSearchPrivacy} className="dashboard-form">
-          <div className="dashboard-field">
-            <div className="dashboard-field__inline dashboard-field__inline--toggle">
-              <span className="dashboard-field__label">Участвовать в глобальном поиске</span>
-              <PillToggle
-                checked={searchOpen}
-                onCheckedChange={(next) => {
-                  setSearchClosed(!next)
-                  setSearchPrivacyMsg(null)
-                  setSearchPrivacyErr(null)
-                }}
-                offLabel="Закрыт"
-                onLabel="Открыт"
-                ariaLabel="Профиль в глобальном поиске пользователей"
-              />
-            </div>
-          </div>
-          <div className="dashboard-field">
-            <span className="dashboard-field__label">Разрешить находить по</span>
-            <div className="dashboard-field__stack">
-              <div className="dashboard-field__inline dashboard-field__inline--toggle">
-                <span className="dashboard-field__sublabel">Имени</span>
-                <PillToggle
-                  compact
-                  checked={allowSearchName}
-                  onCheckedChange={(v) => {
-                    setAllowSearchName(v)
-                    setSearchPrivacyMsg(null)
-                    setSearchPrivacyErr(null)
-                  }}
-                  offLabel="Нет"
-                  onLabel="Да"
-                  ariaLabel="Поиск по имени"
-                  disabled={searchClosed}
-                />
-              </div>
-              <div className="dashboard-field__inline dashboard-field__inline--toggle">
-                <span className="dashboard-field__sublabel">Электронной почте</span>
-                <PillToggle
-                  compact
-                  checked={allowSearchEmail}
-                  onCheckedChange={(v) => {
-                    setAllowSearchEmail(v)
-                    setSearchPrivacyMsg(null)
-                    setSearchPrivacyErr(null)
-                  }}
-                  offLabel="Нет"
-                  onLabel="Да"
-                  ariaLabel="Поиск по email"
-                  disabled={searchClosed}
-                />
-              </div>
-              <div className="dashboard-field__inline dashboard-field__inline--toggle">
-                <span className="dashboard-field__sublabel">Slug (@ник)</span>
-                <PillToggle
-                  compact
-                  checked={allowSearchSlug}
-                  onCheckedChange={(v) => {
-                    setAllowSearchSlug(v)
-                    setSearchPrivacyMsg(null)
-                    setSearchPrivacyErr(null)
-                  }}
-                  offLabel="Нет"
-                  onLabel="Да"
-                  ariaLabel="Поиск по slug"
-                  disabled={searchClosed}
-                />
-              </div>
-            </div>
-            {searchClosed ? (
-              <p className="dashboard-field__note">Пока профиль закрыт, вы не отображаетесь в поиске.</p>
-            ) : null}
-            {noSearchAxes ? (
-              <p className="join-error">
-                Включён открытый режим, но не выбран ни один способ поиска — вас никто не найдёт, пока не включите хотя бы
-                один пункт.
-              </p>
-            ) : null}
-          </div>
-          {searchPrivacyErr ? <p className="join-error">{searchPrivacyErr}</p> : null}
-          {searchPrivacyMsg ? <p className="dashboard-save-ok">{searchPrivacyMsg}</p> : null}
-          <button type="submit" className="join-btn dashboard-form__save" disabled={searchPrivacySaving}>
-            {searchPrivacySaving ? 'Сохранение…' : 'Сохранить настройки поиска'}
-          </button>
-        </form>
-      </section>
-
-      <section className="dashboard-section">
-        <h2 className="dashboard-section__title">Настройки комнаты</h2>
-        <form onSubmit={handleSaveRoomPrefs} className="dashboard-form">
-          <div className="dashboard-field">
-            <div className="dashboard-field__inline">
-              <span className="dashboard-field__label">Вид по умолчанию</span>
-              <DashboardLayoutPicker value={roomLayout} onChange={setRoomLayout} />
-            </div>
-          </div>
-          <div className="dashboard-field">
-            <div className="dashboard-field__inline dashboard-field__inline--toggle">
-              <span className="dashboard-field__label">Кнопка смены вида в комнате</span>
-              <PillToggle
-                checked={roomShowLayoutToggle}
-                onCheckedChange={setRoomShowLayoutToggle}
-                offLabel="Скрыта"
-                onLabel="Показана"
-                ariaLabel="Показывать круглую кнопку смены вида в комнате"
-              />
-            </div>
-          </div>
-          <div className="dashboard-field">
-            <div className="dashboard-field__inline dashboard-field__inline--toggle">
-              <span className="dashboard-field__label">Скрывать поля у камеры</span>
-              <PillToggle
-                checked={roomHideVideoLetterboxing}
-                onCheckedChange={setRoomHideVideoLetterboxing}
-                offLabel="Нет"
-                onLabel="Да"
-                ariaLabel="Обрезать видео камеры под плитку без чёрных полей; выключено — весь кадр вписан в плитку"
-              />
-            </div>
-          </div>
-          {roomSaveErr ? <p className="join-error">{roomSaveErr}</p> : null}
-          {roomSaveMsg ? <p className="dashboard-save-ok">{roomSaveMsg}</p> : null}
-          <button type="submit" className="join-btn dashboard-form__save" disabled={roomSaving}>
-            {roomSaving ? 'Сохранение…' : 'Сохранить настройки комнаты'}
-          </button>
-        </form>
-      </section>
     </DashboardShell>
   )
 }

@@ -175,6 +175,33 @@ export async function getDirectConversationForUser(
   return { data: item, error: null }
 }
 
+/** Собеседники по числу сообщений в личке (без «Сохранённого»: otherUserId = null). */
+export async function listMessengerPeersByMessageCount(
+  limit = 6,
+): Promise<{
+  data: {
+    userId: string
+    messageCount: number
+    avatarUrl: string | null
+    lastMessageAt: string | null
+  }[] | null
+  error: string | null
+}> {
+  const res = await listDirectConversationsForUser()
+  if (res.error) return { data: null, error: res.error }
+  const rows = (res.data ?? [])
+    .filter((c) => Boolean(c.otherUserId?.trim()))
+    .map((c) => ({
+      userId: c.otherUserId!.trim(),
+      messageCount: c.messageCount,
+      avatarUrl: c.avatarUrl,
+      lastMessageAt: c.lastMessageAt,
+    }))
+    .sort((a, b) => b.messageCount - a.messageCount)
+    .slice(0, Math.max(0, limit))
+  return { data: rows, error: null }
+}
+
 const DIRECT_MESSAGES_PAGE_MAX = 100
 
 /** Для PostgREST or(): значение created_at в двойных кавычках. */

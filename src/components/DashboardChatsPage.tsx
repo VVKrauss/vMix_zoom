@@ -175,6 +175,15 @@ export function DashboardChatsPage() {
     <DashboardShell active="chats" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
       <section className="dashboard-section">
         <div className="dashboard-chat-page__head">
+          <Link
+            to="/dashboard"
+            className="dashboard-page-back"
+            title="Назад в кабинет"
+            aria-label="Назад в кабинет"
+          >
+            <ChevronLeftIcon />
+            <span>Кабинет</span>
+          </Link>
           <h2 className="dashboard-section__title dashboard-chat-page__page-title">Комнаты</h2>
         </div>
 

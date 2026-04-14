@@ -253,7 +253,7 @@ export function RoomSession({ roomId }: Props) {
   // поставить [leave], cleanup предыдущего эффекта вызовет leave() и сорвёт join.
   useEffect(() => () => {
     if (statusRef.current === 'idle') return
-    leaveRef.current()
+    void Promise.resolve(leaveRef.current()).catch(() => {})
   }, [])
 
   /** Реальное подключение к комнате (вызывается после всех проверок). */
@@ -349,7 +349,7 @@ export function RoomSession({ roomId }: Props) {
         clearHostSessionIfMatches(rid)
       }
       clearRoomAutoResume(rid)
-      leave()
+      await leave()
       navigate('/', { replace: true })
     } finally {
       setLeaveBusy(false)

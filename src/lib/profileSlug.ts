@@ -25,6 +25,25 @@ export function normalizeProfileSlug(raw: string): string {
     .replace(/_+/g, '-')
 }
 
+/**
+ * Автогенерация ника: после `normalizeProfileSlug` вид `user-<8 hex-символов>`.
+ * Смесь времени регистрации и `crypto.getRandomValues` (коллизии добираются повтором в вызывающем коде).
+ */
+export function buildAutoProfileSlug(nowMs: number = Date.now()): string {
+  const buf = new Uint8Array(4)
+  if (typeof crypto !== 'undefined' && 'getRandomValues' in crypto) {
+    crypto.getRandomValues(buf)
+  } else {
+    for (let i = 0; i < 4; i++) buf[i] = Math.floor(Math.random() * 256)
+  }
+  const t = new DataView(new ArrayBuffer(4))
+  t.setUint32(0, (nowMs / 1000) >>> 0, false)
+  const tv = new Uint8Array(t.buffer)
+  for (let i = 0; i < 4; i++) buf[i] ^= tv[i]
+  const eight = Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('')
+  return normalizeProfileSlug(`user_${eight}`)
+}
+
 /** null — значение валидно (в т.ч. пустая строка = сброс slug). Строка — текст ошибки. */
 export function validateProfileSlugInput(raw: string): string | null {
   const t = normalizeProfileSlug(raw)

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { normalizeProfileSlug, validateProfileSlugInput } from '../lib/profileSlug'
+import { assignAutoProfileSlugIfEmpty, isProfileSlugAvailable } from '../lib/profileSlugAvailability'
 
 /** Глобальные роли из `user_global_roles` + справочник `roles`. */
 export interface UserGlobalRole {
@@ -52,6 +53,8 @@ interface UseProfileReturn {
   }) => Promise<{ error: string | null }>
   uploadAvatar: (file: File) => Promise<{ error: string | null }>
   removeAvatar: () => Promise<{ error: string | null }>
+  /** Проверка занятости ника (свой текущий ник считается свободным). */
+  checkProfileSlugAvailable: (rawSlug: string) => Promise<boolean>
 }
 
 export function useProfile(): UseProfileReturn {
@@ -113,13 +116,20 @@ export function useProfile(): UseProfileReturn {
         return a.code.localeCompare(b.code)
       })
 
+      let resolvedSlug: string | null =
+        typeof userData.profile_slug === 'string' && userData.profile_slug.trim()
+          ? userData.profile_slug.trim()
+          : null
+
+      if (!resolvedSlug) {
+        const assigned = await assignAutoProfileSlugIfEmpty(userData.id)
+        if (assigned.slug) resolvedSlug = assigned.slug
+      }
+
       setProfile({
         id: userData.id,
         display_name: userData.display_name,
-        profile_slug:
-          typeof userData.profile_slug === 'string' && userData.profile_slug.trim()
-            ? userData.profile_slug.trim()
-            : null,
+        profile_slug: resolvedSlug,
         email: userData.email ?? user.email ?? null,
         avatar_url: userData.avatar_url,
         status: userData.status,
@@ -159,8 +169,21 @@ export function useProfile(): UseProfileReturn {
       setLoading(false)
     }
 
-    fetchProfile()
+    void fetchProfile()
   }, [user])
+
+  const checkProfileSlugAvailable = useCallback(
+    async (rawSlug: string): Promise<boolean> => {
+      if (!user) return false
+      const raw = rawSlug.trim()
+      if (!raw) return true
+      const err = validateProfileSlugInput(raw)
+      if (err) return false
+      const normalized = normalizeProfileSlug(raw)
+      return isProfileSlugAvailable(normalized, user.id)
+    },
+    [user],
+  )
 
   const saveProfile = useCallback(
     async (displayName: string, profileSlugRaw?: string): Promise<{ error: string | null }> => {
@@ -185,6 +208,13 @@ export function useProfile(): UseProfileReturn {
             return { error: slugErr }
           }
           nextSlug = normalizeProfileSlug(raw)
+          if (nextSlug !== profile.profile_slug) {
+            const free = await isProfileSlugAvailable(nextSlug, user.id)
+            if (!free) {
+              setSaving(false)
+              return { error: 'Это имя пользователя уже занято' }
+            }
+          }
         }
       }
 
@@ -200,6 +230,9 @@ export function useProfile(): UseProfileReturn {
 
       if (dbErr) {
         setSaving(false)
+        if (dbErr.code === '23505') {
+          return { error: 'Это имя пользователя уже занято' }
+        }
         return { error: dbErr.message }
       }
 
@@ -328,5 +361,6 @@ export function useProfile(): UseProfileReturn {
     saveSearchPrivacy,
     uploadAvatar,
     removeAvatar,
+    checkProfileSlugAvailable,
   }
 }

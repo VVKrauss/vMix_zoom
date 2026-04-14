@@ -1,4 +1,5 @@
 ﻿import { useEffect, useRef } from 'react'
+import { FiRrIcon } from './icons'
 import { PillToggle } from './PillToggle'
 import { shouldClosePopoverOnOutsidePointer } from '../utils/popoverOutsideClick'
 import type { SimpleVideoQualityTier } from '../utils/simpleVideoQuality'
@@ -134,9 +135,5 @@ export function DevicePopover({
 }
 
 function CheckIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
-  )
+  return <FiRrIcon name="check" className="device-popover__check-fi" />
 }

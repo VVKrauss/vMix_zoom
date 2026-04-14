@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, ReactNode } from 'react'
+import { FiRrIcon } from './icons'
 import { useSrtCopyMenu } from './SrtCopyMenu'
 
 export interface PipPos  { x: number; y: number }
@@ -219,9 +220,5 @@ function clamp(v: number, min: number, max: number) {
 }
 
 function ResizeIcon() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-      <path d="M9 1L1 9M9 5L5 9M9 9H9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-    </svg>
-  )
+  return <FiRrIcon name="resize" className="pip-resize-handle__fi" />
 }

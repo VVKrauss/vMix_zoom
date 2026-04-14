@@ -10,6 +10,7 @@ import {
 import { DevicePopover } from './DevicePopover'
 import { PillToggle } from './PillToggle'
 import { ScreenSharePickerModal } from './ScreenSharePickerModal'
+import { ScreenShareGlyphMonitor, ScreenShareGlyphTab, ScreenShareGlyphWindow } from './ScreenShareSurfaceGlyphs'
 import type { VideoPreset } from '../types'
 import { presetToSimpleTier, simpleTierToPreset } from '../utils/simpleVideoQuality'
 import type { LayoutMode, VmixIngressPhase } from './RoomPage'
@@ -17,7 +18,16 @@ import type { SpaceRoomChatVisibility } from '../lib/spaceRoom'
 import { SPACE_ROOM_CHAT_POLICY_SELECT_OPTIONS } from '../lib/spaceRoom'
 import type { SpaceRoomAccessMode } from '../hooks/useSpaceRoomSettings'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
-import { MicIcon, MicOffIcon, CamIcon, CamOffIcon, InviteIcon, EndCallIcon } from './icons'
+import {
+  MicIcon,
+  MicOffIcon,
+  CamIcon,
+  CamOffIcon,
+  InviteIcon,
+  EndCallIcon,
+  FiRrIcon,
+  ChatBubbleIcon,
+} from './icons'
 import { useOnOutsideClick } from '../hooks/useOnOutsideClick'
 import { nextLayoutMode } from '../config/layoutModeCycle'
 
@@ -34,16 +44,8 @@ function layoutModeLabel(mode: LayoutMode): string {
   }
 }
 
-/** Одна иконка для смены раскладки: 2×2, верхний левый — только рамка, остальные залиты. */
 function LayoutModePickerIcon() {
-  return (
-    <svg className="layout-mode-picker-icon" width="20" height="20" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-      <rect x="0.5" y="0.5" width="6" height="6" rx="0.75" fill="none" stroke="currentColor" strokeWidth="1" />
-      <rect x="9" y="0" width="7" height="7" rx="0.75" />
-      <rect x="0" y="9" width="7" height="7" rx="0.75" />
-      <rect x="9" y="9" width="7" height="7" rx="0.75" />
-    </svg>
-  )
+  return <FiRrIcon name="grid" className="layout-mode-picker-icon" />
 }
 
 interface Props {
@@ -914,36 +916,15 @@ export function ControlsBar({
 }
 
 function ProgramSpeakerIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-      <path d="M3 10v4h4l5 5V5L7 10H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
-    </svg>
-  )
+  return <FiRrIcon name="speaker" className="ctrl-playout-fi" />
 }
 
 function ProgramSpeakerMutedIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-      <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
-    </svg>
-  )
-}
-
-function ChatBubbleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 7.5 7.5 0 0114-3 7.5 7.5 0 013 6z" />
-    </svg>
-  )
+  return <FiRrIcon name="volume-slash" className="ctrl-playout-fi" />
 }
 
 function ReactionEmojiIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <circle cx="12" cy="12" r="10" />
-      <path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01" />
-    </svg>
-  )
+  return <FiRrIcon name="smile" />
 }
 
 function LayoutPopover({
@@ -981,36 +962,6 @@ function LayoutPopover({
   )
 }
 
-function ScreenPickIconMonitor() {
-  return (
-    <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
-      <rect x="6" y="8" width="36" height="26" rx="3" />
-      <path d="M16 38h16M24 34v4" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function ScreenPickIconWindow() {
-  return (
-    <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
-      <rect x="8" y="12" width="32" height="28" rx="2" />
-      <path d="M8 18h32" />
-      <circle cx="14" cy="15" r="1.5" fill="currentColor" stroke="none" />
-      <circle cx="19" cy="15" r="1.5" fill="currentColor" stroke="none" />
-    </svg>
-  )
-}
-
-function ScreenPickIconTab() {
-  return (
-    <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
-      <path d="M6 14h36v22a3 3 0 01-3 3H9a3 3 0 01-3-3V14z" />
-      <path d="M6 14V11a3 3 0 013-3h30a3 3 0 013 3v3" />
-      <path d="M18 22h16M18 28h10" strokeLinecap="round" opacity="0.6" />
-    </svg>
-  )
-}
-
 function ShareSourcePopover({
   isSharing,
   onClose,
@@ -1035,15 +986,21 @@ function ShareSourcePopover({
       ) : (
         <>
           <button type="button" className="device-popover__item" onClick={() => onPick('monitor')}>
-            <span className="screen-share-source-popover__icon" aria-hidden><ScreenPickIconMonitor /></span>
+            <span className="screen-share-source-popover__icon" aria-hidden>
+              <ScreenShareGlyphMonitor />
+            </span>
             Весь экран
           </button>
           <button type="button" className="device-popover__item" onClick={() => onPick('window')}>
-            <span className="screen-share-source-popover__icon" aria-hidden><ScreenPickIconWindow /></span>
+            <span className="screen-share-source-popover__icon" aria-hidden>
+              <ScreenShareGlyphWindow />
+            </span>
             Окно приложения
           </button>
           <button type="button" className="device-popover__item" onClick={() => onPick('browser')}>
-            <span className="screen-share-source-popover__icon" aria-hidden><ScreenPickIconTab /></span>
+            <span className="screen-share-source-popover__icon" aria-hidden>
+              <ScreenShareGlyphTab />
+            </span>
             Вкладка браузера
           </button>
         </>
@@ -1311,54 +1268,25 @@ function SettingsPopover({
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
 function LeaveIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-      <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
-    </svg>
-  )
+  return <FiRrIcon name="circle-phone-hangup" />
 }
 
 function ScreenShareIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="2" y="3" width="20" height="14" rx="2" />
-      <path d="M8 21h8M12 17v4" />
-    </svg>
-  )
+  return <FiRrIcon name="screen" />
 }
+
 function ChevronIcon() {
-  return (
-    <svg className="ctrl-chevron__glyph" width="10" height="10" viewBox="0 0 10 10" fill="currentColor" aria-hidden>
-      <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
-    </svg>
-  )
+  return <FiRrIcon name="angle-small-down" className="ctrl-chevron__glyph" />
 }
 
 function HeadphonesIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M3 18v-6a9 9 0 0118 0v6" />
-      <path d="M21 19a2 2 0 01-2 2h-1v-8h1a2 2 0 012 2v4z" />
-      <path d="M3 19a2 2 0 002 2h1v-8H5a2 2 0 00-2 2v4z" />
-    </svg>
-  )
+  return <FiRrIcon name="headphones" />
 }
 
 function HeadphonesMutedIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M3 18v-6a9 9 0 0118 0v6" />
-      <path d="M21 19a2 2 0 01-2 2h-1v-8h1a2 2 0 012 2v4z" />
-      <path d="M3 19a2 2 0 002 2h1v-8H5a2 2 0 00-2 2v4z" />
-      <line x1="1" y1="1" x2="23" y2="23" />
-    </svg>
-  )
+  return <FiRrIcon name="volume-mute" />
 }
+
 function GearIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1.08-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.68 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.32 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
-    </svg>
-  )
+  return <FiRrIcon name="settings" />
 }

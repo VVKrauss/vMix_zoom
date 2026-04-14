@@ -32,7 +32,7 @@ export function NewsPage() {
 
   return (
     <div className="join-screen join-screen--themed news-page">
-      <div className="join-card join-card--news">
+      <div className="news-page__inner">
         <div className="news-page__head">
           <Link to="/" className="news-page__back" title="На главную" aria-label="На главную">
             <ChevronLeftIcon />

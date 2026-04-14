@@ -67,7 +67,6 @@ import {
   MenuBurgerIcon,
   ParticipantsBadgeIcon,
   XCloseIcon,
-  PlusIcon,
   RoomsIcon,
 } from './icons'
 import { DashboardShell } from './DashboardShell'
@@ -1960,6 +1959,14 @@ export function DashboardMessengerPage() {
       headerExtra={
         !isMobileMessenger ? (
           <div className="dashboard-topbar__messenger-controls">
+            <Link
+              to="/dashboard"
+              className="dashboard-topbar__messenger-back"
+              title="Назад в кабинет"
+              aria-label="Назад в кабинет"
+            >
+              <ChevronLeftIcon />
+            </Link>
             <button
               type="button"
               className="dashboard-topbar__messenger-settings"
@@ -2022,28 +2029,14 @@ export function DashboardMessengerPage() {
               <aside className="dashboard-messenger__list" aria-label="Список диалогов">
                 {isMobileMessenger ? (
                   <header className="dashboard-messenger__list-head">
-                    <button
-                      type="button"
-                      className="dashboard-messenger__list-head-user"
-                      aria-label="Мой профиль"
-                      title="Мой профиль"
-                      disabled={!user?.id}
-                      onClick={() => {
-                        if (user?.id) {
-                          openUserPeek({
-                            userId: user.id,
-                            displayName: profile?.display_name ?? user.email ?? 'Я',
-                            avatarUrl: profile?.avatar_url ?? null,
-                          })
-                        }
-                      }}
+                    <Link
+                      to="/dashboard"
+                      className="dashboard-messenger__list-head-back"
+                      title="Назад в кабинет"
+                      aria-label="Назад в кабинет"
                     >
-                      {profile?.avatar_url ? (
-                        <img src={profile.avatar_url} alt="" />
-                      ) : (
-                        <span>{conversationInitial(profile?.display_name || user?.email || 'Я')}</span>
-                      )}
-                    </button>
+                      <ChevronLeftIcon />
+                    </Link>
                     <input
                       id="messenger-chat-list-search"
                       type="search"
@@ -2063,7 +2056,7 @@ export function DashboardMessengerPage() {
                         aria-label="Новая комната"
                         title="Новая комната"
                       >
-                        <PlusIcon />
+                        <FiRrIcon name="circle-phone" />
                       </button>
                       <button
                         type="button"
@@ -2262,7 +2255,7 @@ export function DashboardMessengerPage() {
                               aria-label="Новая комната"
                               title="Новая комната"
                             >
-                              <PlusIcon />
+                              <FiRrIcon name="circle-phone" />
                             </button>
                             <button
                               type="button"
@@ -2564,26 +2557,9 @@ export function DashboardMessengerPage() {
                 </Link>
                 <button type="button" className="dashboard-messenger-quick-menu__btn" onClick={goCreateRoomFromMenu}>
                   <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
-                    <PlusIcon />
+                    <FiRrIcon name="circle-phone" />
                   </span>
                   <span className="dashboard-messenger-quick-menu__lbl">Новая комната</span>
-                </button>
-                <div
-                  className="dashboard-messenger-quick-menu__cell dashboard-messenger-quick-menu__cell--filler"
-                  aria-hidden
-                />
-                <button
-                  type="button"
-                  className="dashboard-messenger-quick-menu__btn"
-                  onClick={() => {
-                    closeMessengerMenu()
-                    setMessengerSettingsOpen(true)
-                  }}
-                >
-                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
-                    <FiRrIcon name="settings" />
-                  </span>
-                  <span className="dashboard-messenger-quick-menu__lbl">Настройки мессенджера</span>
                 </button>
                 {canAccessAdmin ? (
                   <Link to="/admin" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
@@ -2592,12 +2568,7 @@ export function DashboardMessengerPage() {
                     </span>
                     <span className="dashboard-messenger-quick-menu__lbl">Админка</span>
                   </Link>
-                ) : (
-                  <div
-                    className="dashboard-messenger-quick-menu__cell dashboard-messenger-quick-menu__cell--filler"
-                    aria-hidden
-                  />
-                )}
+                ) : null}
                 <button
                   type="button"
                   className="dashboard-messenger-quick-menu__btn dashboard-messenger-quick-menu__btn--danger dashboard-messenger-quick-menu__btn--span"

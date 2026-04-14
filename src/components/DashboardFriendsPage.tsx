@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useUserPeek } from '../context/UserPeekContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
@@ -11,7 +12,7 @@ import {
 } from '../lib/socialGraph'
 import { DashboardMenuPicker, type DashboardMenuOption } from './DashboardMenuPicker'
 import { DashboardShell } from './DashboardShell'
-import { StarIcon } from './icons'
+import { ChevronLeftIcon, StarIcon } from './icons'
 
 type FriendFilter = 'all' | 'friends' | 'favorites' | 'incoming'
 
@@ -183,7 +184,18 @@ export function DashboardFriendsPage() {
   return (
     <DashboardShell active="friends" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
       <section className="dashboard-section dashboard-friends-page">
-        <h2 className="dashboard-section__title dashboard-friends__page-title">Друзья и избранные</h2>
+        <div className="dashboard-chat-page__head dashboard-friends-page__head">
+          <Link
+            to="/dashboard"
+            className="dashboard-page-back"
+            title="Назад в кабинет"
+            aria-label="Назад в кабинет"
+          >
+            <ChevronLeftIcon />
+            <span>Кабинет</span>
+          </Link>
+          <h2 className="dashboard-section__title dashboard-friends__page-title">Друзья и избранные</h2>
+        </div>
 
         <div className="dashboard-chat-filters">
           <label className="dashboard-chat-filters__search">

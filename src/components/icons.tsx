@@ -1,272 +1,5 @@
 import type { HTMLAttributes } from 'react'
 
-/** SVG-иконки приложения (named exports). При ошибке «нет экспорта» в dev — очистить `node_modules/.vite` и перезапустить Vite. */
-export function MicIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-      <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
-      <path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8" />
-    </svg>
-  )
-}
-
-export function MicOffIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-      <line x1="1" y1="1" x2="23" y2="23" />
-      <path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6" />
-      <path d="M17 16.95A7 7 0 015 12v-2m14 0v2a7 7 0 01-.11 1.23M12 19v4M8 23h8" />
-    </svg>
-  )
-}
-
-export function CamIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-      <path d="M23 7l-7 5 7 5V7z" />
-      <rect x="1" y="5" width="15" height="14" rx="2" />
-    </svg>
-  )
-}
-
-/** Та же видеокамера, что у CamIcon, с перечёркиванием (камера выкл.). */
-export function CamOffIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-      <line x1="1" y1="1" x2="23" y2="23" />
-      <path d="M23 7l-7 5 7 5V7z" />
-      <rect x="1" y="5" width="15" height="14" rx="2" />
-    </svg>
-  )
-}
-
-export function DashboardIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-    </svg>
-  )
-}
-
-export function InviteIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <circle cx="9" cy="7" r="4" />
-      <path d="M3 21v-2a7 7 0 0 1 10.46-6.08" />
-      <line x1="19" y1="13" x2="19" y2="21" />
-      <line x1="15" y1="17" x2="23" y2="17" />
-    </svg>
-  )
-}
-
-export function ChatBubbleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M21 11.5a8.5 8.5 0 01-8.5 8.5 8.8 8.8 0 01-3.18-.58L3 21l1.73-5.08A8.5 8.5 0 1112.5 20" />
-    </svg>
-  )
-}
-
-/** Звук уведомлений мессенджера — контур, как у прочих иконок шапки кабинета. */
-export function BellIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9" />
-      <path d="M10.3 21a1.94 1.94 0 003.4 0" />
-    </svg>
-  )
-}
-
-export function BellOffIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <line x1="1" y1="1" x2="23" y2="23" />
-      <path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9" />
-      <path d="M10.3 21a1.94 1.94 0 003.4 0" />
-    </svg>
-  )
-}
-
-/** Назад (мобильный мессенджер и др.). */
-export function ChevronLeftIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M15 18l-6-6 6-6" />
-    </svg>
-  )
-}
-
-/** Вперёд (пагинация и др.). */
-export function ChevronRightIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M9 18l6-6-6-6" />
-    </svg>
-  )
-}
-
-/** Новая комната — плюс в шапке кабинета. */
-export function PlusIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
-  )
-}
-
-/** Выход из аккаунта — шапка кабинета. */
-export function LogOutIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
-      <polyline points="16 17 21 12 16 7" />
-      <line x1="21" y1="12" x2="9" y2="12" />
-    </svg>
-  )
-}
-
-export function HomeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-      <polyline points="9 22 9 12 15 12 15 22" />
-    </svg>
-  )
-}
-
-/** Комнаты / сетка эфиров — для раздела архивов комнат (не путать с личным мессенджером). */
-export function RoomsIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <rect x="3" y="3" width="7" height="9" rx="1.5" />
-      <rect x="14" y="3" width="7" height="5" rx="1.5" />
-      <rect x="14" y="12" width="7" height="9" rx="1.5" />
-      <rect x="3" y="16" width="7" height="5" rx="1.5" />
-    </svg>
-  )
-}
-
-export function StarIcon({ filled = false }: { filled?: boolean }) {
-  if (filled) {
-    return (
-      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-        <path d="M12 2.8l2.75 5.58 6.16.9-4.46 4.34 1.06 6.13L12 16.86 6.49 19.75l1.05-6.13L3.09 9.28l6.16-.9L12 2.8z" />
-      </svg>
-    )
-  }
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M12 2.8l2.75 5.58 6.16.9-4.46 4.34 1.06 6.13L12 16.86 6.49 19.75l1.05-6.13L3.09 9.28l6.16-.9L12 2.8z" />
-    </svg>
-  )
-}
-
-/** Завершить звонок: трубка в круге. */
-export function EndCallIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden>
-      <circle cx="12" cy="12" r="10" fill="currentColor" />
-      <path
-        fill="#fff"
-        d="M11.05 14.2c1.9.95 3.9.95 5.8 0 .28-.14.46-.42.46-.73v-.95c0-.26-.14-.5-.37-.63l-1.12-.56a.75.75 0 0 0-.88.18l-.35.47a.75.75 0 0 1-.95.18 6.2 6.2 0 0 1-2.18-2.18.75.75 0 0 1 .18-.95l.47-.35a.75.75 0 0 0 .18-.88l-.56-1.12a.75.75 0 0 0-.63-.37h-.95c-.31 0-.59.18-.73.46a8.1 8.1 0 0 0 0 7.4z"
-      />
-    </svg>
-  )
-}
-
-/** Во весь экран — четыре угла «наружу», одинаковый отступ от края viewBox. */
-export function FullscreenEnterIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M9 3H3v6M15 3h6v6M3 15v6h6M21 15v6h-6" />
-    </svg>
-  )
-}
-
-/** Выйти из полноэкранного — углы «внутрь», симметрично enter. */
-export function FullscreenExitIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6" />
-    </svg>
-  )
-}
-
-/** Участники в шапке комнаты: силуэты гостей. */
-export function ParticipantsBadgeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <circle cx="9" cy="7" r="3.5" />
-      <path d="M3 19v-1.5a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5V19" />
-      <circle cx="17" cy="8" r="2.5" />
-      <path d="M21 19v-1a3.5 3.5 0 0 0-2.45-3.33" />
-    </svg>
-  )
-}
-
-/** Админ-панель: щит (шапка кабинета). */
-export function AdminPanelIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </svg>
-  )
-}
-
-/** Человек со знаком вопроса — запросы на вход в комнату. */
-export function JoinRequestsIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <circle cx="8" cy="7" r="3.5" />
-      <path d="M2 19v-1.5a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5V19" />
-      <path d="M18 9a2 2 0 1 1 0-4 2 2 0 0 1 1.95 2.45" />
-      <line x1="20" y1="11" x2="20" y2="12.5" />
-      <circle cx="20" cy="14.5" r="0.6" fill="currentColor" stroke="none" />
-    </svg>
-  )
-}
-
-/** Вложение / фото в композере мессенджера — спокойный контур, как у прочих иконок кабинета. */
-export function AttachmentIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-    </svg>
-  )
-}
-
-/** Три полоски — меню (мобильный мессенджер и др.). */
-export function MenuBurgerIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-      <path d="M4 7h16M4 12h16M4 17h16" />
-    </svg>
-  )
-}
-
-/** Удалить из списка / корзина. */
-export function TrashIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <polyline points="3 6 5 6 21 6" />
-      <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-      <line x1="10" y1="11" x2="10" y2="17" />
-      <line x1="14" y1="11" x2="14" y2="17" />
-    </svg>
-  )
-}
-
-/** Закрыть (лайтбокс и др.). */
-export function XCloseIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
-      <path d="M18 6L6 18M6 6l12 12" />
-    </svg>
-  )
-}
-
 export type FiRrIconProps = {
   /** Имя иконки без префикса: `home` → классы `fi fi-rr-home`. Список: flaticon.com/uicons */
   name: string
@@ -286,4 +19,152 @@ export function FiRrIcon({ name, className, 'aria-hidden': ariaHidden, ...rest }
       {...rest}
     />
   )
+}
+
+/** SVG-иконки приложения (named exports). При ошибке «нет экспорта» в dev — очистить `node_modules/.vite` и перезапустить Vite. */
+export function MicIcon() {
+  return <FiRrIcon name="microphone" />
+}
+
+export function MicOffIcon({ className }: { className?: string }) {
+  return <FiRrIcon name="microphone-slash" className={className} />
+}
+
+export function CamIcon() {
+  return <FiRrIcon name="video-camera" />
+}
+
+export function CamOffIcon() {
+  return <FiRrIcon name="video-slash" />
+}
+
+export function DashboardIcon() {
+  return <FiRrIcon name="dashboard" />
+}
+
+export function InviteIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="9" cy="7" r="4" />
+      <path d="M3 21v-2a7 7 0 0 1 10.46-6.08" />
+      <line x1="19" y1="13" x2="19" y2="21" />
+      <line x1="15" y1="17" x2="23" y2="17" />
+    </svg>
+  )
+}
+
+export function ChatBubbleIcon() {
+  return <FiRrIcon name="comment" />
+}
+
+/** Звук уведомлений мессенджера — контур, как у прочих иконок шапки кабинета. */
+export function BellIcon() {
+  return <FiRrIcon name="bell" />
+}
+
+export function BellOffIcon() {
+  return <FiRrIcon name="bell-slash" />
+}
+
+/** Настройки: шестерёнка с «зубьями», не путать с солнцем (круг + лучи). */
+export function SettingsGearIcon({ className }: { className?: string } = {}) {
+  return <FiRrIcon name="settings" className={className} />
+}
+
+/** Назад (мобильный мессенджер и др.). */
+export function ChevronLeftIcon() {
+  return <FiRrIcon name="angle-small-left" />
+}
+
+/** Вперёд (пагинация и др.). */
+export function ChevronRightIcon() {
+  return <FiRrIcon name="angle-small-right" />
+}
+
+/** Новая комната — плюс в шапке кабинета. */
+export function PlusIcon() {
+  return <FiRrIcon name="plus" />
+}
+
+/** Выход из аккаунта — шапка кабинета. */
+export function LogOutIcon() {
+  return <FiRrIcon name="sign-out-alt" />
+}
+
+export function HomeIcon() {
+  return <FiRrIcon name="home" />
+}
+
+/** Комнаты / сетка эфиров — для раздела архивов комнат (не путать с личным мессенджером). */
+export function RoomsIcon() {
+  return <FiRrIcon name="grid" />
+}
+
+export function StarIcon({ filled = false }: { filled?: boolean }) {
+  if (filled) {
+    return (
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+        <path d="M12 2.8l2.75 5.58 6.16.9-4.46 4.34 1.06 6.13L12 16.86 6.49 19.75l1.05-6.13L3.09 9.28l6.16-.9L12 2.8z" />
+      </svg>
+    )
+  }
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 2.8l2.75 5.58 6.16.9-4.46 4.34 1.06 6.13L12 16.86 6.49 19.75l1.05-6.13L3.09 9.28l6.16-.9L12 2.8z" />
+    </svg>
+  )
+}
+
+/** Завершить звонок — трубка в круге (Flaticon). */
+export function EndCallIcon() {
+  return <FiRrIcon name="circle-phone-hangup" />
+}
+
+/** Во весь экран — четыре угла «наружу», одинаковый отступ от края viewBox. */
+export function FullscreenEnterIcon() {
+  return <FiRrIcon name="expand" />
+}
+
+/** Выйти из полноэкранного — углы «внутрь», симметрично enter. */
+export function FullscreenExitIcon() {
+  return <FiRrIcon name="compress" />
+}
+
+/** Участники в шапке комнаты: силуэты гостей. */
+export function ParticipantsBadgeIcon() {
+  return <FiRrIcon name="users" />
+}
+
+/** Админ-панель: щит (шапка кабинета). */
+export function AdminPanelIcon() {
+  return <FiRrIcon name="shield" />
+}
+
+/** Запросы на вход в комнату. */
+export function JoinRequestsIcon() {
+  return <FiRrIcon name="person-circle-question" />
+}
+
+/** Вложение / фото в композере мессенджера — спокойный контур, как у прочих иконок кабинета. */
+export function AttachmentIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+    </svg>
+  )
+}
+
+/** Три полоски — меню (мобильный мессенджер и др.). */
+export function MenuBurgerIcon() {
+  return <FiRrIcon name="menu-burger" />
+}
+
+/** Удалить из списка / корзина. */
+export function TrashIcon() {
+  return <FiRrIcon name="trash" />
+}
+
+/** Закрыть (лайтбокс и др.). */
+export function XCloseIcon() {
+  return <FiRrIcon name="cross" />
 }

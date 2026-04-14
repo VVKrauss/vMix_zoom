@@ -14,8 +14,6 @@ import {
     JoinRequestsIcon,
     ParticipantsBadgeIcon,
     ChatBubbleIcon,
-    FullscreenEnterIcon,
-    FullscreenExitIcon,
     FiRrIcon,
   } from './icons'
 import { useAuth } from '../context/AuthContext'
@@ -69,7 +67,6 @@ import { ReactionBurstOverlay } from './ReactionBurstOverlay'
 import { VmixIngressModal } from './VmixIngressModal'
 import { RoomInviteFriendsModal } from './RoomInviteFriendsModal'
 import { PillToggle } from './PillToggle'
-import { ThemeToggle } from './ThemeToggle'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useActiveSpeaker } from '../hooks/useActiveSpeaker'
 import { buildRoomInviteAbsoluteUrl } from '../utils/soloViewerParams'
@@ -178,35 +175,6 @@ function guestMuteTargetPeerId(tileId: string, localPeerId: string): string | nu
     return owner
   }
   return tileId
-}
-
-type DocumentWithFs = Document & {
-  webkitFullscreenElement?: Element | null
-  webkitFullscreenEnabled?: boolean
-  webkitExitFullscreen?: () => Promise<void>
-}
-
-type ElementWithFs = HTMLElement & {
-  webkitRequestFullscreen?: () => Promise<void> | void
-}
-
-function getBrowserFullscreenElement(): Element | null {
-  const d = document as DocumentWithFs
-  return document.fullscreenElement ?? d.webkitFullscreenElement ?? null
-}
-
-function canToggleBrowserFullscreen(): boolean {
-  if (typeof document === 'undefined') return false
-  const d = document as DocumentWithFs
-  const root = document.documentElement as ElementWithFs
-  return Boolean(
-    document.fullscreenEnabled ||
-    d.webkitFullscreenEnabled ||
-    document.exitFullscreen ||
-    d.webkitExitFullscreen ||
-    root.requestFullscreen ||
-    root.webkitRequestFullscreen,
-  )
 }
 
 export type LayoutMode = StoredLayoutMode
@@ -492,9 +460,6 @@ export function RoomPage({
   const inviteRef = useRef<HTMLDivElement>(null)
   const [roomSpaceSettingsOpen, setRoomSpaceSettingsOpen] = useState(false)
   const roomSpaceHeaderRef = useRef<HTMLDivElement>(null)
-  const [fullscreenActive, setFullscreenActive] = useState(false)
-  const fullscreenSupported = canToggleBrowserFullscreen()
-
   useEffect(() => {
     if (!inviteOpen) return
     const handler = (e: MouseEvent) => {
@@ -559,53 +524,6 @@ export function RoomPage({
     if (friendsInviteToastTimerRef.current != null) window.clearTimeout(friendsInviteToastTimerRef.current)
   }, [])
 
-  useEffect(() => {
-    const sync = () => setFullscreenActive(Boolean(getBrowserFullscreenElement()))
-    sync()
-    document.addEventListener('fullscreenchange', sync)
-    document.addEventListener('webkitfullscreenchange', sync)
-    return () => {
-      document.removeEventListener('fullscreenchange', sync)
-      document.removeEventListener('webkitfullscreenchange', sync)
-    }
-  }, [])
-
-  const toggleBrowserFullscreen = useCallback(async () => {
-    const d = document as DocumentWithFs
-    const root = document.documentElement as ElementWithFs
-    try {
-      if (getBrowserFullscreenElement()) {
-        if (document.exitFullscreen) await document.exitFullscreen()
-        else await d.webkitExitFullscreen?.()
-      } else if (root.requestFullscreen) {
-        await root.requestFullscreen()
-      } else {
-        await Promise.resolve(root.webkitRequestFullscreen?.())
-      }
-    } catch {
-      /* нет API, отклонено пользователем или iOS */
-    }
-  }, [])
-
-  const mobilePresentationActive = fullscreenSupported
-    ? fullscreenActive
-    : immersiveAutoHide && chromeHidden
-
-  const toggleMobilePresentationMode = useCallback(async () => {
-    if (fullscreenSupported) {
-      await toggleBrowserFullscreen()
-      return
-    }
-    if (mobilePresentationActive) {
-      setChromeHidden(false)
-      return
-    }
-    if (!immersiveAutoHideRef.current) {
-      setImmersiveAutoHide(true)
-    }
-    setChromeHidden(true)
-  }, [fullscreenSupported, mobilePresentationActive, setImmersiveAutoHide, toggleBrowserFullscreen])
-
   const { audioOutputs, refreshAudioOutputs } = useAudioOutputs()
   const [playoutVolume, setPlayoutVolume] = useLocalStorageNumber('vmix_playout_volume', 1, 0, 1)
   /** Громкость только потока программы vMix (у каждого гостя своя, localStorage). */
@@ -626,7 +544,6 @@ export function RoomPage({
   /** Открыта ли модалка запросов */
   const [joinRequestsOpen, setJoinRequestsOpen] = useState(false)
   const [roomManageModalOpen, setRoomManageModalOpen] = useState(false)
-  const [mobileRoomSpaceSheetOpen, setMobileRoomSpaceSheetOpen] = useState(false)
   /** Тост о новом запросе на вход */
   const [joinRequestToast, setJoinRequestToast] = useState<string | null>(null)
   const joinRequestToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -2071,7 +1988,6 @@ export function RoomPage({
                   />
                 </div>
               ) : null}
-              <ThemeToggle variant="inline" className="theme-toggle--dashboard theme-toggle--room-header" />
               {user && (
                 <button
                   type="button"
@@ -2178,18 +2094,6 @@ export function RoomPage({
             </div>
           </header>
         </div>
-      ) : null}
-
-      {!isViewportMobile && fullscreenSupported ? (
-        <button
-          type="button"
-          className="room-mobile-fullscreen-btn"
-          onClick={() => { void toggleMobilePresentationMode() }}
-          title={fullscreenActive ? 'Выйти из полноэкранного режима' : 'Во весь экран'}
-          aria-label={fullscreenActive ? 'Выйти из полноэкранного режима' : 'Во весь экран (как F11)'}
-        >
-          {mobilePresentationActive ? <FullscreenExitIcon /> : <FullscreenEnterIcon />}
-        </button>
       ) : null}
 
       {!isViewportMobile && showLayoutToggle && canUseElevatedRoomTools ? (
@@ -2416,53 +2320,6 @@ export function RoomPage({
           onRemoveRoomAdmin={(uid) => void handleRemoveRoomAdmin(uid)}
           onRemoveFromRoom={(peerId, opts) => void handleRemoveFromRoom(peerId, opts)}
         />
-      ) : null}
-
-      {isViewportMobile && canManageRoomSpace ? (
-        <>
-          <button
-            type="button"
-            className="room-mobile-room-space-fab"
-            title="Комната: настройки и управление"
-            aria-label="Комната: настройки и управление"
-            onClick={() => setMobileRoomSpaceSheetOpen(true)}
-          >
-            <FiRrIcon name="settings" />
-          </button>
-          {mobileRoomSpaceSheetOpen ? (
-            <>
-              <button
-                type="button"
-                className="room-mobile-room-space-sheet__backdrop"
-                aria-label="Закрыть"
-                onClick={() => setMobileRoomSpaceSheetOpen(false)}
-              />
-              <div className="room-mobile-room-space-sheet">
-                <RoomSpaceSettingsPopover
-                  embedded
-                  showInfo={showInfo}
-                  onToggleInfo={() => setShowInfo((v) => !v)}
-                  roomChatVisibility={roomChatVisibility}
-                  onRoomChatVisibilityChange={(v) => void handleRoomChatVisibilityChange(v)}
-                  canEditPolicies={canEditSpaceRoomPolicies}
-                  roomAccessMode={roomAccessMode}
-                  onRoomAccessModeChange={(v) => void handleRoomAccessModeChange(v)}
-                  onClose={() => setMobileRoomSpaceSheetOpen(false)}
-                />
-                <button
-                  type="button"
-                  className="room-mobile-room-space-sheet__manage"
-                  onClick={() => {
-                    setMobileRoomSpaceSheetOpen(false)
-                    setRoomManageModalOpen(true)
-                  }}
-                >
-                  Управление комнатой
-                </button>
-              </div>
-            </>
-          ) : null}
-        </>
       ) : null}
 
       <ControlsBar

@@ -1241,12 +1241,12 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           return
         }
         setRoomClosedReason(reason)
-        leave({ preserveRoomClosedReason: true })
+        void leave({ preserveRoomClosedReason: true })
       })
 
       socket.on('kicked', () => {
         setRoomClosedReason('kicked')
-        leave({ preserveRoomClosedReason: true })
+        void leave({ preserveRoomClosedReason: true })
       })
 
       socket.on('srtStarted', (data: SrtSessionInfo) => {
@@ -2181,6 +2181,10 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       await studioStopInFlightRef.current
       return
     }
+    /* Обычная комната без эфира студии: не ждём искусственные 450 ms в конце teardown. */
+    if (studioProgramAudioProducerRef.current == null && studioBroadcastHealth === 'idle') {
+      return
+    }
 
     const stopPromise = (async () => {
       const audioP = studioProgramAudioProducerRef.current
@@ -2445,11 +2449,26 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     [requestStartStudioBroadcast, stopStudioProgram],
   )
 
-  const leave = useCallback((opts?: { preserveRoomClosedReason?: boolean }) => {
+  const leave = useCallback(async (opts?: { preserveRoomClosedReason?: boolean }) => {
     joinGenerationRef.current += 1
     stopScreenShare()
-    stopStudioPreview()
-    stopStudioProgram()
+    if (vmixIngressInfo) {
+      try {
+        await stopVmixIngress()
+      } catch {
+        /* ignore */
+      }
+    }
+    try {
+      await stopStudioPreview()
+    } catch {
+      /* ignore */
+    }
+    try {
+      await stopStudioProgram()
+    } catch {
+      /* ignore */
+    }
     videoProducerRef.current?.close()
     audioProducerRef.current?.close()
     consumersRef.current.forEach((c) => c.close())
@@ -2486,7 +2505,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     setVmixIngressInfo(null)
     setRemoteStudioProgramConsumePending(false)
     setRemoteStudioRtmpByPeer({})
-  }, [stopScreenShare, stopStudioPreview, stopStudioProgram])
+  }, [stopScreenShare, stopStudioPreview, stopStudioProgram, stopVmixIngress, vmixIngressInfo])
 
   const endRoomForAll = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
     suppressRoomClosedReasonRef.current = true
@@ -2495,7 +2514,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       suppressRoomClosedReasonRef.current = false
       return res
     }
-    leave()
+    await leave()
     suppressRoomClosedReasonRef.current = false
     return { ok: true }
   }, [leave, requestEndRoomForAll])

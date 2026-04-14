@@ -3,7 +3,7 @@ import { useUserPeek } from '../context/UserPeekContext'
 import type { ContactStatus } from '../lib/socialGraph'
 import type { RoomChatMessage } from '../types/roomComms'
 import { CHAT_MESSAGE_MAX_LEN } from '../types/roomComms'
-import { StarIcon } from './icons'
+import { FiRrIcon, StarIcon } from './icons'
 
 interface Props {
   variant: 'overlay' | 'embed'
@@ -23,11 +23,7 @@ interface Props {
 }
 
 function ChatSendArrowIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M12 19V5M5 12l7-7 7 7" />
-    </svg>
-  )
+  return <FiRrIcon name="paper-plane" />
 }
 
 export function RoomChatPanel({

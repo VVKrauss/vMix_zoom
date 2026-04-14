@@ -5,7 +5,10 @@ import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import { setPendingHostClaim } from '../lib/spaceRoom'
 import { newRoomId } from '../utils/roomId'
-import { ChatBubbleIcon, ChevronRightIcon, DashboardIcon } from './icons'
+import { ChatBubbleIcon, DashboardIcon } from './icons'
+
+const ALPHA_TOOLTIP =
+  'Сейчас проект работает в тестовом режиме. После окончания тестового периода могут измениться уровни доступа к функциям.'
 
 export function HomePage() {
   const navigate = useNavigate()
@@ -38,6 +41,21 @@ export function HomePage() {
     <div className="join-screen join-screen--themed">
       <div className="join-home-stack">
         <div className="join-card join-card--home">
+        <div className="home-alpha-corner-wrap">
+          <Link
+            to="/news"
+            className="theme-toggle home-alpha-corner-btn"
+            aria-label="Новости и статус тестовой сборки"
+          >
+            <span className="home-alpha-corner-btn__glyph" aria-hidden>
+              α
+            </span>
+          </Link>
+          <div className="home-alpha-corner-tooltip" role="tooltip">
+            {ALPHA_TOOLTIP}
+          </div>
+        </div>
+
         <div className="join-logo-static" aria-hidden>
           <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
         </div>
@@ -141,19 +159,6 @@ export function HomePage() {
           </button>
         </form>
       </div>
-
-      <Link to="/news" className="home-alpha-notice">
-        <span className="home-alpha-notice__badge" aria-hidden>
-          α
-        </span>
-        <span className="home-alpha-notice__text">
-          Сейчас проект работает в тестовом режиме. После окончания тестового периода могут измениться уровни доступа к
-          функциям.
-        </span>
-        <span className="home-alpha-notice__arrow" aria-hidden>
-          <ChevronRightIcon />
-        </span>
-      </Link>
       </div>
     </div>
   )

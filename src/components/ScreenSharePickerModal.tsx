@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { ScreenShareGlyphMonitor, ScreenShareGlyphTab, ScreenShareGlyphWindow } from './ScreenShareSurfaceGlyphs'
 
 type Surface = 'monitor' | 'window' | 'browser'
 
@@ -56,7 +57,7 @@ export function ScreenSharePickerModal({ onClose, onPickSurface }: Props) {
             onClick={() => pick('monitor')}
           >
             <span className="screen-share-modal__card-icon" aria-hidden>
-              <IconMonitor />
+              <ScreenShareGlyphMonitor />
             </span>
             <span className="screen-share-modal__card-title">Весь экран</span>
             <span className="screen-share-modal__card-desc">Монитор целиком</span>
@@ -67,7 +68,7 @@ export function ScreenSharePickerModal({ onClose, onPickSurface }: Props) {
             onClick={() => pick('window')}
           >
             <span className="screen-share-modal__card-icon" aria-hidden>
-              <IconWindow />
+              <ScreenShareGlyphWindow />
             </span>
             <span className="screen-share-modal__card-title">Окно</span>
             <span className="screen-share-modal__card-desc">Приложение на рабочем столе</span>
@@ -78,7 +79,7 @@ export function ScreenSharePickerModal({ onClose, onPickSurface }: Props) {
             onClick={() => pick('browser')}
           >
             <span className="screen-share-modal__card-icon" aria-hidden>
-              <IconTab />
+              <ScreenShareGlyphTab />
             </span>
             <span className="screen-share-modal__card-title">Вкладка</span>
             <span className="screen-share-modal__card-desc">Содержимое вкладки Chrome</span>
@@ -95,34 +96,4 @@ export function ScreenSharePickerModal({ onClose, onPickSurface }: Props) {
   )
 
   return createPortal(node, document.body)
-}
-
-function IconMonitor() {
-  return (
-    <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
-      <rect x="6" y="8" width="36" height="26" rx="3" />
-      <path d="M16 38h16M24 34v4" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function IconWindow() {
-  return (
-    <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
-      <rect x="8" y="12" width="32" height="28" rx="2" />
-      <path d="M8 18h32" />
-      <circle cx="14" cy="15" r="1.5" fill="currentColor" stroke="none" />
-      <circle cx="19" cy="15" r="1.5" fill="currentColor" stroke="none" />
-    </svg>
-  )
-}
-
-function IconTab() {
-  return (
-    <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
-      <path d="M6 14h36v22a3 3 0 01-3 3H9a3 3 0 01-3-3V14z" />
-      <path d="M6 14V11a3 3 0 013-3h30a3 3 0 013 3v3" />
-      <path d="M18 22h16M18 28h10" strokeLinecap="round" opacity="0.6" />
-    </svg>
-  )
 }
