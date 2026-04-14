@@ -2561,6 +2561,21 @@ export function DashboardMessengerPage() {
                   </span>
                   <span className="dashboard-messenger-quick-menu__lbl">Новая комната</span>
                 </button>
+                <button
+                  type="button"
+                  className="dashboard-messenger-quick-menu__btn"
+                  onClick={() => {
+                    closeMessengerMenu()
+                    setMessengerSettingsOpen(true)
+                  }}
+                  title="Настройки мессенджера"
+                  aria-label="Настройки мессенджера"
+                >
+                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                    <FiRrIcon name="settings" />
+                  </span>
+                  <span className="dashboard-messenger-quick-menu__lbl">Настройки</span>
+                </button>
                 {canAccessAdmin ? (
                   <Link to="/admin" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
                     <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
