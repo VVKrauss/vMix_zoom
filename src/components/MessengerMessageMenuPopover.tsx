@@ -15,6 +15,7 @@ export function MessengerMessageMenuPopover({
   pinActive,
   pinBusy,
   onTogglePin,
+  hideReply,
 }: {
   canEdit: boolean
   canDelete: boolean
@@ -23,6 +24,8 @@ export function MessengerMessageMenuPopover({
   onDelete: () => void
   onReply: () => void
   onPickReaction: (emoji: ReactionEmoji) => void
+  /** Скрыть пункт «Ответить» (например, комментарии к посту канала). */
+  hideReply?: boolean
   showAddPin?: boolean
   pinActive?: boolean
   pinBusy?: boolean
@@ -73,9 +76,11 @@ export function MessengerMessageMenuPopover({
           </button>
         ))}
       </div>
-      <button type="button" className="messenger-msg-menu__item" role="menuitem" onClick={onReply}>
-        Ответить
-      </button>
+      {!hideReply ? (
+        <button type="button" className="messenger-msg-menu__item" role="menuitem" onClick={onReply}>
+          Ответить
+        </button>
+      ) : null}
       {showAddPin && onTogglePin ? (
         <button
           type="button"

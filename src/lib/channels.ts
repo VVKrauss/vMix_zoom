@@ -194,6 +194,36 @@ export async function appendChannelComment(
   return { data: parseOkMessageResult(data), error: null }
 }
 
+export async function editChannelComment(
+  conversationId: string,
+  messageId: string,
+  newBody: string,
+): Promise<{ error: string | null }> {
+  const { data, error } = await supabase.rpc('edit_channel_comment', {
+    p_conversation_id: conversationId.trim(),
+    p_message_id: messageId.trim(),
+    p_new_body: newBody,
+  })
+  if (error) return { error: error.message }
+  const row = data as Record<string, unknown> | null
+  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_edited' }
+  return { error: null }
+}
+
+export async function deleteChannelComment(
+  conversationId: string,
+  messageId: string,
+): Promise<{ error: string | null }> {
+  const { data, error } = await supabase.rpc('delete_channel_comment', {
+    p_conversation_id: conversationId.trim(),
+    p_message_id: messageId.trim(),
+  })
+  if (error) return { error: error.message }
+  const row = data as Record<string, unknown> | null
+  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_deleted' }
+  return { error: null }
+}
+
 export async function editChannelPost(
   conversationId: string,
   messageId: string,

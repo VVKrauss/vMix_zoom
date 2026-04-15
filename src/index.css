@@ -5711,6 +5711,32 @@ button.dashboard-messenger__row-avatar {
   align-items: start;
 }
 
+button.dashboard-messenger__thread-head-main--tappable {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  width: 100%;
+  border: none;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  appearance: none;
+  border-radius: 12px;
+}
+
+button.dashboard-messenger__thread-head-main--tappable:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme='light'] button.dashboard-messenger__thread-head-main--tappable:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
 .dashboard-messenger__thread-titleline {
   display: flex;
   align-items: center;
@@ -5743,6 +5769,13 @@ button.dashboard-messenger__row-avatar {
   font-family: inherit;
   appearance: none;
 }
+
+span.dashboard-messenger__thread-avatar {
+  cursor: inherit;
+  border: 1px solid var(--border);
+  box-sizing: border-box;
+}
+
 .dashboard-messenger__thread-avatar img {
   width: 100%;
   height: 100%;
@@ -6949,6 +6982,40 @@ html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
   text-align: center;
 }
 
+button.dashboard-messenger__thread-head-center--tappable {
+  appearance: none;
+  border: none;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  justify-content: center;
+  text-align: center;
+  border-radius: 12px;
+}
+
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__list-head .dashboard-messenger__thread-head-center--tappable {
+  justify-self: stretch;
+  width: 100%;
+  min-width: 0;
+}
+
+button.dashboard-messenger__thread-head-center--tappable:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme='light'] button.dashboard-messenger__thread-head-center--tappable:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
 .dashboard-messenger__thread-head-center-avatar {
   width: 36px;
   height: 36px;
@@ -6976,6 +7043,10 @@ button.dashboard-messenger__thread-head-center-avatar {
   padding: 0;
   cursor: pointer;
   font-family: inherit;
+}
+
+span.dashboard-messenger__thread-head-center-avatar {
+  flex-shrink: 0;
 }
 
 .dashboard-messenger__thread-head-back-wrap {

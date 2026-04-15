@@ -8,7 +8,9 @@ import { mapDirectMessageFromRow, type DirectMessage } from '../../lib/messenger
 import { getMessengerImageSignedUrl } from '../../lib/messenger'
 import {
   appendChannelComment,
+  deleteChannelComment,
   deleteChannelPost,
+  editChannelComment,
   isAllowedReactionEmoji,
   listChannelCommentsPage,
   listChannelPostsPage,
@@ -44,6 +46,17 @@ function sortChrono(a: DirectMessage, b: DirectMessage): number {
   return a.id.localeCompare(b.id)
 }
 
+function formatChannelBubbleTime(iso: string): string {
+  const dt = new Date(iso)
+  if (Number.isNaN(dt.getTime())) return '—'
+  return dt.toLocaleString('ru-RU', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  })
+}
+
+const CHANNEL_STAFF_ROLES = new Set(['owner', 'admin', 'moderator'])
+
 export function ChannelThreadPane({
   conversationId,
   onTouchTail,
@@ -77,13 +90,52 @@ export function ChannelThreadPane({
     post: DirectMessage
     anchor: { left: number; top: number; right: number; bottom: number }
   } | null>(null)
+  const [commentMenu, setCommentMenu] = useState<{
+    message: DirectMessage
+    anchor: { left: number; top: number; right: number; bottom: number }
+  } | null>(null)
+  const [myChannelMemberRole, setMyChannelMemberRole] = useState<string | null>(null)
+  const [commentDeleteBusy, setCommentDeleteBusy] = useState(false)
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
+  const [draftEditComment, setDraftEditComment] = useState('')
+  const [editCommentBusy, setEditCommentBusy] = useState(false)
   const postMenuWrapRef = useRef<HTMLDivElement | null>(null)
+  const commentMenuWrapRef = useRef<HTMLDivElement | null>(null)
   const reactionPickWrapRef = useRef<HTMLDivElement | null>(null)
   const seenChannelCommentIdsRef = useRef<Set<string>>(new Set())
   const [signedUrlByPath, setSignedUrlByPath] = useState<Record<string, string>>({})
 
   const cidRef = useRef(conversationId)
   cidRef.current = conversationId
+
+  const canModerateChannel = Boolean(myChannelMemberRole && CHANNEL_STAFF_ROLES.has(myChannelMemberRole))
+
+  useEffect(() => {
+    let cancelled = false
+    const cid = conversationId.trim()
+    if (!user?.id || !cid) {
+      setMyChannelMemberRole(null)
+      return
+    }
+    void supabase
+      .from('chat_conversation_members')
+      .select('role')
+      .eq('conversation_id', cid)
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error || !data) {
+          setMyChannelMemberRole(null)
+          return
+        }
+        const r = typeof (data as { role?: unknown }).role === 'string' ? (data as { role: string }).role.trim() : null
+        setMyChannelMemberRole(r)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [conversationId, user?.id])
 
   const reloadPosts = useCallback(() => {
     const cid = conversationId.trim()
@@ -183,6 +235,34 @@ export function ChannelThreadPane({
           if (!cur) return prev
           return { ...prev, [postId]: cur.map(patchOne) }
         })
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'chat_messages', filter }, (payload) => {
+        const oldRow = payload.old as Record<string, unknown>
+        const id = typeof oldRow.id === 'string' ? oldRow.id : ''
+        if (!id || cidRef.current.trim() !== cid) return
+        const kind = typeof oldRow.kind === 'string' ? oldRow.kind : ''
+        const replyToRaw = oldRow.reply_to_message_id
+        const replyTo = typeof replyToRaw === 'string' && replyToRaw.trim() ? replyToRaw.trim() : null
+
+        if (kind === 'reaction') {
+          setReactions((prev) => prev.filter((r) => r.id !== id))
+          return
+        }
+
+        if (replyTo) {
+          setCommentsByPostId((prev) => {
+            const cur = prev[replyTo]
+            if (!cur?.some((c) => c.id === id)) return prev
+            setCommentCountByPostId((pc) => ({
+              ...pc,
+              [replyTo]: Math.max(0, (pc[replyTo] ?? 0) - 1),
+            }))
+            return { ...prev, [replyTo]: cur.filter((c) => c.id !== id) }
+          })
+          return
+        }
+
+        setPosts((prev) => prev.filter((p) => p.id !== id))
       })
       .subscribe()
 
@@ -413,6 +493,69 @@ export function ChannelThreadPane({
     [commentsModalPostId, conversationId, deleteBusy, user?.id],
   )
 
+  const runDeleteComment = useCallback(
+    async (comment: DirectMessage) => {
+      const cid = conversationId.trim()
+      const postId = comment.replyToMessageId?.trim() ?? ''
+      if (!user?.id || !cid || !comment.id || commentDeleteBusy || !postId) return
+      if (!window.confirm('Удалить этот комментарий?')) return
+      setCommentDeleteBusy(true)
+      setError(null)
+      try {
+        const res = await deleteChannelComment(cid, comment.id)
+        if (res.error) {
+          setError(res.error)
+          return
+        }
+        setCommentMenu(null)
+        setCommentsByPostId((prev) => {
+          const cur = prev[postId]
+          if (!cur?.some((c) => c.id === comment.id)) return prev
+          setCommentCountByPostId((pc) => ({
+            ...pc,
+            [postId]: Math.max(0, (pc[postId] ?? 0) - 1),
+          }))
+          return { ...prev, [postId]: cur.filter((c) => c.id !== comment.id) }
+        })
+        if (editingCommentId === comment.id) {
+          setEditingCommentId(null)
+          setDraftEditComment('')
+        }
+      } finally {
+        setCommentDeleteBusy(false)
+      }
+    },
+    [commentDeleteBusy, conversationId, editingCommentId, user?.id],
+  )
+
+  const runSaveEditComment = useCallback(async () => {
+    const cid = conversationId.trim()
+    const id = editingCommentId?.trim() ?? ''
+    const body = draftEditComment.trim()
+    if (!user?.id || !cid || !id || !body || editCommentBusy) return
+    setEditCommentBusy(true)
+    setError(null)
+    try {
+      const res = await editChannelComment(cid, id, body)
+      if (res.error) {
+        setError(res.error)
+        return
+      }
+      setEditingCommentId(null)
+      setDraftEditComment('')
+    } finally {
+      setEditCommentBusy(false)
+    }
+  }, [conversationId, draftEditComment, editCommentBusy, editingCommentId, user?.id])
+
+  useEffect(() => {
+    if (!commentsModalPostId) {
+      setCommentMenu(null)
+      setEditingCommentId(null)
+      setDraftEditComment('')
+    }
+  }, [commentsModalPostId])
+
   useLayoutEffect(() => {
     const el = postMenuWrapRef.current
     if (!el || !postMenu) return
@@ -439,6 +582,33 @@ export function ChannelThreadPane({
     el.style.visibility = 'hidden'
     place()
   }, [postMenu])
+
+  useLayoutEffect(() => {
+    const el = commentMenuWrapRef.current
+    if (!el || !commentMenu) return
+    const { anchor } = commentMenu
+    const place = () => {
+      const rect = el.getBoundingClientRect()
+      if (rect.width < 2 || rect.height < 2) {
+        requestAnimationFrame(place)
+        return
+      }
+      const pad = 10
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      let left = anchor.left
+      let top = anchor.bottom + 6
+      if (left + rect.width > vw - pad) left = vw - pad - rect.width
+      if (left < pad) left = pad
+      if (top + rect.height > vh - pad) top = anchor.top - rect.height - 6
+      if (top < pad) top = pad
+      el.style.left = `${left}px`
+      el.style.top = `${top}px`
+      el.style.visibility = 'visible'
+    }
+    el.style.visibility = 'hidden'
+    place()
+  }, [commentMenu])
 
   useLayoutEffect(() => {
     const el = reactionPickWrapRef.current
@@ -484,6 +654,22 @@ export function ChannelThreadPane({
   }, [postMenu])
 
   useEffect(() => {
+    if (!commentMenu) return
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      const target =
+        'touches' in e && e.touches[0] ? (e.touches[0]!.target as EventTarget) : (e as MouseEvent).target
+      if (shouldClosePopoverOnOutsidePointer(commentMenuWrapRef.current, target)) setCommentMenu(null)
+    }
+    const touchOpts: AddEventListenerOptions = { capture: true, passive: true }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('touchstart', onDown, touchOpts)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown, touchOpts)
+    }
+  }, [commentMenu])
+
+  useEffect(() => {
     if (!reactionPick) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setReactionPick(null)
@@ -500,6 +686,15 @@ export function ChannelThreadPane({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [postMenu])
+
+  useEffect(() => {
+    if (!commentMenu) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCommentMenu(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [commentMenu])
 
   const renderMarkdownAndPreview = (m: DirectMessage, bodyClassName?: string) => {
     if (m.kind === 'reaction') return null
@@ -648,11 +843,91 @@ export function ChannelThreadPane({
     )
   }
 
-  const renderMessage = (m: DirectMessage, isComment = false) => {
+  const canEditOrDeleteComment = (m: DirectMessage) =>
+    Boolean(
+      user?.id &&
+        !m.id.startsWith('local-') &&
+        (m.kind === 'text' || m.kind === 'image') &&
+        (m.senderUserId === user.id || canModerateChannel),
+    )
+
+  const renderChannelComment = (m: DirectMessage) => {
     if (m.kind === 'reaction') return null
+    const isOwn = Boolean(user?.id && m.senderUserId === user.id)
+    const menuOpen = commentMenu?.message.id === m.id
+    const isEditing = editingCommentId === m.id
+
     return (
-      <article key={m.id} className={`dashboard-messenger__message${isComment ? ' dashboard-messenger__message--reply' : ''}`}>
-        <div className="dashboard-messenger__message-body">{renderMarkdownAndPreview(m)}</div>
+      <article
+        key={m.id}
+        className={`dashboard-messenger__message dashboard-messenger__message--reply${isOwn ? ' dashboard-messenger__message--own' : ''}`}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          if (m.id.startsWith('local-')) return
+          setReactionPick({
+            targetId: m.id,
+            anchor: { left: e.clientX, top: e.clientY, right: e.clientX, bottom: e.clientY },
+          })
+        }}
+      >
+        <div className="dashboard-messenger__message-meta">
+          <div className="dashboard-messenger__message-meta-main">
+            <span className="dashboard-messenger__message-author">{m.senderNameSnapshot}</span>
+            <time dateTime={m.createdAt}>{formatChannelBubbleTime(m.createdAt)}</time>
+            {m.editedAt ? <span className="dashboard-messenger__edited">изм.</span> : null}
+          </div>
+          <button
+            type="button"
+            className={`dashboard-messenger__msg-more${menuOpen ? ' dashboard-messenger__msg-more--open' : ''}`}
+            aria-label="Действия с комментарием"
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+            disabled={m.id.startsWith('local-')}
+            onClick={(e) => {
+              const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
+              setCommentMenu((cur) => {
+                if (cur?.message.id === m.id) return null
+                return { message: m, anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } }
+              })
+            }}
+          >
+            ⋮
+          </button>
+        </div>
+        {isEditing ? (
+          <div className="dashboard-messenger__message-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <textarea
+              className="dashboard-messenger__input"
+              rows={3}
+              value={draftEditComment}
+              onChange={(e) => setDraftEditComment(e.target.value)}
+              disabled={editCommentBusy}
+            />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="dashboard-topbar__action"
+                disabled={editCommentBusy}
+                onClick={() => {
+                  setEditingCommentId(null)
+                  setDraftEditComment('')
+                }}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="dashboard-topbar__action dashboard-topbar__action--primary"
+                disabled={editCommentBusy || !draftEditComment.trim()}
+                onClick={() => void runSaveEditComment()}
+              >
+                {editCommentBusy ? '…' : 'Сохранить'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="dashboard-messenger__message-body">{renderMarkdownAndPreview(m)}</div>
+        )}
         {renderReactionChips(m, 'dashboard-messenger__message-reactions')}
       </article>
     )
@@ -810,6 +1085,38 @@ export function ChannelThreadPane({
           )
         : null}
 
+      {commentMenu
+        ? createPortal(
+            <div
+              ref={commentMenuWrapRef}
+              className="messenger-msg-menu-wrap"
+              style={{ position: 'fixed', left: 0, top: 0, zIndex: 26500, visibility: 'hidden' }}
+            >
+              <MessengerMessageMenuPopover
+                hideReply
+                canEdit={canEditOrDeleteComment(commentMenu.message)}
+                canDelete={canEditOrDeleteComment(commentMenu.message)}
+                onClose={() => setCommentMenu(null)}
+                onEdit={() => {
+                  setEditingCommentId(commentMenu.message.id)
+                  setDraftEditComment(commentMenu.message.body ?? '')
+                  setCommentMenu(null)
+                }}
+                onDelete={() => {
+                  void runDeleteComment(commentMenu.message)
+                }}
+                onReply={() => {}}
+                onPickReaction={(em) => {
+                  if (!commentMenu.message.id || !isAllowedReactionEmoji(em)) return
+                  void addReactionOnly(commentMenu.message.id, em)
+                  setCommentMenu(null)
+                }}
+              />
+            </div>,
+            document.body,
+          )
+        : null}
+
       {reactionPick
         ? createPortal(
             <div
@@ -835,27 +1142,41 @@ export function ChannelThreadPane({
       {commentsModalPostId ? (
         <div className="confirm-dialog-root">
           <button type="button" className="confirm-dialog-backdrop" aria-label="Закрыть" onClick={() => setCommentsModalPostId(null)} />
-          <div className="confirm-dialog" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
+          <div
+            className="confirm-dialog channel-comments-modal"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', maxHeight: 'min(88vh, 720px)' }}
+          >
             <h3 style={{ marginTop: 0 }}>Комментарии</h3>
             {commentsLoadingPostId === commentsModalPostId ? (
               <div className="auth-loading auth-loading--inline" aria-label="Загрузка..." />
             ) : null}
-            <div style={{ maxHeight: 420, overflow: 'auto' }}>
+            <div className="channel-comments-modal__scroll" style={{ flex: 1, minHeight: 0, overflow: 'auto', maxHeight: 'min(52vh, 480px)' }}>
               {(commentsByPostId[commentsModalPostId] ?? [])
                 .filter((m) => m.kind !== 'reaction')
-                .map((c) => renderMessage(c, true))}
+                .map((c) => renderChannelComment(c))}
               {(commentsByPostId[commentsModalPostId] ?? []).filter((m) => m.kind !== 'reaction').length === 0 ? (
                 <div className="dashboard-chats-empty" style={{ padding: 8 }}>
                   Пока нет комментариев.
                 </div>
               ) : null}
             </div>
-            <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-              <input
+            <div style={{ display: 'flex', gap: 10, marginTop: 10, alignItems: 'flex-end' }}>
+              <textarea
                 className="dashboard-messenger__input"
+                rows={2}
+                style={{ flex: 1, resize: 'vertical', minHeight: 44 }}
                 value={draftCommentByPostId[commentsModalPostId] ?? ''}
                 placeholder="Комментарий…"
                 onChange={(e) => setDraftCommentByPostId((prev) => ({ ...prev, [commentsModalPostId]: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault()
+                    void sendComment(commentsModalPostId)
+                  }
+                }}
               />
               <button
                 type="button"

@@ -2850,19 +2850,19 @@ export function DashboardMessengerPage() {
                                   <ChevronLeftIcon />
                                 </button>
                               </div>
-                              <div className="dashboard-messenger__thread-head-center">
-                                <button
-                                  type="button"
-                                  className="dashboard-messenger__thread-head-center-avatar"
-                                  aria-label="Информация"
-                                  onClick={() => void openConversationInfo(activeConversationId)}
-                                >
+                              <button
+                                type="button"
+                                className="dashboard-messenger__thread-head-center dashboard-messenger__thread-head-center--tappable"
+                                aria-label="Информация о чате"
+                                onClick={() => void openConversationInfo(activeConversationId)}
+                              >
+                                <span className="dashboard-messenger__thread-head-center-avatar" aria-hidden>
                                   {conversationAvatarUrlById[activeConversationId] ? (
                                     <img src={conversationAvatarUrlById[activeConversationId] ?? undefined} alt="" />
                                   ) : (
                                     <span>{conversationInitial(threadHeadConversation.title)}</span>
                                   )}
-                                </button>
+                                </span>
                                 <div className="dashboard-messenger__thread-head-center-text">
                                   <div className="dashboard-messenger__thread-head-center-title">
                                     {threadHeadConversation.title}
@@ -2872,22 +2872,23 @@ export function DashboardMessengerPage() {
                                     {threadHeadConversation.memberCount ?? 0} участн.
                                   </div>
                                 </div>
-                              </div>
+                              </button>
                             </header>
                           ) : (
-                            <div className="dashboard-messenger__thread-head-center" style={{ padding: 16 }}>
-                              <button
-                                type="button"
-                                className="dashboard-messenger__thread-head-center-avatar"
-                                aria-label="Информация"
-                                onClick={() => void openConversationInfo(activeConversationId)}
-                              >
+                            <button
+                              type="button"
+                              className="dashboard-messenger__thread-head-center dashboard-messenger__thread-head-center--tappable"
+                              style={{ padding: 16 }}
+                              aria-label="Информация о чате"
+                              onClick={() => void openConversationInfo(activeConversationId)}
+                            >
+                              <span className="dashboard-messenger__thread-head-center-avatar" aria-hidden>
                                 {conversationAvatarUrlById[activeConversationId] ? (
                                   <img src={conversationAvatarUrlById[activeConversationId] ?? undefined} alt="" />
                                 ) : (
                                   <span>{conversationInitial(threadHeadConversation.title)}</span>
                                 )}
-                              </button>
+                              </span>
                               <div className="dashboard-messenger__thread-head-center-text">
                                 <div className="dashboard-messenger__thread-head-center-title">{threadHeadConversation.title}</div>
                                 <div className="dashboard-messenger__thread-head-center-meta">
@@ -2895,7 +2896,7 @@ export function DashboardMessengerPage() {
                                   {threadHeadConversation.memberCount ?? 0} участн.
                                 </div>
                               </div>
-                            </div>
+                            </button>
                           )}
                         </div>
 
@@ -2949,38 +2950,38 @@ export function DashboardMessengerPage() {
                               </span>
                             ) : null}
                           </div>
-                          <div className="dashboard-messenger__thread-head-center">
-                            <button
-                              type="button"
-                              className="dashboard-messenger__thread-head-center-avatar"
-                              aria-label="Профиль собеседника"
-                              onClick={() => {
-                                const oid = threadHeadConversation.otherUserId?.trim()
-                                if (oid) {
-                                  openUserPeek({
-                                    userId: oid,
-                                    displayName: threadHeadConversation.title,
-                                    avatarUrl: activeAvatarUrl,
-                                  })
-                                } else if (user?.id) {
-                                  openUserPeek({
-                                    userId: user.id,
-                                    displayName: profile?.display_name ?? threadHeadConversation.title,
-                                    avatarUrl: profile?.avatar_url ?? null,
-                                  })
-                                }
-                              }}
-                            >
+                          <button
+                            type="button"
+                            className="dashboard-messenger__thread-head-center dashboard-messenger__thread-head-center--tappable"
+                            aria-label="Профиль собеседника"
+                            onClick={() => {
+                              const oid = threadHeadConversation.otherUserId?.trim()
+                              if (oid) {
+                                openUserPeek({
+                                  userId: oid,
+                                  displayName: threadHeadConversation.title,
+                                  avatarUrl: activeAvatarUrl,
+                                })
+                              } else if (user?.id) {
+                                openUserPeek({
+                                  userId: user.id,
+                                  displayName: profile?.display_name ?? threadHeadConversation.title,
+                                  avatarUrl: profile?.avatar_url ?? null,
+                                })
+                              }
+                            }}
+                          >
+                            <span className="dashboard-messenger__thread-head-center-avatar" aria-hidden>
                               {activeAvatarUrl ? (
                                 <img src={activeAvatarUrl ?? undefined} alt="" />
                               ) : (
                                 <span>{conversationInitial(threadHeadConversation.title)}</span>
                               )}
-                            </button>
+                            </span>
                             <div className="dashboard-messenger__thread-head-center-text">
-                              <h3 className="dashboard-messenger__thread-head-center-title">
+                              <div className="dashboard-messenger__thread-head-center-title" role="heading" aria-level={3}>
                                 {threadHeadConversation.title}
-                              </h3>
+                              </div>
                               <div className="dashboard-messenger__thread-head-center-meta">
                                 {formatMessengerListRowTime(
                                   threadHeadConversation.lastMessageAt ?? threadHeadConversation.createdAt,
@@ -2997,7 +2998,7 @@ export function DashboardMessengerPage() {
                                 ) : null}
                               </div>
                             </div>
-                          </div>
+                          </button>
                           <div className="dashboard-messenger__list-head-actions">
                             <button
                               type="button"
@@ -3021,37 +3022,39 @@ export function DashboardMessengerPage() {
                           </div>
                         </header>
                       ) : (
-                        <div className="dashboard-messenger__thread-head-main">
-                          <button
-                            type="button"
-                            className="dashboard-messenger__thread-avatar"
-                            aria-label="Профиль в диалоге"
-                            onClick={() => {
-                              const oid = threadHeadConversation.otherUserId?.trim()
-                              if (oid) {
-                                openUserPeek({
-                                  userId: oid,
-                                  displayName: threadHeadConversation.title,
-                                  avatarUrl: activeAvatarUrl,
-                                })
-                              } else if (user?.id) {
-                                openUserPeek({
-                                  userId: user.id,
-                                  displayName: profile?.display_name ?? threadHeadConversation.title,
-                                  avatarUrl: profile?.avatar_url ?? null,
-                                })
-                              }
-                            }}
-                          >
+                        <button
+                          type="button"
+                          className="dashboard-messenger__thread-head-main dashboard-messenger__thread-head-main--tappable"
+                          aria-label="Профиль в диалоге"
+                          onClick={() => {
+                            const oid = threadHeadConversation.otherUserId?.trim()
+                            if (oid) {
+                              openUserPeek({
+                                userId: oid,
+                                displayName: threadHeadConversation.title,
+                                avatarUrl: activeAvatarUrl,
+                              })
+                            } else if (user?.id) {
+                              openUserPeek({
+                                userId: user.id,
+                                displayName: profile?.display_name ?? threadHeadConversation.title,
+                                avatarUrl: profile?.avatar_url ?? null,
+                              })
+                            }
+                          }}
+                        >
+                          <span className="dashboard-messenger__thread-avatar" aria-hidden>
                             {activeAvatarUrl ? (
                               <img src={activeAvatarUrl ?? undefined} alt="" />
                             ) : (
                               <span>{conversationInitial(threadHeadConversation.title)}</span>
                             )}
-                          </button>
+                          </span>
                           <div>
                             <div className="dashboard-messenger__thread-titleline">
-                              <h3 className="dashboard-section__subtitle">{threadHeadConversation.title}</h3>
+                              <div className="dashboard-section__subtitle" role="heading" aria-level={3}>
+                                {threadHeadConversation.title}
+                              </div>
                               {threadHeadConversation.unreadCount > 0 ? (
                                 <span className="dashboard-messenger__row-badge">
                                   {threadHeadConversation.unreadCount > 99
@@ -3070,7 +3073,7 @@ export function DashboardMessengerPage() {
                               </span>
                             </div>
                           </div>
-                        </div>
+                        </button>
                       )}
                     </div>
 
