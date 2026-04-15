@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 import { ensureDirectConversationWithUser } from '../lib/messenger'
 import { fetchPublicUserProfile, type PublicUserProfileRow } from '../lib/userPublicProfile'
 import { getContactStatuses, setContactPin, type ContactStatus } from '../lib/socialGraph'
@@ -24,6 +25,7 @@ export function UserProfilePeekModal({
 }) {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const toast = useToast()
   const [profile, setProfile] = useState<PublicUserProfileRow | null>(null)
   const [loadErr, setLoadErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -103,6 +105,29 @@ export function UserProfilePeekModal({
     }
   }
 
+  const shareProfile = async () => {
+    if (!slug?.trim()) {
+      toast.push({ tone: 'warning', title: 'Нет ссылки', message: 'У пользователя пока нет публичного адреса.', ms: 3200 })
+      return
+    }
+    const url = `${window.location.origin}/u/${encodeURIComponent(slug.trim())}`
+    try {
+      const nav = navigator as unknown as { share?: (data: { title?: string; url?: string; text?: string }) => Promise<void> }
+      if (typeof nav.share === 'function') {
+        await nav.share({ title: displayName, url })
+        return
+      }
+    } catch {
+      /* ignore */
+    }
+    try {
+      await navigator.clipboard.writeText(url)
+      toast.push({ tone: 'success', message: 'Ссылка скопирована.', ms: 2200 })
+    } catch {
+      window.open(url, '_blank', 'noopener')
+    }
+  }
+
   return (
     <div className="confirm-dialog-root">
       <button type="button" className="confirm-dialog-backdrop" aria-label="Закрыть" onClick={onClose} />
@@ -138,7 +163,10 @@ export function UserProfilePeekModal({
                 disabled={pinBusy}
                 onClick={() => void togglePin()}
               >
-                {status?.pinnedByMe ? 'Снять закреп' : 'Закрепить'}
+                {status?.pinnedByMe ? 'Убрать из контактов' : 'Добавить в контакты'}
+              </button>
+              <button type="button" className="dashboard-topbar__action" onClick={() => void shareProfile()}>
+                Поделиться
               </button>
               <button
                 type="button"

@@ -32,6 +32,8 @@ type DashboardShellProps = {
   suppressBurger?: boolean
   /** Доп. элементы в правой части шапки (например, переключатель звука на странице мессенджера). */
   headerExtra?: ReactNode
+  /** Показывать плитку «Мессенджер» в быстром меню (по умолчанию скрыта вне «Комнаты» и самого мессенджера). */
+  showMessengerTileInQuickMenu?: boolean
 }
 
 const INCOMING_PINS_BANNER_DISMISS_PREFIX = 'vmix.dashboard.incomingPin.dismissSig:'
@@ -52,6 +54,7 @@ export function DashboardShell({
   chromeless,
   suppressBurger = false,
   headerExtra,
+  showMessengerTileInQuickMenu = active === 'chats' || active === 'messenger',
 }: DashboardShellProps) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -310,7 +313,7 @@ export function DashboardShell({
                   <span className="dashboard-messenger-quick-menu__lbl">Комнаты</span>
                 </Link>
               ) : null}
-              {active !== 'messenger' ? (
+              {showMessengerTileInQuickMenu && active !== 'messenger' ? (
                 <Link
                   to="/dashboard/messenger"
                   className="dashboard-messenger-quick-menu__btn"

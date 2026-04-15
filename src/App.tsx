@@ -57,6 +57,16 @@ const DashboardMessengerPage = lazy(async () => {
   return { default: mod.DashboardMessengerPage }
 })
 
+const DashboardChannelsPage = lazy(async () => {
+  const mod = await import('./components/DashboardChannelsPage')
+  return { default: mod.DashboardChannelsPage }
+})
+
+const DashboardGroupsPage = lazy(async () => {
+  const mod = await import('./components/DashboardGroupsPage')
+  return { default: mod.DashboardGroupsPage }
+})
+
 const DashboardChatViewPage = lazy(async () => {
   const mod = await import('./components/DashboardChatViewPage')
   return { default: mod.DashboardChatViewPage }
@@ -152,6 +162,8 @@ export function App() {
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path="/dashboard/chats" element={<ProtectedRoute><DashboardChatsPage /></ProtectedRoute>} />
         <Route path="/dashboard/chats/:conversationId" element={<ProtectedRoute><DashboardChatViewPage /></ProtectedRoute>} />
+        <Route path="/dashboard/groups" element={<ProtectedRoute><DashboardGroupsPage /></ProtectedRoute>} />
+        <Route path="/dashboard/channels" element={<ProtectedRoute><DashboardChannelsPage /></ProtectedRoute>} />
         <Route path="/dashboard/messenger" element={<ProtectedRoute><DashboardMessengerPage /></ProtectedRoute>} />
         <Route path="/dashboard/messenger/:conversationId" element={<ProtectedRoute><DashboardMessengerPage /></ProtectedRoute>} />
         <Route path="/dashboard/contacts" element={<ProtectedRoute><DashboardContactsPage /></ProtectedRoute>} />

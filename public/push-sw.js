@@ -7,6 +7,7 @@ self.addEventListener('push', (event) => {
   let icon = '/logo.png'
   let badge = '/logo.png'
   let conversationId = ''
+  let image = ''
   try {
     const t = event.data && event.data.text && event.data.text()
     if (t) {
@@ -18,6 +19,7 @@ self.addEventListener('push', (event) => {
       if (typeof j.icon === 'string' && j.icon.trim()) icon = j.icon.trim()
       if (typeof j.badge === 'string' && j.badge.trim()) badge = j.badge.trim()
       if (typeof j.conversationId === 'string' && j.conversationId.trim()) conversationId = j.conversationId.trim()
+      if (typeof j.image === 'string' && j.image.trim()) image = j.image.trim()
     }
   } catch (_) {
     /* text() не JSON — показываем дефолт */
@@ -31,18 +33,33 @@ self.addEventListener('push', (event) => {
           try {
             if (c.visibilityState !== 'visible') continue
             const u = new URL(c.url)
-            if (!u.pathname.startsWith('/dashboard/messenger')) continue
-            const chat = u.searchParams.get('chat')?.trim() ?? ''
-            if (chat && chat === conversationId) return
+            if (u.pathname.startsWith('/dashboard/messenger')) {
+              const chat = u.searchParams.get('chat')?.trim() ?? ''
+              if (chat && chat === conversationId) return
+            }
+            if (u.pathname.startsWith('/dashboard/channels')) {
+              const ch = u.searchParams.get('channel')?.trim() ?? ''
+              if (ch && ch === conversationId) return
+            }
           } catch (_) {
             /* ignore parse */
           }
         }
       }
+      // iOS PWA: часто игнорирует NotificationOptions.icon (в пользу иконки из manifest).
+      // Показываем аватар хотя бы как "image" (если поддерживается) и ставим бейдж на иконку приложения.
+      try {
+        if (self.navigator && typeof self.navigator.setAppBadge === 'function') {
+          await self.navigator.setAppBadge(1)
+        }
+      } catch (_) {
+        /* ignore */
+      }
       await self.registration.showNotification(title, {
         body,
         icon,
         badge,
+        image: image || undefined,
         tag,
         renotify: true,
         data: { url, conversationId },

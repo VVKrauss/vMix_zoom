@@ -1,5 +1,5 @@
 /**
- * Web Push для личных сообщений (chat_messages, direct).
+ * Web Push для каналов (chat_messages, kind=channel).
  *
  * Вызов: Database Webhook (INSERT на public.chat_messages) → POST на этот endpoint.
  * Секреты (Supabase Dashboard → Edge Functions → Secrets):
@@ -7,10 +7,6 @@
  *   VAPID_SUBJECT        — например mailto:you@domain
  *   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY — пара VAPID (должна соответствовать VITE_VAPID_PUBLIC_KEY на клиенте)
  *   PUBLIC_APP_URL       — https://redflow.online (для ссылок в уведомлении)
- *
- * Dashboard → Database → Webhooks: таблица chat_messages, INSERT,
- *   URL: https://<ref>.supabase.co/functions/v1/send-dm-webpush
- *   Header: Authorization: Bearer <WEBHOOK_PUSH_SECRET>
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
@@ -41,34 +37,23 @@ function truncate(s: string, max: number): string {
   return `${t.slice(0, max - 1)}…`
 }
 
-/** Корень JSON: иногда вебхук кладёт событие во вложенный объект. */
 function unwrapRoot(raw: Record<string, unknown>): Record<string, unknown> {
   const payload = raw.payload
-  if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
-    return payload as Record<string, unknown>
-  }
+  if (payload && typeof payload === 'object' && !Array.isArray(payload)) return payload as Record<string, unknown>
   return raw
 }
 
-/**
- * Стандартный Database Webhook Supabase: type, table, record.
- * type сравниваем без учёта регистра.
- */
-function parseChatMessageInsert(
-  root: Record<string, unknown>,
-): { record: Record<string, unknown> } | null {
+function parseChatMessageInsert(root: Record<string, unknown>): { record: Record<string, unknown> } | null {
   const tableRaw = typeof root.table === 'string' ? root.table.trim() : ''
   const typeRaw = typeof root.type === 'string' ? root.type.trim() : ''
   const table = tableRaw.replace(/^public\./, '')
   if (table !== 'chat_messages') return null
   if (typeRaw.toUpperCase() !== 'INSERT') return null
-
   const record = root.record
   if (!record || typeof record !== 'object' || Array.isArray(record)) return null
   return { record: record as Record<string, unknown> }
 }
 
-/** Объект подписки для npm:web-push (как у PushSubscription.toJSON()). */
 function toWebPushSubscription(
   raw: unknown,
 ): { endpoint: string; keys: { p256dh: string; auth: string } } | null {
@@ -82,11 +67,6 @@ function toWebPushSubscription(
   const auth = typeof k.auth === 'string' ? k.auth.trim() : ''
   if (!p256dh || !auth) return null
   return { endpoint, keys: { p256dh, auth } }
-}
-
-function endpointHint(endpoint: string): string {
-  if (endpoint.length <= 48) return endpoint
-  return `${endpoint.slice(0, 40)}…`
 }
 
 function readWebPushError(e: unknown): { statusCode: number; message: string } {
@@ -104,19 +84,13 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   const webhookSecret = Deno.env.get('WEBHOOK_PUSH_SECRET')
-  if (!verifyBearer(req, webhookSecret)) {
-    return json({ error: 'unauthorized' }, 401)
-  }
-
+  if (!verifyBearer(req, webhookSecret)) return json({ error: 'unauthorized' }, 401)
   if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405)
 
   const vapidSubject = Deno.env.get('VAPID_SUBJECT')
   const vapidPublic = Deno.env.get('VAPID_PUBLIC_KEY')
   const vapidPrivate = Deno.env.get('VAPID_PRIVATE_KEY')
-  if (!vapidSubject || !vapidPublic || !vapidPrivate) {
-    return json({ error: 'vapid_not_configured' }, 500)
-  }
-
+  if (!vapidSubject || !vapidPublic || !vapidPrivate) return json({ error: 'vapid_not_configured' }, 500)
   webPush.setVapidDetails(vapidSubject, vapidPublic, vapidPrivate)
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!
@@ -132,48 +106,33 @@ Deno.serve(async (req) => {
 
   const root = unwrapRoot(rawBody)
   const parsed = parseChatMessageInsert(root)
-  if (!parsed) {
-    return json({ ok: true, skipped: 'not_chat_messages_insert' })
-  }
+  if (!parsed) return json({ ok: true, skipped: 'not_chat_messages_insert' })
 
   const record = parsed.record
-
   const kind = typeof record.kind === 'string' ? record.kind : 'text'
-  if (kind === 'reaction' || kind === 'system') {
-    return json({ ok: true, skipped: `kind_${kind}` })
-  }
+  if (kind === 'reaction' || kind === 'system') return json({ ok: true, skipped: `kind_${kind}` })
 
-  const conversationId =
-    typeof record.conversation_id === 'string' ? record.conversation_id.trim() : ''
-  const senderId =
-    typeof record.sender_user_id === 'string' ? record.sender_user_id.trim() : ''
-  if (!conversationId || !senderId) {
-    return json({ ok: true, skipped: 'missing_ids' })
-  }
+  const conversationId = typeof record.conversation_id === 'string' ? record.conversation_id.trim() : ''
+  const senderId = typeof record.sender_user_id === 'string' ? record.sender_user_id.trim() : ''
+  if (!conversationId || !senderId) return json({ ok: true, skipped: 'missing_ids' })
 
   const { data: conv, error: convErr } = await admin
     .from('chat_conversations')
-    .select('kind')
+    .select('kind, title')
     .eq('id', conversationId)
     .maybeSingle()
+  if (convErr || !conv || (conv as { kind?: string }).kind !== 'channel') return json({ ok: true, skipped: 'not_channel' })
 
-  if (convErr || !conv || (conv as { kind?: string }).kind !== 'direct') {
-    return json({ ok: true, skipped: 'not_direct' })
-  }
+  const channelTitle = typeof (conv as { title?: unknown }).title === 'string' ? String((conv as { title?: string }).title).trim() : 'Канал'
 
   let bodyText = typeof record.body === 'string' ? record.body : ''
   if (kind === 'image' && !bodyText.trim()) bodyText = `${'\u{1F4F7}'} Фото`
 
-  const senderName =
-    typeof record.sender_name_snapshot === 'string' && record.sender_name_snapshot.trim()
-      ? record.sender_name_snapshot.trim()
-      : 'Сообщение'
+  const senderName = typeof record.sender_name_snapshot === 'string' && record.sender_name_snapshot.trim()
+    ? record.sender_name_snapshot.trim()
+    : 'Сообщение'
 
-  const { data: senderRow } = await admin
-    .from('users')
-    .select('avatar_url')
-    .eq('id', senderId)
-    .maybeSingle()
+  const { data: senderRow } = await admin.from('users').select('avatar_url').eq('id', senderId).maybeSingle()
   const senderAvatar =
     senderRow && typeof (senderRow as { avatar_url?: unknown }).avatar_url === 'string'
       ? ((senderRow as { avatar_url?: string }).avatar_url ?? '').trim()
@@ -184,33 +143,28 @@ Deno.serve(async (req) => {
     .select('user_id')
     .eq('conversation_id', conversationId)
     .neq('user_id', senderId)
-
-  if (memErr || !members?.length) {
-    return json({ ok: true, skipped: 'no_recipients', detail: memErr?.message })
-  }
+  if (memErr || !members?.length) return json({ ok: true, skipped: 'no_recipients', detail: memErr?.message })
 
   const recipientIds = members
     .map((m: { user_id?: string }) => (typeof m.user_id === 'string' ? m.user_id : ''))
     .filter(Boolean)
-
   if (recipientIds.length === 0) return json({ ok: true, skipped: 'empty_recipients' })
 
   const { data: subs, error: subErr } = await admin
     .from('push_subscriptions')
     .select('id, user_id, subscription')
     .in('user_id', recipientIds)
-
   if (subErr) return json({ error: 'subs_query', detail: subErr.message }, 500)
   if (!subs?.length) return json({ ok: true, sent: 0, note: 'no_subscriptions' })
 
   const appBase = (Deno.env.get('PUBLIC_APP_URL') ?? 'https://redflow.online').replace(/\/$/, '')
-  const openPath = `/dashboard/messenger?chat=${encodeURIComponent(conversationId)}`
+  const openPath = `/dashboard/channels?channel=${encodeURIComponent(conversationId)}`
   const defaultIcon = `${appBase}/logo.png`
   const payload = JSON.stringify({
-    title: truncate(senderName, 60),
-    body: truncate(bodyText, 140),
+    title: truncate(channelTitle, 60),
+    body: truncate(`${senderName}: ${bodyText}`, 140),
     url: `${appBase}${openPath}`,
-    tag: `dm-${conversationId}`,
+    tag: `ch-${conversationId}`,
     conversationId,
     icon: senderAvatar || defaultIcon,
     image: senderAvatar || '',
@@ -219,55 +173,29 @@ Deno.serve(async (req) => {
 
   let sent = 0
   let removed = 0
-  let skippedBadSubscription = 0
   let failed = 0
-  const failures: { subscription_id: string; status_code: number; endpoint: string; detail: string }[] = []
+  let skippedBadSubscription = 0
 
-  for (const row of subs as { id: string; user_id: string; subscription: unknown }[]) {
+  for (const row of subs as { id: string; subscription: unknown }[]) {
     const subObj = toWebPushSubscription(row.subscription)
     if (!subObj) {
       skippedBadSubscription += 1
-      console.warn('[send-dm-webpush] invalid subscription json', { id: row.id })
       continue
     }
-
     try {
-      await webPush.sendNotification(subObj, payload, {
-        TTL: 86_400,
-      })
+      await webPush.sendNotification(subObj, payload, { TTL: 86_400 })
       sent += 1
     } catch (e: unknown) {
-      const { statusCode, message } = readWebPushError(e)
-      console.error('[send-dm-webpush] send failed', {
-        subscription_id: row.id,
-        status_code: statusCode,
-        endpoint: endpointHint(subObj.endpoint),
-        detail: truncate(message, 200),
-      })
-
+      const { statusCode } = readWebPushError(e)
       if (statusCode === 404 || statusCode === 410) {
         await admin.from('push_subscriptions').delete().eq('id', row.id)
         removed += 1
       } else {
         failed += 1
-        if (failures.length < 8) {
-          failures.push({
-            subscription_id: row.id,
-            status_code: statusCode,
-            endpoint: endpointHint(subObj.endpoint),
-            detail: truncate(message, 120),
-          })
-        }
       }
     }
   }
 
-  return json({
-    ok: true,
-    sent,
-    removed_invalid: removed,
-    skipped_bad_subscription: skippedBadSubscription,
-    failed,
-    ...(failures.length ? { failures } : {}),
-  })
+  return json({ ok: true, sent, removed_invalid: removed, skipped_bad_subscription: skippedBadSubscription, failed })
 })
+

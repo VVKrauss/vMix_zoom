@@ -7,3 +7,6 @@ major_version = 17
 # Вызов только из Database Webhook (Bearer WEBHOOK_PUSH_SECRET), без JWT пользователя.
 [functions.send-dm-webpush]
 verify_jwt = false
+
+[functions.send-channel-webpush]
+verify_jwt = false
