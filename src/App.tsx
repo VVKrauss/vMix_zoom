@@ -9,6 +9,7 @@ import {
 } from 'react-router-dom'
 import { AdminProtectedRoute } from './components/AdminProtectedRoute'
 import { ProtectedRoute } from './components/ProtectedRoute'
+import { ToastProvider } from './context/ToastContext'
 import { useVisualViewport } from './hooks/useVisualViewport'
 
 function VisualViewportSync() {
@@ -81,6 +82,11 @@ const NewsPage = lazy(async () => {
   return { default: mod.NewsPage }
 })
 
+const PublicUserPage = lazy(async () => {
+  const mod = await import('./components/PublicUserPage')
+  return { default: mod.PublicUserPage }
+})
+
 function RouteLoadingFallback() {
   return (
     <div className="join-screen">
@@ -135,10 +141,12 @@ export function App() {
   return (
     <>
       <VisualViewportSync />
+      <ToastProvider>
       <Suspense fallback={<RouteLoadingFallback />}>
       <Routes>
         <Route path="/" element={<HomeRoute />} />
         <Route path="/news" element={<NewsPage />} />
+        <Route path="/u/:slug" element={<PublicUserPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/auth/email-confirmed" element={<EmailConfirmedPage />} />
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
@@ -154,6 +162,7 @@ export function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
+      </ToastProvider>
     </>
   )
 }

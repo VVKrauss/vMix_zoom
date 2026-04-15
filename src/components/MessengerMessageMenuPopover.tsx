@@ -84,7 +84,7 @@ export function MessengerMessageMenuPopover({
           disabled={pinBusy}
           onClick={onTogglePin}
         >
-          {pinActive ? 'Снять закреп' : 'Закрепить'}
+          {pinActive ? 'Убрать из контактов' : 'Добавить в контакты'}
         </button>
       ) : null}
     </div>

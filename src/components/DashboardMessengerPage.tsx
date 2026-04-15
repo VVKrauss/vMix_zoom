@@ -25,6 +25,7 @@ import {
 } from '../lib/messengerWebPush'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useProfile } from '../hooks/useProfile'
+import { useToast } from '../context/ToastContext'
 import {
   appendDirectMessage,
   editDirectMessage,
@@ -483,6 +484,7 @@ function MessengerDmBubble({
 }
 
 export function DashboardMessengerPage() {
+  const toast = useToast()
   const { conversationId: rawConversationId } = useParams<{ conversationId?: string }>()
   const routeConversationId = rawConversationId?.trim() ?? ''
   const [searchParams] = useSearchParams()
@@ -1416,7 +1418,12 @@ export function DashboardMessengerPage() {
     const convId = activeConversationId.trim()
     if (!user?.id || !convId || photoUploading || threadLoading) return
     if (file.size > MESSENGER_PHOTO_MAX_BYTES) {
-      setError('Файл больше 2 МБ. Выберите изображение меньшего размера.')
+      toast.push({
+        tone: 'warning',
+        title: 'Слишком большой файл',
+        message: 'Файл больше 2 МБ. Выберите изображение меньшего размера.',
+        ms: 4200,
+      })
       return
     }
     setPhotoUploading(true)

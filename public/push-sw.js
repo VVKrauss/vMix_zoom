@@ -6,6 +6,7 @@ self.addEventListener('push', (event) => {
   let tag = 'dm'
   let icon = '/logo.png'
   let badge = '/logo.png'
+  let conversationId = ''
   try {
     const t = event.data && event.data.text && event.data.text()
     if (t) {
@@ -16,19 +17,37 @@ self.addEventListener('push', (event) => {
       if (typeof j.tag === 'string' && j.tag.trim()) tag = j.tag.trim()
       if (typeof j.icon === 'string' && j.icon.trim()) icon = j.icon.trim()
       if (typeof j.badge === 'string' && j.badge.trim()) badge = j.badge.trim()
+      if (typeof j.conversationId === 'string' && j.conversationId.trim()) conversationId = j.conversationId.trim()
     }
   } catch (_) {
     /* text() не JSON — показываем дефолт */
   }
   event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      icon,
-      badge,
-      tag,
-      renotify: true,
-      data: { url },
-    }),
+    (async () => {
+      // Если вкладка с тем же чатом уже открыта и активна — push не нужен.
+      if (conversationId) {
+        const list = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+        for (const c of list) {
+          try {
+            if (c.visibilityState !== 'visible') continue
+            const u = new URL(c.url)
+            if (!u.pathname.startsWith('/dashboard/messenger')) continue
+            const chat = u.searchParams.get('chat')?.trim() ?? ''
+            if (chat && chat === conversationId) return
+          } catch (_) {
+            /* ignore parse */
+          }
+        }
+      }
+      await self.registration.showNotification(title, {
+        body,
+        icon,
+        badge,
+        tag,
+        renotify: true,
+        data: { url, conversationId },
+      })
+    })(),
   )
 })
 

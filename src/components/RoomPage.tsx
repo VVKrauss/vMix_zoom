@@ -969,6 +969,8 @@ export function RoomPage({
         pinnedByMe: nextFavorite,
         pinnedMe: current?.pinnedMe ?? false,
         isMutualContact: nextFavorite && (current?.pinnedMe ?? false),
+          blockedByMe: current?.blockedByMe ?? false,
+          blockedMe: current?.blockedMe ?? false,
       },
     }))
     const result = await setContactPin(targetUserId, nextFavorite)

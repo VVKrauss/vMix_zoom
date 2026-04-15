@@ -10,21 +10,24 @@ import {
   listMyContacts,
   searchRegisteredUsers,
   setContactPin,
+  setUserBlocked,
 } from '../lib/socialGraph'
 import { DashboardMenuPicker, type DashboardMenuOption } from './DashboardMenuPicker'
 import { DashboardShell } from './DashboardShell'
-import { ChatBubbleIcon, ChevronLeftIcon, StarIcon, TrashIcon } from './icons'
+import { ChatBubbleIcon, ChevronLeftIcon, FiRrIcon, StarIcon, TrashIcon } from './icons'
 
-type ContactFilter = 'all' | 'mutual' | 'pinned' | 'incoming'
+type ContactFilter = 'all' | 'mutual' | 'pinned' | 'incoming' | 'blocked'
 
 const CONTACT_FILTER_OPTIONS: DashboardMenuOption<ContactFilter>[] = [
   { value: 'all', label: 'Все' },
   { value: 'mutual', label: 'Взаимные' },
-  { value: 'pinned', label: 'Закреплённые' },
-  { value: 'incoming', label: 'Закрепили вас' },
+  { value: 'pinned', label: 'В контактах' },
+  { value: 'incoming', label: 'Добавили вас' },
+  { value: 'blocked', label: 'Заблокированные' },
 ]
 
 function matchesContactFilter(item: ContactCard, filter: ContactFilter): boolean {
+  if (filter === 'blocked') return item.blockedByMe
   if (filter === 'mutual') return item.isMutualContact
   if (filter === 'pinned') return item.pinnedByMe
   if (filter === 'incoming') return item.pinnedMe && !item.pinnedByMe
@@ -32,9 +35,11 @@ function matchesContactFilter(item: ContactCard, filter: ContactFilter): boolean
 }
 
 function statusLabel(item: ContactCard): string {
+  if (item.blockedByMe) return 'Вы заблокировали'
+  if (item.blockedMe) return 'Заблокировал вас'
   if (item.isMutualContact) return 'Взаимный контакт'
-  if (item.pinnedByMe) return 'Закреплён у вас'
-  if (item.pinnedMe) return 'Закрепил вас'
+  if (item.pinnedByMe) return 'В ваших контактах'
+  if (item.pinnedMe) return 'Добавил вас'
   return 'Контакт'
 }
 
@@ -147,7 +152,7 @@ export function DashboardContactsPage() {
     setBusyTarget(null)
     if (result.error || !result.data) {
       setItems((prev) => prev.map((row) => (row.targetUserId === item.targetUserId ? item : row)))
-      setError(result.error ?? 'Не удалось обновить закреп')
+      setError(result.error ?? 'Не удалось обновить контакт')
       return
     }
     setError(null)
@@ -159,6 +164,8 @@ export function DashboardContactsPage() {
               pinnedByMe: result.data!.pinnedByMe,
               pinnedMe: result.data!.pinnedMe,
               isMutualContact: result.data!.isMutualContact,
+              blockedByMe: result.data!.blockedByMe,
+              blockedMe: result.data!.blockedMe,
             }
           : row,
       ),
@@ -176,7 +183,21 @@ export function DashboardContactsPage() {
     const result = await setContactPin(hit.id, true)
     setBusyTarget(null)
     if (result.error || !result.data) {
-      setError(result.error ?? 'Не удалось закрепить')
+      setError(result.error ?? 'Не удалось добавить в контакты')
+      return
+    }
+    setError(null)
+    silentReloadContacts()
+  }
+
+  const toggleBlock = async (item: ContactCard) => {
+    if (busyTarget) return
+    const next = !item.blockedByMe
+    setBusyTarget(item.targetUserId)
+    const res = await setUserBlocked(item.targetUserId, next)
+    setBusyTarget(null)
+    if (res.error || !res.data) {
+      setError(res.error ?? 'Не удалось обновить блокировку')
       return
     }
     setError(null)
@@ -315,10 +336,10 @@ export function DashboardContactsPage() {
                           className={`dashboard-friend-card__fav-btn${pin ? ' dashboard-friend-card__fav-btn--active' : ''}`}
                           onClick={() => void togglePinForSearchHit(hit)}
                           disabled={busyTarget === hit.id}
-                          title={pin ? 'Снять закреп' : 'Закрепить'}
+                          title={pin ? 'Убрать из контактов' : 'Добавить в контакты'}
                         >
                           <StarIcon filled={pin} />
-                          <span>{pin ? 'Закреплено' : 'Закрепить'}</span>
+                          <span>{pin ? 'В контактах' : 'В контакты'}</span>
                         </button>
                       </div>
                     </article>
@@ -336,9 +357,11 @@ export function DashboardContactsPage() {
             {filter === 'mutual'
               ? 'Пока нет взаимных контактов. Закрепите человека — когда он ответит взаимностью, вы появитесь здесь.'
               : filter === 'pinned'
-                ? 'Закреплённых пока нет. Закрепляйте из чата комнаты, мессенджера или найдите по имени выше.'
+                ? 'Пока нет контактов. Добавляйте людей из чата/мессенджера или найдите пользователя поиском (от 2 символов).'
                 : filter === 'incoming'
-                  ? 'Пока никто не закрепил вас.'
+                  ? 'Пока никто не добавил вас.'
+                  : filter === 'blocked'
+                    ? 'Пока нет заблокированных пользователей.'
                   : 'Пока здесь пусто. Закрепляйте людей из чата или найдите пользователя поиском (от 2 символов).'}
           </div>
         ) : null}
@@ -389,10 +412,20 @@ export function DashboardContactsPage() {
                     className={`dashboard-contact-compact-row__pin${item.pinnedByMe ? ' dashboard-contact-compact-row__pin--on' : ''}`}
                     disabled={busyTarget === item.targetUserId}
                     onClick={() => void togglePin(item)}
-                    title={item.pinnedByMe ? 'Снять закреп' : 'Закрепить'}
-                    aria-label={item.pinnedByMe ? 'Снять закреп' : 'Закрепить'}
+                    title={item.pinnedByMe ? 'Убрать из контактов' : 'Добавить в контакты'}
+                    aria-label={item.pinnedByMe ? 'Убрать из контактов' : 'Добавить в контакты'}
                   >
                     <StarIcon filled={item.pinnedByMe} />
+                  </button>
+                  <button
+                    type="button"
+                    className={`dashboard-contact-compact-row__hide${item.blockedByMe ? ' dashboard-contact-compact-row__pin--on' : ''}`}
+                    disabled={busyTarget === item.targetUserId}
+                    onClick={() => void toggleBlock(item)}
+                    title={item.blockedByMe ? 'Разблокировать' : 'Заблокировать'}
+                    aria-label={item.blockedByMe ? 'Разблокировать' : 'Заблокировать'}
+                  >
+                    <FiRrIcon name={item.blockedByMe ? 'unlock' : 'ban'} />
                   </button>
                   <button
                     type="button"

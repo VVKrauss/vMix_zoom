@@ -6,6 +6,8 @@ export type ContactStatus = {
   pinnedByMe: boolean
   pinnedMe: boolean
   isMutualContact: boolean
+  blockedByMe: boolean
+  blockedMe: boolean
 }
 
 export type ContactCard = ContactStatus & {
@@ -34,11 +36,15 @@ function mapContactStatusRow(row: Record<string, unknown>): ContactStatus {
   const isMutualContact =
     row.is_friend === true ||
     (pinnedByMe && pinnedMe)
+  const blockedByMe = row.blocked_by_me === true
+  const blockedMe = row.blocked_me === true
   return {
     targetUserId,
     pinnedByMe,
     pinnedMe,
     isMutualContact,
+    blockedByMe,
+    blockedMe,
   }
 }
 
@@ -131,6 +137,29 @@ export async function hideContactFromMyList(
     return { error: typeof row?.error === 'string' ? row.error : 'request_failed' }
   }
   return { error: null }
+}
+
+export async function setUserBlocked(
+  targetUserId: string,
+  blocked: boolean,
+): Promise<{ data: Pick<ContactStatus, 'targetUserId' | 'blockedByMe' | 'blockedMe'> | null; error: string | null }> {
+  const trimmed = targetUserId.trim()
+  if (!trimmed) return { data: null, error: 'Не выбран пользователь' }
+  const { data, error } = await supabase.rpc('set_user_block', {
+    p_target_user_id: trimmed,
+    p_block: blocked,
+  })
+  if (error) return { data: null, error: error.message }
+  if (!data || typeof data !== 'object') return { data: null, error: 'Пустой ответ сервера' }
+  const row = data as Record<string, unknown>
+  return {
+    data: {
+      targetUserId: String(row.target_user_id ?? trimmed),
+      blockedByMe: row.blocked_by_me === true,
+      blockedMe: row.blocked_me === true,
+    },
+    error: null,
+  }
 }
 
 export async function searchRegisteredUsers(

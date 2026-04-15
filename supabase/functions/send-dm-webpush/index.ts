@@ -211,6 +211,7 @@ Deno.serve(async (req) => {
     body: truncate(bodyText, 140),
     url: `${appBase}${openPath}`,
     tag: `dm-${conversationId}`,
+    conversationId,
     icon: senderAvatar || defaultIcon,
     badge: defaultIcon,
   })
