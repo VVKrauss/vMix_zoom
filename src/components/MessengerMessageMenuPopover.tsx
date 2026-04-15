@@ -5,8 +5,10 @@ import type { ReactionEmoji } from '../types/roomComms'
 
 export function MessengerMessageMenuPopover({
   canEdit,
+  canDelete,
   onClose,
   onEdit,
+  onDelete,
   onReply,
   onPickReaction,
   showAddPin,
@@ -15,8 +17,10 @@ export function MessengerMessageMenuPopover({
   onTogglePin,
 }: {
   canEdit: boolean
+  canDelete: boolean
   onClose: () => void
   onEdit: () => void
+  onDelete: () => void
   onReply: () => void
   onPickReaction: (emoji: ReactionEmoji) => void
   showAddPin?: boolean
@@ -48,6 +52,11 @@ export function MessengerMessageMenuPopover({
       {canEdit ? (
         <button type="button" className="messenger-msg-menu__item" role="menuitem" onClick={onEdit}>
           Редактировать
+        </button>
+      ) : null}
+      {canDelete ? (
+        <button type="button" className="messenger-msg-menu__item" role="menuitem" onClick={onDelete}>
+          Удалить
         </button>
       ) : null}
       <div className="messenger-msg-menu__emoji-row" role="group" aria-label="Реакции">

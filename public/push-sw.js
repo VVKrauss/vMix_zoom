@@ -4,6 +4,8 @@ self.addEventListener('push', (event) => {
   let body = 'Новое сообщение'
   let url = '/dashboard/messenger'
   let tag = 'dm'
+  let icon = '/logo.png'
+  let badge = '/logo.png'
   try {
     const t = event.data && event.data.text && event.data.text()
     if (t) {
@@ -12,6 +14,8 @@ self.addEventListener('push', (event) => {
       if (typeof j.body === 'string') body = j.body
       if (typeof j.url === 'string' && j.url.trim()) url = j.url.trim()
       if (typeof j.tag === 'string' && j.tag.trim()) tag = j.tag.trim()
+      if (typeof j.icon === 'string' && j.icon.trim()) icon = j.icon.trim()
+      if (typeof j.badge === 'string' && j.badge.trim()) badge = j.badge.trim()
     }
   } catch (_) {
     /* text() не JSON — показываем дефолт */
@@ -19,8 +23,8 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
-      icon: '/logo.png',
-      badge: '/logo.png',
+      icon,
+      badge,
       tag,
       renotify: true,
       data: { url },

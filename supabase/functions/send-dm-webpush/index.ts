@@ -169,6 +169,16 @@ Deno.serve(async (req) => {
       ? record.sender_name_snapshot.trim()
       : 'Сообщение'
 
+  const { data: senderRow } = await admin
+    .from('users')
+    .select('avatar_url')
+    .eq('id', senderId)
+    .maybeSingle()
+  const senderAvatar =
+    senderRow && typeof (senderRow as { avatar_url?: unknown }).avatar_url === 'string'
+      ? ((senderRow as { avatar_url?: string }).avatar_url ?? '').trim()
+      : ''
+
   const { data: members, error: memErr } = await admin
     .from('chat_conversation_members')
     .select('user_id')
@@ -195,11 +205,14 @@ Deno.serve(async (req) => {
 
   const appBase = (Deno.env.get('PUBLIC_APP_URL') ?? 'https://redflow.online').replace(/\/$/, '')
   const openPath = `/dashboard/messenger?chat=${encodeURIComponent(conversationId)}`
+  const defaultIcon = `${appBase}/logo.png`
   const payload = JSON.stringify({
     title: truncate(senderName, 60),
     body: truncate(bodyText, 140),
     url: `${appBase}${openPath}`,
     tag: `dm-${conversationId}`,
+    icon: senderAvatar || defaultIcon,
+    badge: defaultIcon,
   })
 
   let sent = 0

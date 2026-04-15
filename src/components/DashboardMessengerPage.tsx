@@ -37,6 +37,7 @@ import {
   listDirectConversationsForUser,
   listDirectMessagesPage,
   mapDirectMessageFromRow,
+  deleteDirectMessage,
   markDirectConversationRead,
   previewTextForDirectMessageTail,
   requestMessengerUnreadRefresh,
@@ -1640,6 +1641,19 @@ export function DashboardMessengerPage() {
 
   const closeMessageActionMenu = useCallback(() => setMessageMenu(null), [])
 
+  const deleteMessageFromMenu = useCallback(async () => {
+    const convId = activeConversationId.trim()
+    const m = messageMenu?.message
+    if (!user?.id || !convId || !m?.id || m.id.startsWith('local-')) return
+    if (m.senderUserId !== user.id) return
+    if (m.kind !== 'text' && m.kind !== 'image') return
+    if (threadLoading) return
+
+    closeMessageActionMenu()
+    const res = await deleteDirectMessage(convId, m.id)
+    if (res.error) setError(res.error)
+  }, [activeConversationId, closeMessageActionMenu, deleteDirectMessage, messageMenu?.message, threadLoading, user?.id])
+
   const toggleFavoriteFromMessageMenu = useCallback(async () => {
     const m = messageMenu?.message
     const sid = m?.senderUserId?.trim()
@@ -2491,6 +2505,13 @@ export function DashboardMessengerPage() {
                                   (messageMenu.message.kind === 'text' ||
                                     messageMenu.message.kind === 'image'),
                               )}
+                              canDelete={Boolean(
+                                user?.id &&
+                                  messageMenu.message.senderUserId === user.id &&
+                                  !messageMenu.message.id.startsWith('local-') &&
+                                  (messageMenu.message.kind === 'text' ||
+                                    messageMenu.message.kind === 'image'),
+                              )}
                               onClose={closeMessageActionMenu}
                               onEdit={() => {
                                 const m = messageMenu.message
@@ -2500,6 +2521,9 @@ export function DashboardMessengerPage() {
                                 setDraft(m.body)
                                 closeMessageActionMenu()
                                 queueMicrotask(() => composerTextareaRef.current?.focus())
+                              }}
+                              onDelete={() => {
+                                void deleteMessageFromMenu()
                               }}
                               onReply={() => {
                                 setReplyTo(messageMenu.message)

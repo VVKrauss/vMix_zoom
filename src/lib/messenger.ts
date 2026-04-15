@@ -406,6 +406,17 @@ export async function editDirectMessage(
   return { error: error?.message ?? null }
 }
 
+export async function deleteDirectMessage(
+  conversationId: string,
+  messageId: string,
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.rpc('delete_direct_message', {
+    p_conversation_id: conversationId.trim(),
+    p_message_id: messageId.trim(),
+  })
+  return { error: error?.message ?? null }
+}
+
 const MESSENGER_IMAGE_MAX_EDGE = 1680
 const MESSENGER_IMAGE_JPEG_QUALITY = 0.86
 /** Превью в ленте: меньший файл, отдельный объект в storage. */
