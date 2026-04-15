@@ -44,12 +44,22 @@ import {
   requestMessengerUnreadRefresh,
   toggleDirectMessageReaction,
   uploadMessengerImage,
+  getMessengerImageSignedUrl,
 } from '../lib/messenger'
 import {
   listMessengerConversations,
   type MessengerConversationKind,
   type MessengerConversationSummary,
 } from '../lib/messengerConversations'
+import {
+  createGroupChat,
+  getOrCreateConversationInvite,
+  joinConversationByInvite,
+  resolveConversationByInvite,
+  updateGroupProfile,
+  type InviteConversationPreview,
+} from '../lib/groups'
+import { createChannel, updateChannelProfile } from '../lib/channels'
 import {
   getMessengerFontPreset,
   setMessengerFontPreset,
@@ -75,6 +85,7 @@ import {
   LogOutIcon,
   MenuBurgerIcon,
   ParticipantsBadgeIcon,
+  PlusIcon,
   XCloseIcon,
   RoomsIcon,
 } from './icons'
@@ -497,7 +508,8 @@ export function DashboardMessengerPage() {
   const routeConversationId = rawConversationId?.trim() ?? ''
   const [searchParams] = useSearchParams()
   const searchConversationId = searchParams.get('chat')?.trim() ?? ''
-  const conversationId = searchConversationId || routeConversationId
+  const inviteToken = searchParams.get('invite')?.trim() ?? ''
+  const urlConversationId = searchConversationId || routeConversationId
   const targetUserId = searchParams.get('with')?.trim() ?? ''
   const targetTitle = searchParams.get('title')?.trim() ?? ''
   const navigate = useNavigate()
@@ -514,8 +526,22 @@ export function DashboardMessengerPage() {
   const [messengerSettingsOpen, setMessengerSettingsOpen] = useState(false)
   const [messengerMenuOpen, setMessengerMenuOpen] = useState(false)
   const [chatListSearch, setChatListSearch] = useState('')
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [createKind, setCreateKind] = useState<'group' | 'channel'>('group')
+  const [createIsOpen, setCreateIsOpen] = useState(true)
+  const [createTitle, setCreateTitle] = useState('')
+  const [createNick, setCreateNick] = useState('')
+  const [createLogoFile, setCreateLogoFile] = useState<File | null>(null)
+  const [createChannelComments, setCreateChannelComments] = useState<'comments' | 'reactions_only'>('comments')
+  const [createBusy, setCreateBusy] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [invitePreview, setInvitePreview] = useState<InviteConversationPreview | null>(null)
+  const [inviteLoading, setInviteLoading] = useState(false)
+  const [inviteError, setInviteError] = useState<string | null>(null)
+  const [inviteJoinBusy, setInviteJoinBusy] = useState(false)
   /** Мобильный режим «только дерево чатов» — не подставлять chat в URL и не грузить тред */
   const listOnlyMobile = isMobileMessenger && searchParams.get('view') === 'list'
+  const conversationId = inviteToken && invitePreview?.id ? invitePreview.id : urlConversationId
 
   const [pushUi, setPushUi] = useState<'absent' | 'unconfigured' | 'off' | 'on' | 'denied'>('absent')
   const [pushBusy, setPushBusy] = useState(false)
@@ -589,9 +615,82 @@ export function DashboardMessengerPage() {
   const [threadLoading, setThreadLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [items, setItems] = useState<MessengerConversationSummary[]>([])
+  const [conversationAvatarUrlById, setConversationAvatarUrlById] = useState<Record<string, string>>({})
   const [activeConversation, setActiveConversation] = useState<MessengerConversationSummary | null>(null)
   const [messages, setMessages] = useState<DirectMessage[]>([])
   const [draft, setDraft] = useState('')
+
+  useEffect(() => {
+    let active = true
+    if (!user?.id) {
+      setInvitePreview(null)
+      setInviteError(null)
+      setInviteLoading(false)
+      return
+    }
+    const token = inviteToken.trim()
+    if (!token) {
+      setInvitePreview(null)
+      setInviteError(null)
+      setInviteLoading(false)
+      return
+    }
+    setInviteLoading(true)
+    setInviteError(null)
+    void resolveConversationByInvite(token).then((res) => {
+      if (!active) return
+      setInviteLoading(false)
+      if (res.error) {
+        setInvitePreview(null)
+        setInviteError(res.error)
+        return
+      }
+      setInvitePreview(res.data)
+    })
+    return () => {
+      active = false
+    }
+  }, [inviteToken, user?.id])
+
+  useEffect(() => {
+    const cid = invitePreview?.id?.trim()
+    const token = inviteToken.trim()
+    if (!token || !cid) return
+    if (items.some((i) => i.id === cid)) {
+      navigate(`/dashboard/messenger/${encodeURIComponent(cid)}`, { replace: true })
+    }
+  }, [invitePreview?.id, inviteToken, items, navigate])
+
+  const joinFromInvite = useCallback(async () => {
+    const token = inviteToken.trim()
+    if (!user?.id || !token || inviteJoinBusy) return
+    setInviteJoinBusy(true)
+    setInviteError(null)
+    try {
+      const res = await joinConversationByInvite(token)
+      if (res.error || !res.data?.conversationId) {
+        setInviteError(res.error ?? 'Не удалось вступить.')
+        return
+      }
+      const listRes = await listMessengerConversations()
+      if (!listRes.error && listRes.data) setItems(listRes.data)
+      navigate(`/dashboard/messenger/${encodeURIComponent(res.data.conversationId)}`, { replace: true })
+    } finally {
+      setInviteJoinBusy(false)
+    }
+  }, [inviteJoinBusy, inviteToken, navigate, setItems, user?.id])
+
+  const [conversationInfoOpen, setConversationInfoOpen] = useState(false)
+  const [conversationInfoId, setConversationInfoId] = useState<string | null>(null)
+  const [conversationInfoRole, setConversationInfoRole] = useState<string | null>(null)
+  const [conversationInfoLoading, setConversationInfoLoading] = useState(false)
+  const [conversationInfoEdit, setConversationInfoEdit] = useState(false)
+  const [conversationInfoError, setConversationInfoError] = useState<string | null>(null)
+  const [conversationInfoTitle, setConversationInfoTitle] = useState('')
+  const [conversationInfoNick, setConversationInfoNick] = useState('')
+  const [conversationInfoIsOpen, setConversationInfoIsOpen] = useState(true)
+  const [conversationInfoChannelComments, setConversationInfoChannelComments] = useState<'comments' | 'reactions_only'>('comments')
+  const [conversationInfoLogoFile, setConversationInfoLogoFile] = useState<File | null>(null)
   const [sending, setSending] = useState(false)
   const [photoUploading, setPhotoUploading] = useState(false)
   /** Ответ на сообщение (цитата над композером). */
@@ -652,6 +751,32 @@ export function DashboardMessengerPage() {
   itemsRef.current = items
   const messagesRef = useRef(messages)
   messagesRef.current = messages
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      const missing = (itemsRef.current ?? []).filter(
+        (it) =>
+          (it.kind === 'group' || it.kind === 'channel') &&
+          Boolean(it.avatarThumbPath?.trim() || it.avatarPath?.trim()) &&
+          !conversationAvatarUrlById[it.id],
+      )
+      if (missing.length === 0) return
+      for (const it of missing) {
+        const path = (it.avatarThumbPath?.trim() || it.avatarPath?.trim() || '').trim()
+        if (!path) continue
+        const signed = await getMessengerImageSignedUrl(path, 3600)
+        if (!active) return
+        if (signed.url) {
+          setConversationAvatarUrlById((prev) => (prev[it.id] ? prev : { ...prev, [it.id]: signed.url! }))
+        }
+      }
+    }
+    void run()
+    return () => {
+      active = false
+    }
+  }, [items, conversationAvatarUrlById])
   const messagesScrollRef = useRef<HTMLDivElement | null>(null)
   /** Контейнер с сообщениями — ResizeObserver ловит рост высоты после decode изображений. */
   const messagesContentRef = useRef<HTMLDivElement | null>(null)
@@ -834,6 +959,41 @@ export function DashboardMessengerPage() {
         setMessageMenu(null)
         return
       }
+
+      const token = inviteToken.trim()
+      const preview = invitePreview
+      if (token && preview?.id && !itemsRef.current.some((i) => i.id === preview.id)) {
+        setError(null)
+        setThreadLoading(false)
+        setActiveConversation({
+          id: preview.id,
+          kind: preview.kind,
+          title: preview.title,
+          createdAt: new Date(0).toISOString(),
+          lastMessageAt: null,
+          lastMessagePreview: null,
+          messageCount: 0,
+          unreadCount: 0,
+          isPublic: preview.isPublic,
+          publicNick: preview.publicNick,
+          avatarPath: preview.avatarPath,
+          avatarThumbPath: preview.avatarThumbPath,
+          memberCount: preview.memberCount,
+          ...(preview.kind === 'channel'
+            ? {
+                postingMode: preview.postingMode ?? 'admins_only',
+                commentsMode: preview.commentsMode ?? 'everyone',
+              }
+            : {}),
+        })
+        setMessages([])
+        setHasMoreOlder(false)
+        setReplyTo(null)
+        setEditingMessageId(null)
+        setComposerEmojiOpen(false)
+        setMessageMenu(null)
+        return
+      }
       const startedTarget =
         conversationId.trim() || pickDefaultConversationId(itemsRef.current, null) || ''
       if (!startedTarget) {
@@ -941,9 +1101,15 @@ export function DashboardMessengerPage() {
     }
 
     void run()
-  }, [conversationId, listOnlyMobile, loading, user?.id])
+  }, [conversationId, invitePreview, inviteToken, listOnlyMobile, loading, user?.id])
 
   const activeConversationId = listOnlyMobile ? '' : conversationId || activeConversation?.id || ''
+  const inviteJoinMode = Boolean(
+    inviteToken.trim() &&
+      invitePreview?.id &&
+      activeConversationId === invitePreview.id &&
+      !items.some((i) => i.id === invitePreview.id),
+  )
 
   useEffect(() => {
     messengerPinnedToBottomRef.current = true
@@ -1830,6 +1996,11 @@ export function DashboardMessengerPage() {
   const threadHeadConversation =
     sortedItems.find((i) => i.id === activeConversationId) ?? activeConversation
 
+  const conversationInfoConv =
+    conversationInfoId?.trim()
+      ? sortedItems.find((i) => i.id === conversationInfoId) ?? (activeConversation?.id === conversationInfoId ? activeConversation : null)
+      : null
+
   const activeAvatarUrl =
     threadHeadConversation?.kind === 'direct'
       ? threadHeadConversation.avatarUrl ??
@@ -1916,6 +2087,285 @@ export function DashboardMessengerPage() {
     goCreateRoomFromMessenger()
   }, [closeMessengerMenu, goCreateRoomFromMessenger])
 
+  const openCreateConversationModal = useCallback(() => {
+    setCreateError(null)
+    setCreateBusy(false)
+    setCreateKind('group')
+    setCreateIsOpen(true)
+    setCreateTitle('')
+    setCreateNick('')
+    setCreateLogoFile(null)
+    setCreateChannelComments('comments')
+    setCreateModalOpen(true)
+  }, [])
+
+  const closeCreateConversationModal = useCallback(() => {
+    if (createBusy) return
+    setCreateModalOpen(false)
+    setCreateError(null)
+  }, [createBusy])
+
+  const submitCreateConversation = useCallback(async () => {
+    if (!user?.id || createBusy) return
+    const title = createTitle.trim()
+    const nickRaw = createNick.trim().toLowerCase()
+    const nick = nickRaw ? nickRaw.replace(/\s+/g, '_') : ''
+    const nickOk = !nick || /^[a-z0-9_]{3,32}$/.test(nick)
+    if (!title) {
+      setCreateError('Введите название.')
+      return
+    }
+    if (!nickOk) {
+      setCreateError('Ник: только a-z, 0-9, _ (3–32 символа).')
+      return
+    }
+
+    setCreateBusy(true)
+    setCreateError(null)
+    try {
+      const isPublic = createIsOpen
+      let conversationId: string | null = null
+
+      if (createKind === 'group') {
+        const res = await createGroupChat(title, isPublic)
+        if (res.error || !res.data) {
+          setCreateError(res.error ?? 'Не удалось создать группу.')
+          return
+        }
+        conversationId = res.data
+      } else {
+        const commentsMode = createChannelComments === 'comments' ? 'everyone' : 'disabled'
+        const res = await createChannel(title, { isPublic, postingMode: 'admins_only', commentsMode })
+        if (res.error || !res.data) {
+          setCreateError(res.error ?? 'Не удалось создать канал.')
+          return
+        }
+        conversationId = res.data
+      }
+
+      if (!conversationId) {
+        setCreateError('Не удалось создать.')
+        return
+      }
+
+      let avatarPath: string | null = null
+      let avatarThumbPath: string | null = null
+      if (createLogoFile) {
+        const up = await uploadMessengerImage(conversationId, createLogoFile)
+        if (up.error) {
+          setCreateError(up.error)
+          return
+        }
+        avatarPath = up.path
+        avatarThumbPath = up.thumbPath
+      }
+
+      if (createKind === 'group') {
+        const upd = await updateGroupProfile({
+          conversationId,
+          publicNick: nick || null,
+          isPublic,
+          ...(avatarPath ? { avatarPath } : {}),
+          ...(avatarThumbPath ? { avatarThumbPath } : {}),
+        })
+        if (upd.error) {
+          setCreateError(upd.error === 'nick_taken' ? 'Ник уже занят.' : upd.error)
+          return
+        }
+      } else {
+        const commentsMode = createChannelComments === 'comments' ? 'everyone' : 'disabled'
+        const upd = await updateChannelProfile({
+          conversationId,
+          publicNick: nick || null,
+          isPublic,
+          postingMode: 'admins_only',
+          commentsMode,
+          ...(avatarPath ? { avatarPath } : {}),
+          ...(avatarThumbPath ? { avatarThumbPath } : {}),
+        })
+        if (upd.error) {
+          setCreateError(upd.error === 'nick_taken' ? 'Ник уже занят.' : upd.error)
+          return
+        }
+      }
+
+      setCreateModalOpen(false)
+      setCreateLogoFile(null)
+
+      const listRes = await listMessengerConversations()
+      if (!listRes.error && listRes.data) setItems(listRes.data)
+
+      navigate(`/dashboard/messenger/${encodeURIComponent(conversationId)}`)
+    } finally {
+      setCreateBusy(false)
+    }
+  }, [
+    user?.id,
+    createBusy,
+    createTitle,
+    createNick,
+    createLogoFile,
+    createKind,
+    createIsOpen,
+    createChannelComments,
+    navigate,
+    setItems,
+  ])
+
+  const openConversationInfo = useCallback(
+    async (cid: string) => {
+      const id = cid.trim()
+      if (!id) return
+      const conv = itemsRef.current.find((i) => i.id === id) ?? (activeConversation?.id === id ? activeConversation : null)
+      if (!conv || (conv.kind !== 'group' && conv.kind !== 'channel')) return
+
+      setConversationInfoOpen(true)
+      setConversationInfoId(id)
+      setConversationInfoEdit(false)
+      setConversationInfoError(null)
+      setConversationInfoLogoFile(null)
+      setConversationInfoTitle(conv.title)
+      setConversationInfoNick((conv.publicNick ?? '').trim())
+      setConversationInfoIsOpen(conv.isPublic !== false)
+      setConversationInfoChannelComments(
+        conv.kind === 'channel' && conv.commentsMode === 'disabled' ? 'reactions_only' : 'comments',
+      )
+
+      if (!user?.id) return
+      setConversationInfoLoading(true)
+      setConversationInfoRole(null)
+      try {
+        const { data, error } = await supabase
+          .from('chat_conversation_members')
+          .select('role')
+          .eq('conversation_id', id)
+          .eq('user_id', user.id)
+          .maybeSingle()
+        if (error) {
+          setConversationInfoRole(null)
+        } else {
+          const role = typeof (data as any)?.role === 'string' ? String((data as any).role) : null
+          setConversationInfoRole(role)
+        }
+      } finally {
+        setConversationInfoLoading(false)
+      }
+    },
+    [activeConversation, user?.id],
+  )
+
+  const closeConversationInfo = useCallback(() => {
+    setConversationInfoOpen(false)
+    setConversationInfoId(null)
+    setConversationInfoEdit(false)
+    setConversationInfoError(null)
+    setConversationInfoLogoFile(null)
+  }, [])
+
+  const shareConversationInvite = useCallback(async () => {
+    const cid = conversationInfoId?.trim() ?? ''
+    if (!cid) return
+    const res = await getOrCreateConversationInvite(cid)
+    if (res.error || !res.data?.token) {
+      toast.push({ tone: 'error', message: res.error ?? 'Не удалось создать ссылку.', ms: 2600 })
+      return
+    }
+    const url = `${window.location.origin}/dashboard/messenger?invite=${encodeURIComponent(res.data.token)}`
+    try {
+      await navigator.clipboard.writeText(url)
+      toast.push({ tone: 'success', message: 'Ссылка скопирована.', ms: 2200 })
+    } catch {
+      toast.push({ tone: 'info', message: url, ms: 4200 })
+    }
+  }, [conversationInfoId, toast])
+
+  const saveConversationInfo = useCallback(async () => {
+    const cid = conversationInfoId?.trim() ?? ''
+    if (!user?.id || !cid || conversationInfoLoading) return
+    const title = conversationInfoTitle.trim()
+    const nickRaw = conversationInfoNick.trim().toLowerCase()
+    const nick = nickRaw ? nickRaw.replace(/\s+/g, '_') : ''
+    const nickOk = !nick || /^[a-z0-9_]{3,32}$/.test(nick)
+    if (!title) {
+      setConversationInfoError('Введите название.')
+      return
+    }
+    if (!nickOk) {
+      setConversationInfoError('Ник: только a-z, 0-9, _ (3–32).')
+      return
+    }
+
+    setConversationInfoLoading(true)
+    setConversationInfoError(null)
+    try {
+      const conv = itemsRef.current.find((i) => i.id === cid) ?? activeConversation
+      const kind = conv?.kind ?? 'group'
+
+      let avatarPath: string | null = null
+      let avatarThumbPath: string | null = null
+      if (conversationInfoLogoFile) {
+        const up = await uploadMessengerImage(cid, conversationInfoLogoFile)
+        if (up.error) {
+          setConversationInfoError(up.error)
+          return
+        }
+        avatarPath = up.path
+        avatarThumbPath = up.thumbPath
+      }
+
+      if (kind === 'group') {
+        const upd = await updateGroupProfile({
+          conversationId: cid,
+          title,
+          publicNick: nick || null,
+          isPublic: conversationInfoIsOpen,
+          ...(avatarPath ? { avatarPath } : {}),
+          ...(avatarThumbPath ? { avatarThumbPath } : {}),
+        })
+        if (upd.error) {
+          setConversationInfoError(upd.error === 'nick_taken' ? 'Ник уже занят.' : upd.error)
+          return
+        }
+      } else if (kind === 'channel') {
+        const commentsMode = conversationInfoChannelComments === 'comments' ? 'everyone' : 'disabled'
+        const upd = await updateChannelProfile({
+          conversationId: cid,
+          title,
+          publicNick: nick || null,
+          isPublic: conversationInfoIsOpen,
+          postingMode: 'admins_only',
+          commentsMode,
+          ...(avatarPath ? { avatarPath } : {}),
+          ...(avatarThumbPath ? { avatarThumbPath } : {}),
+        })
+        if (upd.error) {
+          setConversationInfoError(upd.error === 'nick_taken' ? 'Ник уже занят.' : upd.error)
+          return
+        }
+      }
+
+      const listRes = await listMessengerConversations()
+      if (!listRes.error && listRes.data) setItems(listRes.data)
+      setConversationInfoEdit(false)
+      setConversationInfoLogoFile(null)
+      toast.push({ tone: 'success', message: 'Сохранено.', ms: 1800 })
+    } finally {
+      setConversationInfoLoading(false)
+    }
+  }, [
+    activeConversation,
+    conversationInfoChannelComments,
+    conversationInfoId,
+    conversationInfoIsOpen,
+    conversationInfoLoading,
+    conversationInfoLogoFile,
+    conversationInfoNick,
+    conversationInfoTitle,
+    setItems,
+    toast,
+    user?.id,
+  ])
+
   useEffect(() => {
     if (!messengerMenuOpen) return
     const onKey = (e: KeyboardEvent) => {
@@ -1933,6 +2383,15 @@ export function DashboardMessengerPage() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [messengerSettingsOpen])
+
+  useEffect(() => {
+    if (!createModalOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeCreateConversationModal()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [createModalOpen, closeCreateConversationModal])
 
   const renderThreadComposer = () => (
     <div className="dashboard-messenger__composer" role="region" aria-label="Новое сообщение">
@@ -2121,6 +2580,15 @@ export function DashboardMessengerPage() {
                     >
                       <ChevronLeftIcon />
                     </Link>
+                    <button
+                      type="button"
+                      className="dashboard-messenger__list-head-btn"
+                      onClick={openCreateConversationModal}
+                      aria-label="Создать группу или канал"
+                      title="Создать группу или канал"
+                    >
+                      <PlusIcon />
+                    </button>
                     <input
                       id="messenger-chat-list-search"
                       type="search"
@@ -2160,6 +2628,15 @@ export function DashboardMessengerPage() {
                     <label className="dashboard-messenger__list-search-label" htmlFor="messenger-chat-list-search-desktop">
                       Поиск
                     </label>
+                    <button
+                      type="button"
+                      className="dashboard-messenger__list-head-btn"
+                      onClick={openCreateConversationModal}
+                      aria-label="Создать группу или канал"
+                      title="Создать группу или канал"
+                    >
+                      <PlusIcon />
+                    </button>
                     <input
                       id="messenger-chat-list-search-desktop"
                       type="search"
@@ -2223,7 +2700,7 @@ export function DashboardMessengerPage() {
                       const avatarUrl =
                         item.kind === 'direct'
                           ? item.avatarUrl ?? (!item.otherUserId ? profile?.avatar_url ?? null : null)
-                          : null
+                          : conversationAvatarUrlById[item.id] ?? null
                       const rowPeekUserId =
                         item.kind === 'direct'
                           ? item.otherUserId?.trim() || (!item.otherUserId && user?.id ? user.id : '')
@@ -2250,12 +2727,16 @@ export function DashboardMessengerPage() {
                               onClick={(e) => {
                                 e.preventDefault()
                                 e.stopPropagation()
-                                if (rowPeekUserId && item.kind === 'direct') {
-                                  openUserPeek({
-                                    userId: rowPeekUserId,
-                                    displayName: item.title,
-                                    avatarUrl,
-                                  })
+                                if (item.kind === 'direct') {
+                                  if (rowPeekUserId) {
+                                    openUserPeek({
+                                      userId: rowPeekUserId,
+                                      displayName: item.title,
+                                      avatarUrl,
+                                    })
+                                  }
+                                } else {
+                                  void openConversationInfo(item.id)
                                 }
                               }}
                             >
@@ -2304,32 +2785,149 @@ export function DashboardMessengerPage() {
                     <BrandLogoLoader size={56} />
                   </div>
                 ) : threadHeadConversation ? (
-                  threadHeadConversation.kind === 'group' ? (
-                    <GroupThreadPane
-                      conversationId={activeConversationId}
-                      onTouchTail={(patch) => {
-                        setItems((prev) =>
-                          prev.map((it) =>
-                            it.id === activeConversationId
-                              ? { ...it, lastMessageAt: patch.lastMessageAt, lastMessagePreview: patch.lastMessagePreview }
-                              : it,
-                          ),
-                        )
-                      }}
-                    />
-                  ) : threadHeadConversation.kind === 'channel' ? (
-                    <ChannelThreadPane
-                      conversationId={activeConversationId}
-                      onTouchTail={(patch) => {
-                        setItems((prev) =>
-                          prev.map((it) =>
-                            it.id === activeConversationId
-                              ? { ...it, lastMessageAt: patch.lastMessageAt, lastMessagePreview: patch.lastMessagePreview }
-                              : it,
-                          ),
-                        )
-                      }}
-                    />
+                  threadHeadConversation.kind === 'group' || threadHeadConversation.kind === 'channel' ? (
+                    inviteJoinMode ? (
+                      <div className="dashboard-messenger__thread-body">
+                        <div className="dashboard-messenger__thread-head">
+                          {isMobileMessenger ? (
+                            <header className="dashboard-messenger__list-head">
+                              <button
+                                type="button"
+                                className="dashboard-messenger__list-head-btn"
+                                aria-label="К списку чатов"
+                                title="К списку чатов"
+                                onClick={() => navigate('/dashboard/messenger?view=list', { replace: true })}
+                              >
+                                <ChevronLeftIcon />
+                              </button>
+                              <div className="dashboard-messenger__thread-head-center">
+                                <div className="dashboard-messenger__thread-head-center-meta">
+                                  {threadHeadConversation.kind === 'channel' ? 'Канал' : 'Группа'}
+                                </div>
+                                <div className="dashboard-messenger__thread-head-center-title">
+                                  {threadHeadConversation.title}
+                                </div>
+                              </div>
+                            </header>
+                          ) : (
+                            <div className="dashboard-messenger__thread-head-center" style={{ padding: 16 }}>
+                              <div className="dashboard-messenger__thread-head-center-meta">
+                                {threadHeadConversation.kind === 'channel' ? 'Канал' : 'Группа'} ·{' '}
+                                {invitePreview?.memberCount ?? threadHeadConversation.memberCount ?? 0} участн.
+                              </div>
+                              <div className="dashboard-messenger__thread-head-center-title">{threadHeadConversation.title}</div>
+                            </div>
+                          )}
+                        </div>
+
+                        {inviteLoading ? <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" /> : null}
+                        {inviteError ? <p className="join-error">{inviteError}</p> : null}
+
+                        <div className="dashboard-chats-empty" style={{ paddingTop: 0 }}>
+                          <button
+                            type="button"
+                            className="dashboard-topbar__action dashboard-topbar__action--primary"
+                            onClick={() => void joinFromInvite()}
+                            disabled={inviteJoinBusy || inviteLoading}
+                          >
+                            {inviteJoinBusy ? 'Вступаем…' : 'Вступить'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="dashboard-messenger__thread-body">
+                        <div className="dashboard-messenger__thread-head">
+                          {isMobileMessenger ? (
+                            <header className="dashboard-messenger__list-head">
+                              <div className="dashboard-messenger__thread-head-back-wrap">
+                                <button
+                                  type="button"
+                                  className="dashboard-messenger__list-head-btn"
+                                  aria-label="К списку чатов"
+                                  title="К списку чатов"
+                                  onClick={() => navigate('/dashboard/messenger?view=list', { replace: true })}
+                                >
+                                  <ChevronLeftIcon />
+                                </button>
+                              </div>
+                              <div className="dashboard-messenger__thread-head-center">
+                                <button
+                                  type="button"
+                                  className="dashboard-messenger__thread-head-center-avatar"
+                                  aria-label="Информация"
+                                  onClick={() => void openConversationInfo(activeConversationId)}
+                                >
+                                  {conversationAvatarUrlById[activeConversationId] ? (
+                                    <img src={conversationAvatarUrlById[activeConversationId] ?? undefined} alt="" />
+                                  ) : (
+                                    <span>{conversationInitial(threadHeadConversation.title)}</span>
+                                  )}
+                                </button>
+                                <div className="dashboard-messenger__thread-head-center-text">
+                                  <div className="dashboard-messenger__thread-head-center-title">
+                                    {threadHeadConversation.title}
+                                  </div>
+                                  <div className="dashboard-messenger__thread-head-center-meta">
+                                    {(threadHeadConversation.kind === 'channel' ? 'Канал' : 'Группа') + ' · '}
+                                    {threadHeadConversation.memberCount ?? 0} участн.
+                                  </div>
+                                </div>
+                              </div>
+                            </header>
+                          ) : (
+                            <div className="dashboard-messenger__thread-head-center" style={{ padding: 16 }}>
+                              <button
+                                type="button"
+                                className="dashboard-messenger__thread-head-center-avatar"
+                                aria-label="Информация"
+                                onClick={() => void openConversationInfo(activeConversationId)}
+                              >
+                                {conversationAvatarUrlById[activeConversationId] ? (
+                                  <img src={conversationAvatarUrlById[activeConversationId] ?? undefined} alt="" />
+                                ) : (
+                                  <span>{conversationInitial(threadHeadConversation.title)}</span>
+                                )}
+                              </button>
+                              <div className="dashboard-messenger__thread-head-center-text">
+                                <div className="dashboard-messenger__thread-head-center-title">{threadHeadConversation.title}</div>
+                                <div className="dashboard-messenger__thread-head-center-meta">
+                                  {(threadHeadConversation.kind === 'channel' ? 'Канал' : 'Группа') + ' · '}
+                                  {threadHeadConversation.memberCount ?? 0} участн.
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {threadHeadConversation.kind === 'group' ? (
+                          <GroupThreadPane
+                            conversationId={activeConversationId}
+                            onTouchTail={(patch) => {
+                              setItems((prev) =>
+                                prev.map((it) =>
+                                  it.id === activeConversationId
+                                    ? { ...it, lastMessageAt: patch.lastMessageAt, lastMessagePreview: patch.lastMessagePreview }
+                                    : it,
+                                ),
+                              )
+                            }}
+                          />
+                        ) : (
+                          <ChannelThreadPane
+                            conversationId={activeConversationId}
+                            onTouchTail={(patch) => {
+                              setItems((prev) =>
+                                prev.map((it) =>
+                                  it.id === activeConversationId
+                                    ? { ...it, lastMessageAt: patch.lastMessageAt, lastMessagePreview: patch.lastMessagePreview }
+                                    : it,
+                                ),
+                              )
+                            }}
+                          />
+                        )}
+                      </div>
+                    )
                   ) : (
                   <DirectThreadPane>
                     <div className="dashboard-messenger__thread-head">
@@ -2828,6 +3426,385 @@ export function DashboardMessengerPage() {
                 }}
               >
                 <img src={messengerImageLightboxUrl} className="messenger-image-lightbox__img" alt="" draggable={false} />
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+
+      {conversationInfoOpen && conversationInfoConv
+        ? createPortal(
+            <div
+              className="messenger-settings-modal-root"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="messenger-conv-info-title"
+            >
+              <button
+                type="button"
+                className="messenger-settings-modal-backdrop"
+                aria-label="Закрыть"
+                onClick={closeConversationInfo}
+              />
+              <div className="messenger-settings-modal">
+                <h2 id="messenger-conv-info-title" className="messenger-settings-modal__title">
+                  {conversationInfoConv.kind === 'channel' ? 'Канал' : 'Группа'}
+                </h2>
+
+                {conversationInfoError ? <p className="join-error">{conversationInfoError}</p> : null}
+
+                <div className="messenger-settings-modal__section">
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      className="dashboard-messenger__thread-head-center-avatar"
+                      aria-label="Логотип"
+                    >
+                      {conversationAvatarUrlById[conversationInfoConv.id] ? (
+                        <img src={conversationAvatarUrlById[conversationInfoConv.id] ?? undefined} alt="" />
+                      ) : (
+                        <span>{conversationInitial(conversationInfoConv.title)}</span>
+                      )}
+                    </button>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <strong>{conversationInfoConv.title}</strong>
+                      <span className="messenger-settings-modal__hint">
+                        {(conversationInfoConv.memberCount ?? 0)} участн.
+                        {conversationInfoConv.publicNick?.trim() ? ` · @${conversationInfoConv.publicNick.trim()}` : ''}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="messenger-settings-modal__section">
+                  <button
+                    type="button"
+                    className="messenger-settings-modal__row-btn"
+                    onClick={() => void shareConversationInvite()}
+                  >
+                    <span className="messenger-settings-modal__row-ico" aria-hidden>
+                      ⤴
+                    </span>
+                    Поделиться ссылкой
+                  </button>
+                </div>
+
+                {conversationInfoRole &&
+                (conversationInfoConv.kind === 'group'
+                  ? ['owner', 'admin'].includes(conversationInfoRole)
+                  : ['owner', 'admin', 'moderator'].includes(conversationInfoRole)) ? (
+                  <div className="messenger-settings-modal__section">
+                    <button
+                      type="button"
+                      className={`messenger-settings-modal__row-btn${
+                        conversationInfoEdit ? ' messenger-settings-modal__row-btn--on' : ''
+                      }`}
+                      aria-pressed={conversationInfoEdit}
+                      onClick={() => setConversationInfoEdit((v) => !v)}
+                      disabled={conversationInfoLoading}
+                    >
+                      <span className="messenger-settings-modal__row-ico" aria-hidden>
+                        ✎
+                      </span>
+                      Редактировать
+                    </button>
+                  </div>
+                ) : null}
+
+                {conversationInfoEdit ? (
+                  <>
+                    <div className="messenger-settings-modal__section">
+                      <label className="messenger-settings-modal__label" htmlFor="messenger-conv-info-title-input">
+                        Название
+                      </label>
+                      <input
+                        id="messenger-conv-info-title-input"
+                        className="dashboard-messenger__list-search-input"
+                        value={conversationInfoTitle}
+                        disabled={conversationInfoLoading}
+                        onChange={(e) => setConversationInfoTitle(e.target.value)}
+                        autoComplete="off"
+                      />
+                    </div>
+
+                    <div className="messenger-settings-modal__section">
+                      <label className="messenger-settings-modal__label" htmlFor="messenger-conv-info-nick-input">
+                        Ник (для ссылки)
+                      </label>
+                      <input
+                        id="messenger-conv-info-nick-input"
+                        className="dashboard-messenger__list-search-input"
+                        value={conversationInfoNick}
+                        disabled={conversationInfoLoading}
+                        onChange={(e) => setConversationInfoNick(e.target.value)}
+                        autoComplete="off"
+                      />
+                      <p className="messenger-settings-modal__hint">Только a-z, 0-9, _ (3–32). Можно оставить пустым.</p>
+                    </div>
+
+                    <div className="messenger-settings-modal__section">
+                      <span className="messenger-settings-modal__label">Доступ</span>
+                      <div className="messenger-settings-modal__segment" role="group" aria-label="Доступ">
+                        <button
+                          type="button"
+                          className={`messenger-settings-modal__segment-btn${
+                            conversationInfoIsOpen ? ' messenger-settings-modal__segment-btn--active' : ''
+                          }`}
+                          onClick={() => setConversationInfoIsOpen(true)}
+                          disabled={conversationInfoLoading}
+                        >
+                          Открыто
+                        </button>
+                        <button
+                          type="button"
+                          className={`messenger-settings-modal__segment-btn${
+                            !conversationInfoIsOpen ? ' messenger-settings-modal__segment-btn--active' : ''
+                          }`}
+                          onClick={() => setConversationInfoIsOpen(false)}
+                          disabled={conversationInfoLoading}
+                        >
+                          Закрыто
+                        </button>
+                      </div>
+                    </div>
+
+                    {conversationInfoConv.kind === 'channel' ? (
+                      <div className="messenger-settings-modal__section">
+                        <span className="messenger-settings-modal__label">Обсуждение</span>
+                        <div className="messenger-settings-modal__segment" role="group" aria-label="Обсуждение">
+                          <button
+                            type="button"
+                            className={`messenger-settings-modal__segment-btn${
+                              conversationInfoChannelComments === 'comments'
+                                ? ' messenger-settings-modal__segment-btn--active'
+                                : ''
+                            }`}
+                            onClick={() => setConversationInfoChannelComments('comments')}
+                            disabled={conversationInfoLoading}
+                          >
+                            Комментарии
+                          </button>
+                          <button
+                            type="button"
+                            className={`messenger-settings-modal__segment-btn${
+                              conversationInfoChannelComments === 'reactions_only'
+                                ? ' messenger-settings-modal__segment-btn--active'
+                                : ''
+                            }`}
+                            onClick={() => setConversationInfoChannelComments('reactions_only')}
+                            disabled={conversationInfoLoading}
+                          >
+                            Только реакции
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="messenger-settings-modal__section">
+                      <span className="messenger-settings-modal__label">Логотип</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        disabled={conversationInfoLoading}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] ?? null
+                          e.target.value = ''
+                          setConversationInfoLogoFile(f)
+                        }}
+                      />
+                      {conversationInfoLogoFile ? (
+                        <p className="messenger-settings-modal__hint">Выбрано: {conversationInfoLogoFile.name}</p>
+                      ) : (
+                        <p className="messenger-settings-modal__hint">Опционально.</p>
+                      )}
+                    </div>
+                  </>
+                ) : null}
+
+                <div className="messenger-settings-modal__actions">
+                  {conversationInfoEdit ? (
+                    <button
+                      type="button"
+                      className="messenger-settings-modal__done"
+                      onClick={() => void saveConversationInfo()}
+                      disabled={conversationInfoLoading}
+                    >
+                      {conversationInfoLoading ? 'Сохраняем…' : 'Сохранить'}
+                    </button>
+                  ) : (
+                    <button type="button" className="messenger-settings-modal__done" onClick={closeConversationInfo}>
+                      Готово
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+
+      {createModalOpen
+        ? createPortal(
+            <div
+              className="messenger-settings-modal-root"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="messenger-create-title"
+            >
+              <button
+                type="button"
+                className="messenger-settings-modal-backdrop"
+                aria-label="Закрыть"
+                onClick={closeCreateConversationModal}
+              />
+              <div className="messenger-settings-modal">
+                <h2 id="messenger-create-title" className="messenger-settings-modal__title">
+                  Создать
+                </h2>
+
+                {createError ? <p className="join-error">{createError}</p> : null}
+
+                <div className="messenger-settings-modal__section">
+                  <span className="messenger-settings-modal__label">Тип</span>
+                  <div className="messenger-settings-modal__segment" role="group" aria-label="Тип">
+                    <button
+                      type="button"
+                      className={`messenger-settings-modal__segment-btn${
+                        createKind === 'group' ? ' messenger-settings-modal__segment-btn--active' : ''
+                      }`}
+                      onClick={() => setCreateKind('group')}
+                      disabled={createBusy}
+                    >
+                      Группа
+                    </button>
+                    <button
+                      type="button"
+                      className={`messenger-settings-modal__segment-btn${
+                        createKind === 'channel' ? ' messenger-settings-modal__segment-btn--active' : ''
+                      }`}
+                      onClick={() => setCreateKind('channel')}
+                      disabled={createBusy}
+                    >
+                      Канал
+                    </button>
+                  </div>
+                </div>
+
+                <div className="messenger-settings-modal__section">
+                  <span className="messenger-settings-modal__label">Доступ</span>
+                  <div className="messenger-settings-modal__segment" role="group" aria-label="Доступ">
+                    <button
+                      type="button"
+                      className={`messenger-settings-modal__segment-btn${
+                        createIsOpen ? ' messenger-settings-modal__segment-btn--active' : ''
+                      }`}
+                      onClick={() => setCreateIsOpen(true)}
+                      disabled={createBusy}
+                    >
+                      Открыто
+                    </button>
+                    <button
+                      type="button"
+                      className={`messenger-settings-modal__segment-btn${
+                        !createIsOpen ? ' messenger-settings-modal__segment-btn--active' : ''
+                      }`}
+                      onClick={() => setCreateIsOpen(false)}
+                      disabled={createBusy}
+                    >
+                      Закрыто
+                    </button>
+                  </div>
+                </div>
+
+                <div className="messenger-settings-modal__section">
+                  <label className="messenger-settings-modal__label" htmlFor="messenger-create-title-input">
+                    Название
+                  </label>
+                  <input
+                    id="messenger-create-title-input"
+                    className="dashboard-messenger__list-search-input"
+                    value={createTitle}
+                    disabled={createBusy}
+                    onChange={(e) => setCreateTitle(e.target.value)}
+                    placeholder={createKind === 'channel' ? 'Например: Новости' : 'Например: Команда'}
+                    autoComplete="off"
+                  />
+                </div>
+
+                <div className="messenger-settings-modal__section">
+                  <label className="messenger-settings-modal__label" htmlFor="messenger-create-nick-input">
+                    Ник (для ссылки)
+                  </label>
+                  <input
+                    id="messenger-create-nick-input"
+                    className="dashboard-messenger__list-search-input"
+                    value={createNick}
+                    disabled={createBusy}
+                    onChange={(e) => setCreateNick(e.target.value)}
+                    placeholder="team_chat"
+                    autoComplete="off"
+                    inputMode="text"
+                  />
+                  <p className="messenger-settings-modal__hint">Только a-z, 0-9, _ (3–32). Можно оставить пустым.</p>
+                </div>
+
+                <div className="messenger-settings-modal__section">
+                  <span className="messenger-settings-modal__label">Логотип</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={createBusy}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] ?? null
+                      e.target.value = ''
+                      setCreateLogoFile(f)
+                    }}
+                  />
+                  {createLogoFile ? (
+                    <p className="messenger-settings-modal__hint">Выбрано: {createLogoFile.name}</p>
+                  ) : (
+                    <p className="messenger-settings-modal__hint">Опционально.</p>
+                  )}
+                </div>
+
+                {createKind === 'channel' ? (
+                  <div className="messenger-settings-modal__section">
+                    <span className="messenger-settings-modal__label">Обсуждение</span>
+                    <div className="messenger-settings-modal__segment" role="group" aria-label="Обсуждение">
+                      <button
+                        type="button"
+                        className={`messenger-settings-modal__segment-btn${
+                          createChannelComments === 'comments' ? ' messenger-settings-modal__segment-btn--active' : ''
+                        }`}
+                        onClick={() => setCreateChannelComments('comments')}
+                        disabled={createBusy}
+                      >
+                        Комментарии
+                      </button>
+                      <button
+                        type="button"
+                        className={`messenger-settings-modal__segment-btn${
+                          createChannelComments === 'reactions_only' ? ' messenger-settings-modal__segment-btn--active' : ''
+                        }`}
+                        onClick={() => setCreateChannelComments('reactions_only')}
+                        disabled={createBusy}
+                      >
+                        Только реакции
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="messenger-settings-modal__actions">
+                  <button
+                    type="button"
+                    className="messenger-settings-modal__done"
+                    onClick={submitCreateConversation}
+                    disabled={createBusy}
+                  >
+                    {createBusy ? 'Создаём…' : 'Создать'}
+                  </button>
+                </div>
               </div>
             </div>,
             document.body,

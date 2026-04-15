@@ -19,6 +19,16 @@ export type MessengerConversationSummary = {
   avatarUrl?: string | null
   /** Для group/channel */
   isPublic?: boolean
+  /** Для group/channel: ник для ссылок */
+  publicNick?: string | null
+  /** Для group/channel: лого в storage (messenger-media) */
+  avatarPath?: string | null
+  avatarThumbPath?: string | null
+  /** Для group/channel */
+  memberCount?: number
+  /** Для channel */
+  postingMode?: 'admins_only' | 'everyone'
+  commentsMode?: 'everyone' | 'disabled'
 }
 
 function mapDirect(c: DirectConversationSummary): MessengerConversationSummary {
@@ -36,6 +46,10 @@ function mapGroup(g: GroupChatSummary): MessengerConversationSummary {
     messageCount: g.messageCount,
     unreadCount: g.unreadCount,
     isPublic: g.isPublic,
+    publicNick: g.publicNick,
+    avatarPath: g.avatarPath,
+    avatarThumbPath: g.avatarThumbPath,
+    memberCount: g.memberCount,
   }
 }
 
@@ -50,6 +64,12 @@ function mapChannel(ch: ChannelSummary): MessengerConversationSummary {
     messageCount: ch.messageCount,
     unreadCount: ch.unreadCount,
     isPublic: ch.isPublic,
+    publicNick: ch.publicNick,
+    avatarPath: ch.avatarPath,
+    avatarThumbPath: ch.avatarThumbPath,
+    memberCount: ch.memberCount,
+    postingMode: ch.postingMode,
+    commentsMode: ch.commentsMode,
   }
 }
 

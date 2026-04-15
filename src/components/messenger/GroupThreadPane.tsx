@@ -14,6 +14,7 @@ import {
   isAllowedReactionEmoji,
 } from '../../lib/groups'
 import type { ReactionEmoji } from '../../types/roomComms'
+import { REACTION_EMOJI_WHITELIST } from '../../types/roomComms'
 import { MessengerBubbleBody } from '../MessengerBubbleBody'
 import { FiRrIcon } from '../icons'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
@@ -130,6 +131,14 @@ export function GroupThreadPane({
     [conversationId, toast],
   )
 
+  const onReactionChipTap = useCallback(
+    async (targetMessageId: string, emoji: string) => {
+      if (!isAllowedReactionEmoji(emoji)) return
+      await toggleReaction(targetMessageId, emoji)
+    },
+    [toggleReaction],
+  )
+
   const sendText = useCallback(async () => {
     const cid = conversationId.trim()
     const body = draft.trim()
@@ -237,7 +246,43 @@ export function GroupThreadPane({
                 </div>
                 <div className="dashboard-messenger__message-reactions">
                   {rows.map(([emoji, count]) => (
-                    <span key={emoji} className="dashboard-messenger__reaction-chip">
+                    <span
+                      key={emoji}
+                      className={`dashboard-messenger__reaction-chip${
+                        user?.id && reacts.some((r) => r.senderUserId === user.id && (r.body.trim() || r.body) === emoji)
+                          ? ' dashboard-messenger__reaction-chip--mine'
+                          : ''
+                      }`}
+                      role={
+                        user?.id && reacts.some((r) => r.senderUserId === user.id && (r.body.trim() || r.body) === emoji)
+                          ? 'button'
+                          : undefined
+                      }
+                      tabIndex={
+                        user?.id && reacts.some((r) => r.senderUserId === user.id && (r.body.trim() || r.body) === emoji)
+                          ? 0
+                          : undefined
+                      }
+                      onClick={
+                        user?.id && reacts.some((r) => r.senderUserId === user.id && (r.body.trim() || r.body) === emoji)
+                          ? (e) => {
+                              e.stopPropagation()
+                              void onReactionChipTap(m.id, emoji)
+                            }
+                          : undefined
+                      }
+                      onKeyDown={
+                        user?.id && reacts.some((r) => r.senderUserId === user.id && (r.body.trim() || r.body) === emoji)
+                          ? (e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                void onReactionChipTap(m.id, emoji)
+                              }
+                            }
+                          : undefined
+                      }
+                    >
                       <span className="dashboard-messenger__reaction-emoji">{emoji}</span>
                       {count > 1 ? <span className="dashboard-messenger__reaction-count">{count}</span> : null}
                     </span>
@@ -313,7 +358,7 @@ export function GroupThreadPane({
           <div className="confirm-dialog" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <ReactionEmojiPopover
               title="Реакция"
-              emojis={['👍', '👏', '❤️', '😂', '🔥', '✋', '🖖']}
+              emojis={REACTION_EMOJI_WHITELIST}
               onClose={() => setReactOpenFor(null)}
               onPick={(em) => {
                 if (!reactOpenFor || !isAllowedReactionEmoji(em)) return

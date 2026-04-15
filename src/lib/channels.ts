@@ -14,6 +14,10 @@ export type ChannelSummary = {
   isPublic: boolean
   postingMode: 'admins_only' | 'everyone'
   commentsMode: 'everyone' | 'disabled'
+  publicNick: string | null
+  avatarPath: string | null
+  avatarThumbPath: string | null
+  memberCount: number
 }
 
 function mapChannelRow(row: Record<string, unknown>): ChannelSummary {
@@ -30,6 +34,11 @@ function mapChannelRow(row: Record<string, unknown>): ChannelSummary {
     isPublic: row.is_public === true,
     postingMode: row.posting_mode === 'everyone' ? 'everyone' : 'admins_only',
     commentsMode: row.comments_mode === 'disabled' ? 'disabled' : 'everyone',
+    publicNick: typeof row.public_nick === 'string' && row.public_nick.trim() ? row.public_nick.trim() : null,
+    avatarPath: typeof row.avatar_path === 'string' && row.avatar_path.trim() ? row.avatar_path.trim() : null,
+    avatarThumbPath:
+      typeof row.avatar_thumb_path === 'string' && row.avatar_thumb_path.trim() ? row.avatar_thumb_path.trim() : null,
+    memberCount: typeof row.member_count === 'number' ? row.member_count : Number(row.member_count ?? 0) || 0,
   }
 }
 
@@ -57,6 +66,32 @@ export async function createChannel(
   })
   if (error) return { data: null, error: error.message }
   return { data: typeof data === 'string' ? data : null, error: null }
+}
+
+export async function updateChannelProfile(args: {
+  conversationId: string
+  title?: string | null
+  publicNick?: string | null
+  isPublic?: boolean | null
+  postingMode?: 'admins_only' | 'everyone' | null
+  commentsMode?: 'everyone' | 'disabled' | null
+  avatarPath?: string | null
+  avatarThumbPath?: string | null
+}): Promise<{ error: string | null }> {
+  const { data, error } = await supabase.rpc('update_channel_profile', {
+    p_conversation_id: args.conversationId.trim(),
+    p_title: args.title ?? null,
+    p_public_nick: args.publicNick ?? null,
+    p_is_public: args.isPublic ?? null,
+    p_posting_mode: args.postingMode ?? null,
+    p_comments_mode: args.commentsMode ?? null,
+    p_avatar_path: args.avatarPath ?? null,
+    p_avatar_thumb_path: args.avatarThumbPath ?? null,
+  })
+  if (error) return { error: error.message }
+  const row = data as Record<string, unknown> | null
+  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_updated' }
+  return { error: null }
 }
 
 export async function joinPublicChannel(conversationId: string): Promise<{ error: string | null }> {
@@ -131,6 +166,20 @@ export async function appendChannelPost(
   return { data: parseOkMessageResult(data), error: null }
 }
 
+export async function appendChannelPostRich(
+  conversationId: string,
+  body: string,
+  meta?: Record<string, unknown> | null,
+): Promise<{ data: { messageId: string | null; createdAt: string | null } | null; error: string | null }> {
+  const { data, error } = await supabase.rpc('append_channel_post_rich', {
+    p_conversation_id: conversationId.trim(),
+    p_body: body,
+    p_meta: meta ?? null,
+  })
+  if (error) return { data: null, error: error.message }
+  return { data: parseOkMessageResult(data), error: null }
+}
+
 export async function appendChannelComment(
   conversationId: string,
   postId: string,
@@ -143,6 +192,55 @@ export async function appendChannelComment(
   })
   if (error) return { data: null, error: error.message }
   return { data: parseOkMessageResult(data), error: null }
+}
+
+export async function editChannelPost(
+  conversationId: string,
+  messageId: string,
+  newBody: string,
+): Promise<{ error: string | null }> {
+  const { data, error } = await supabase.rpc('edit_channel_post', {
+    p_conversation_id: conversationId.trim(),
+    p_message_id: messageId.trim(),
+    p_new_body: newBody,
+  })
+  if (error) return { error: error.message }
+  const row = data as Record<string, unknown> | null
+  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_edited' }
+  return { error: null }
+}
+
+export async function editChannelPostRich(
+  conversationId: string,
+  messageId: string,
+  newBody: string,
+  meta: Record<string, unknown> | null,
+): Promise<{ error: string | null }> {
+  const { data, error } = await supabase.rpc('edit_channel_post_rich', {
+    p_conversation_id: conversationId.trim(),
+    p_message_id: messageId.trim(),
+    p_new_body: newBody,
+    p_meta: meta,
+  })
+  if (error) return { error: error.message }
+  const row = data as Record<string, unknown> | null
+  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_edited' }
+  return { error: null }
+}
+
+export async function deleteChannelPost(
+  conversationId: string,
+  messageId: string,
+): Promise<{ error: string | null; deleted: number }> {
+  const { data, error } = await supabase.rpc('delete_channel_post', {
+    p_conversation_id: conversationId.trim(),
+    p_message_id: messageId.trim(),
+  })
+  if (error) return { error: error.message, deleted: 0 }
+  const row = data as Record<string, unknown> | null
+  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_deleted', deleted: 0 }
+  const deleted = typeof row.deleted === 'number' ? row.deleted : Number(row.deleted ?? 0) || 0
+  return { error: null, deleted }
 }
 
 export type ToggleChannelReactionResult = { action: 'added' | 'removed'; messageId: string; createdAt: string | null }

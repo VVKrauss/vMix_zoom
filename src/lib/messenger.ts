@@ -1,5 +1,7 @@
 import type { ReactionEmoji } from '../types/roomComms'
 import { REACTION_EMOJI_WHITELIST } from '../types/roomComms'
+import { isPostDraftV1 } from './postEditor/draftUtils'
+import type { PostDraftV1 } from './postEditor/types'
 import { supabase } from './supabase'
 
 /** Событие для мгновенного пересчёта бейджа непрочитанных (см. useMessengerUnreadCount). */
@@ -33,8 +35,19 @@ export type DirectMessage = {
   createdAt: string
   editedAt?: string | null
   replyToMessageId?: string | null
-  /** Для kind=reaction: id целевого сообщения (сервер: meta.react_to). Для image: пути в storage (превью опционально). */
-  meta?: { react_to?: string; image?: { path: string; thumbPath?: string } } | null
+  /**
+   * Meta из базы (jsonb):
+   * - reaction: react_to
+   * - image: image.path/thumbPath
+   * - rich: link preview (link.*)
+   */
+  meta?: {
+    react_to?: string
+    image?: { path: string; thumbPath?: string }
+    link?: { url: string; title?: string; description?: string; image?: string; siteName?: string }
+    /** Редактор поста канала v1 */
+    postDraft?: PostDraftV1
+  } | null
 }
 
 function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
@@ -42,6 +55,7 @@ function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
   const o = raw as Record<string, unknown>
   const reactTo = o.react_to
   const img = o.image
+  const link = o.link
   let image: { path: string; thumbPath?: string } | undefined
   if (img && typeof img === 'object') {
     const io = img as Record<string, unknown>
@@ -54,8 +68,37 @@ function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
     }
   }
   const react = typeof reactTo === 'string' && reactTo.trim() ? reactTo.trim() : undefined
-  if (!react && !image) return null
-  return { ...(react ? { react_to: react } : {}), ...(image ? { image } : {}) }
+  let linkMeta:
+    | { url: string; title?: string; description?: string; image?: string; siteName?: string }
+    | undefined
+  if (link && typeof link === 'object') {
+    const lo = link as Record<string, unknown>
+    const url = typeof lo.url === 'string' && lo.url.trim() ? lo.url.trim() : null
+    if (url) {
+      linkMeta = {
+        url,
+        ...(typeof lo.title === 'string' && lo.title.trim() ? { title: lo.title.trim() } : {}),
+        ...(typeof lo.description === 'string' && lo.description.trim() ? { description: lo.description.trim() } : {}),
+        ...(typeof lo.image === 'string' && lo.image.trim() ? { image: lo.image.trim() } : {}),
+        ...(typeof lo.siteName === 'string' && lo.siteName.trim()
+          ? { siteName: lo.siteName.trim() }
+          : typeof lo.site_name === 'string' && lo.site_name.trim()
+            ? { siteName: lo.site_name.trim() }
+            : {}),
+      }
+    }
+  }
+  let postDraft: PostDraftV1 | undefined
+  const pd = o.postDraft
+  if (isPostDraftV1(pd)) postDraft = pd
+
+  if (!react && !image && !linkMeta && !postDraft) return null
+  return {
+    ...(react ? { react_to: react } : {}),
+    ...(image ? { image } : {}),
+    ...(linkMeta ? { link: linkMeta } : {}),
+    ...(postDraft ? { postDraft } : {}),
+  }
 }
 
 /** Строка из PostgREST / Realtime (snake_case). */

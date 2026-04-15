@@ -2264,30 +2264,10 @@ export function RoomPage({
                         src={avatarUrl}
                         alt=""
                         className="header-dashboard-avatar"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (user?.id) {
-                            openUserPeek({
-                              userId: user.id,
-                              displayName: name,
-                              avatarUrl: avatarUrl ?? null,
-                            })
-                          }
-                        }}
                       />
                     ) : (
                       <span
                         className="header-dashboard-avatar-fallback"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (user?.id) {
-                            openUserPeek({
-                              userId: user.id,
-                              displayName: name,
-                              avatarUrl: null,
-                            })
-                          }
-                        }}
                       >
                         <DashboardIcon />
                       </span>
