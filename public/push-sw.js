@@ -34,12 +34,11 @@ self.addEventListener('push', (event) => {
             if (c.visibilityState !== 'visible') continue
             const u = new URL(c.url)
             if (u.pathname.startsWith('/dashboard/messenger')) {
-              const chat = u.searchParams.get('chat')?.trim() ?? ''
-              if (chat && chat === conversationId) return
-            }
-            if (u.pathname.startsWith('/dashboard/channels')) {
-              const ch = u.searchParams.get('channel')?.trim() ?? ''
-              if (ch && ch === conversationId) return
+              const seg = u.pathname.split('/').filter(Boolean)
+              const inPath = seg.length >= 3 && seg[0] === 'dashboard' && seg[1] === 'messenger' ? seg[2] : ''
+              const inQuery = u.searchParams.get('chat')?.trim() ?? ''
+              const openId = inPath || inQuery
+              if (openId && openId === conversationId) return
             }
           } catch (_) {
             /* ignore parse */

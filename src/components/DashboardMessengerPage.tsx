@@ -46,6 +46,11 @@ import {
   uploadMessengerImage,
 } from '../lib/messenger'
 import {
+  listMessengerConversations,
+  type MessengerConversationKind,
+  type MessengerConversationSummary,
+} from '../lib/messengerConversations'
+import {
   getMessengerFontPreset,
   setMessengerFontPreset,
   truncateMessengerReplySnippet,
@@ -80,6 +85,9 @@ import { MessengerMessageMenuPopover } from './MessengerMessageMenuPopover'
 import { PillToggle } from './PillToggle'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
 import type { ReactionEmoji } from '../types/roomComms'
+import { DirectThreadPane } from './messenger/DirectThreadPane'
+import { GroupThreadPane } from './messenger/GroupThreadPane'
+import { ChannelThreadPane } from './messenger/ChannelThreadPane'
 
 function formatDateTime(value: string): string {
   const dt = new Date(value)
@@ -130,7 +138,7 @@ function sortDirectMessagesChrono(a: DirectMessage, b: DirectMessage): number {
   return a.id.localeCompare(b.id)
 }
 
-function sortConversationsByActivity(list: DirectConversationSummary[]): DirectConversationSummary[] {
+function sortConversationsByActivity(list: MessengerConversationSummary[]): MessengerConversationSummary[] {
   return [...list].sort((a, b) => {
     const aTs = new Date(a.lastMessageAt ?? a.createdAt).getTime()
     const bTs = new Date(b.lastMessageAt ?? b.createdAt).getTime()
@@ -142,7 +150,7 @@ function normalizeMessengerListSearch(raw: string): string {
   return raw.trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
-function itemMatchesMessengerListSearch(item: DirectConversationSummary, needle: string): boolean {
+function itemMatchesMessengerListSearch(item: MessengerConversationSummary, needle: string): boolean {
   if (!needle) return true
   const title = item.title.toLowerCase()
   const preview = (item.lastMessagePreview ?? '').toLowerCase()
@@ -162,7 +170,7 @@ function lastNonReactionBody(rows: DirectMessage[]): string | null {
 
 /** URL пустой: последний открытый диалог из localStorage, иначе самый свежий по активности, иначе запасной id (напр. «с собой»). */
 function pickDefaultConversationId(
-  list: DirectConversationSummary[],
+  list: MessengerConversationSummary[],
   fallbackId: string | null,
 ): string {
   if (list.length === 0) return fallbackId?.trim() || ''
@@ -580,8 +588,8 @@ export function DashboardMessengerPage() {
   const [loading, setLoading] = useState(true)
   const [threadLoading, setThreadLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [items, setItems] = useState<DirectConversationSummary[]>([])
-  const [activeConversation, setActiveConversation] = useState<DirectConversationSummary | null>(null)
+  const [items, setItems] = useState<MessengerConversationSummary[]>([])
+  const [activeConversation, setActiveConversation] = useState<MessengerConversationSummary | null>(null)
   const [messages, setMessages] = useState<DirectMessage[]>([])
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -768,7 +776,7 @@ export function DashboardMessengerPage() {
         return
       }
 
-      const listRes = await listDirectConversationsForUser()
+      const listRes = await listMessengerConversations()
       if (!active) return
       if (listRes.error) {
         setError(listRes.error)
@@ -838,6 +846,22 @@ export function DashboardMessengerPage() {
         return
       }
 
+      const startedSummary = itemsRef.current.find((i) => i.id === startedTarget) ?? null
+      if (startedSummary && startedSummary.kind !== 'direct') {
+        setError(null)
+        setActiveConversation(startedSummary)
+        setThreadLoading(false)
+        lastFetchedThreadIdRef.current = null
+        // direct-only state: очищаем, чтобы не мешало UI других типов.
+        setMessages([])
+        setHasMoreOlder(false)
+        setReplyTo(null)
+        setEditingMessageId(null)
+        setComposerEmojiOpen(false)
+        setMessageMenu(null)
+        return
+      }
+
       const prevOpenedId = prevThreadIdForClearRef.current
       const conversationSwitched = prevOpenedId !== startedTarget
       if (conversationSwitched) {
@@ -893,14 +917,14 @@ export function DashboardMessengerPage() {
         } else if (messagesRes.error) {
           setError(messagesRes.error)
           setActiveConversation(
-            conversationRes.data ? { ...conversationRes.data, unreadCount: 0 } : null,
+            conversationRes.data ? { ...conversationRes.data, kind: 'direct', unreadCount: 0 } : null,
           )
           setMessages([])
           setHasMoreOlder(false)
           lastFetchedThreadIdRef.current = null
         } else {
           void markDirectConversationRead(startedTarget)
-          setActiveConversation({ ...conversationRes.data, unreadCount: 0 })
+          setActiveConversation({ ...conversationRes.data, kind: 'direct', unreadCount: 0 })
           setMessages(messagesRes.data ?? [])
           setHasMoreOlder(messagesRes.hasMoreOlder)
           lastFetchedThreadIdRef.current = startedTarget
@@ -961,6 +985,8 @@ export function DashboardMessengerPage() {
     const uid = user?.id
     const convId = activeConversationId
     if (!uid || !convId || listOnlyMobile) return
+    const kind = itemsRef.current.find((i) => i.id === convId)?.kind ?? 'direct'
+    if (kind !== 'direct') return
 
     let sawSubscribed = false
 
@@ -1165,7 +1191,7 @@ export function DashboardMessengerPage() {
         const idx = prev.findIndex((item) => item.id === cid)
         if (idx === -1) {
           queueMicrotask(() => {
-            void listDirectConversationsForUser().then((r) => {
+            void listMessengerConversations().then((r) => {
               if (!r.error && r.data) setItems(r.data)
             })
           })
@@ -1510,12 +1536,18 @@ export function DashboardMessengerPage() {
     })
   }
 
+  const [conversationKindFilter, setConversationKindFilter] = useState<
+    'all' | MessengerConversationKind
+  >('all')
+
   const sortedItems = useMemo(() => sortConversationsByActivity(items), [items])
   const chatListSearchNorm = useMemo(() => normalizeMessengerListSearch(chatListSearch), [chatListSearch])
   const filteredSortedItems = useMemo(() => {
-    if (!chatListSearchNorm) return sortedItems
-    return sortedItems.filter((item) => itemMatchesMessengerListSearch(item, chatListSearchNorm))
-  }, [sortedItems, chatListSearchNorm])
+    const filteredByKind =
+      conversationKindFilter === 'all' ? sortedItems : sortedItems.filter((i) => i.kind === conversationKindFilter)
+    if (!chatListSearchNorm) return filteredByKind
+    return filteredByKind.filter((item) => itemMatchesMessengerListSearch(item, chatListSearchNorm))
+  }, [sortedItems, chatListSearchNorm, conversationKindFilter])
 
   /** Сумма непрочитанных во всех диалогах, кроме активного — для бейджа «Назад к чатам». */
   const totalOtherUnread = useMemo(
@@ -1799,8 +1831,10 @@ export function DashboardMessengerPage() {
     sortedItems.find((i) => i.id === activeConversationId) ?? activeConversation
 
   const activeAvatarUrl =
-    threadHeadConversation?.avatarUrl ??
-    (threadHeadConversation?.otherUserId ? null : profile?.avatar_url ?? null)
+    threadHeadConversation?.kind === 'direct'
+      ? threadHeadConversation.avatarUrl ??
+        (threadHeadConversation.otherUserId ? null : profile?.avatar_url ?? null)
+      : null
 
   const adjustMobileComposerHeight = useCallback(() => {
     const ta = composerTextareaRef.current
@@ -1850,7 +1884,11 @@ export function DashboardMessengerPage() {
     const id = newRoomId()
     setPendingHostClaim(id)
     stashSpaceRoomCreateOptions(id, { lifecycle: 'permanent', chatVisibility: 'everyone' })
-    const otherId = threadHeadConversation?.otherUserId?.trim()
+    if (threadHeadConversation?.kind !== 'direct') {
+      navigate(`/r/${encodeURIComponent(id)}`)
+      return
+    }
+    const otherId = threadHeadConversation.otherUserId?.trim()
     const activeId = activeConversationId.trim()
     if (otherId && user?.id && otherId !== user.id) {
       const peerTitle = threadHeadConversation?.title?.trim() || null
@@ -2135,6 +2173,42 @@ export function DashboardMessengerPage() {
                     />
                   </div>
                 ) : null}
+                <div className="dashboard-messenger__list-search" style={{ paddingTop: 0 }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }} aria-label="Фильтр бесед">
+                    <button
+                      type="button"
+                      className="dashboard-topbar__action"
+                      aria-pressed={conversationKindFilter === 'all'}
+                      onClick={() => setConversationKindFilter('all')}
+                    >
+                      Все
+                    </button>
+                    <button
+                      type="button"
+                      className="dashboard-topbar__action"
+                      aria-pressed={conversationKindFilter === 'direct'}
+                      onClick={() => setConversationKindFilter('direct')}
+                    >
+                      Лички
+                    </button>
+                    <button
+                      type="button"
+                      className="dashboard-topbar__action"
+                      aria-pressed={conversationKindFilter === 'group'}
+                      onClick={() => setConversationKindFilter('group')}
+                    >
+                      Группы
+                    </button>
+                    <button
+                      type="button"
+                      className="dashboard-topbar__action"
+                      aria-pressed={conversationKindFilter === 'channel'}
+                      onClick={() => setConversationKindFilter('channel')}
+                    >
+                      Каналы
+                    </button>
+                  </div>
+                </div>
                 <div className="dashboard-messenger__list-scroll">
                   {loading && sortedItems.length === 0 ? (
                     <div className="dashboard-messenger__pane-loader" aria-label="Загрузка списка…">
@@ -2146,8 +2220,14 @@ export function DashboardMessengerPage() {
                     <div className="dashboard-chats-empty">Ничего не найдено.</div>
                   ) : (
                     filteredSortedItems.map((item) => {
-                      const avatarUrl = item.avatarUrl ?? (!item.otherUserId ? profile?.avatar_url ?? null : null)
-                      const rowPeekUserId = item.otherUserId?.trim() || (!item.otherUserId && user?.id ? user.id : '')
+                      const avatarUrl =
+                        item.kind === 'direct'
+                          ? item.avatarUrl ?? (!item.otherUserId ? profile?.avatar_url ?? null : null)
+                          : null
+                      const rowPeekUserId =
+                        item.kind === 'direct'
+                          ? item.otherUserId?.trim() || (!item.otherUserId && user?.id ? user.id : '')
+                          : ''
                       return (
                         <Link
                           key={item.id}
@@ -2170,7 +2250,7 @@ export function DashboardMessengerPage() {
                               onClick={(e) => {
                                 e.preventDefault()
                                 e.stopPropagation()
-                                if (rowPeekUserId) {
+                                if (rowPeekUserId && item.kind === 'direct') {
                                   openUserPeek({
                                     userId: rowPeekUserId,
                                     displayName: item.title,
@@ -2224,7 +2304,34 @@ export function DashboardMessengerPage() {
                     <BrandLogoLoader size={56} />
                   </div>
                 ) : threadHeadConversation ? (
-                  <>
+                  threadHeadConversation.kind === 'group' ? (
+                    <GroupThreadPane
+                      conversationId={activeConversationId}
+                      onTouchTail={(patch) => {
+                        setItems((prev) =>
+                          prev.map((it) =>
+                            it.id === activeConversationId
+                              ? { ...it, lastMessageAt: patch.lastMessageAt, lastMessagePreview: patch.lastMessagePreview }
+                              : it,
+                          ),
+                        )
+                      }}
+                    />
+                  ) : threadHeadConversation.kind === 'channel' ? (
+                    <ChannelThreadPane
+                      conversationId={activeConversationId}
+                      onTouchTail={(patch) => {
+                        setItems((prev) =>
+                          prev.map((it) =>
+                            it.id === activeConversationId
+                              ? { ...it, lastMessageAt: patch.lastMessageAt, lastMessagePreview: patch.lastMessagePreview }
+                              : it,
+                          ),
+                        )
+                      }}
+                    />
+                  ) : (
+                  <DirectThreadPane>
                     <div className="dashboard-messenger__thread-head">
                       {isMobileMessenger ? (
                         <header className="dashboard-messenger__list-head">
@@ -2406,7 +2513,9 @@ export function DashboardMessengerPage() {
                                     src.senderUserId,
                                     user?.id,
                                     profile?.avatar_url,
-                                    threadHeadConversation,
+                                    threadHeadConversation?.kind === 'direct'
+                                      ? (threadHeadConversation as unknown as DirectConversationSummary)
+                                      : null,
                                   )
                                   const quotedName = src.senderNameSnapshot?.trim() || undefined
                                   if (src.kind === 'image') {
@@ -2562,7 +2671,8 @@ export function DashboardMessengerPage() {
                           document.body,
                         )
                       : null}
-                  </>
+                  </DirectThreadPane>
+                  )
                 ) : (
                   <div className="dashboard-chats-empty">Выберите диалог слева.</div>
                 )}
