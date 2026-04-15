@@ -97,7 +97,7 @@ import {
 import { supabase } from '../lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import type { StudioOutputPreset } from '../types/studio'
-import { getContactStatuses, setUserFavorite, type ContactStatus } from '../lib/socialGraph'
+import { getContactStatuses, setContactPin, type ContactStatus } from '../lib/socialGraph'
 
 /** Входящий запрос на вход в комнату (access_mode=approval). */
 interface JoinRequest {
@@ -966,12 +966,12 @@ export function RoomPage({
       ...prev,
       [targetUserId]: {
         targetUserId,
-        isFavorite: nextFavorite,
-        favorsMe: current?.favorsMe ?? false,
-        isFriend: nextFavorite && (current?.favorsMe ?? false),
+        pinnedByMe: nextFavorite,
+        pinnedMe: current?.pinnedMe ?? false,
+        isMutualContact: nextFavorite && (current?.pinnedMe ?? false),
       },
     }))
-    const result = await setUserFavorite(targetUserId, nextFavorite)
+    const result = await setContactPin(targetUserId, nextFavorite)
     if (result.error || !result.data) {
       setChatContactStatuses((prev) => {
         const next = { ...prev }
@@ -1007,9 +1007,9 @@ export function RoomPage({
         },
         {
           key: 'fav',
-          label: c?.isFavorite ? 'Убрать из избранного' : 'В избранное',
+          label: c?.pinnedByMe ? 'Снять закреп' : 'Закрепить',
           onSelect: () => {
-            void toggleFavoriteFromChat(uid, !(c?.isFavorite ?? false))
+            void toggleFavoriteFromChat(uid, !(c?.pinnedByMe ?? false))
           },
         },
       ]
@@ -1669,7 +1669,7 @@ export function RoomPage({
             ? () => {
                 const uid = p.authUserId!
                 const cur = chatContactStatuses[uid]
-                void toggleFavoriteFromChat(uid, !(cur?.isFavorite ?? false))
+                void toggleFavoriteFromChat(uid, !(cur?.pinnedByMe ?? false))
               }
             : undefined
         }
@@ -2539,7 +2539,7 @@ export function RoomPage({
               avatarByPeerId={chatAvatarByPeerId}
               avatarByUserId={chatAvatarByUserId}
               contactStatuses={chatContactStatuses}
-              onToggleFavoriteUser={(targetUserId, nextFavorite) => {
+              onToggleContactPin={(targetUserId, nextFavorite) => {
                 void toggleFavoriteFromChat(targetUserId, nextFavorite)
               }}
               onSend={sendChatGuarded}
@@ -2646,7 +2646,7 @@ export function RoomPage({
         showStudioEntry={streamerMode && canUseElevatedRoomTools}
         studioOpen={studioOpen}
         onStudioToggle={() => setStudioOpen((v) => !v)}
-        showCouchEntry={!streamerMode && canUseElevatedRoomTools}
+        showCouchEntry={!streamerMode && isPlatformAdminish}
         couchOpen={couchOpen}
         onCouchToggle={() => setCouchOpen((v) => !v)}
       />
@@ -2663,7 +2663,7 @@ export function RoomPage({
             avatarByPeerId={chatAvatarByPeerId}
             avatarByUserId={chatAvatarByUserId}
             contactStatuses={chatContactStatuses}
-            onToggleFavoriteUser={(targetUserId, nextFavorite) => {
+            onToggleContactPin={(targetUserId, nextFavorite) => {
               void toggleFavoriteFromChat(targetUserId, nextFavorite)
             }}
           onSend={sendChatGuarded}
@@ -2692,7 +2692,7 @@ export function RoomPage({
             studioServerLogLines={studioServerLogLines}
             currentUserId={user?.id ?? null}
             contactStatuses={chatContactStatuses}
-            onToggleFavoriteUser={(targetUserId, nextFavorite) => {
+            onToggleContactPin={(targetUserId, nextFavorite) => {
               void toggleFavoriteFromChat(targetUserId, nextFavorite)
             }}
           />

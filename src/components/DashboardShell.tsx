@@ -19,7 +19,7 @@ import {
   RoomsIcon,
 } from './icons'
 
-type DashboardShellTab = 'cabinet' | 'chats' | 'messenger' | 'friends'
+type DashboardShellTab = 'cabinet' | 'chats' | 'messenger' | 'contacts'
 
 type DashboardShellProps = {
   active: DashboardShellTab
@@ -34,13 +34,13 @@ type DashboardShellProps = {
   headerExtra?: ReactNode
 }
 
-const INCOMING_FAVORITES_BANNER_DISMISS_PREFIX = 'vmix.dashboard.incomingFav.dismissSig:'
+const INCOMING_PINS_BANNER_DISMISS_PREFIX = 'vmix.dashboard.incomingPin.dismissSig:'
 
-function incomingFavDismissStorageKey(userId: string): string {
-  return `${INCOMING_FAVORITES_BANNER_DISMISS_PREFIX}${userId}`
+function incomingPinDismissStorageKey(userId: string): string {
+  return `${INCOMING_PINS_BANNER_DISMISS_PREFIX}${userId}`
 }
 
-function incomingFavoritesSignature(ids: string[]): string {
+function incomingPinsSignature(ids: string[]): string {
   return [...ids].sort().join('|')
 }
 
@@ -65,62 +65,62 @@ export function DashboardShell({
   /** Круглые кнопки мессенджер / новая комната / выход — только у «Комнаты» на десктопе. */
   const showCabinetQuickCircleActions = Boolean(!chromeless && active === 'chats' && !isMobileCabinetNav)
   const [cabinetMenuOpen, setCabinetMenuOpen] = useState(false)
-  const [incomingFavSig, setIncomingFavSig] = useState<string | null>(null)
-  const [dismissedIncomingFavSig, setDismissedIncomingFavSig] = useState<string | null>(null)
+  const [incomingPinSig, setIncomingPinSig] = useState<string | null>(null)
+  const [dismissedIncomingPinSig, setDismissedIncomingPinSig] = useState<string | null>(null)
   useEffect(() => {
     if (!user?.id) {
-      setDismissedIncomingFavSig(null)
+      setDismissedIncomingPinSig(null)
       return
     }
     try {
-      setDismissedIncomingFavSig(localStorage.getItem(incomingFavDismissStorageKey(user.id)))
+      setDismissedIncomingPinSig(localStorage.getItem(incomingPinDismissStorageKey(user.id)))
     } catch {
-      setDismissedIncomingFavSig(null)
+      setDismissedIncomingPinSig(null)
     }
   }, [user?.id])
 
-  const refreshIncomingFavoritesSig = useCallback(() => {
+  const refreshIncomingPinsSig = useCallback(() => {
     if (!user?.id) {
-      setIncomingFavSig(null)
+      setIncomingPinSig(null)
       return
     }
     void listMyContacts().then((res) => {
       if (res.error || !res.data) {
-        setIncomingFavSig('')
+        setIncomingPinSig('')
         return
       }
-      const ids = res.data.filter((c) => c.favorsMe && !c.isFavorite).map((c) => c.targetUserId)
-      setIncomingFavSig(incomingFavoritesSignature(ids))
+      const ids = res.data.filter((c) => c.pinnedMe && !c.pinnedByMe).map((c) => c.targetUserId)
+      setIncomingPinSig(incomingPinsSignature(ids))
     })
   }, [user?.id])
 
   useEffect(() => {
-    refreshIncomingFavoritesSig()
-  }, [refreshIncomingFavoritesSig])
+    refreshIncomingPinsSig()
+  }, [refreshIncomingPinsSig])
 
   useEffect(() => {
     if (!user?.id) return
     const onFocus = () => {
-      refreshIncomingFavoritesSig()
+      refreshIncomingPinsSig()
     }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-  }, [user?.id, refreshIncomingFavoritesSig])
+  }, [user?.id, refreshIncomingPinsSig])
 
-  const showIncomingFavoritesBanner =
+  const showIncomingPinsBanner =
     Boolean(user?.id) &&
-    incomingFavSig !== null &&
-    incomingFavSig !== '' &&
-    incomingFavSig !== dismissedIncomingFavSig
+    incomingPinSig !== null &&
+    incomingPinSig !== '' &&
+    incomingPinSig !== dismissedIncomingPinSig
 
-  const dismissIncomingFavoritesBanner = () => {
-    if (!incomingFavSig || !user?.id) return
+  const dismissIncomingPinsBanner = () => {
+    if (!incomingPinSig || !user?.id) return
     try {
-      localStorage.setItem(incomingFavDismissStorageKey(user.id), incomingFavSig)
+      localStorage.setItem(incomingPinDismissStorageKey(user.id), incomingPinSig)
     } catch {
       /* ignore quota / private mode */
     }
-    setDismissedIncomingFavSig(incomingFavSig)
+    setDismissedIncomingPinSig(incomingPinSig)
   }
 
   const goCreateRoom = () => {
@@ -236,22 +236,21 @@ export function DashboardShell({
       </header>
 
       <div
-        className={`dashboard-shell${showIncomingFavoritesBanner ? ' dashboard-shell--with-banner' : ''}`}
+        className={`dashboard-shell${showIncomingPinsBanner ? ' dashboard-shell--with-banner' : ''}`}
       >
-        {showIncomingFavoritesBanner ? (
+        {showIncomingPinsBanner ? (
           <div className="dashboard-incoming-fav-banner" role="status" aria-live="polite">
             <p className="dashboard-incoming-fav-banner__text">
-              Вас добавили в избранное. Вы можете добавить этого человека в избранное у себя — тогда вы станете
-              друзьями.
+              Вас закрепили у себя. Закрепите этого человека у себя — вы станете взаимными контактами.
             </p>
             <div className="dashboard-incoming-fav-banner__actions">
-              <Link to="/dashboard/friends" className="dashboard-incoming-fav-banner__link">
-                К разделу «Друзья»
+              <Link to="/dashboard/contacts" className="dashboard-incoming-fav-banner__link">
+                К разделу «Контакты»
               </Link>
               <button
                 type="button"
                 className="dashboard-incoming-fav-banner__dismiss"
-                onClick={dismissIncomingFavoritesBanner}
+                onClick={dismissIncomingPinsBanner}
               >
                 Скрыть
               </button>
@@ -328,16 +327,16 @@ export function DashboardShell({
                   ) : null}
                 </Link>
               ) : null}
-              {active !== 'friends' ? (
+              {active !== 'contacts' ? (
                 <Link
-                  to="/dashboard/friends"
+                  to="/dashboard/contacts"
                   className="dashboard-messenger-quick-menu__btn"
                   onClick={closeCabinetMenu}
                 >
                   <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
                     <ParticipantsBadgeIcon />
                   </span>
-                  <span className="dashboard-messenger-quick-menu__lbl">Друзья</span>
+                  <span className="dashboard-messenger-quick-menu__lbl">Контакты</span>
                 </Link>
               ) : null}
               {!unifiedCabinetNav ? (

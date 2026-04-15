@@ -50,7 +50,7 @@ import {
 } from '../lib/messengerUi'
 import { MESSENGER_COMPOSER_EMOJIS } from '../lib/messengerComposerEmojis'
 import { setPendingHostClaim, stashSpaceRoomCreateOptions } from '../lib/spaceRoom'
-import { getContactStatuses, setUserFavorite, type ContactStatus } from '../lib/socialGraph'
+import { getContactStatuses, setContactPin, type ContactStatus } from '../lib/socialGraph'
 import { supabase } from '../lib/supabase'
 import { newRoomId } from '../utils/roomId'
 import { BrandLogoLoader } from './BrandLogoLoader'
@@ -596,7 +596,7 @@ export function DashboardMessengerPage() {
   }>({ pointerId: null, x0: 0, y0: 0, active: false })
   const messengerLightboxFrameRef = useRef<HTMLDivElement | null>(null)
   const [senderContactByUserId, setSenderContactByUserId] = useState<Record<string, ContactStatus>>({})
-  const [favoriteBusyUserId, setFavoriteBusyUserId] = useState<string | null>(null)
+  const [pinBusyUserId, setPinBusyUserId] = useState<string | null>(null)
   /** Снятие реакции уже отразили в списке диалогов после RPC — пропускаем дубль из realtime DELETE. */
   const reactionDeleteSidebarSyncedRef = useRef(new Set<string>())
 
@@ -1592,15 +1592,15 @@ export function DashboardMessengerPage() {
     const m = messageMenu?.message
     const sid = m?.senderUserId?.trim()
     if (!sid || !user?.id || sid === user.id) return
-    setFavoriteBusyUserId(sid)
+    setPinBusyUserId(sid)
     try {
-      const cur = senderContactByUserId[sid]?.isFavorite ?? false
-      const res = await setUserFavorite(sid, !cur)
+      const cur = senderContactByUserId[sid]?.pinnedByMe ?? false
+      const res = await setContactPin(sid, !cur)
       if (res.data) {
         setSenderContactByUserId((prev) => ({ ...prev, [sid]: res.data! }))
       }
     } finally {
-      setFavoriteBusyUserId(null)
+      setPinBusyUserId(null)
     }
     closeMessageActionMenu()
   }, [messageMenu, user?.id, senderContactByUserId, closeMessageActionMenu])
@@ -2455,20 +2455,20 @@ export function DashboardMessengerPage() {
                                 void toggleMessengerReaction(messageMenu.message.id, emoji)
                                 closeMessageActionMenu()
                               }}
-                              showAddFavorite={Boolean(
+                              showAddPin={Boolean(
                                 messageMenu.message.senderUserId &&
                                   user?.id &&
                                   messageMenu.message.senderUserId !== user.id,
                               )}
-                              favoriteActive={Boolean(
+                              pinActive={Boolean(
                                 messageMenu.message.senderUserId &&
-                                  senderContactByUserId[messageMenu.message.senderUserId]?.isFavorite,
+                                  senderContactByUserId[messageMenu.message.senderUserId]?.pinnedByMe,
                               )}
-                              favoriteBusy={
+                              pinBusy={
                                 Boolean(messageMenu.message.senderUserId) &&
-                                favoriteBusyUserId === messageMenu.message.senderUserId
+                                pinBusyUserId === messageMenu.message.senderUserId
                               }
-                              onToggleFavorite={() => {
+                              onTogglePin={() => {
                                 void toggleFavoriteFromMessageMenu()
                               }}
                             />
@@ -2521,11 +2521,11 @@ export function DashboardMessengerPage() {
                   </span>
                   <span className="dashboard-messenger-quick-menu__lbl">Комнаты</span>
                 </Link>
-                <Link to="/dashboard/friends" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
+                <Link to="/dashboard/contacts" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
                   <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
                     <ParticipantsBadgeIcon />
                   </span>
-                  <span className="dashboard-messenger-quick-menu__lbl">Друзья</span>
+                  <span className="dashboard-messenger-quick-menu__lbl">Контакты</span>
                 </Link>
                 <button type="button" className="dashboard-messenger-quick-menu__btn" onClick={goCreateRoomFromMenu}>
                   <span className="dashboard-messenger-quick-menu__ico" aria-hidden>

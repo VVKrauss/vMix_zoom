@@ -45,7 +45,7 @@ export function RoomInviteFriendsModal({
         setFriends([])
         return
       }
-      const rows = (res.data ?? []).filter((c) => c.isFriend && !excludeSet.has(c.targetUserId))
+      const rows = (res.data ?? []).filter((c) => c.isMutualContact && !excludeSet.has(c.targetUserId))
       setFriends(rows)
     })
   }, [excludeSet])
@@ -107,7 +107,7 @@ export function RoomInviteFriendsModal({
           Пригласить из контактов
         </h2>
         <p className="confirm-dialog__msg room-invite-friends-modal__intro">
-          Выберите друзей — им уйдёт сообщение в личный чат со ссылкой на эту комнату.
+          Выберите взаимные контакты — им уйдёт сообщение в личный чат со ссылкой на эту комнату.
         </p>
 
         {loading ? (
@@ -119,11 +119,11 @@ export function RoomInviteFriendsModal({
         {!loading && error ? <p className="join-error room-invite-friends-modal__err">{error}</p> : null}
 
         {!loading && !error && friends.length === 0 ? (
-          <p className="room-invite-friends-modal__empty">Нет друзей для приглашения (или все уже в комнате).</p>
+          <p className="room-invite-friends-modal__empty">Нет подходящих контактов (или все уже в комнате).</p>
         ) : null}
 
         {!loading && !error && friends.length > 0 ? (
-          <ul className="room-invite-friends-modal__list" aria-label="Друзья">
+          <ul className="room-invite-friends-modal__list" aria-label="Контакты">
             {friends.map((f) => {
               const checked = selected.has(f.targetUserId)
               return (

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ContactCard } from '../lib/socialGraph'
-import { setUserFavorite } from '../lib/socialGraph'
-import { hideIncomingFavoriteId, unhideIncomingFavoriteId } from '../lib/dashboardIncomingFavoritesHidden'
+import { setContactPin } from '../lib/socialGraph'
+import { hideIncomingPinRow, unhideIncomingPinRow } from '../lib/dashboardIncomingPinsHidden'
 import { StarIcon } from './icons'
 
-export interface DashboardFriendsIncomingModalProps {
+export interface DashboardContactsIncomingModalProps {
   open: boolean
   onClose: () => void
   userId: string
@@ -16,7 +16,7 @@ export interface DashboardFriendsIncomingModalProps {
   onContactsUpdated: () => void
 }
 
-export function DashboardFriendsIncomingModal({
+export function DashboardContactsIncomingModal({
   open,
   onClose,
   userId,
@@ -26,7 +26,7 @@ export function DashboardFriendsIncomingModal({
   onShowHiddenChange,
   onHiddenChange,
   onContactsUpdated,
-}: DashboardFriendsIncomingModalProps) {
+}: DashboardContactsIncomingModalProps) {
   const [busy, setBusy] = useState<string | null>(null)
 
   useEffect(() => {
@@ -42,7 +42,7 @@ export function DashboardFriendsIncomingModal({
   }, [open, onClose])
 
   const incoming = useMemo(
-    () => items.filter((c) => c.favorsMe && !c.isFavorite),
+    () => items.filter((c) => c.pinnedMe && !c.pinnedByMe),
     [items],
   )
 
@@ -54,21 +54,21 @@ export function DashboardFriendsIncomingModal({
 
   if (!open) return null
 
-  const addFavorite = async (targetUserId: string) => {
+  const addPin = async (targetUserId: string) => {
     if (busy) return
     setBusy(targetUserId)
-    const res = await setUserFavorite(targetUserId, true)
+    const res = await setContactPin(targetUserId, true)
     setBusy(null)
     if (!res.error) onContactsUpdated()
   }
 
   const hideRequest = (targetUserId: string) => {
-    hideIncomingFavoriteId(userId, targetUserId)
+    hideIncomingPinRow(userId, targetUserId)
     onHiddenChange()
   }
 
   const unhideRequest = (targetUserId: string) => {
-    unhideIncomingFavoriteId(userId, targetUserId)
+    unhideIncomingPinRow(userId, targetUserId)
     onHiddenChange()
   }
 
@@ -79,16 +79,16 @@ export function DashboardFriendsIncomingModal({
         className="confirm-dialog dashboard-profile-modal__dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="dashboard-friends-incoming-title"
+        aria-labelledby="dashboard-contacts-incoming-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 id="dashboard-friends-incoming-title" className="confirm-dialog__title">
-          Запросы из избранного
+        <h2 id="dashboard-contacts-incoming-title" className="confirm-dialog__title">
+          Входящие закрепы
         </h2>
         <div className="dashboard-profile-modal__scroll">
           <p className="dashboard-field__hint" style={{ marginTop: 0 }}>
-            Кто-то добавил вас в избранное. Добавьте в ответ — станете друзьями. «Скрыть» убирает строку из списка
-            (считается просмотренным).
+            Кто-то закрепил вас у себя. Закрепите в ответ — станете взаимными контактами. «Скрыть» убирает строку из
+            списка (считается просмотренным).
           </p>
           <div className="dashboard-field__inline dashboard-field__inline--toggle" style={{ marginBottom: '12px' }}>
             <span className="dashboard-field__label">Показать скрытые</span>
@@ -121,16 +121,16 @@ export function DashboardFriendsIncomingModal({
                       </div>
                     </div>
                     <div className="dashboard-incoming-fav-modal__actions">
-                      {!row.isFavorite ? (
+                      {!row.pinnedByMe ? (
                         <button
                           type="button"
                           className="join-btn"
                           disabled={busy === row.targetUserId}
-                          onClick={() => void addFavorite(row.targetUserId)}
+                          onClick={() => void addPin(row.targetUserId)}
                         >
                           <span className="dashboard-incoming-fav-modal__btn-inner">
                             <StarIcon filled={false} />
-                            <span>В избранное</span>
+                            <span>Закрепить</span>
                           </span>
                         </button>
                       ) : null}

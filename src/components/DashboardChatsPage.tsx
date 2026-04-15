@@ -18,6 +18,7 @@ import { newRoomId } from '../utils/roomId'
 import { ConfirmDialog } from './ConfirmDialog'
 import { DashboardShell } from './DashboardShell'
 import { CamIcon, ChatBubbleIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, TrashIcon } from './icons'
+import { DashboardRoomInfoModal } from './DashboardRoomInfoModal'
 import { RoomChatArchiveModal } from './RoomChatArchiveModal'
 
 function formatRoomListDate(value: string | null): string {
@@ -50,6 +51,8 @@ export function DashboardChatsPage() {
   const [myRooms, setMyRooms] = useState<PersistentSpaceRoomRow[]>([])
   const [myRoomsLoading, setMyRoomsLoading] = useState(false)
   const [myRoomsError, setMyRoomsError] = useState<string | null>(null)
+  const [roomInfoOpen, setRoomInfoOpen] = useState(false)
+  const [roomInfoSummary, setRoomInfoSummary] = useState<RoomChatConversationSummary | null>(null)
 
   const loadPage = useCallback(
     async (offset: number) => {
@@ -140,6 +143,16 @@ export function DashboardChatsPage() {
     setModalOpen(true)
   }
 
+  const openRoomInfo = (item: RoomChatConversationSummary) => {
+    setRoomInfoSummary(item)
+    setRoomInfoOpen(true)
+  }
+
+  const closeRoomInfo = () => {
+    setRoomInfoOpen(false)
+    setRoomInfoSummary(null)
+  }
+
   const closeChatModal = () => {
     setModalOpen(false)
     setModalConversationId(null)
@@ -162,6 +175,14 @@ export function DashboardChatsPage() {
   }
 
   const canGoNewer = pageOffset > 0
+
+  const joinableSlugs = useMemo(() => {
+    const s = new Set<string>()
+    for (const r of myRooms) {
+      if (r.status === 'open' && r.slug?.trim()) s.add(r.slug.trim())
+    }
+    return s
+  }, [myRooms])
 
   const emptyHint = useMemo(
     () =>
@@ -298,57 +319,77 @@ export function DashboardChatsPage() {
             {items.map((item) => {
               const chatEnabled = item.messageCount > 0
               const isOpen = !item.closedAt
+              const slug = item.roomSlug?.trim() ?? ''
+              const canJoinRoom = Boolean(slug && joinableSlugs.has(slug))
               return (
-                <li key={item.id} className="dashboard-rooms-compact-row">
-                  {isOpen ? (
-                    <span className="dashboard-rooms-live-dot" title="Комната ещё открыта" aria-label="Открыта" />
-                  ) : (
-                    <span className="dashboard-rooms-live-slot" aria-hidden />
-                  )}
-                  <span className="dashboard-rooms-compact-row__title" title={item.title}>
-                    {item.title}
-                  </span>
-                  <span className="dashboard-rooms-compact-row__date">
-                    {formatRoomListDate(item.lastMessageAt ?? item.createdAt)}
-                  </span>
-                  <div className="dashboard-rooms-compact-row__actions">
+                <li key={item.id}>
+                  <div className="dashboard-rooms-compact-row dashboard-rooms-compact-row--clickable">
                     <button
                       type="button"
-                      className="dashboard-rooms-icon-btn"
-                      disabled={!chatEnabled}
-                      title={chatEnabled ? 'Чат комнаты' : 'Нет сообщений'}
-                      aria-label="Чат комнаты"
-                      onClick={() => openChatModal(item)}
+                      className="dashboard-rooms-compact-row__main-hit"
+                      onClick={() => openRoomInfo(item)}
+                      title="Подробнее о комнате"
                     >
-                      <ChatBubbleIcon />
-                    </button>
-                    {item.roomSlug ? (
-                      <Link
-                        to={`/r/${encodeURIComponent(item.roomSlug)}`}
-                        className="dashboard-rooms-icon-btn"
-                        title="К эфиру"
-                        aria-label="К эфиру"
-                      >
-                        <CamIcon />
-                      </Link>
-                    ) : (
-                      <span
-                        className="dashboard-rooms-icon-btn dashboard-rooms-icon-btn--disabled"
-                        aria-hidden
-                        title="Нет ссылки на комнату"
-                      >
-                        <CamIcon />
+                      <span className="dashboard-rooms-compact-row__hit-inner">
+                        {isOpen ? (
+                          <span className="dashboard-rooms-live-dot" title="Комната ещё открыта" aria-label="Открыта" />
+                        ) : (
+                          <span className="dashboard-rooms-live-slot" aria-hidden />
+                        )}
+                        <span className="dashboard-rooms-compact-row__title" title={item.title}>
+                          {item.title}
+                        </span>
+                        <span className="dashboard-rooms-compact-row__date">
+                          {formatRoomListDate(item.lastMessageAt ?? item.createdAt)}
+                        </span>
                       </span>
-                    )}
-                    <button
-                      type="button"
-                      className="dashboard-rooms-icon-btn dashboard-rooms-icon-btn--danger"
-                      title="Убрать из списка"
-                      aria-label="Убрать из списка"
-                      onClick={() => setDeleteTarget(item)}
-                    >
-                      <TrashIcon />
                     </button>
+                    <div className="dashboard-rooms-compact-row__actions">
+                      <button
+                        type="button"
+                        className="dashboard-rooms-icon-btn"
+                        disabled={!chatEnabled}
+                        title={chatEnabled ? 'Чат комнаты' : 'Нет сообщений'}
+                        aria-label="Чат комнаты"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openChatModal(item)
+                        }}
+                      >
+                        <ChatBubbleIcon />
+                      </button>
+                      {canJoinRoom ? (
+                        <Link
+                          to={`/r/${encodeURIComponent(slug)}`}
+                          className="dashboard-rooms-icon-btn"
+                          title="Зайти в комнату"
+                          aria-label="Зайти в комнату"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <CamIcon />
+                        </Link>
+                      ) : (
+                        <span
+                          className="dashboard-rooms-icon-btn dashboard-rooms-icon-btn--disabled"
+                          aria-hidden
+                          title={slug ? 'Комната недоступна (закрыта или удалена)' : 'Нет ссылки на комнату'}
+                        >
+                          <CamIcon />
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        className="dashboard-rooms-icon-btn dashboard-rooms-icon-btn--danger"
+                        title="Убрать из списка"
+                        aria-label="Убрать из списка"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDeleteTarget(item)
+                        }}
+                      >
+                        <TrashIcon />
+                      </button>
+                    </div>
                   </div>
                 </li>
               )
@@ -364,6 +405,23 @@ export function DashboardChatsPage() {
           summary={modalSummary}
           userId={user.id}
           onClose={closeChatModal}
+        />
+      ) : null}
+
+      {user?.id ? (
+        <DashboardRoomInfoModal
+          open={roomInfoOpen}
+          conversationId={roomInfoSummary?.id ?? null}
+          summary={roomInfoSummary}
+          userId={user.id}
+          onClose={closeRoomInfo}
+          onOpenChat={() => {
+            if (!roomInfoSummary || roomInfoSummary.messageCount <= 0) return
+            setModalSummary(roomInfoSummary)
+            setModalConversationId(roomInfoSummary.id)
+            setModalOpen(true)
+            closeRoomInfo()
+          }}
         />
       ) : null}
 

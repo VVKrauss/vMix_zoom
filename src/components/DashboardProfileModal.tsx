@@ -225,7 +225,7 @@ export function DashboardProfileModal({
           <form onSubmit={onSaveSearchPrivacy} className="dashboard-form">
             <h3 className="dashboard-profile-modal__subtitle">Поиск профиля на платформе</h3>
             <p className="dashboard-field__hint">
-              Другие пользователи могут находить вас на странице «Друзья» только если вы разрешите это явно.
+              Другие пользователи могут находить вас в разделе «Контакты» только если вы разрешите это явно.
             </p>
             <div className="dashboard-field">
               <div className="dashboard-field__inline dashboard-field__inline--toggle">

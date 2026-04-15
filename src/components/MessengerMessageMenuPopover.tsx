@@ -9,20 +9,20 @@ export function MessengerMessageMenuPopover({
   onEdit,
   onReply,
   onPickReaction,
-  showAddFavorite,
-  favoriteActive,
-  favoriteBusy,
-  onToggleFavorite,
+  showAddPin,
+  pinActive,
+  pinBusy,
+  onTogglePin,
 }: {
   canEdit: boolean
   onClose: () => void
   onEdit: () => void
   onReply: () => void
   onPickReaction: (emoji: ReactionEmoji) => void
-  showAddFavorite?: boolean
-  favoriteActive?: boolean
-  favoriteBusy?: boolean
-  onToggleFavorite?: () => void
+  showAddPin?: boolean
+  pinActive?: boolean
+  pinBusy?: boolean
+  onTogglePin?: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -67,15 +67,15 @@ export function MessengerMessageMenuPopover({
       <button type="button" className="messenger-msg-menu__item" role="menuitem" onClick={onReply}>
         Ответить
       </button>
-      {showAddFavorite && onToggleFavorite ? (
+      {showAddPin && onTogglePin ? (
         <button
           type="button"
           className="messenger-msg-menu__item"
           role="menuitem"
-          disabled={favoriteBusy}
-          onClick={onToggleFavorite}
+          disabled={pinBusy}
+          onClick={onTogglePin}
         >
-          {favoriteActive ? 'Убрать из избранного' : 'В избранное'}
+          {pinActive ? 'Снять закреп' : 'Закрепить'}
         </button>
       ) : null}
     </div>

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { ensureDirectConversationWithUser } from '../lib/messenger'
 import { fetchPublicUserProfile, type PublicUserProfileRow } from '../lib/userPublicProfile'
-import { getContactStatuses, setUserFavorite, type ContactStatus } from '../lib/socialGraph'
+import { getContactStatuses, setContactPin, type ContactStatus } from '../lib/socialGraph'
 import type { UserPeekTarget } from '../types/userPeek'
 
 function formatLastActive(iso: string | null): string {
@@ -28,7 +28,7 @@ export function UserProfilePeekModal({
   const [loadErr, setLoadErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<ContactStatus | null>(null)
-  const [favoriteBusy, setFavoriteBusy] = useState(false)
+  const [pinBusy, setPinBusy] = useState(false)
   const [chatBusy, setChatBusy] = useState(false)
 
   const uid = target?.userId?.trim() ?? ''
@@ -83,12 +83,12 @@ export function UserProfilePeekModal({
 
   const initials = (displayName.trim().charAt(0) || '?').toUpperCase()
 
-  const toggleFavorite = async () => {
-    if (!uid || isSelf || favoriteBusy) return
-    setFavoriteBusy(true)
-    const next = !(status?.isFavorite ?? false)
-    const res = await setUserFavorite(uid, next)
-    setFavoriteBusy(false)
+  const togglePin = async () => {
+    if (!uid || isSelf || pinBusy) return
+    setPinBusy(true)
+    const next = !(status?.pinnedByMe ?? false)
+    const res = await setContactPin(uid, next)
+    setPinBusy(false)
     if (res.data) setStatus(res.data)
   }
 
@@ -135,10 +135,10 @@ export function UserProfilePeekModal({
               <button
                 type="button"
                 className="dashboard-topbar__action"
-                disabled={favoriteBusy}
-                onClick={() => void toggleFavorite()}
+                disabled={pinBusy}
+                onClick={() => void togglePin()}
               >
-                {status?.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
+                {status?.pinnedByMe ? 'Снять закреп' : 'Закрепить'}
               </button>
               <button
                 type="button"

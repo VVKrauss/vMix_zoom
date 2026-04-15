@@ -22,6 +22,7 @@ async function adminSettingsReachable(): Promise<boolean> {
 /** Метрики хоста signaling (опционально в том же JSON, что и счётчики). */
 export type AdminHostMetrics = {
   cpuPercent: number | null
+  gpuPercent: number | null
   memoryUsedMb: number | null
   memoryTotalMb: number | null
   uptimeSec: number | null
@@ -31,6 +32,7 @@ export type AdminHostMetrics = {
 
 const EMPTY_HOST_METRICS: AdminHostMetrics = {
   cpuPercent: null,
+  gpuPercent: null,
   memoryUsedMb: null,
   memoryTotalMb: null,
   uptimeSec: null,
@@ -96,6 +98,9 @@ function parseHostMetrics(body: Record<string, unknown>): AdminHostMetrics {
   const cpuPercent = pickFiniteNumber(
     src.cpuPercent ?? src.cpu_percent ?? src.cpu ?? src.cpuLoad ?? src.cpu_load,
   )
+  const gpuPercent = pickFiniteNumber(
+    src.gpuPercent ?? src.gpu_percent ?? src.gpu ?? src.gpuLoad ?? src.gpu_load,
+  )
   const memoryUsedMb = pickFiniteNumber(
     src.memoryUsedMb ??
       src.memory_used_mb ??
@@ -122,6 +127,7 @@ function parseHostMetrics(body: Record<string, unknown>): AdminHostMetrics {
 
   const allNull =
     cpuPercent == null &&
+    gpuPercent == null &&
     memoryUsedMb == null &&
     memoryTotalMb == null &&
     uptimeSec == null &&
@@ -132,6 +138,7 @@ function parseHostMetrics(body: Record<string, unknown>): AdminHostMetrics {
 
   return {
     cpuPercent,
+    gpuPercent,
     memoryUsedMb,
     memoryTotalMb,
     uptimeSec,
@@ -231,6 +238,23 @@ export async function fetchAdminOverview(): Promise<AdminOverviewState> {
     kind: 'error',
     serverReachable: false,
     message: 'Не удалось достучаться до signaling (проверьте VITE_SIGNALING_URL и прокси).',
+  }
+}
+
+/** Метрики хоста с signaling: GET /api/admin/stats (тот же Bearer). */
+export async function fetchAdminHostMetrics(): Promise<AdminHostMetrics | null> {
+  if (!hasAdminBearerToken()) return null
+  const base = signalingHttpBase()
+  try {
+    const res = await fetch(`${base}${STATS_PATH}`, {
+      method: 'GET',
+      headers: adminAuthHeaders(false),
+    })
+    if (!res.ok) return null
+    const body = (await res.json()) as Record<string, unknown>
+    return parseHostMetrics(body)
+  } catch {
+    return null
   }
 }
 

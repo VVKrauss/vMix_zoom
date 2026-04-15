@@ -30,6 +30,12 @@ export type RoomChatLastSender = {
   createdAt: string
 }
 
+export type RoomChatMemberRow = {
+  userId: string
+  displayName: string
+  avatarUrl: string | null
+}
+
 function mapConversationRow(row: Record<string, unknown>): RoomChatConversationSummary {
   return {
     id: String(row.id),
@@ -109,6 +115,60 @@ export async function adminPurgeStaleRoomChats(): Promise<{ deleted: number; err
   }
   const n = typeof row.deleted === 'number' ? row.deleted : Number(row.deleted ?? 0) || 0
   return { deleted: n, error: null }
+}
+
+/** Участники room-чата (имена из users), только если текущий пользователь состоит в беседе. */
+export async function listRoomChatMembersForUser(
+  conversationId: string,
+  userId: string,
+): Promise<{ data: RoomChatMemberRow[] | null; error: string | null }> {
+  const convo = await getRoomChatConversationForUser(conversationId, userId)
+  if (convo.error) return { data: null, error: convo.error }
+  if (!convo.data) return { data: null, error: 'Чат не найден' }
+
+  const { data: mems, error: mErr } = await supabase
+    .from('chat_conversation_members')
+    .select('user_id')
+    .eq('conversation_id', conversationId)
+
+  if (mErr) return { data: null, error: mErr.message }
+  const ids = Array.from(
+    new Set(
+      (mems ?? [])
+        .map((row) => (typeof row.user_id === 'string' ? row.user_id.trim() : ''))
+        .filter(Boolean),
+    ),
+  )
+  if (ids.length === 0) return { data: [], error: null }
+
+  const { data: users, error: uErr } = await supabase
+    .from('users')
+    .select('id, display_name, avatar_url')
+    .in('id', ids)
+
+  if (uErr) return { data: null, error: uErr.message }
+
+  const byId = new Map<string, { display_name: string | null; avatar_url: string | null }>()
+  for (const row of users ?? []) {
+    const id = typeof row.id === 'string' ? row.id : ''
+    if (!id) continue
+    byId.set(id, {
+      display_name: typeof row.display_name === 'string' ? row.display_name : null,
+      avatar_url: typeof row.avatar_url === 'string' ? row.avatar_url : null,
+    })
+  }
+
+  const mapped: RoomChatMemberRow[] = ids.map((id) => {
+    const u = byId.get(id)
+    const dn = u?.display_name?.trim()
+    return {
+      userId: id,
+      displayName: dn || 'Участник',
+      avatarUrl: u?.avatar_url?.trim() ? u.avatar_url.trim() : null,
+    }
+  })
+  mapped.sort((a, b) => a.displayName.localeCompare(b.displayName, 'ru'))
+  return { data: mapped, error: null }
 }
 
 export async function getRoomChatConversationForUser(

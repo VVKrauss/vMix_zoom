@@ -27,6 +27,13 @@ export interface UserProfile {
   profile_search_allow_by_name: boolean
   profile_search_allow_by_email: boolean
   profile_search_allow_by_slug: boolean
+  /** ЛС: everyone | contacts_only */
+  dm_allow_from: 'everyone' | 'contacts_only'
+  /** Карточка профиля: everyone | contacts_only */
+  profile_view_allow_from: 'everyone' | 'contacts_only'
+  profile_show_avatar: boolean
+  profile_show_slug: boolean
+  profile_show_last_active: boolean
 }
 
 export interface PlanInfo {
@@ -45,11 +52,19 @@ interface UseProfileReturn {
   error: string | null
   saveProfile: (displayName: string, profileSlugRaw?: string) => Promise<{ error: string | null }>
   searchPrivacySaving: boolean
+  contactPrivacySaving: boolean
   saveSearchPrivacy: (patch: {
     profile_search_closed: boolean
     profile_search_allow_by_name: boolean
     profile_search_allow_by_email: boolean
     profile_search_allow_by_slug: boolean
+  }) => Promise<{ error: string | null }>
+  saveContactPrivacy: (patch: {
+    dm_allow_from: 'everyone' | 'contacts_only'
+    profile_view_allow_from: 'everyone' | 'contacts_only'
+    profile_show_avatar: boolean
+    profile_show_slug: boolean
+    profile_show_last_active: boolean
   }) => Promise<{ error: string | null }>
   uploadAvatar: (file: File) => Promise<{ error: string | null }>
   removeAvatar: () => Promise<{ error: string | null }>
@@ -64,11 +79,19 @@ export function useProfile(): UseProfileReturn {
   const [loading, setLoading]               = useState(true)
   const [saving, setSaving]                 = useState(false)
   const [searchPrivacySaving, setSearchPrivacySaving] = useState(false)
+  const [contactPrivacySaving, setContactPrivacySaving] = useState(false)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [error, setError]                   = useState<string | null>(null)
 
   useEffect(() => {
-    if (!user) return
+    const uid = user?.id
+    if (!uid) {
+      setProfile(null)
+      setPlan(null)
+      setLoading(false)
+      setError(null)
+      return
+    }
 
     const fetchProfile = async () => {
       setLoading(true)
@@ -78,14 +101,14 @@ export function useProfile(): UseProfileReturn {
         supabase
           .from('users')
           .select(
-            'id, display_name, profile_slug, email, avatar_url, status, room_ui_preferences, profile_search_closed, profile_search_allow_by_name, profile_search_allow_by_email, profile_search_allow_by_slug',
+            'id, display_name, profile_slug, email, avatar_url, status, room_ui_preferences, profile_search_closed, profile_search_allow_by_name, profile_search_allow_by_email, profile_search_allow_by_slug, dm_allow_from, profile_view_allow_from, profile_show_avatar, profile_show_slug, profile_show_last_active',
           )
-          .eq('id', user.id)
+          .eq('id', uid)
           .single(),
         supabase
           .from('user_global_roles')
           .select('roles ( code, title, scope_type )')
-          .eq('user_id', user.id),
+          .eq('user_id', uid),
       ])
 
       if (userError) {
@@ -139,6 +162,12 @@ export function useProfile(): UseProfileReturn {
         profile_search_allow_by_name: userData.profile_search_allow_by_name !== false,
         profile_search_allow_by_email: userData.profile_search_allow_by_email === true,
         profile_search_allow_by_slug: userData.profile_search_allow_by_slug !== false,
+        dm_allow_from: userData.dm_allow_from === 'contacts_only' ? 'contacts_only' : 'everyone',
+        profile_view_allow_from:
+          userData.profile_view_allow_from === 'contacts_only' ? 'contacts_only' : 'everyone',
+        profile_show_avatar: userData.profile_show_avatar !== false,
+        profile_show_slug: userData.profile_show_slug !== false,
+        profile_show_last_active: userData.profile_show_last_active !== false,
       })
 
       // Подписка: берём через аккаунт владельца
@@ -170,7 +199,7 @@ export function useProfile(): UseProfileReturn {
     }
 
     void fetchProfile()
-  }, [user])
+  }, [user?.id])
 
   const checkProfileSlugAvailable = useCallback(
     async (rawSlug: string): Promise<boolean> => {
@@ -324,6 +353,40 @@ export function useProfile(): UseProfileReturn {
     [user, profile],
   )
 
+  const saveContactPrivacy = useCallback(
+    async (patch: {
+      dm_allow_from: 'everyone' | 'contacts_only'
+      profile_view_allow_from: 'everyone' | 'contacts_only'
+      profile_show_avatar: boolean
+      profile_show_slug: boolean
+      profile_show_last_active: boolean
+    }): Promise<{ error: string | null }> => {
+      if (!user || !profile) return { error: 'Нет пользователя' }
+      setContactPrivacySaving(true)
+      const body = {
+        dm_allow_from: patch.dm_allow_from,
+        profile_view_allow_from: patch.profile_view_allow_from,
+        profile_show_avatar: patch.profile_show_avatar,
+        profile_show_slug: patch.profile_show_slug,
+        profile_show_last_active: patch.profile_show_last_active,
+        updated_at: new Date().toISOString(),
+      }
+      const { error: dbErr } = await supabase.from('users').update(body).eq('id', user.id)
+      setContactPrivacySaving(false)
+      if (dbErr) return { error: dbErr.message }
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              ...patch,
+            }
+          : prev,
+      )
+      return { error: null }
+    },
+    [user, profile],
+  )
+
   const removeAvatar = useCallback(async (): Promise<{ error: string | null }> => {
     if (!user || !profile?.avatar_url) return { error: null }
     setUploadingAvatar(true)
@@ -355,10 +418,12 @@ export function useProfile(): UseProfileReturn {
     loading,
     saving,
     searchPrivacySaving,
+    contactPrivacySaving,
     uploadingAvatar,
     error,
     saveProfile,
     saveSearchPrivacy,
+    saveContactPrivacy,
     uploadAvatar,
     removeAvatar,
     checkProfileSlugAvailable,

@@ -46,9 +46,9 @@ const DashboardChatsPage = lazy(async () => {
   return { default: mod.DashboardChatsPage }
 })
 
-const DashboardFriendsPage = lazy(async () => {
-  const mod = await import('./components/DashboardFriendsPage')
-  return { default: mod.DashboardFriendsPage }
+const DashboardContactsPage = lazy(async () => {
+  const mod = await import('./components/DashboardContactsPage')
+  return { default: mod.DashboardContactsPage }
 })
 
 const DashboardMessengerPage = lazy(async () => {
@@ -146,7 +146,8 @@ export function App() {
         <Route path="/dashboard/chats/:conversationId" element={<ProtectedRoute><DashboardChatViewPage /></ProtectedRoute>} />
         <Route path="/dashboard/messenger" element={<ProtectedRoute><DashboardMessengerPage /></ProtectedRoute>} />
         <Route path="/dashboard/messenger/:conversationId" element={<ProtectedRoute><DashboardMessengerPage /></ProtectedRoute>} />
-        <Route path="/dashboard/friends" element={<ProtectedRoute><DashboardFriendsPage /></ProtectedRoute>} />
+        <Route path="/dashboard/contacts" element={<ProtectedRoute><DashboardContactsPage /></ProtectedRoute>} />
+        <Route path="/dashboard/friends" element={<Navigate to="/dashboard/contacts" replace />} />
         <Route path="/admin" element={<AdminProtectedRoute><AdminPage /></AdminProtectedRoute>} />
         <Route path="/room-closed" element={<RoomClosedPage />} />
         <Route path="/r/:roomId" element={<RoomRoute />} />

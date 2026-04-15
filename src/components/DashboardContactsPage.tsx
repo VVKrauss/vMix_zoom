@@ -6,38 +6,39 @@ import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import {
   type ContactCard,
   type RegisteredUserSearchHit,
+  hideContactFromMyList,
   listMyContacts,
   searchRegisteredUsers,
-  setUserFavorite,
+  setContactPin,
 } from '../lib/socialGraph'
 import { DashboardMenuPicker, type DashboardMenuOption } from './DashboardMenuPicker'
 import { DashboardShell } from './DashboardShell'
-import { ChevronLeftIcon, StarIcon } from './icons'
+import { ChatBubbleIcon, ChevronLeftIcon, StarIcon, TrashIcon } from './icons'
 
-type FriendFilter = 'all' | 'friends' | 'favorites' | 'incoming'
+type ContactFilter = 'all' | 'mutual' | 'pinned' | 'incoming'
 
-const FRIEND_FILTER_OPTIONS: DashboardMenuOption<FriendFilter>[] = [
+const CONTACT_FILTER_OPTIONS: DashboardMenuOption<ContactFilter>[] = [
   { value: 'all', label: 'Все' },
-  { value: 'friends', label: 'Друзья' },
-  { value: 'favorites', label: 'Моё избранное' },
-  { value: 'incoming', label: 'Добавили меня' },
+  { value: 'mutual', label: 'Взаимные' },
+  { value: 'pinned', label: 'Закреплённые' },
+  { value: 'incoming', label: 'Закрепили вас' },
 ]
 
-function matchesFriendFilter(item: ContactCard, filter: FriendFilter): boolean {
-  if (filter === 'friends') return item.isFriend
-  if (filter === 'favorites') return item.isFavorite
-  if (filter === 'incoming') return item.favorsMe && !item.isFavorite
+function matchesContactFilter(item: ContactCard, filter: ContactFilter): boolean {
+  if (filter === 'mutual') return item.isMutualContact
+  if (filter === 'pinned') return item.pinnedByMe
+  if (filter === 'incoming') return item.pinnedMe && !item.pinnedByMe
   return true
 }
 
 function statusLabel(item: ContactCard): string {
-  if (item.isFriend) return 'Друзья'
-  if (item.isFavorite) return 'В избранном'
-  if (item.favorsMe) return 'Добавил вас'
+  if (item.isMutualContact) return 'Взаимный контакт'
+  if (item.pinnedByMe) return 'Закреплён у вас'
+  if (item.pinnedMe) return 'Закрепил вас'
   return 'Контакт'
 }
 
-export function DashboardFriendsPage() {
+export function DashboardContactsPage() {
   const { signOut, user } = useAuth()
   const { openUserPeek } = useUserPeek()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
@@ -45,8 +46,9 @@ export function DashboardFriendsPage() {
   const [error, setError] = useState<string | null>(null)
   const [items, setItems] = useState<ContactCard[]>([])
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<FriendFilter>('all')
+  const [filter, setFilter] = useState<ContactFilter>('all')
   const [busyTarget, setBusyTarget] = useState<string | null>(null)
+  const [hideBusy, setHideBusy] = useState<string | null>(null)
   const [registryHits, setRegistryHits] = useState<RegisteredUserSearchHit[]>([])
   const [registryLoading, setRegistryLoading] = useState(false)
   const [registryError, setRegistryError] = useState<string | null>(null)
@@ -108,7 +110,7 @@ export function DashboardFriendsPage() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     return items.filter((item) => {
-      if (!matchesFriendFilter(item, filter)) return false
+      if (!matchesContactFilter(item, filter)) return false
       if (!q) return true
       const slug = (item.profileSlug ?? '').toLowerCase()
       return item.displayName.toLowerCase().includes(q) || slug.includes(q)
@@ -126,26 +128,26 @@ export function DashboardFriendsPage() {
     return m
   }, [items])
 
-  const toggleFavorite = async (item: ContactCard) => {
+  const togglePin = async (item: ContactCard) => {
     if (busyTarget) return
-    const nextFavorite = !item.isFavorite
+    const next = !item.pinnedByMe
     setBusyTarget(item.targetUserId)
     setItems((prev) =>
       prev.map((row) =>
         row.targetUserId === item.targetUserId
           ? {
               ...row,
-              isFavorite: nextFavorite,
-              isFriend: nextFavorite && row.favorsMe,
+              pinnedByMe: next,
+              isMutualContact: next && row.pinnedMe,
             }
           : row,
       ),
     )
-    const result = await setUserFavorite(item.targetUserId, nextFavorite)
+    const result = await setContactPin(item.targetUserId, next)
     setBusyTarget(null)
     if (result.error || !result.data) {
       setItems((prev) => prev.map((row) => (row.targetUserId === item.targetUserId ? item : row)))
-      setError(result.error ?? 'Не удалось обновить избранное')
+      setError(result.error ?? 'Не удалось обновить закреп')
       return
     }
     setError(null)
@@ -154,37 +156,57 @@ export function DashboardFriendsPage() {
         row.targetUserId === item.targetUserId
           ? {
               ...row,
-              isFavorite: result.data!.isFavorite,
-              favorsMe: result.data!.favorsMe,
-              isFriend: result.data!.isFriend,
+              pinnedByMe: result.data!.pinnedByMe,
+              pinnedMe: result.data!.pinnedMe,
+              isMutualContact: result.data!.isMutualContact,
             }
           : row,
       ),
     )
   }
 
-  const toggleFavoriteForSearchHit = async (hit: RegisteredUserSearchHit) => {
+  const togglePinForSearchHit = async (hit: RegisteredUserSearchHit) => {
     const existing = contactByUserId.get(hit.id)
     if (existing) {
-      await toggleFavorite(existing)
+      await togglePin(existing)
       return
     }
     if (busyTarget) return
     setBusyTarget(hit.id)
-    const result = await setUserFavorite(hit.id, true)
+    const result = await setContactPin(hit.id, true)
     setBusyTarget(null)
     if (result.error || !result.data) {
-      setError(result.error ?? 'Не удалось добавить в избранное')
+      setError(result.error ?? 'Не удалось закрепить')
       return
     }
     setError(null)
     silentReloadContacts()
   }
 
+  const hideFromList = async (targetUserId: string) => {
+    if (hideBusy) return
+    setHideBusy(targetUserId)
+    const res = await hideContactFromMyList(targetUserId)
+    setHideBusy(null)
+    if (res.error) {
+      setError(res.error)
+      return
+    }
+    setError(null)
+    silentReloadContacts()
+  }
+
+  const messengerUrl = (uid: string, title: string) => {
+    const sp = new URLSearchParams()
+    sp.set('with', uid)
+    if (title.trim()) sp.set('title', title.trim())
+    return `/dashboard/messenger?${sp.toString()}`
+  }
+
   return (
-    <DashboardShell active="friends" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
-      <section className="dashboard-section dashboard-friends-page">
-        <div className="dashboard-chat-page__head dashboard-friends-page__head">
+    <DashboardShell active="contacts" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
+      <section className="dashboard-section dashboard-contacts-page">
+        <div className="dashboard-chat-page__head dashboard-contacts-page__head">
           <Link
             to="/dashboard"
             className="dashboard-page-back"
@@ -194,7 +216,7 @@ export function DashboardFriendsPage() {
             <ChevronLeftIcon />
             <span>Кабинет</span>
           </Link>
-          <h2 className="dashboard-section__title dashboard-friends__page-title">Друзья и избранные</h2>
+          <h2 className="dashboard-section__title dashboard-contacts__page-title">Контакты</h2>
         </div>
 
         <div className="dashboard-chat-filters">
@@ -214,7 +236,7 @@ export function DashboardFriendsPage() {
             <DashboardMenuPicker
               value={filter}
               onChange={setFilter}
-              options={FRIEND_FILTER_OPTIONS}
+              options={CONTACT_FILTER_OPTIONS}
               ariaLabelPrefix="Фильтр"
               modifierClass="admin-role-picker--dashboard-filters"
             />
@@ -233,7 +255,7 @@ export function DashboardFriendsPage() {
               <div className="dashboard-friends-list dashboard-friends-list--registry">
                 {registryRows.map((hit) => {
                   const linked = contactByUserId.get(hit.id)
-                  const fav = linked?.isFavorite ?? false
+                  const pin = linked?.pinnedByMe ?? false
                   return (
                     <article key={hit.id} className="dashboard-friend-card">
                       <div className="dashboard-friend-card__main">
@@ -264,25 +286,39 @@ export function DashboardFriendsPage() {
                           ) : null}
                           {linked ? (
                             <div className="dashboard-friend-card__meta">
-                              <span>{linked.isFriend ? 'Друзья' : linked.favorsMe ? 'Добавил вас' : 'Контакт'}</span>
+                              <span>
+                                {linked.isMutualContact
+                                  ? 'Взаимный контакт'
+                                  : linked.pinnedMe
+                                    ? 'Закрепил вас'
+                                    : 'Контакт'}
+                              </span>
                             </div>
                           ) : (
                             <div className="dashboard-friend-card__meta">
-                              <span>Не в вашем списке контактов</span>
+                              <span>Не в вашем списке</span>
                             </div>
                           )}
                         </div>
                       </div>
                       <div className="dashboard-friend-card__actions">
+                        <Link
+                          className="dashboard-contact-msg-ico"
+                          to={messengerUrl(hit.id, hit.displayName)}
+                          title="Личный чат"
+                          aria-label="Открыть личный чат"
+                        >
+                          <ChatBubbleIcon />
+                        </Link>
                         <button
                           type="button"
-                          className={`dashboard-friend-card__fav-btn${fav ? ' dashboard-friend-card__fav-btn--active' : ''}`}
-                          onClick={() => void toggleFavoriteForSearchHit(hit)}
+                          className={`dashboard-friend-card__fav-btn${pin ? ' dashboard-friend-card__fav-btn--active' : ''}`}
+                          onClick={() => void togglePinForSearchHit(hit)}
                           disabled={busyTarget === hit.id}
-                          title={fav ? 'Убрать из избранного' : 'В избранное'}
+                          title={pin ? 'Снять закреп' : 'Закрепить'}
                         >
-                          <StarIcon filled={fav} />
-                          <span>{fav ? 'Убрать из избранного' : 'В избранное'}</span>
+                          <StarIcon filled={pin} />
+                          <span>{pin ? 'Закреплено' : 'Закрепить'}</span>
                         </button>
                       </div>
                     </article>
@@ -297,97 +333,81 @@ export function DashboardFriendsPage() {
         {!loading && error ? <p className="join-error">{error}</p> : null}
         {!loading && !error && filtered.length === 0 ? (
           <div className="dashboard-chats-empty">
-            {filter === 'friends'
-              ? 'Пока нет взаимных друзей. Добавьте человека в избранное из чата комнаты или мессенджера — когда он ответит взаимностью, вы появитесь друг у друга здесь.'
-              : filter === 'favorites'
-                ? 'В избранном пока никого. Добавляйте людей из чата комнаты, мессенджера или найдите по имени и slug во вкладке «Друзья».'
+            {filter === 'mutual'
+              ? 'Пока нет взаимных контактов. Закрепите человека — когда он ответит взаимностью, вы появитесь здесь.'
+              : filter === 'pinned'
+                ? 'Закреплённых пока нет. Закрепляйте из чата комнаты, мессенджера или найдите по имени выше.'
                 : filter === 'incoming'
-                  ? 'Пока никто не добавил вас в избранное.'
-                  : 'Пока здесь пусто. Добавляйте в избранное из чата комнаты, мессенджера или найдите пользователя поиском выше (от 2 символов).'}
+                  ? 'Пока никто не закрепил вас.'
+                  : 'Пока здесь пусто. Закрепляйте людей из чата или найдите пользователя поиском (от 2 символов).'}
           </div>
         ) : null}
 
         {!loading && !error && filtered.length > 0 ? (
-          <div className="dashboard-friends-list">
+          <ul className="dashboard-contact-compact-list">
             {filtered.map((item) => (
-              <article key={item.targetUserId} className="dashboard-friend-card">
-                <div className="dashboard-friend-card__main">
-                  <button
-                    type="button"
-                    className="dashboard-friend-card__avatar"
-                    aria-label={`Профиль: ${item.displayName}`}
-                    onClick={() =>
-                      openUserPeek({
-                        userId: item.targetUserId,
-                        displayName: item.displayName,
-                        avatarUrl: item.avatarUrl,
-                      })
-                    }
+              <li key={item.targetUserId} className="dashboard-contact-compact-row">
+                <button
+                  type="button"
+                  className="dashboard-contact-compact-row__avatar"
+                  aria-label={`Профиль: ${item.displayName}`}
+                  onClick={() =>
+                    openUserPeek({
+                      userId: item.targetUserId,
+                      displayName: item.displayName,
+                      avatarUrl: item.avatarUrl,
+                    })
+                  }
+                >
+                  {item.avatarUrl ? (
+                    <img src={item.avatarUrl} alt="" />
+                  ) : (
+                    <span>{item.displayName.charAt(0).toUpperCase()}</span>
+                  )}
+                </button>
+                <div className="dashboard-contact-compact-row__main">
+                  <span className="dashboard-contact-compact-row__name">{item.displayName}</span>
+                  <span
+                    className={`dashboard-contact-compact-row__badge${
+                      item.isMutualContact ? ' dashboard-contact-compact-row__badge--on' : ''
+                    }`}
                   >
-                    {item.avatarUrl ? (
-                      <img src={item.avatarUrl} alt={item.displayName} />
-                    ) : (
-                      <span>{item.displayName.charAt(0).toUpperCase()}</span>
-                    )}
-                  </button>
-                  <div className="dashboard-friend-card__text">
-                    <div className="dashboard-friend-card__titleline">
-                      <span className="dashboard-friend-card__name">{item.displayName}</span>
-                      <span className={`dashboard-badge ${item.isFriend ? 'dashboard-badge--active' : 'dashboard-badge--pending'}`}>
-                        {statusLabel(item)}
-                      </span>
-                    </div>
-                    {item.profileSlug ? (
-                      <div className="dashboard-friend-card__slug">@{item.profileSlug}</div>
-                    ) : null}
-                    {item.favorsMe && !item.isFavorite ? (
-                      <div className="dashboard-friend-card__reciprocal">
-                        <p className="dashboard-friend-card__reciprocal-text">
-                          <strong>{item.displayName}</strong> добавил вас в избранное. Ответьте ему тем же?
-                        </p>
-                        <button
-                          type="button"
-                          className="dashboard-friend-card__reciprocal-add"
-                          disabled={busyTarget === item.targetUserId}
-                          onClick={() => void toggleFavorite(item)}
-                        >
-                          Добавить
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="dashboard-friend-card__meta">
-                        <span>{item.isFavorite ? 'У вас в избранном' : 'Не в избранном'}</span>
-                        <span>{item.favorsMe ? 'Добавил вас' : 'Ещё не добавил вас'}</span>
-                      </div>
-                    )}
-                  </div>
+                    {statusLabel(item)}
+                  </span>
                 </div>
-
-                <div className="dashboard-friend-card__actions">
-                  {item.isFavorite ? (
-                    <button
-                      type="button"
-                      className="dashboard-friend-card__remove-fav"
-                      disabled={busyTarget === item.targetUserId}
-                      onClick={() => void toggleFavorite(item)}
-                    >
-                      Убрать из избранного
-                    </button>
-                  ) : null}
+                <div className="dashboard-contact-compact-row__actions">
+                  <Link
+                    className="dashboard-contact-msg-ico"
+                    to={messengerUrl(item.targetUserId, item.displayName)}
+                    title="Личный чат"
+                    aria-label="Открыть личный чат"
+                  >
+                    <ChatBubbleIcon />
+                  </Link>
                   <button
                     type="button"
-                    className={`dashboard-friend-card__fav-btn${item.isFavorite ? ' dashboard-friend-card__fav-btn--active' : ''}`}
-                    onClick={() => void toggleFavorite(item)}
+                    className={`dashboard-contact-compact-row__pin${item.pinnedByMe ? ' dashboard-contact-compact-row__pin--on' : ''}`}
                     disabled={busyTarget === item.targetUserId}
-                    title={item.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
+                    onClick={() => void togglePin(item)}
+                    title={item.pinnedByMe ? 'Снять закреп' : 'Закрепить'}
+                    aria-label={item.pinnedByMe ? 'Снять закреп' : 'Закрепить'}
                   >
-                    <StarIcon filled={item.isFavorite} />
-                    <span>{item.isFavorite ? 'В избранном' : 'В избранное'}</span>
+                    <StarIcon filled={item.pinnedByMe} />
+                  </button>
+                  <button
+                    type="button"
+                    className="dashboard-contact-compact-row__hide"
+                    disabled={hideBusy === item.targetUserId}
+                    onClick={() => void hideFromList(item.targetUserId)}
+                    title="Скрыть из списка"
+                    aria-label="Скрыть из списка контактов"
+                  >
+                    <TrashIcon />
                   </button>
                 </div>
-              </article>
+              </li>
             ))}
-          </div>
+          </ul>
         ) : null}
       </section>
     </DashboardShell>

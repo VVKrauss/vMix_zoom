@@ -262,7 +262,16 @@ export async function ensureDirectConversationWithUser(
     p_target_user_id: targetUserId,
     p_target_title: targetTitle ?? null,
   })
-  if (error) return { data: null, error: error.message }
+  if (error) {
+    const msg = error.message
+    if (msg.includes('dm_not_allowed')) {
+      return {
+        data: null,
+        error: 'Этот пользователь принимает личные сообщения только от взаимных контактов.',
+      }
+    }
+    return { data: null, error: msg }
+  }
   return { data: typeof data === 'string' ? data : null, error: null }
 }
 

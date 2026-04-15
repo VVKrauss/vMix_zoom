@@ -15,7 +15,7 @@ interface Props {
   avatarByPeerId?: Record<string, string | null | undefined>
   avatarByUserId?: Record<string, string | null | undefined>
   contactStatuses?: Record<string, ContactStatus>
-  onToggleFavoriteUser?: (targetUserId: string, nextFavorite: boolean) => void
+  onToggleContactPin?: (targetUserId: string, nextFavorite: boolean) => void
   onSend: (text: string) => void
   /** Запретить ввод (например, режим «чат закрыт»). */
   composerLocked?: boolean
@@ -36,7 +36,7 @@ export function RoomChatPanel({
   avatarByPeerId = {},
   avatarByUserId = {},
   contactStatuses = {},
-  onToggleFavoriteUser,
+  onToggleContactPin,
   onSend,
   composerLocked = false,
   composerLockedHint = null,
@@ -95,9 +95,13 @@ export function RoomChatPanel({
             const status = message.senderUserId ? contactStatuses[message.senderUserId] : undefined
             const canToggleFavorite =
               Boolean(message.senderUserId) &&
-              Boolean(onToggleFavoriteUser) &&
+              Boolean(onToggleContactPin) &&
               (!localUserId || message.senderUserId !== localUserId)
-            const statusLabel = status?.isFriend ? 'друг' : status?.isFavorite ? 'в избранном' : null
+            const statusLabel = status?.isMutualContact
+              ? 'контакт'
+              : status?.pinnedByMe
+                ? 'закреплён'
+                : null
             const authorAvatarUrl =
               avatarByPeerId[message.peerId] ??
               (message.senderUserId ? avatarByUserId[message.senderUserId] ?? null : null)
@@ -150,12 +154,12 @@ export function RoomChatPanel({
                       {canToggleFavorite ? (
                         <button
                           type="button"
-                          className={`room-chat-msg__favorite-btn${status?.isFavorite ? ' room-chat-msg__favorite-btn--active' : ''}`}
-                          onClick={() => onToggleFavoriteUser?.(message.senderUserId!, !status?.isFavorite)}
-                          title={status?.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
-                          aria-label={status?.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
+                          className={`room-chat-msg__favorite-btn${status?.pinnedByMe ? ' room-chat-msg__favorite-btn--active' : ''}`}
+                          onClick={() => onToggleContactPin?.(message.senderUserId!, !status?.pinnedByMe)}
+                          title={status?.pinnedByMe ? 'Снять закреп' : 'Закрепить'}
+                          aria-label={status?.pinnedByMe ? 'Снять закреп' : 'Закрепить'}
                         >
-                          <StarIcon filled={status?.isFavorite === true} />
+                          <StarIcon filled={status?.pinnedByMe === true} />
                         </button>
                       ) : null}
                     </span>

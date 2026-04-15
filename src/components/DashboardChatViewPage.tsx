@@ -9,7 +9,7 @@ import {
   listRoomChatMessagesForUser,
 } from '../lib/chatArchive'
 import { ensureDirectConversationWithUser } from '../lib/messenger'
-import { getContactStatuses, setUserFavorite, type ContactStatus } from '../lib/socialGraph'
+import { getContactStatuses, setContactPin, type ContactStatus } from '../lib/socialGraph'
 import { DashboardShell } from './DashboardShell'
 import { MessengerMessageBody } from './MessengerMessageBody'
 import { ChatBubbleIcon, StarIcon } from './icons'
@@ -125,7 +125,7 @@ export function DashboardChatViewPage() {
   const toggleFavorite = async (targetUserId: string, currentValue: boolean) => {
     if (!targetUserId || pendingFavoriteUserId) return
     setPendingFavoriteUserId(targetUserId)
-    const result = await setUserFavorite(targetUserId, !currentValue)
+    const result = await setContactPin(targetUserId, !currentValue)
     if (result.error) {
       setError(result.error)
     } else if (result.data) {
@@ -201,13 +201,13 @@ export function DashboardChatViewPage() {
                             <button
                               type="button"
                               className={`dashboard-chat-message__action${
-                                contact?.isFavorite ? ' dashboard-chat-message__action--active' : ''
+                                contact?.pinnedByMe ? ' dashboard-chat-message__action--active' : ''
                               }`}
                               disabled={pendingFavoriteUserId === senderUserId}
-                              onClick={() => void toggleFavorite(senderUserId, contact?.isFavorite ?? false)}
-                              title={contact?.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
+                              onClick={() => void toggleFavorite(senderUserId, contact?.pinnedByMe ?? false)}
+                              title={contact?.pinnedByMe ? 'Снять закреп' : 'Закрепить'}
                             >
-                              <StarIcon filled={contact?.isFavorite === true} />
+                              <StarIcon filled={contact?.pinnedByMe === true} />
                             </button>
                             <button
                               type="button"

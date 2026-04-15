@@ -10,7 +10,7 @@ import {
   ROOM_CHAT_PAGE_SIZE,
   listRoomChatConversationsForUser,
 } from '../lib/chatArchive'
-import { readHiddenIncomingFavoriteIds } from '../lib/dashboardIncomingFavoritesHidden'
+import { readHiddenIncomingPinIds } from '../lib/dashboardIncomingPinsHidden'
 import { listMessengerPeersByMessageCount } from '../lib/messenger'
 import { normalizeProfileSlug, validateProfileSlugInput } from '../lib/profileSlug'
 import type { ContactCard } from '../lib/socialGraph'
@@ -19,14 +19,14 @@ import { fetchPersistentSpaceRoomsForUser, type PersistentSpaceRoomRow } from '.
 import { supabase } from '../lib/supabase'
 import type { StoredLayoutMode } from '../config/roomUiStorage'
 import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
-import { DashboardFriendsIncomingModal } from './DashboardFriendsIncomingModal'
+import { DashboardContactsIncomingModal } from './DashboardContactsIncomingModal'
 import { DashboardLayoutPicker } from './DashboardLayoutPicker'
 import type { ProfileSlugAvailability } from './DashboardProfileModal'
 import { DashboardProfileModal } from './DashboardProfileModal'
 import { PillToggle } from './PillToggle'
 import { DashboardShell } from './DashboardShell'
 import { ConfirmDialog } from './ConfirmDialog'
-import { SettingsGearIcon } from './icons'
+import { ChatBubbleIcon, SettingsGearIcon } from './icons'
 
 const STATUS_LABEL: Record<string, string> = {
   active: 'Активен',
@@ -72,7 +72,7 @@ function formatRoomTileDate(value: string | null): string {
   })
 }
 
-/** Время последней активности в личке (для тайла «Друзья»). */
+/** Время последней активности в личке (для тайла «Контакты»). */
 function formatPeerGuestTime(iso: string | null): string {
   if (!iso) return '—'
   const dt = new Date(iso)
@@ -103,10 +103,12 @@ export function DashboardPage() {
     loading,
     saving,
     searchPrivacySaving,
+    contactPrivacySaving,
     uploadingAvatar,
     error,
     saveProfile,
     saveSearchPrivacy,
+    saveContactPrivacy,
     uploadAvatar,
     removeAvatar,
     checkProfileSlugAvailable,
@@ -131,6 +133,13 @@ export function DashboardPage() {
   const [allowSearchSlug, setAllowSearchSlug] = useState(true)
   const [searchPrivacyMsg, setSearchPrivacyMsg] = useState<string | null>(null)
   const [searchPrivacyErr, setSearchPrivacyErr] = useState<string | null>(null)
+  const [dmAllowFrom, setDmAllowFrom] = useState<'everyone' | 'contacts_only'>('everyone')
+  const [profileViewAllowFrom, setProfileViewAllowFrom] = useState<'everyone' | 'contacts_only'>('everyone')
+  const [profileShowAvatar, setProfileShowAvatar] = useState(true)
+  const [profileShowSlug, setProfileShowSlug] = useState(true)
+  const [profileShowLastActive, setProfileShowLastActive] = useState(true)
+  const [contactPrivacyMsg, setContactPrivacyMsg] = useState<string | null>(null)
+  const [contactPrivacyErr, setContactPrivacyErr] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteErr, setDeleteErr] = useState<string | null>(null)
@@ -153,7 +162,7 @@ export function DashboardPage() {
       setHiddenIncomingIds([])
       return
     }
-    setHiddenIncomingIds(readHiddenIncomingFavoriteIds(user.id))
+    setHiddenIncomingIds(readHiddenIncomingPinIds(user.id))
   }, [user?.id])
 
   useEffect(() => {
@@ -176,6 +185,13 @@ export function DashboardPage() {
     setAllowSearchSlug(profile.profile_search_allow_by_slug)
     setSearchPrivacyMsg(null)
     setSearchPrivacyErr(null)
+    setDmAllowFrom(profile.dm_allow_from)
+    setProfileViewAllowFrom(profile.profile_view_allow_from)
+    setProfileShowAvatar(profile.profile_show_avatar)
+    setProfileShowSlug(profile.profile_show_slug)
+    setProfileShowLastActive(profile.profile_show_last_active)
+    setContactPrivacyMsg(null)
+    setContactPrivacyErr(null)
   }, [profile])
 
   useEffect(() => {
@@ -325,6 +341,21 @@ export function DashboardPage() {
     else setSearchPrivacyMsg('Сохранено')
   }
 
+  const handleSaveContactPrivacyForm = async (event: FormEvent) => {
+    event.preventDefault()
+    setContactPrivacyErr(null)
+    setContactPrivacyMsg(null)
+    const { error: err } = await saveContactPrivacy({
+      dm_allow_from: dmAllowFrom,
+      profile_view_allow_from: profileViewAllowFrom,
+      profile_show_avatar: profileShowAvatar,
+      profile_show_slug: profileShowSlug,
+      profile_show_last_active: profileShowLastActive,
+    })
+    if (err) setContactPrivacyErr(err)
+    else setContactPrivacyMsg('Сохранено')
+  }
+
   const handleSaveRoomPrefs = async (event: FormEvent) => {
     event.preventDefault()
     if (!user) return
@@ -372,7 +403,7 @@ export function DashboardPage() {
 
   const hiddenIncomingSet = useMemo(() => new Set(hiddenIncomingIds), [hiddenIncomingIds])
   const incomingRequests = useMemo(
-    () => contacts.filter((c) => c.favorsMe && !c.isFavorite),
+    () => contacts.filter((c) => c.pinnedMe && !c.pinnedByMe),
     [contacts],
   )
   const visibleIncomingCount = useMemo(
@@ -403,7 +434,7 @@ export function DashboardPage() {
 
   return (
     <DashboardShell active="cabinet" canAccessAdmin={canAccessAdmin} onSignOut={() => signOut()}>
-      <DashboardFriendsIncomingModal
+      <DashboardContactsIncomingModal
         open={incomingModalOpen}
         onClose={() => setIncomingModalOpen(false)}
         userId={user?.id ?? ''}
@@ -587,6 +618,85 @@ export function DashboardPage() {
           {deleteErr ? <p className="join-error dashboard-tile__foot-err">{deleteErr}</p> : null}
         </section>
 
+        <section className="dashboard-tile dashboard-tile--contact-privacy">
+          <h2 className="dashboard-tile__title">Приватность контактов</h2>
+          <form onSubmit={handleSaveContactPrivacyForm} className="dashboard-form dashboard-form--compact">
+            <p className="dashboard-field__hint" style={{ marginTop: 0 }}>
+              Кто может написать вам первым и кто видит карточку профиля (имя, аватар, ник, активность) при просмотре из
+              мессенджера и комнат.
+            </p>
+            <div className="dashboard-field">
+              <label className="dashboard-field__label">Личные сообщения</label>
+              <select
+                className="dashboard-chat-filters__input"
+                value={dmAllowFrom}
+                onChange={(e) => setDmAllowFrom(e.target.value === 'contacts_only' ? 'contacts_only' : 'everyone')}
+                aria-label="Кто может начать личный чат"
+              >
+                <option value="everyone">Все зарегистрированные</option>
+                <option value="contacts_only">Только взаимные контакты</option>
+              </select>
+            </div>
+            <div className="dashboard-field">
+              <label className="dashboard-field__label">Карточка профиля для других</label>
+              <select
+                className="dashboard-chat-filters__input"
+                value={profileViewAllowFrom}
+                onChange={(e) =>
+                  setProfileViewAllowFrom(e.target.value === 'contacts_only' ? 'contacts_only' : 'everyone')
+                }
+                aria-label="Кто видит данные профиля"
+              >
+                <option value="everyone">Все зарегистрированные</option>
+                <option value="contacts_only">Только взаимные контакты</option>
+              </select>
+            </div>
+            <div className="dashboard-field">
+              <div className="dashboard-field__inline dashboard-field__inline--toggle">
+                <span className="dashboard-field__label">Показывать аватар</span>
+                <PillToggle
+                  checked={profileShowAvatar}
+                  onCheckedChange={setProfileShowAvatar}
+                  offLabel="Скрыть"
+                  onLabel="Показать"
+                  ariaLabel="Показывать аватар в карточке"
+                />
+              </div>
+            </div>
+            <div className="dashboard-field">
+              <div className="dashboard-field__inline dashboard-field__inline--toggle">
+                <span className="dashboard-field__label">Показывать ник (@slug)</span>
+                <PillToggle
+                  checked={profileShowSlug}
+                  onCheckedChange={setProfileShowSlug}
+                  offLabel="Скрыть"
+                  onLabel="Показать"
+                  ariaLabel="Показывать ник в карточке"
+                />
+              </div>
+            </div>
+            <div className="dashboard-field">
+              <div className="dashboard-field__inline dashboard-field__inline--toggle">
+                <span className="dashboard-field__label">Показывать последнюю активность</span>
+                <PillToggle
+                  checked={profileShowLastActive}
+                  onCheckedChange={setProfileShowLastActive}
+                  offLabel="Скрыть"
+                  onLabel="Показать"
+                  ariaLabel="Показывать последнюю активность"
+                />
+              </div>
+            </div>
+            {contactPrivacyErr ? <p className="join-error">{contactPrivacyErr}</p> : null}
+            {contactPrivacyMsg ? <p className="dashboard-form__ok">{contactPrivacyMsg}</p> : null}
+            <div className="dashboard-form__save">
+              <button type="submit" className="join-btn" disabled={contactPrivacySaving}>
+                {contactPrivacySaving ? 'Сохранение…' : 'Сохранить'}
+              </button>
+            </div>
+          </form>
+        </section>
+
         <section className="dashboard-tile dashboard-tile--rooms">
           <h2 className="dashboard-tile__title">Комнаты</h2>
           <div className="dashboard-tile__grow">
@@ -637,9 +747,9 @@ export function DashboardPage() {
         </section>
 
         <section className="dashboard-tile dashboard-tile--friends">
-          <h2 className="dashboard-tile__title">Друзья</h2>
+          <h2 className="dashboard-tile__title">Контакты</h2>
           <div className="dashboard-tile-friends__head">
-            <span className="dashboard-tile-friends__label">Запросы из избранного</span>
+            <span className="dashboard-tile-friends__label">Входящие закрепы</span>
             {visibleIncomingCount > 0 ? (
               <span className="dashboard-tile-friends__count">{visibleIncomingCount}</span>
             ) : (
@@ -655,38 +765,51 @@ export function DashboardPage() {
             ) : (
               peerTop.map((p) => {
                 const name = contacts.find((c) => c.targetUserId === p.userId)?.displayName ?? 'Гость'
+                const msgSp = new URLSearchParams()
+                msgSp.set('with', p.userId)
+                if (name.trim()) msgSp.set('title', name.trim())
                 return (
-                  <button
-                    key={p.userId}
-                    type="button"
-                    className="dashboard-tile-friends__card"
-                    title={`${p.messageCount} сообщ.`}
-                    onClick={() =>
-                      openUserPeek({
-                        userId: p.userId,
-                        displayName: name,
-                        avatarUrl: p.avatarUrl,
-                      })
-                    }
-                  >
-                    <div className="dashboard-tile-friends__card-avatar">
-                      {p.avatarUrl ? (
-                        <img src={p.avatarUrl} alt="" />
-                      ) : (
-                        <span>{name.charAt(0).toUpperCase()}</span>
-                      )}
-                    </div>
-                    <div className="dashboard-tile-friends__card-name" title={name}>
-                      {name}
-                    </div>
-                    <div className="dashboard-tile-friends__card-time">{formatPeerGuestTime(p.lastMessageAt)}</div>
-                  </button>
+                  <div key={p.userId} className="dashboard-tile-friends__card-wrap">
+                    <button
+                      type="button"
+                      className="dashboard-tile-friends__card"
+                      title={`${p.messageCount} сообщ.`}
+                      onClick={() =>
+                        openUserPeek({
+                          userId: p.userId,
+                          displayName: name,
+                          avatarUrl: p.avatarUrl,
+                        })
+                      }
+                    >
+                      <div className="dashboard-tile-friends__card-avatar">
+                        {p.avatarUrl ? (
+                          <img src={p.avatarUrl} alt="" />
+                        ) : (
+                          <span>{name.charAt(0).toUpperCase()}</span>
+                        )}
+                      </div>
+                      <div className="dashboard-tile-friends__card-name" title={name}>
+                        {name}
+                      </div>
+                      <div className="dashboard-tile-friends__card-time">{formatPeerGuestTime(p.lastMessageAt)}</div>
+                    </button>
+                    <Link
+                      to={`/dashboard/messenger?${msgSp.toString()}`}
+                      className="dashboard-tile-friends__msg"
+                      title="Личный чат"
+                      aria-label="Открыть личный чат"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <ChatBubbleIcon />
+                    </Link>
+                  </div>
                 )
               })
             )}
           </div>
-          <Link to="/dashboard/friends" className="dashboard-tile__more">
-            Подробнее — все друзья
+          <Link to="/dashboard/contacts" className="dashboard-tile__more">
+            Подробнее — все контакты
           </Link>
         </section>
 

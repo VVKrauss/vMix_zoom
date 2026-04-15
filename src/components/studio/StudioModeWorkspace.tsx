@@ -10,6 +10,7 @@ import {
   type StudioSourceOption,
 } from '../../types/studio'
 import { drawStudioParticipantPlaceholder, drawVideoCover } from '../../utils/studioCanvasDraw'
+import { StudioSystemMetricsRow, useStudioSystemMetrics } from './useStudioSystemMetrics'
 import { buildStudioSources } from './buildStudioSources'
 import { connectStudioProgramAudioMix, type StudioProgramMixHandle, type StudioSourceMixMap } from './buildProgramAudioMix'
 import { StudioBoardPanel } from './StudioBoardPanel'
@@ -47,7 +48,7 @@ const StudioSourcesStrip = memo(function StudioSourcesStrip({
   onSendToProgram,
   currentUserId,
   contactStatuses,
-  onToggleFavoriteUser,
+  onToggleContactPin,
 }: {
   sources: StudioSourceOption[]
   sourceMix: StudioSourceMixMap
@@ -57,15 +58,15 @@ const StudioSourcesStrip = memo(function StudioSourcesStrip({
   onSendToProgram: (key: string) => void
   currentUserId: string | null
   contactStatuses: Record<string, ContactStatus>
-  onToggleFavoriteUser: (targetUserId: string, nextFavorite: boolean) => void
+  onToggleContactPin: (targetUserId: string, nextFavorite: boolean) => void
 }) {
   return (
     <div className="studio-source-strip" role="region" aria-label="Источники">
       {sources.map((s) => {
         const uid = s.authUserId?.trim() ?? ''
         const me = currentUserId?.trim() ?? ''
-        const showFavorite = Boolean(uid && me && uid !== me)
-        const fav = showFavorite ? (contactStatuses[uid]?.isFavorite ?? false) : false
+        const showPin = Boolean(uid && me && uid !== me)
+        const fav = showPin ? (contactStatuses[uid]?.pinnedByMe ?? false) : false
         return (
           <StudioSourceStripItem
             key={s.key}
@@ -77,12 +78,12 @@ const StudioSourcesStrip = memo(function StudioSourcesStrip({
             onToggleMute={toggleSourceMute}
             onAddToPreview={onAddToPreview}
             onSendToProgram={onSendToProgram}
-            favoriteShow={showFavorite}
-            favoriteActive={fav}
-            onToggleFavorite={
-              showFavorite
+            pinShow={showPin}
+            pinActive={fav}
+            onTogglePin={
+              showPin
                 ? () => {
-                    onToggleFavoriteUser(uid, !fav)
+                    onToggleContactPin(uid, !fav)
                   }
                 : undefined
             }
@@ -117,7 +118,7 @@ interface Props {
   studioServerLogLines?: readonly string[]
   currentUserId?: string | null
   contactStatuses?: Record<string, ContactStatus>
-  onToggleFavoriteUser?: (targetUserId: string, nextFavorite: boolean) => void
+  onToggleContactPin?: (targetUserId: string, nextFavorite: boolean) => void
 }
 
 export function StudioModeWorkspace({
@@ -138,7 +139,7 @@ export function StudioModeWorkspace({
   studioServerLogLines = [],
   currentUserId = null,
   contactStatuses = {},
-  onToggleFavoriteUser,
+  onToggleContactPin,
 }: Props) {
   const [boards, setBoards] = useState(() => ({
     preview: emptyStudioBoard(),
@@ -164,6 +165,7 @@ export function StudioModeWorkspace({
   const [logsOpen, setLogsOpen] = useState(false)
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false)
   const logsEndRef = useRef<HTMLDivElement>(null)
+  const systemMetrics = useStudioSystemMetrics(open)
 
   const addLog = useCallback((level: LogLevel, text: string) => {
     const entry: LogEntry = { ts: nowTs(), level, text }
@@ -650,32 +652,39 @@ export function StudioModeWorkspace({
       <canvas ref={canvasRef} className="studio-mode-workspace__capture-canvas" aria-hidden />
 
       <header className="studio-chrome">
-        <div className="studio-chrome__identity">
-          <div className="studio-chrome__title-row">
-            <img className="studio-chrome__logo" src="/logo.png" alt="" draggable={false} />
-            <h1 className="studio-chrome__title">Студия</h1>
+        <div className="studio-chrome__head-row">
+          <div className="studio-chrome__identity">
+            <div className="studio-chrome__title-row">
+              <img className="studio-chrome__logo" src="/logo.png" alt="" draggable={false} />
+              <h1 className="studio-chrome__title">Студия</h1>
+            </div>
+          </div>
+          <div className="studio-chrome__actions">
+            <span className={`studio-chrome__health studio-chrome__health--${studioBroadcastHealth}`}>
+              {healthLabel}
+            </span>
+            <button
+              type="button"
+              className={liveBtnClass}
+              onClick={() => void handleLiveToggle()}
+              title={liveBtnTitle}
+              disabled={liveBusy}
+            >
+              LIVE
+            </button>
+            <button type="button" className="studio-chrome__settings" onClick={() => setSettingsOpen(true)} aria-label="Настройки потока" title="Настройки потока">
+              <GearIcon />
+            </button>
+            <button type="button" className="studio-chrome__close" onClick={() => void handleCloseStudio()} disabled={liveBusy}>
+              Закрыть студию
+            </button>
           </div>
         </div>
-        <div className="studio-chrome__actions">
-          <span className={`studio-chrome__health studio-chrome__health--${studioBroadcastHealth}`}>
-            {healthLabel}
-          </span>
-          <button
-            type="button"
-            className={liveBtnClass}
-            onClick={() => void handleLiveToggle()}
-            title={liveBtnTitle}
-            disabled={liveBusy}
-          >
-            LIVE
-          </button>
-          <button type="button" className="studio-chrome__settings" onClick={() => setSettingsOpen(true)} aria-label="Настройки потока" title="Настройки потока">
-            <GearIcon />
-          </button>
-          <button type="button" className="studio-chrome__close" onClick={() => void handleCloseStudio()} disabled={liveBusy}>
-            Закрыть студию
-          </button>
-        </div>
+        <StudioSystemMetricsRow
+          cpuPercent={systemMetrics.cpuPercent}
+          gpuPercent={systemMetrics.gpuPercent}
+          ramPercent={systemMetrics.ramPercent}
+        />
       </header>
 
       {liveError ? <div className="studio-mode-workspace__error" role="alert">{liveError}</div> : null}
@@ -748,8 +757,8 @@ export function StudioModeWorkspace({
           onSendToProgram={(key) => placeSourceOnBoard('program', key, true)}
           currentUserId={currentUserId}
           contactStatuses={contactStatuses}
-          onToggleFavoriteUser={(targetUserId, nextFavorite) => {
-            onToggleFavoriteUser?.(targetUserId, nextFavorite)
+          onToggleContactPin={(targetUserId, nextFavorite) => {
+            onToggleContactPin?.(targetUserId, nextFavorite)
           }}
         />
       </div>

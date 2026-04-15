@@ -14,9 +14,9 @@ interface Props {
   onToggleMute: (sourceKey: string) => void
   onAddToPreview: (sourceKey: string) => void
   onSendToProgram: (sourceKey: string) => void
-  favoriteShow?: boolean
-  favoriteActive?: boolean
-  onToggleFavorite?: () => void
+  pinShow?: boolean
+  pinActive?: boolean
+  onTogglePin?: () => void
 }
 
 function getSourceKindLabel(source: StudioSourceOption): string {
@@ -35,9 +35,9 @@ const StudioSourceStripItem = memo(function StudioSourceStripItem({
   onToggleMute,
   onAddToPreview,
   onSendToProgram,
-  favoriteShow = false,
-  favoriteActive = false,
-  onToggleFavorite,
+  pinShow = false,
+  pinActive = false,
+  onTogglePin,
 }: Props) {
   const thumbRef = useRef<HTMLVideoElement>(null)
   const primaryLabel = source.label.split(' - ')[0].split(' — ')[0]
@@ -111,15 +111,15 @@ const StudioSourceStripItem = memo(function StudioSourceStripItem({
       <div className="studio-source-strip__bottom-row">
         <div className="studio-source-strip__name-fav">
           <span className="studio-source-strip__cap studio-source-strip__cap--grow">{primaryLabel}</span>
-          {favoriteShow && onToggleFavorite ? (
+          {pinShow && onTogglePin ? (
             <button
               type="button"
-              className={`studio-source-strip__fav-ico${favoriteActive ? ' studio-source-strip__fav-ico--on' : ''}`}
-              onClick={onToggleFavorite}
-              title={favoriteActive ? 'Убрать из избранного' : 'В избранное'}
-              aria-label={favoriteActive ? 'Убрать из избранного' : 'В избранное'}
+              className={`studio-source-strip__fav-ico${pinActive ? ' studio-source-strip__fav-ico--on' : ''}`}
+              onClick={onTogglePin}
+              title={pinActive ? 'Снять закреп' : 'Закрепить'}
+              aria-label={pinActive ? 'Снять закреп' : 'Закрепить'}
             >
-              <StarIcon filled={favoriteActive} />
+              <StarIcon filled={pinActive} />
             </button>
           ) : null}
         </div>

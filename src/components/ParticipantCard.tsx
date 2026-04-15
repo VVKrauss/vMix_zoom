@@ -34,9 +34,9 @@ interface Props {
   guestKick?: { show: boolean; onKick: () => void; onBan?: () => void }
   onOpenDirectChat?: (participant: RemoteParticipant) => void
   currentUserId?: string | null
-  /** Статус избранного/друзей для участника с authUserId */
+  /** Статус закрепа/контактов для участника с authUserId */
   contactStatus?: ContactStatus | null
-  /** Переключить избранное (только для чужого залогиненного участника) */
+  /** Переключить закреп (только для чужого залогиненного участника) */
   onToggleFavorite?: () => void
 }
 
@@ -91,7 +91,7 @@ export function ParticipantCard({
     if (uid && me && uid !== me && onToggleFavorite) {
       out.push({
         key: 'fav',
-        label: contactStatus?.isFavorite ? 'Убрать из избранного' : 'В избранное',
+        label: contactStatus?.pinnedByMe ? 'Снять закреп' : 'Закрепить',
         onSelect: onToggleFavorite,
       })
     }
@@ -101,7 +101,7 @@ export function ParticipantCard({
     currentUserId,
     onOpenDirectChat,
     onToggleFavorite,
-    contactStatus?.isFavorite,
+    contactStatus?.pinnedByMe,
   ])
 
   useEffect(() => {
@@ -176,12 +176,12 @@ export function ParticipantCard({
           participant.authUserId.trim() !== currentUserId.trim() ? (
             <button
               type="button"
-              className={`card-bar-fav${contactStatus?.isFavorite ? ' card-bar-fav--on' : ''}`}
+              className={`card-bar-fav${contactStatus?.pinnedByMe ? ' card-bar-fav--on' : ''}`}
               onClick={onToggleFavorite}
-              title={contactStatus?.isFavorite ? 'Убрать из избранного' : 'В избранное'}
-              aria-label={contactStatus?.isFavorite ? 'Убрать из избранного' : 'В избранное'}
+              title={contactStatus?.pinnedByMe ? 'Снять закреп' : 'Закрепить'}
+              aria-label={contactStatus?.pinnedByMe ? 'Снять закреп' : 'Закрепить'}
             >
-              <StarIcon filled={contactStatus?.isFavorite ?? false} />
+              <StarIcon filled={contactStatus?.pinnedByMe ?? false} />
             </button>
           ) : null}
         </div>
