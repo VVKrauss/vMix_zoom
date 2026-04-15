@@ -6,10 +6,13 @@ import { MessengerMessageBody } from './MessengerMessageBody'
 export function MessengerBubbleBody({
   message,
   onOpenImageLightbox,
+  onInlineImageLayout,
 }: {
   message: DirectMessage
   /** Полноэкран: передаётся URL полноразмерного изображения (подпись отдельно). */
   onOpenImageLightbox?: (imageUrl: string) => void
+  /** После decode/раскладки превью в ленте (догон скролла к низу). */
+  onInlineImageLayout?: () => void
 }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [fullUrl, setFullUrl] = useState<string | null>(null)
@@ -92,6 +95,7 @@ export function MessengerBubbleBody({
                   alt=""
                   loading="eager"
                   decoding="async"
+                  onLoad={() => onInlineImageLayout?.()}
                 />
               </button>
             ) : (
@@ -107,6 +111,7 @@ export function MessengerBubbleBody({
                   alt=""
                   loading="eager"
                   decoding="async"
+                  onLoad={() => onInlineImageLayout?.()}
                 />
               </a>
             )}

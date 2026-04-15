@@ -5313,13 +5313,13 @@ button.dashboard-chat-row__last-author-avatar--btn {
   display: grid;
   grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
   gap: 18px;
-  min-height: min(400px, calc(100dvh - 240px));
+  min-height: min(400px, calc(var(--vvh, 100dvh) - 240px));
 }
 
 .dashboard-messenger--fill .dashboard-messenger__layout {
   flex: 1 1 0;
   min-height: 0;
-  max-height: calc(100dvh - 220px);
+  max-height: calc(var(--vvh, 100dvh) - 220px);
   grid-template-rows: minmax(0, 1fr);
 }
 
@@ -7379,7 +7379,7 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   }
 
   .dashboard-messenger--fill .dashboard-messenger__layout {
-    max-height: calc(100dvh - 200px);
+    max-height: calc(var(--vvh, 100dvh) - 200px);
   }
 
   .dashboard-messenger__messages {
@@ -7422,7 +7422,7 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
 
 @media (max-width: 720px) {
   .dashboard-messenger--fill .dashboard-messenger__layout {
-    max-height: calc(100dvh - 270px);
+    max-height: calc(var(--vvh, 100dvh) - 270px);
   }
 
   .dashboard-messenger--mobile-chromeless.dashboard-messenger--fill .dashboard-messenger__layout {

@@ -38,6 +38,7 @@ import {
   listDirectMessagesPage,
   mapDirectMessageFromRow,
   markDirectConversationRead,
+  previewTextForDirectMessageTail,
   requestMessengerUnreadRefresh,
   toggleDirectMessageReaction,
   uploadMessengerImage,
@@ -116,7 +117,9 @@ const DM_PAGE_SIZE = 50
 /** Лимит размера фото в мессенджере (клиент). */
 const MESSENGER_PHOTO_MAX_BYTES = 2 * 1024 * 1024
 /** Ниже этой дистанции от низа считаем, что пользователь «на хвосте» — догоняем при подгрузке картинок и т.п. */
-const MESSENGER_BOTTOM_PIN_PX = 160
+const MESSENGER_BOTTOM_PIN_PX = 200
+/** Сжимаем частые mark read при пачке входящих в открытом треде. */
+const MARK_DIRECT_READ_DEBOUNCE_MS = 400
 
 function sortDirectMessagesChrono(a: DirectMessage, b: DirectMessage): number {
   const ta = new Date(a.createdAt).getTime()
@@ -150,7 +153,7 @@ function lastNonReactionBody(rows: DirectMessage[]): string | null {
   for (let i = sorted.length - 1; i >= 0; i--) {
     const m = sorted[i]!
     if (m.kind === 'text' || m.kind === 'system') return m.body
-    if (m.kind === 'image') return m.body.trim() || '📷 Фото'
+    if (m.kind === 'image') return previewTextForDirectMessageTail(m)
   }
   return null
 }
@@ -213,6 +216,8 @@ type MessengerDmBubbleProps = {
   onMenuButtonClick: (e: React.MouseEvent<HTMLButtonElement>) => void
   onBubbleContextMenu: (e: React.MouseEvent<HTMLElement>) => void
   onOpenImageLightbox: (imageUrl: string) => void
+  onInlineImageLayout?: () => void
+  onReplyThumbLayout?: () => void
 }
 
 function MessengerDmBubble({
@@ -232,6 +237,8 @@ function MessengerDmBubble({
   onMenuButtonClick,
   onBubbleContextMenu,
   onOpenImageLightbox,
+  onInlineImageLayout,
+  onReplyThumbLayout,
 }: MessengerDmBubbleProps) {
   const [swipeTx, setSwipeTx] = useState(0)
   const swipeRef = useRef<{
@@ -316,7 +323,7 @@ function MessengerDmBubble({
           </span>
         )}
         {replyPreview.kind === 'image' && replyPreview.thumbPath ? (
-          <MessengerReplyMiniThumb thumbPath={replyPreview.thumbPath} />
+          <MessengerReplyMiniThumb thumbPath={replyPreview.thumbPath} onThumbLayout={onReplyThumbLayout} />
         ) : null}
         <span className="dashboard-messenger__reply-quote-snippet">{replyPreview.snippet}</span>
       </span>
@@ -418,7 +425,11 @@ function MessengerDmBubble({
         )
       ) : null}
       <div className="dashboard-messenger__message-body">
-        <MessengerBubbleBody message={message} onOpenImageLightbox={onOpenImageLightbox} />
+        <MessengerBubbleBody
+          message={message}
+          onOpenImageLightbox={onOpenImageLightbox}
+          onInlineImageLayout={onInlineImageLayout}
+        />
       </div>
       {reactionCounts.size > 0 ? (
         <div
@@ -646,12 +657,39 @@ export function DashboardMessengerPage() {
   const lastFetchedThreadIdRef = useRef<string | null>(null)
   /** После первой успешной загрузки списка — повторный bootstrap при «Назад к чатам» не нужен */
   const listLoadedOnceRef = useRef(false)
+  const markReadDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const updateMessengerScrollPinned = useCallback(() => {
     const el = messagesScrollRef.current
     if (!el) return
     messengerPinnedToBottomRef.current =
       el.scrollHeight - el.scrollTop - el.clientHeight < MESSENGER_BOTTOM_PIN_PX
+  }, [])
+
+  /** Догон низа после decode картинки / смены высоты пузыря, если пользователь был у хвоста. */
+  const bumpScrollIfPinned = useCallback(() => {
+    requestAnimationFrame(() => {
+      if (!messengerPinnedToBottomRef.current) return
+      const el = messagesScrollRef.current
+      if (!el) return
+      el.scrollTop = el.scrollHeight
+    })
+  }, [])
+
+  const mergeLatestPageIntoMessages = useCallback((convId: string, page: DirectMessage[]) => {
+    setMessages((prev) => {
+      if (conversationIdRef.current.trim() !== convId) return prev
+      const seen = new Set(prev.map((m) => m.id))
+      const next = [...prev]
+      for (const m of page) {
+        if (!seen.has(m.id)) {
+          seen.add(m.id)
+          next.push(m)
+        }
+      }
+      next.sort(sortDirectMessagesChrono)
+      return next
+    })
   }, [])
 
   const buildMessengerUrl = (chatId?: string, withUserId?: string, withTitle?: string) => {
@@ -858,6 +896,7 @@ export function DashboardMessengerPage() {
           setHasMoreOlder(false)
           lastFetchedThreadIdRef.current = null
         } else {
+          void markDirectConversationRead(startedTarget)
           setActiveConversation({ ...conversationRes.data, unreadCount: 0 })
           setMessages(messagesRes.data ?? [])
           setHasMoreOlder(messagesRes.hasMoreOlder)
@@ -911,32 +950,6 @@ export function DashboardMessengerPage() {
     return () => ro.disconnect()
   }, [activeConversationId, listOnlyMobile, threadLoading])
 
-  /**
-   * Сразу при открытии треда: сервер «прочитано» + нулим бейдж в списке и шапке.
-   * Зависит от `items`, чтобы сработать, когда список диалогов только подгрузился; если непрочитанных уже 0 — не дёргаем RPC.
-   */
-  useEffect(() => {
-    if (!user?.id || listOnlyMobile) return
-    const cid = conversationId.trim()
-    if (!cid) return
-    const row = items.find((i) => i.id === cid)
-    if (row && row.unreadCount === 0) return
-
-    void markDirectConversationRead(cid)
-    setItems((prev) => {
-      const idx = prev.findIndex((item) => item.id === cid)
-      if (idx === -1) return prev
-      if (prev[idx]!.unreadCount === 0) return prev
-      return prev.map((item) => (item.id === cid ? { ...item, unreadCount: 0 } : item))
-    })
-    setActiveConversation((prev) => {
-      if (!prev || prev.id !== cid) return prev
-      if (prev.unreadCount === 0) return prev
-      return { ...prev, unreadCount: 0 }
-    })
-    if (!row || row.unreadCount > 0) requestMessengerUnreadRefresh()
-  }, [conversationId, listOnlyMobile, user?.id, items])
-
   const showListPane = !isMobileMessenger || !activeConversationId
   const showThreadPane = !isMobileMessenger || Boolean(activeConversationId)
 
@@ -945,6 +958,8 @@ export function DashboardMessengerPage() {
     const uid = user?.id
     const convId = activeConversationId
     if (!uid || !convId || listOnlyMobile) return
+
+    let sawSubscribed = false
 
     const bumpSidebarForInsert = (msg: DirectMessage) => {
       if (msg.kind === 'reaction') {
@@ -972,7 +987,7 @@ export function DashboardMessengerPage() {
         )
         return
       }
-      const preview = msg.kind === 'image' ? (msg.body.trim() || '📷 Фото') : msg.body
+      const preview = previewTextForDirectMessageTail(msg)
       setItems((prev) =>
         prev.map((item) =>
           item.id === convId
@@ -1037,10 +1052,16 @@ export function DashboardMessengerPage() {
             return next
           })
 
+          queueMicrotask(() => bumpScrollIfPinned())
+
           if (!skipSidebarBump) bumpSidebarForInsert(msg)
           /* Пока тред открыт: входящие от других не должны увеличивать непрочитанные (сервер + бейдж в шапке). */
           if (!isOwn) {
-            void markDirectConversationRead(convId)
+            if (markReadDebounceTimerRef.current) clearTimeout(markReadDebounceTimerRef.current)
+            markReadDebounceTimerRef.current = setTimeout(() => {
+              markReadDebounceTimerRef.current = null
+              void markDirectConversationRead(convId)
+            }, MARK_DIRECT_READ_DEBOUNCE_MS)
             /* Звук — только если вкладка не активна (пользователь видит переписку — достаточно). */
             if (document.hidden) playMessageSound()
           }
@@ -1093,14 +1114,32 @@ export function DashboardMessengerPage() {
           if (!row?.id) return
           const msg = mapDirectMessageFromRow(row)
           setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)))
+          queueMicrotask(() => bumpScrollIfPinned())
         },
       )
-      .subscribe()
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          sawSubscribed = true
+          return
+        }
+        if (!sawSubscribed || (status !== 'CHANNEL_ERROR' && status !== 'TIMED_OUT')) return
+        void (async () => {
+          const res = await listDirectMessagesPage(convId, { limit: DM_PAGE_SIZE })
+          if (res.error || !res.data?.length) return
+          mergeLatestPageIntoMessages(convId, res.data)
+          bumpScrollIfPinned()
+        })()
+      })
 
     return () => {
+      if (markReadDebounceTimerRef.current) {
+        clearTimeout(markReadDebounceTimerRef.current)
+        markReadDebounceTimerRef.current = null
+        void markDirectConversationRead(convId)
+      }
       void supabase.removeChannel(channel)
     }
-  }, [activeConversationId, listOnlyMobile, user?.id])
+  }, [activeConversationId, listOnlyMobile, user?.id, bumpScrollIfPinned, mergeLatestPageIntoMessages])
 
   /**
    * Фоновые диалоги: обновляем sidebar-превью и счётчик когда приходит сообщение
@@ -1119,8 +1158,17 @@ export function DashboardMessengerPage() {
       // Реакции не меняют превью
       if (kind === 'reaction') return
 
-      setItems((prev) =>
-        prev.map((item) =>
+      setItems((prev) => {
+        const idx = prev.findIndex((item) => item.id === cid)
+        if (idx === -1) {
+          queueMicrotask(() => {
+            void listDirectConversationsForUser().then((r) => {
+              if (!r.error && r.data) setItems(r.data)
+            })
+          })
+          return prev
+        }
+        return prev.map((item) =>
           item.id === cid
             ? {
                 ...item,
@@ -1130,8 +1178,8 @@ export function DashboardMessengerPage() {
                 messageCount: item.messageCount + 1,
               }
             : item,
-        ),
-      )
+        )
+      })
 
       if (senderUserId !== uid) playMessageSound()
     }
@@ -1396,7 +1444,11 @@ export function DashboardMessengerPage() {
       setPhotoUploading(false)
       return
     }
-    const preview = caption || '📷 Фото'
+    const preview = previewTextForDirectMessageTail({
+      kind: 'image',
+      body: caption,
+      meta: imageMeta,
+    })
     setDraft('')
     setReplyTo(null)
     setPhotoUploading(false)
@@ -1840,6 +1892,7 @@ export function DashboardMessengerPage() {
                         replyTo.meta?.image?.path?.trim() ||
                         ''
                       ).trim()}
+                      onThumbLayout={bumpScrollIfPinned}
                     />
                   ) : null}
                   <span>{truncateMessengerReplySnippet(replyTo.body)}</span>
@@ -2380,6 +2433,8 @@ export function DashboardMessengerPage() {
                                     closeMessageActionMenu()
                                     setMessengerImageLightboxUrl(url)
                                   }}
+                                  onInlineImageLayout={bumpScrollIfPinned}
+                                  onReplyThumbLayout={bumpScrollIfPinned}
                                   onMenuButtonClick={(e) => {
                                     e.stopPropagation()
                                     const r = e.currentTarget.getBoundingClientRect()

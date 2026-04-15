@@ -64,6 +64,21 @@ function mapMessageKind(raw: unknown): DirectMessageKind {
   return 'text'
 }
 
+/**
+ * Строка превью хвоста диалога в списке для сообщения (в т.ч. фото без подписи — имя файла или метка).
+ */
+export function previewTextForDirectMessageTail(msg: Pick<DirectMessage, 'kind' | 'body' | 'meta'>): string {
+  if (msg.kind !== 'image') return msg.body
+  const cap = msg.body.replace(/\s+/g, ' ').trim()
+  if (cap) return cap
+  const path = msg.meta?.image?.path?.trim()
+  if (path) {
+    const base = path.split(/[/\\]/).pop()?.trim()
+    if (base) return base
+  }
+  return 'Изображение'
+}
+
 export function mapDirectMessageFromRow(row: Record<string, unknown>): DirectMessage {
   return {
     id: String(row.id),
@@ -100,14 +115,22 @@ function mapDirectConversationRow(row: Record<string, unknown>): DirectConversat
     ? otherDisplayName || storedTitle || 'Личный чат'
     : storedTitle || 'Сохраненное'
 
+  const messageCount =
+    typeof row.message_count === 'number' ? row.message_count : Number(row.message_count ?? 0) || 0
+  const rawPreview =
+    typeof row.last_message_preview === 'string' ? row.last_message_preview.trim() : ''
+  const lastMessagePreview =
+    rawPreview || (messageCount > 0 ? 'Изображение' : null)
+
   return {
     id: String(row.id),
     title: displayTitle,
     createdAt: typeof row.created_at === 'string' ? row.created_at : new Date(0).toISOString(),
     lastMessageAt: typeof row.last_message_at === 'string' ? row.last_message_at : null,
-    lastMessagePreview: typeof row.last_message_preview === 'string' ? row.last_message_preview : null,
-    messageCount: typeof row.message_count === 'number' ? row.message_count : Number(row.message_count ?? 0) || 0,
-    unreadCount: typeof row.unread_count === 'number' ? row.unread_count : Number(row.unread_count ?? 0) || 0,
+    lastMessagePreview,
+    messageCount,
+    unreadCount:
+      typeof row.unread_count === 'number' ? row.unread_count : Number(row.unread_count ?? 0) || 0,
     otherUserId,
     avatarUrl: otherUserId ? otherAvatarFromRpc : null,
   }
