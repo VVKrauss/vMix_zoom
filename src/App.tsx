@@ -9,7 +9,6 @@ import {
 } from 'react-router-dom'
 import { AdminProtectedRoute } from './components/AdminProtectedRoute'
 import { ProtectedRoute } from './components/ProtectedRoute'
-import { ToastProvider } from './context/ToastContext'
 import { useVisualViewport } from './hooks/useVisualViewport'
 
 function VisualViewportSync() {
@@ -151,7 +150,6 @@ export function App() {
   return (
     <>
       <VisualViewportSync />
-      <ToastProvider>
       <Suspense fallback={<RouteLoadingFallback />}>
       <Routes>
         <Route path="/" element={<HomeRoute />} />
@@ -174,7 +172,6 @@ export function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
-      </ToastProvider>
     </>
   )
 }

@@ -6,6 +6,7 @@ import { App } from './App'
 import { AuthProvider } from './context/AuthContext'
 import { MessengerUnreadProvider } from './context/MessengerUnreadContext'
 import { UserPeekProvider } from './context/UserPeekContext'
+import { ToastProvider } from './context/ToastContext'
 import { applyTheme, getStoredTheme } from './config/themeStorage'
 import { registerPwa } from './pwaRegister'
 
@@ -19,12 +20,14 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       v7_relativeSplatPath: true,
     }}
   >
-    <AuthProvider>
-      <MessengerUnreadProvider>
-        <UserPeekProvider>
-          <App />
-        </UserPeekProvider>
-      </MessengerUnreadProvider>
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <MessengerUnreadProvider>
+          <UserPeekProvider>
+            <App />
+          </UserPeekProvider>
+        </MessengerUnreadProvider>
+      </AuthProvider>
+    </ToastProvider>
   </BrowserRouter>,
 )
