@@ -84,6 +84,7 @@ export function ChannelThreadPane({
   isMemberHint,
   postingMode,
   viewerOnly,
+  publicJoinCta,
   joinRequestPending,
   jumpToMessageId,
   jumpToParentMessageId,
@@ -97,6 +98,7 @@ export function ChannelThreadPane({
   isMemberHint?: boolean
   postingMode?: 'admins_only' | 'everyone'
   viewerOnly?: boolean
+  publicJoinCta?: { label: string; disabled: boolean; onClick: () => void } | null
   joinRequestPending?: boolean
   jumpToMessageId?: string | null
   /** Для комментариев канала: id поста-родителя. */
@@ -1313,13 +1315,40 @@ export function ChannelThreadPane({
             </div>
           )
         ) : posts.filter((m) => m.kind !== 'reaction').length === 0 ? (
-          <div className="dashboard-chats-empty">Пока нет постов.</div>
+          viewerOnly && publicJoinCta ? (
+            <div className="messenger-viewer-join-empty messenger-viewer-join-empty--channel">
+              <button
+                type="button"
+                className="messenger-join-gate__cta messenger-join-gate__cta--inline"
+                onClick={publicJoinCta.onClick}
+                disabled={publicJoinCta.disabled}
+              >
+                {publicJoinCta.disabled ? '…' : publicJoinCta.label}
+              </button>
+            </div>
+          ) : (
+            <div className="dashboard-chats-empty">Пока нет постов.</div>
+          )
         ) : (
-          <div className="dashboard-messenger__channel-feed">
-            {posts
-              .filter((m) => m.kind !== 'reaction')
-              .map((p) => renderChannelPostCard(p))}
-          </div>
+          <>
+            <div className="dashboard-messenger__channel-feed">
+              {posts
+                .filter((m) => m.kind !== 'reaction')
+                .map((p) => renderChannelPostCard(p))}
+            </div>
+            {viewerOnly && publicJoinCta ? (
+              <div className="messenger-viewer-join-after">
+                <button
+                  type="button"
+                  className="messenger-join-gate__cta messenger-join-gate__cta--inline"
+                  onClick={publicJoinCta.onClick}
+                  disabled={publicJoinCta.disabled}
+                >
+                  {publicJoinCta.disabled ? '…' : publicJoinCta.label}
+                </button>
+              </div>
+            ) : null}
+          </>
         )}
       </div>
 

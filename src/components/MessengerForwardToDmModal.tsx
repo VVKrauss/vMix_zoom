@@ -1,4 +1,5 @@
 import { useCallback } from 'react'
+import { createPortal } from 'react-dom'
 
 export type ForwardDmPickItem = {
   id: string
@@ -36,7 +37,7 @@ export function MessengerForwardToDmModal({
 
   if (!open) return null
 
-  return (
+  return createPortal(
     <div className="messenger-forward-modal-root" role="dialog" aria-modal="true" aria-labelledby="messenger-forward-title">
       <button type="button" className="messenger-settings-modal-backdrop" aria-label="Закрыть" onClick={onBackdrop} />
       <div className="messenger-forward-modal">
@@ -82,6 +83,7 @@ export function MessengerForwardToDmModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

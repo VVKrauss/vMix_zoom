@@ -63,6 +63,7 @@ export function GroupThreadPane({
   onForwardMessage,
   isMemberHint,
   viewerOnly,
+  publicJoinCta,
   joinRequestPending,
   jumpToMessageId,
   onJumpHandled,
@@ -73,6 +74,8 @@ export function GroupThreadPane({
   /** Хинт из родителя: если диалог уже есть в списке, считаем что участник (убирает рассинхрон после вступления). */
   isMemberHint?: boolean
   viewerOnly?: boolean
+  /** Публичный просмотр без членства: кнопка «Вступить» в ленте, не в шапке. */
+  publicJoinCta?: { label: string; disabled: boolean; onClick: () => void } | null
   joinRequestPending?: boolean
   jumpToMessageId?: string | null
   onJumpHandled?: () => void
@@ -558,7 +561,11 @@ export function GroupThreadPane({
         aria-label="Сообщения группы"
         onScroll={updatePinnedToBottom}
       >
-        <div className="dashboard-messenger__messages">
+        <div
+          className={`dashboard-messenger__messages${
+            viewerOnly && publicJoinCta ? ' dashboard-messenger__messages--public-join-host' : ''
+          }`}
+        >
           {!canView ? (
             joinRequestPending ? (
               <div className="messenger-join-gate messenger-join-gate--embed">
@@ -578,63 +585,90 @@ export function GroupThreadPane({
               </div>
             )
           ) : messages.filter((m) => m.kind !== 'reaction').length === 0 ? (
-            <div className="dashboard-chats-empty">Пока нет сообщений.</div>
+            viewerOnly && publicJoinCta ? (
+              <div className="messenger-viewer-join-empty">
+                <button
+                  type="button"
+                  className="messenger-join-gate__cta messenger-join-gate__cta--inline"
+                  onClick={publicJoinCta.onClick}
+                  disabled={publicJoinCta.disabled}
+                >
+                  {publicJoinCta.disabled ? '…' : publicJoinCta.label}
+                </button>
+              </div>
+            ) : (
+              <div className="dashboard-chats-empty">Пока нет сообщений.</div>
+            )
           ) : (
-            messages.map((m) => {
-              if (m.kind === 'reaction') return null
-              const reacts = reactionsByTargetId.get(m.id) ?? []
-              const isOwn = Boolean(user?.id && m.senderUserId === user.id)
-              const { preview: replyPreview, scrollTargetId: replyScrollTargetId } = buildQuotePreview({
-                quotedMessageId: m.quoteToMessageId?.trim() || m.replyToMessageId?.trim() || null,
-                messageById: (id) => messages.find((x) => x.id === id),
-                resolveQuotedAvatarUrl: () => null,
-              })
-              return (
-                <ThreadMessageBubble
-                  key={m.id}
-                  message={m}
-                  isOwn={isOwn}
-                  reactions={reacts}
-                  formatDt={formatGroupBubbleTime}
-                  replyPreview={replyPreview}
-                  replyScrollTargetId={replyScrollTargetId}
-                  onReplyQuoteNavigate={scrollToQuotedMessage}
-                  bindMessageAnchor={(id, el) => {
-                    if (el) messageAnchorRef.current.set(id, el)
-                    else messageAnchorRef.current.delete(id)
-                  }}
-                  currentUserId={user?.id ?? null}
-                  onReactionChipTap={(targetId, emoji) => {
-                    if (!isAllowedReactionEmoji(emoji)) return
-                    void onReactionChipTap(targetId, emoji)
-                  }}
-                  quickReactEnabled={Boolean(
-                    user?.id && (m.kind === 'text' || m.kind === 'image') && !m.id.startsWith('local-'),
-                  )}
-                  onQuickHeart={() => void toggleReaction(m.id, QUICK_REACTION_EMOJI)}
-                  swipeReplyEnabled={isMobileMessenger}
-                  onSwipeReply={() => setReplyTo(m)}
-                  menuOpen={messageMenu?.message.id === m.id}
-                  onMenuButtonClick={(e) => {
-                    e.stopPropagation()
-                    if (viewerOnly || m.id.startsWith('local-')) return
-                    const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
-                    setMessageMenu((cur) => {
-                      if (cur?.message.id === m.id) return null
-                      return { message: m, anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } }
-                    })
-                  }}
-                  onBubbleContextMenu={(e) => {
-                    e.preventDefault()
-                    if (viewerOnly || m.id.startsWith('local-')) return
-                    setMessageMenu((cur) => {
-                      if (cur?.message.id === m.id) return null
-                      return { message: m, anchor: { left: e.clientX, top: e.clientY, right: e.clientX, bottom: e.clientY } }
-                    })
-                  }}
-                />
-              )
-            })
+            <>
+              {messages.map((m) => {
+                if (m.kind === 'reaction') return null
+                const reacts = reactionsByTargetId.get(m.id) ?? []
+                const isOwn = Boolean(user?.id && m.senderUserId === user.id)
+                const { preview: replyPreview, scrollTargetId: replyScrollTargetId } = buildQuotePreview({
+                  quotedMessageId: m.quoteToMessageId?.trim() || m.replyToMessageId?.trim() || null,
+                  messageById: (id) => messages.find((x) => x.id === id),
+                  resolveQuotedAvatarUrl: () => null,
+                })
+                return (
+                  <ThreadMessageBubble
+                    key={m.id}
+                    message={m}
+                    isOwn={isOwn}
+                    reactions={reacts}
+                    formatDt={formatGroupBubbleTime}
+                    replyPreview={replyPreview}
+                    replyScrollTargetId={replyScrollTargetId}
+                    onReplyQuoteNavigate={scrollToQuotedMessage}
+                    bindMessageAnchor={(id, el) => {
+                      if (el) messageAnchorRef.current.set(id, el)
+                      else messageAnchorRef.current.delete(id)
+                    }}
+                    currentUserId={user?.id ?? null}
+                    onReactionChipTap={(targetId, emoji) => {
+                      if (!isAllowedReactionEmoji(emoji)) return
+                      void onReactionChipTap(targetId, emoji)
+                    }}
+                    quickReactEnabled={Boolean(
+                      user?.id && (m.kind === 'text' || m.kind === 'image') && !m.id.startsWith('local-'),
+                    )}
+                    onQuickHeart={() => void toggleReaction(m.id, QUICK_REACTION_EMOJI)}
+                    swipeReplyEnabled={isMobileMessenger}
+                    onSwipeReply={() => setReplyTo(m)}
+                    menuOpen={messageMenu?.message.id === m.id}
+                    onMenuButtonClick={(e) => {
+                      e.stopPropagation()
+                      if (viewerOnly || m.id.startsWith('local-')) return
+                      const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
+                      setMessageMenu((cur) => {
+                        if (cur?.message.id === m.id) return null
+                        return { message: m, anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } }
+                      })
+                    }}
+                    onBubbleContextMenu={(e) => {
+                      e.preventDefault()
+                      if (viewerOnly || m.id.startsWith('local-')) return
+                      setMessageMenu((cur) => {
+                        if (cur?.message.id === m.id) return null
+                        return { message: m, anchor: { left: e.clientX, top: e.clientY, right: e.clientX, bottom: e.clientY } }
+                      })
+                    }}
+                  />
+                )
+              })}
+              {viewerOnly && publicJoinCta ? (
+                <div className="messenger-viewer-join-after">
+                  <button
+                    type="button"
+                    className="messenger-join-gate__cta messenger-join-gate__cta--inline"
+                    onClick={publicJoinCta.onClick}
+                    disabled={publicJoinCta.disabled}
+                  >
+                    {publicJoinCta.disabled ? '…' : publicJoinCta.label}
+                  </button>
+                </div>
+              ) : null}
+            </>
           )}
         </div>
       </div>
