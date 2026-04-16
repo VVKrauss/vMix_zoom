@@ -78,11 +78,20 @@ export function ChannelThreadPane({
   conversationId,
   onTouchTail,
   onForwardMessage,
+  viewerOnly,
+  jumpToMessageId,
+  jumpToParentMessageId,
+  onJumpHandled,
 }: {
   conversationId: string
   onTouchTail?: (patch: { lastMessageAt: string; lastMessagePreview: string }) => void
   /** Переслать текст/фото в личный чат (открывает модалку на уровне страницы). */
   onForwardMessage?: (message: DirectMessage) => void
+  viewerOnly?: boolean
+  jumpToMessageId?: string | null
+  /** Для комментариев канала: id поста-родителя. */
+  jumpToParentMessageId?: string | null
+  onJumpHandled?: () => void
 }) {
   const { user } = useAuth()
   const toast = useToast()
@@ -125,6 +134,8 @@ export function ChannelThreadPane({
   const reactionPickWrapRef = useRef<HTMLDivElement | null>(null)
   const seenChannelCommentIdsRef = useRef<Set<string>>(new Set())
   const [signedUrlByPath, setSignedUrlByPath] = useState<Record<string, string>>({})
+  const postAnchorRef = useRef<Map<string, HTMLElement>>(new Map())
+  const commentAnchorRef = useRef<Map<string, HTMLElement>>(new Map())
 
   const cidRef = useRef(conversationId)
   cidRef.current = conversationId
@@ -394,6 +405,7 @@ export function ChannelThreadPane({
   }, [conversationId, loadingOlder, hasMoreOlder, posts])
 
   const openCommentsModal = useCallback(async (postId: string) => {
+    if (viewerOnly) return
     const cid = conversationId.trim()
     if (!cid || !postId) return
     setCommentsModalPostId(postId)
@@ -426,7 +438,44 @@ export function ChannelThreadPane({
     } finally {
       setCommentsLoadingPostId(null)
     }
-  }, [conversationId])
+  }, [conversationId, viewerOnly])
+
+  useEffect(() => {
+    const mid = jumpToMessageId?.trim() ?? ''
+    if (!mid) return
+    const pid = jumpToParentMessageId?.trim() ?? ''
+    if (pid) {
+      if (commentsModalPostId?.trim() !== pid) {
+        void openCommentsModal(pid)
+        return
+      }
+      const el = commentAnchorRef.current.get(mid)
+      if (!el) return
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      el.classList.add('dashboard-messenger__message--highlight')
+      window.setTimeout(() => {
+        el.classList.remove('dashboard-messenger__message--highlight')
+      }, 1400)
+      onJumpHandled?.()
+      return
+    }
+    const el = postAnchorRef.current.get(mid)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('dashboard-messenger__message--highlight')
+    window.setTimeout(() => {
+      el.classList.remove('dashboard-messenger__message--highlight')
+    }, 1400)
+    onJumpHandled?.()
+  }, [
+    commentsByPostId,
+    commentsModalPostId,
+    jumpToMessageId,
+    jumpToParentMessageId,
+    onJumpHandled,
+    openCommentsModal,
+    posts.length,
+  ])
 
   const sendComment = useCallback(async (postId: string) => {
     const cid = conversationId.trim()
@@ -476,7 +525,7 @@ export function ChannelThreadPane({
     async (targetMessageId: string, emoji: ReactionEmoji) => {
       const cid = conversationId.trim()
       const uid = user?.id
-      if (!cid || !uid || !isAllowedReactionEmoji(emoji)) return
+      if (viewerOnly || !cid || !uid || !isAllowedReactionEmoji(emoji)) return
       const opKey = `${cid}::${targetMessageId}::${emoji}`
       if (reactionOpInFlightRef.current.has(opKey)) return
       reactionOpInFlightRef.current.add(opKey)
@@ -516,7 +565,7 @@ export function ChannelThreadPane({
         reactionOpInFlightRef.current.delete(opKey)
       }
     },
-    [conversationId, toast, user, removeReactionMessageEverywhere],
+    [conversationId, toast, user, removeReactionMessageEverywhere, viewerOnly],
   )
 
   const onReactionChipTap = useCallback(
@@ -853,6 +902,7 @@ export function ChannelThreadPane({
     containerClassName: string,
     opts?: { showAddButton?: boolean },
   ) => {
+    if (viewerOnly) return null
     if (m.kind === 'reaction') return null
     const showAdd = opts?.showAddButton !== false
     const reacts = reactionsByTargetId.get(m.id) ?? []
@@ -931,8 +981,13 @@ export function ChannelThreadPane({
       <article
         key={m.id}
         className={`dashboard-messenger__message dashboard-messenger__message--reply${isOwn ? ' dashboard-messenger__message--own' : ''}`}
+        ref={(el) => {
+          if (el) commentAnchorRef.current.set(m.id, el)
+          else commentAnchorRef.current.delete(m.id)
+        }}
         onContextMenu={(e) => {
           e.preventDefault()
+          if (viewerOnly) return
           if (m.id.startsWith('local-')) return
           setReactionPick({
             targetId: m.id,
@@ -952,7 +1007,7 @@ export function ChannelThreadPane({
             aria-label="Действия с комментарием"
             aria-expanded={menuOpen}
             aria-haspopup="menu"
-            disabled={m.id.startsWith('local-')}
+            disabled={viewerOnly || m.id.startsWith('local-')}
             onClick={(e) => {
               const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
               setCommentMenu((cur) => {
@@ -1020,8 +1075,13 @@ export function ChannelThreadPane({
       <article
         key={p.id}
         className="dashboard-messenger__channel-post"
+        ref={(el) => {
+          if (el) postAnchorRef.current.set(p.id, el)
+          else postAnchorRef.current.delete(p.id)
+        }}
         onContextMenu={(e) => {
           e.preventDefault()
+          if (viewerOnly) return
           if (p.id.startsWith('local-')) return
           setReactionPick({
             targetId: p.id,
@@ -1030,7 +1090,7 @@ export function ChannelThreadPane({
         }}
       >
         <DoubleTapHeartSurface
-          enabled={Boolean(user?.id && !p.id.startsWith('local-'))}
+          enabled={Boolean(!viewerOnly && user?.id && !p.id.startsWith('local-'))}
           isMobileViewport={isMobileMessenger}
           onHeart={() => void toggleReaction(p.id, QUICK_REACTION_EMOJI)}
         >
@@ -1050,7 +1110,7 @@ export function ChannelThreadPane({
                 }
               })
             }}
-            disabled={p.id.startsWith('local-')}
+            disabled={viewerOnly || p.id.startsWith('local-')}
           >
             <span className="dashboard-messenger__channel-post-more-icon" aria-hidden>
               ⋮
@@ -1073,15 +1133,17 @@ export function ChannelThreadPane({
         </DoubleTapHeartSurface>
         <div className="dashboard-messenger__channel-post-footer">
           {renderReactionChips(p, 'dashboard-messenger__channel-post-reactions', { showAddButton: false })}
-          <button
-            type="button"
-            className="dashboard-messenger__channel-post-comments"
-            aria-label={`Комментарии, ${countLabel}`}
-            onClick={() => void openCommentsModal(p.id)}
-          >
-            <FiRrIcon name="comment" />
-            <span className="dashboard-messenger__channel-post-comments-count">{countLabel}</span>
-          </button>
+          {!viewerOnly ? (
+            <button
+              type="button"
+              className="dashboard-messenger__channel-post-comments"
+              aria-label={`Комментарии, ${countLabel}`}
+              onClick={() => void openCommentsModal(p.id)}
+            >
+              <FiRrIcon name="comment" />
+              <span className="dashboard-messenger__channel-post-comments-count">{countLabel}</span>
+            </button>
+          ) : null}
         </div>
       </article>
     )
@@ -1114,15 +1176,17 @@ export function ChannelThreadPane({
       </div>
 
       <div className="dashboard-messenger__thread-footer">
-        <button
-          type="button"
-          className="dashboard-topbar__action dashboard-topbar__action--primary"
-          onClick={() => setPostEditor({ mode: 'create' })}
-          disabled={threadLoading}
-          style={{ width: '100%' }}
-        >
-          Добавить пост
-        </button>
+        {!viewerOnly ? (
+          <button
+            type="button"
+            className="dashboard-topbar__action dashboard-topbar__action--primary"
+            onClick={() => setPostEditor({ mode: 'create' })}
+            disabled={threadLoading}
+            style={{ width: '100%' }}
+          >
+            Добавить пост
+          </button>
+        ) : null}
       </div>
 
       {postMenu

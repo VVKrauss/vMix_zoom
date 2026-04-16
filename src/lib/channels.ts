@@ -102,6 +102,14 @@ export async function joinPublicChannel(conversationId: string): Promise<{ error
   return { error: null }
 }
 
+export async function leaveChannel(conversationId: string): Promise<{ error: string | null }> {
+  const { data, error } = await supabase.rpc('leave_channel', { p_conversation_id: conversationId.trim() })
+  if (error) return { error: error.message }
+  const row = data as Record<string, unknown> | null
+  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_left' }
+  return { error: null }
+}
+
 function mapMessagesFromRows(rows: unknown): DirectMessage[] {
   const arr = Array.isArray(rows) ? rows : []
   return arr.map((r) => mapDirectMessageFromRow(r as Record<string, unknown>)).filter((m) => m.id)

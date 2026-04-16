@@ -62,11 +62,13 @@ import {
   createGroupChat,
   getOrCreateConversationInvite,
   joinConversationByInvite,
+  leaveGroupChat,
+  joinPublicGroupChat,
   resolveConversationByInvite,
   updateGroupProfile,
   type InviteConversationPreview,
 } from '../lib/groups'
-import { createChannel, updateChannelProfile } from '../lib/channels'
+import { createChannel, joinPublicChannel, leaveChannel, updateChannelProfile } from '../lib/channels'
 import {
   getMessengerFontPreset,
   resolveQuotedAvatarForDm,
@@ -245,6 +247,7 @@ type MessengerDmBubbleProps = {
   /** Если цитируемое сообщение есть в ленте — прокрутка к нему по клику. */
   replyScrollTargetId: string | null
   onReplyQuoteNavigate?: (messageId: string) => void
+  onForwardQuoteNavigate?: (forward: MessengerForwardMeta) => void
   bindMessageAnchor: (messageId: string, el: HTMLElement | null) => void
   currentUserId: string | null
   onReactionChipTap?: (targetMessageId: string, emoji: ReactionEmoji) => void
@@ -272,6 +275,7 @@ function MessengerDmBubble({
   replyPreview,
   replyScrollTargetId,
   onReplyQuoteNavigate,
+  onForwardQuoteNavigate,
   bindMessageAnchor,
   currentUserId,
   onReactionChipTap,
@@ -314,7 +318,14 @@ function MessengerDmBubble({
 
   const forwardStrip = forwardMetaToQuotedStrip(message.meta?.forward)
 
-  const quoteNavigable = Boolean(!forwardStrip && replyScrollTargetId && onReplyQuoteNavigate)
+  const forwardNavOk = Boolean(
+    forwardStrip &&
+      message.meta?.forward?.source_conversation_id?.trim() &&
+      message.meta?.forward?.source_message_id?.trim() &&
+      onForwardQuoteNavigate,
+  )
+  const replyNavOk = Boolean(!forwardStrip && replyScrollTargetId && onReplyQuoteNavigate)
+  const quoteNavigable = Boolean(forwardNavOk || replyNavOk)
 
   const canSwipeReply =
     Boolean(swipeReplyEnabled && onSwipeReply) &&
@@ -503,7 +514,13 @@ function MessengerDmBubble({
             type="button"
             className="dashboard-messenger__reply-quote dashboard-messenger__reply-quote--action"
             aria-label={replyQuoteAria}
-            onClick={() => onReplyQuoteNavigate?.(replyScrollTargetId!)}
+            onClick={() => {
+              if (forwardNavOk) {
+                onForwardQuoteNavigate?.(message.meta!.forward!)
+                return
+              }
+              onReplyQuoteNavigate?.(replyScrollTargetId!)
+            }}
           >
             {replyQuoteInner}
           </button>
@@ -764,6 +781,9 @@ export function DashboardMessengerPage() {
   const [conversationInfoIsOpen, setConversationInfoIsOpen] = useState(true)
   const [conversationInfoChannelComments, setConversationInfoChannelComments] = useState<'comments' | 'reactions_only'>('comments')
   const [conversationInfoLogoFile, setConversationInfoLogoFile] = useState<File | null>(null)
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
+  const [leaveBusy, setLeaveBusy] = useState(false)
+  const [leaveError, setLeaveError] = useState<string | null>(null)
   const [conversationStaffRows, setConversationStaffRows] = useState<ConversationStaffMember[]>([])
   const [conversationStaffLoading, setConversationStaffLoading] = useState(false)
   const [conversationStaffTargetUserId, setConversationStaffTargetUserId] = useState('')
@@ -788,6 +808,11 @@ export function DashboardMessengerPage() {
   const [forwardDmModal, setForwardDmModal] = useState<{ forward: MessengerForwardMeta; sendBody: string } | null>(null)
   const [forwardDmComment, setForwardDmComment] = useState('')
   const [forwardDmSending, setForwardDmSending] = useState(false)
+  const [pendingJump, setPendingJump] = useState<{
+    conversationId: string
+    messageId: string
+    parentMessageId?: string | null
+  } | null>(null)
   const msgMenuWrapRef = useRef<HTMLDivElement | null>(null)
   const [messengerImageLightboxUrl, setMessengerImageLightboxUrl] = useState<string | null>(null)
   const messengerLightboxSwipeRef = useRef<{
@@ -869,6 +894,7 @@ export function DashboardMessengerPage() {
   const composerEmojiWrapRef = useRef<HTMLDivElement | null>(null)
   const photoInputRef = useRef<HTMLInputElement | null>(null)
   const olderFetchInFlightRef = useRef(false)
+  const pendingJumpOlderAttemptsRef = useRef(0)
   const prevThreadIdForClearRef = useRef<string | null>(null)
   const prevMessagesLenForScrollRef = useRef(0)
   /** Уже загруженные сообщения для этого id — не дергать API при повторном срабатывании эффекта (напр. loading). */
@@ -918,6 +944,18 @@ export function DashboardMessengerPage() {
     const qs = params.toString()
     return qs ? `/dashboard/messenger?${qs}` : '/dashboard/messenger'
   }
+
+  const navigateToForwardSource = useCallback(
+    (forward: MessengerForwardMeta) => {
+      const scid = forward.source_conversation_id?.trim() ?? ''
+      const smid = forward.source_message_id?.trim() ?? ''
+      const spid = forward.source_parent_message_id?.trim() ?? ''
+      if (!scid || !smid) return
+      setPendingJump({ conversationId: scid, messageId: smid, parentMessageId: spid || null })
+      navigate(buildMessengerUrl(scid))
+    },
+    [navigate],
+  )
 
   const selectConversation = (nextConversationId: string) => {
     navigate(buildMessengerUrl(nextConversationId), { replace: false })
@@ -1190,7 +1228,8 @@ export function DashboardMessengerPage() {
     inviteToken.trim() &&
       invitePreview?.id &&
       activeConversationId === invitePreview.id &&
-      !items.some((i) => i.id === invitePreview.id),
+      !items.some((i) => i.id === invitePreview.id) &&
+      invitePreview.isPublic !== true,
   )
 
   useEffect(() => {
@@ -1794,6 +1833,20 @@ export function DashboardMessengerPage() {
   const threadHeadConversation =
     sortedItems.find((i) => i.id === activeConversationId) ?? activeConversation
 
+  const isMemberOfActiveConversation = useMemo(
+    () => Boolean(activeConversationId.trim() && items.some((i) => i.id === activeConversationId)),
+    [activeConversationId, items],
+  )
+  const activeIsPublic = Boolean(
+    (threadHeadConversation?.kind === 'group' || threadHeadConversation?.kind === 'channel') &&
+      (threadHeadConversation?.isPublic === true || invitePreview?.isPublic === true),
+  )
+  const viewerOnly = Boolean(
+    (threadHeadConversation?.kind === 'group' || threadHeadConversation?.kind === 'channel') &&
+      activeIsPublic &&
+      !isMemberOfActiveConversation,
+  )
+
   const conversationInfoConv =
     conversationInfoId?.trim()
       ? sortedItems.find((i) => i.id === conversationInfoId) ??
@@ -1805,6 +1858,47 @@ export function DashboardMessengerPage() {
       ? threadHeadConversation.avatarUrl ??
         (threadHeadConversation.otherUserId ? null : profile?.avatar_url ?? null)
       : null
+
+  const joinOpenConversation = useCallback(async () => {
+    if (!threadHeadConversation || (threadHeadConversation.kind !== 'group' && threadHeadConversation.kind !== 'channel')) return
+    if (!viewerOnly || inviteJoinBusy) return
+    if (inviteToken.trim() && invitePreview?.id && invitePreview.id === activeConversationId) {
+      await joinFromInvite()
+      return
+    }
+    setInviteJoinBusy(true)
+    setInviteError(null)
+    try {
+      const cid = activeConversationId.trim()
+      if (!cid) return
+      if (threadHeadConversation.kind === 'group') {
+        const res = await joinPublicGroupChat(cid)
+        if (res.error) {
+          setInviteError(res.error)
+          return
+        }
+      } else {
+        const res = await joinPublicChannel(cid)
+        if (res.error) {
+          setInviteError(res.error)
+          return
+        }
+      }
+      const listRes = await listMessengerConversations()
+      if (!listRes.error && listRes.data) setItems(listRes.data)
+    } finally {
+      setInviteJoinBusy(false)
+    }
+  }, [
+    activeConversationId,
+    inviteJoinBusy,
+    invitePreview?.id,
+    inviteToken,
+    joinFromInvite,
+    setItems,
+    threadHeadConversation,
+    viewerOnly,
+  ])
 
   const forwardDmPickItems = useMemo(
     () =>
@@ -1970,6 +2064,7 @@ export function DashboardMessengerPage() {
       const built = buildForwardMetaFromDirectMessage(m, {
         currentUserId: user?.id,
         profileAvatar: profile?.avatar_url ?? null,
+        sourceConversationId: activeConversationId,
         directConv: {
           otherUserId: conv.otherUserId ?? null,
           avatarUrl: conv.avatarUrl ?? null,
@@ -1979,7 +2074,7 @@ export function DashboardMessengerPage() {
       setForwardDmModal(built)
       closeMessageActionMenu()
     },
-    [closeMessageActionMenu, profile?.avatar_url, threadHeadConversation, user?.id],
+    [activeConversationId, closeMessageActionMenu, profile?.avatar_url, threadHeadConversation, user?.id],
   )
 
   const handleForwardFromChannelMessage = useCallback(
@@ -1987,7 +2082,11 @@ export function DashboardMessengerPage() {
       if (!threadHeadConversation || threadHeadConversation.kind !== 'channel') return
       const title = threadHeadConversation.title?.trim() || 'Канал'
       const avatar = conversationAvatarUrlById[activeConversationId] ?? null
-      const built = buildForwardMetaFromChannelOrGroup(message, 'channel', { sourceTitle: title, sourceAvatarUrl: avatar })
+      const built = buildForwardMetaFromChannelOrGroup(message, 'channel', {
+        sourceTitle: title,
+        sourceAvatarUrl: avatar,
+        sourceConversationId: activeConversationId,
+      })
       setForwardDmComment('')
       setForwardDmModal(built)
     },
@@ -1999,7 +2098,11 @@ export function DashboardMessengerPage() {
       if (!threadHeadConversation || threadHeadConversation.kind !== 'group') return
       const title = threadHeadConversation.title?.trim() || 'Группа'
       const avatar = conversationAvatarUrlById[activeConversationId] ?? null
-      const built = buildForwardMetaFromChannelOrGroup(message, 'group', { sourceTitle: title, sourceAvatarUrl: avatar })
+      const built = buildForwardMetaFromChannelOrGroup(message, 'group', {
+        sourceTitle: title,
+        sourceAvatarUrl: avatar,
+        sourceConversationId: activeConversationId,
+      })
       setForwardDmComment('')
       setForwardDmModal(built)
     },
@@ -2225,6 +2328,45 @@ export function DashboardMessengerPage() {
     }, 1400)
   }, [])
 
+  useEffect(() => {
+    const j = pendingJump
+    if (!j) return
+    const activeId = activeConversationId.trim()
+    if (!activeId || j.conversationId.trim() !== activeId) return
+    if (threadHeadConversation?.kind !== 'direct') return
+
+    if (messages.some((m) => m.id === j.messageId)) {
+      pendingJumpOlderAttemptsRef.current = 0
+      scrollToQuotedMessage(j.messageId)
+      setPendingJump(null)
+      return
+    }
+
+    if (threadLoading || loadingOlder) return
+    if (!hasMoreOlder) {
+      pendingJumpOlderAttemptsRef.current = 0
+      setPendingJump(null)
+      return
+    }
+    if (pendingJumpOlderAttemptsRef.current > 12) {
+      pendingJumpOlderAttemptsRef.current = 0
+      setPendingJump(null)
+      return
+    }
+    pendingJumpOlderAttemptsRef.current += 1
+    void loadOlderMessages()
+  }, [
+    activeConversationId,
+    hasMoreOlder,
+    loadOlderMessages,
+    loadingOlder,
+    messages,
+    pendingJump,
+    scrollToQuotedMessage,
+    threadHeadConversation?.kind,
+    threadLoading,
+  ])
+
   const goCreateRoomFromMessenger = useCallback(() => {
     const id = newRoomId()
     setPendingHostClaim(id)
@@ -2434,12 +2576,39 @@ export function DashboardMessengerPage() {
     setConversationInfoEdit(false)
     setConversationInfoError(null)
     setConversationInfoLogoFile(null)
+    setLeaveConfirmOpen(false)
+    setLeaveBusy(false)
+    setLeaveError(null)
     setConversationStaffRows([])
     setConversationStaffTargetUserId('')
     setConversationStaffNewRole('moderator')
     setConversationStaffLoading(false)
     setConversationStaffMutating(false)
   }, [])
+
+  const confirmLeaveConversation = useCallback(async () => {
+    if (!conversationInfoConv || conversationInfoConv.kind === 'direct') return
+    if (!conversationInfoRole || leaveBusy) return
+    setLeaveBusy(true)
+    setLeaveError(null)
+    try {
+      const cid = conversationInfoConv.id.trim()
+      if (!cid) return
+      const res =
+        conversationInfoConv.kind === 'group' ? await leaveGroupChat(cid) : await leaveChannel(cid)
+      if (res.error) {
+        setLeaveError(res.error)
+        return
+      }
+      const listRes = await listMessengerConversations()
+      if (!listRes.error && listRes.data) setItems(listRes.data)
+      setLeaveConfirmOpen(false)
+      closeConversationInfo()
+      navigate('/dashboard/messenger?view=list', { replace: true })
+    } finally {
+      setLeaveBusy(false)
+    }
+  }, [closeConversationInfo, conversationInfoConv, conversationInfoRole, leaveBusy, navigate, setItems])
 
   const cancelConversationInfoEdit = useCallback(() => {
     const id = conversationInfoId?.trim()
@@ -3122,6 +3291,17 @@ export function DashboardMessengerPage() {
                                   <ChevronLeftIcon />
                                 </button>
                               </div>
+                              {viewerOnly ? (
+                                <button
+                                  type="button"
+                                  className="dashboard-topbar__action dashboard-topbar__action--primary"
+                                  onClick={() => void joinOpenConversation()}
+                                  disabled={inviteJoinBusy || inviteLoading}
+                                  title="Вступить"
+                                >
+                                  {inviteJoinBusy ? '…' : 'Вступить'}
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
                                 className="dashboard-messenger__thread-head-center dashboard-messenger__thread-head-center--tappable"
@@ -3147,34 +3327,54 @@ export function DashboardMessengerPage() {
                               </button>
                             </header>
                           ) : (
-                            <button
-                              type="button"
-                              className="dashboard-messenger__thread-head-center dashboard-messenger__thread-head-center--tappable"
-                              style={{ padding: 16 }}
-                              aria-label="Информация о чате"
-                              onClick={() => void openConversationInfo(activeConversationId)}
-                            >
-                              <span className="dashboard-messenger__thread-head-center-avatar" aria-hidden>
-                                {conversationAvatarUrlById[activeConversationId] ? (
-                                  <img src={conversationAvatarUrlById[activeConversationId] ?? undefined} alt="" />
-                                ) : (
-                                  <span>{conversationInitial(threadHeadConversation.title)}</span>
-                                )}
-                              </span>
-                              <div className="dashboard-messenger__thread-head-center-text">
-                                <div className="dashboard-messenger__thread-head-center-title">{threadHeadConversation.title}</div>
-                                <div className="dashboard-messenger__thread-head-center-meta">
-                                  {(threadHeadConversation.kind === 'channel' ? 'Канал' : 'Группа') + ' · '}
-                                  {threadHeadConversation.memberCount ?? 0} участн.
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 16 }}>
+                              {viewerOnly ? (
+                                <button
+                                  type="button"
+                                  className="dashboard-topbar__action dashboard-topbar__action--primary"
+                                  onClick={() => void joinOpenConversation()}
+                                  disabled={inviteJoinBusy || inviteLoading}
+                                  title="Вступить"
+                                >
+                                  {inviteJoinBusy ? '…' : 'Вступить'}
+                                </button>
+                              ) : null}
+                              <button
+                                type="button"
+                                className="dashboard-messenger__thread-head-center dashboard-messenger__thread-head-center--tappable"
+                                style={{ padding: 0 }}
+                                aria-label="Информация о чате"
+                                onClick={() => void openConversationInfo(activeConversationId)}
+                              >
+                                <span className="dashboard-messenger__thread-head-center-avatar" aria-hidden>
+                                  {conversationAvatarUrlById[activeConversationId] ? (
+                                    <img src={conversationAvatarUrlById[activeConversationId] ?? undefined} alt="" />
+                                  ) : (
+                                    <span>{conversationInitial(threadHeadConversation.title)}</span>
+                                  )}
+                                </span>
+                                <div className="dashboard-messenger__thread-head-center-text">
+                                  <div className="dashboard-messenger__thread-head-center-title">{threadHeadConversation.title}</div>
+                                  <div className="dashboard-messenger__thread-head-center-meta">
+                                    {(threadHeadConversation.kind === 'channel' ? 'Канал' : 'Группа') + ' · '}
+                                    {threadHeadConversation.memberCount ?? 0} участн.
+                                  </div>
                                 </div>
-                              </div>
-                            </button>
+                              </button>
+                            </div>
                           )}
                         </div>
 
                         {threadHeadConversation.kind === 'group' ? (
                           <GroupThreadPane
                             conversationId={activeConversationId}
+                            viewerOnly={viewerOnly}
+                            jumpToMessageId={
+                              pendingJump && pendingJump.conversationId.trim() === activeConversationId.trim()
+                                ? pendingJump.messageId
+                                : null
+                            }
+                            onJumpHandled={() => setPendingJump(null)}
                             onTouchTail={(patch) => {
                               setItems((prev) =>
                                 prev.map((it) =>
@@ -3189,6 +3389,18 @@ export function DashboardMessengerPage() {
                         ) : (
                           <ChannelThreadPane
                             conversationId={activeConversationId}
+                            viewerOnly={viewerOnly}
+                            jumpToMessageId={
+                              pendingJump && pendingJump.conversationId.trim() === activeConversationId.trim()
+                                ? pendingJump.messageId
+                                : null
+                            }
+                            jumpToParentMessageId={
+                              pendingJump && pendingJump.conversationId.trim() === activeConversationId.trim()
+                                ? pendingJump.parentMessageId ?? null
+                                : null
+                            }
+                            onJumpHandled={() => setPendingJump(null)}
                             onTouchTail={(patch) => {
                               setItems((prev) =>
                                 prev.map((it) =>
@@ -3433,6 +3645,7 @@ export function DashboardMessengerPage() {
                                   replyPreview={replyPreview}
                                   replyScrollTargetId={replyScrollTargetId}
                                   onReplyQuoteNavigate={scrollToQuotedMessage}
+                                  onForwardQuoteNavigate={navigateToForwardSource}
                                   bindMessageAnchor={bindMessageAnchor}
                                   menuOpen={messageMenu?.message.id === message.id}
                                   onOpenImageLightbox={(url) => {
@@ -3999,6 +4212,22 @@ export function DashboardMessengerPage() {
                   </>
                 ) : null}
 
+                {conversationInfoRole ? (
+                  <div className="messenger-settings-modal__section">
+                    {leaveError ? <p className="join-error">{leaveError}</p> : null}
+                    <button
+                      type="button"
+                      className="dashboard-messenger-quick-menu__btn dashboard-messenger-quick-menu__btn--danger dashboard-messenger-quick-menu__btn--span"
+                      onClick={() => setLeaveConfirmOpen(true)}
+                      disabled={conversationInfoLoading || leaveBusy}
+                    >
+                      <span className="dashboard-messenger-quick-menu__lbl">
+                        {conversationInfoConv.kind === 'channel' ? 'Выйти из канала' : 'Выйти из группы'}
+                      </span>
+                    </button>
+                  </div>
+                ) : null}
+
                 <div
                   className={`messenger-settings-modal__actions${
                     conversationInfoEdit ? ' messenger-settings-modal__actions--split' : ''
@@ -4029,6 +4258,45 @@ export function DashboardMessengerPage() {
                     </button>
                   )}
                 </div>
+
+                {leaveConfirmOpen ? (
+                  <div className="confirm-dialog-root">
+                    <button
+                      type="button"
+                      className="confirm-dialog-backdrop"
+                      aria-label="Закрыть"
+                      onClick={() => {
+                        if (!leaveBusy) setLeaveConfirmOpen(false)
+                      }}
+                    />
+                    <div className="confirm-dialog" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+                      <h3 style={{ marginTop: 0 }}>
+                        {conversationInfoConv.kind === 'channel' ? 'Выйти из канала?' : 'Выйти из группы?'}
+                      </h3>
+                      <p className="messenger-settings-modal__hint" style={{ marginTop: 6 }}>
+                        Вы больше не будете участником и чат исчезнет из списка.
+                      </p>
+                      <div className="messenger-settings-modal__actions messenger-settings-modal__actions--split">
+                        <button
+                          type="button"
+                          className="dashboard-topbar__action"
+                          disabled={leaveBusy}
+                          onClick={() => setLeaveConfirmOpen(false)}
+                        >
+                          Отмена
+                        </button>
+                        <button
+                          type="button"
+                          className="dashboard-topbar__action dashboard-topbar__action--primary"
+                          disabled={leaveBusy}
+                          onClick={() => void confirmLeaveConversation()}
+                        >
+                          {leaveBusy ? '…' : 'Выйти'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>,
             document.body,

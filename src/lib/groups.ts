@@ -55,6 +55,14 @@ export async function joinPublicGroupChat(conversationId: string): Promise<{ err
   return { error: null }
 }
 
+export async function leaveGroupChat(conversationId: string): Promise<{ error: string | null }> {
+  const { data, error } = await supabase.rpc('leave_group_chat', { p_conversation_id: conversationId.trim() })
+  if (error) return { error: error.message }
+  const row = data as Record<string, unknown> | null
+  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_left' }
+  return { error: null }
+}
+
 export async function addUsersToGroupChat(conversationId: string, userIds: string[]): Promise<{ error: string | null; added: number }> {
   const { data, error } = await supabase.rpc('add_users_to_group_chat', {
     p_conversation_id: conversationId.trim(),

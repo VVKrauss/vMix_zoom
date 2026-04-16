@@ -55,6 +55,7 @@ export function buildForwardMetaFromDirectMessage(
     currentUserId: string | undefined
     profileAvatar: string | null | undefined
     directConv: { otherUserId: string | null; avatarUrl: string | null } | null
+    sourceConversationId: string
   },
 ): { forward: MessengerForwardMeta; sendBody: string } {
   const sk: 'text' | 'image' = m.kind === 'image' ? 'image' : 'text'
@@ -79,6 +80,8 @@ export function buildForwardMetaFromDirectMessage(
       from: 'direct',
       author_name: m.senderNameSnapshot?.trim() || undefined,
       author_avatar_url: author_avatar_url,
+      source_conversation_id: opts.sourceConversationId.trim(),
+      source_message_id: m.id,
       snippet,
       source_kind: sk,
       ...(thumb ? { image_thumb_path: thumb } : {}),
@@ -90,7 +93,7 @@ export function buildForwardMetaFromDirectMessage(
 export function buildForwardMetaFromChannelOrGroup(
   m: DirectMessage,
   from: 'channel' | 'group',
-  opts: { sourceTitle: string; sourceAvatarUrl: string | null },
+  opts: { sourceTitle: string; sourceAvatarUrl: string | null; sourceConversationId: string },
 ): { forward: MessengerForwardMeta; sendBody: string } {
   const sk: 'text' | 'image' = m.kind === 'image' ? 'image' : 'text'
   const thumb =
@@ -108,6 +111,9 @@ export function buildForwardMetaFromChannelOrGroup(
       from,
       source_title: opts.sourceTitle.trim() || (from === 'channel' ? 'Канал' : 'Группа'),
       source_avatar_url: opts.sourceAvatarUrl,
+      source_conversation_id: opts.sourceConversationId.trim(),
+      source_message_id: m.id,
+      ...(from === 'channel' && m.replyToMessageId?.trim() ? { source_parent_message_id: m.replyToMessageId.trim() } : {}),
       snippet,
       source_kind: sk,
       ...(thumb ? { image_thumb_path: thumb } : {}),

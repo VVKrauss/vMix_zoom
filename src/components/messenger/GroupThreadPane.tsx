@@ -59,10 +59,16 @@ export function GroupThreadPane({
   conversationId,
   onTouchTail,
   onForwardMessage,
+  viewerOnly,
+  jumpToMessageId,
+  onJumpHandled,
 }: {
   conversationId: string
   onTouchTail?: (patch: { lastMessageAt: string; lastMessagePreview: string }) => void
   onForwardMessage?: (message: DirectMessage) => void
+  viewerOnly?: boolean
+  jumpToMessageId?: string | null
+  onJumpHandled?: () => void
 }) {
   const { user } = useAuth()
   const { profile } = useProfile()
@@ -84,6 +90,7 @@ export function GroupThreadPane({
     anchor: { left: number; top: number; right: number; bottom: number }
   } | null>(null)
   const messageMenuWrapRef = useRef<HTMLDivElement | null>(null)
+  const messageAnchorRef = useRef<Map<string, HTMLElement>>(new Map())
 
   const cidRef = useRef(conversationId)
   cidRef.current = conversationId
@@ -94,6 +101,19 @@ export function GroupThreadPane({
     if (!id) return
     setMessages((prev) => prev.filter((m) => m.id !== id))
   }, [])
+
+  useEffect(() => {
+    const id = jumpToMessageId?.trim() ?? ''
+    if (!id) return
+    const el = messageAnchorRef.current.get(id)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('dashboard-messenger__message--highlight')
+    window.setTimeout(() => {
+      el.classList.remove('dashboard-messenger__message--highlight')
+    }, 1400)
+    onJumpHandled?.()
+  }, [jumpToMessageId, onJumpHandled, messages.length])
 
   useEffect(() => {
     let active = true
@@ -111,13 +131,13 @@ export function GroupThreadPane({
         return
       }
       setMessages(res.data ?? [])
-      void markGroupRead(cid)
+      if (!viewerOnly) void markGroupRead(cid)
       requestAnimationFrame(() => composerTextareaRef.current?.focus())
     })
     return () => {
       active = false
     }
-  }, [conversationId, user?.id])
+  }, [conversationId, user?.id, viewerOnly])
 
   useEffect(() => {
     const cid = conversationId.trim()
@@ -137,7 +157,7 @@ export function GroupThreadPane({
         })
         const preview = previewTextForDirectMessageTail(msg)
         onTouchTail?.({ lastMessageAt: msg.createdAt, lastMessagePreview: preview })
-        if (document.visibilityState === 'visible') void markGroupRead(cid)
+        if (!viewerOnly && document.visibilityState === 'visible') void markGroupRead(cid)
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages', filter }, (payload) => {
         const msg = mapDirectMessageFromRow(payload.new as Record<string, unknown>)
@@ -154,7 +174,7 @@ export function GroupThreadPane({
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [conversationId, user?.id, onTouchTail, removeMessageById])
+  }, [conversationId, user?.id, onTouchTail, removeMessageById, viewerOnly])
 
   const reactionsByTargetId = useMemo(() => {
     const map = new Map<string, DirectMessage[]>()
@@ -174,7 +194,7 @@ export function GroupThreadPane({
     async (targetMessageId: string, emoji: ReactionEmoji) => {
       const cid = conversationId.trim()
       const uid = user?.id
-      if (!cid || !uid || !isAllowedReactionEmoji(emoji)) return
+      if (viewerOnly || !cid || !uid || !isAllowedReactionEmoji(emoji)) return
       const opKey = `${cid}::${targetMessageId}::${emoji}`
       if (reactionOpInFlightRef.current.has(opKey)) return
       reactionOpInFlightRef.current.add(opKey)
@@ -209,7 +229,7 @@ export function GroupThreadPane({
         reactionOpInFlightRef.current.delete(opKey)
       }
     },
-    [conversationId, toast, user?.id, profile?.display_name, removeMessageById],
+    [conversationId, toast, user?.id, profile?.display_name, removeMessageById, viewerOnly],
   )
 
   const onReactionChipTap = useCallback(
@@ -223,7 +243,7 @@ export function GroupThreadPane({
   const sendText = useCallback(async () => {
     const cid = conversationId.trim()
     const body = draft.trim()
-    if (!user?.id || !cid || !body || sending || threadLoading) return
+    if (viewerOnly || !user?.id || !cid || !body || sending || threadLoading) return
     setSending(true)
     setError(null)
     const replyId = replyTo?.id ?? null
@@ -257,7 +277,7 @@ export function GroupThreadPane({
   const sendPhotoFile = useCallback(
     async (file: File) => {
       const cid = conversationId.trim()
-      if (!user?.id || !cid || photoUploading || threadLoading) return
+      if (viewerOnly || !user?.id || !cid || photoUploading || threadLoading) return
       setPhotoUploading(true)
       setError(null)
       const up = await uploadMessengerImage(cid, file)
@@ -294,7 +314,7 @@ export function GroupThreadPane({
       setMessages((prev) => [...prev, newMsg].sort(sortChrono))
       onTouchTail?.({ lastMessageAt: createdAt, lastMessagePreview: preview })
     },
-    [conversationId, user?.id, photoUploading, threadLoading, draft, replyTo?.id, profile?.display_name, onTouchTail],
+    [conversationId, user?.id, photoUploading, threadLoading, draft, replyTo?.id, profile?.display_name, onTouchTail, viewerOnly],
   )
 
   useLayoutEffect(() => {
@@ -372,6 +392,10 @@ export function GroupThreadPane({
               <article
                 key={m.id}
                 className={`dashboard-messenger__message${isOwn ? ' dashboard-messenger__message--own' : ''}`}
+                ref={(el) => {
+                  if (el) messageAnchorRef.current.set(m.id, el)
+                  else messageAnchorRef.current.delete(m.id)
+                }}
               >
                 {replyTarget ? (
                   <div className="messenger-reply-mini">
@@ -391,7 +415,7 @@ export function GroupThreadPane({
                     aria-label="Действия с сообщением"
                     aria-expanded={menuOpen}
                     aria-haspopup="menu"
-                    disabled={m.id.startsWith('local-')}
+                    disabled={viewerOnly || m.id.startsWith('local-')}
                     onClick={(e) => {
                       const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
                       setMessageMenu((cur) => {
@@ -415,54 +439,60 @@ export function GroupThreadPane({
                   </div>
                 </DoubleTapHeartSurface>
                 <div className="dashboard-messenger__message-reactions">
-                  {rows.map(([emoji, count]) => (
-                    <span
-                      key={emoji}
-                      className={`dashboard-messenger__reaction-chip${
-                        user?.id && reacts.some((r) => r.senderUserId === user.id && (r.body.trim() || r.body) === emoji)
-                          ? ' dashboard-messenger__reaction-chip--mine'
-                          : ''
-                      }`}
-                      role={
-                        user?.id && reacts.some((r) => r.senderUserId === user.id && (r.body.trim() || r.body) === emoji)
-                          ? 'button'
-                          : undefined
-                      }
-                      tabIndex={
-                        user?.id && reacts.some((r) => r.senderUserId === user.id && (r.body.trim() || r.body) === emoji)
-                          ? 0
-                          : undefined
-                      }
-                      onClick={
-                        user?.id && reacts.some((r) => r.senderUserId === user.id && (r.body.trim() || r.body) === emoji)
-                          ? (e) => {
-                              e.stopPropagation()
-                              void onReactionChipTap(m.id, emoji)
-                            }
-                          : undefined
-                      }
-                      onKeyDown={
-                        user?.id && reacts.some((r) => r.senderUserId === user.id && (r.body.trim() || r.body) === emoji)
-                          ? (e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                void onReactionChipTap(m.id, emoji)
-                              }
-                            }
-                          : undefined
-                      }
-                    >
-                      <span className="dashboard-messenger__reaction-emoji">{emoji}</span>
-                      {count > 1 ? <span className="dashboard-messenger__reaction-count">{count}</span> : null}
-                    </span>
-                  ))}
-                  <button type="button" className="dashboard-messenger__reaction-add" onClick={() => setReactOpenFor(m.id)}>
-                    <FiRrIcon name="add" />
-                  </button>
-                  <button type="button" className="dashboard-messenger__reaction-add" onClick={() => setReplyTo(m)} title="Ответить">
-                    <FiRrIcon name="reply" />
-                  </button>
+                  {!viewerOnly
+                    ? rows.map(([emoji, count]) => (
+                        <span
+                          key={emoji}
+                          className={`dashboard-messenger__reaction-chip${
+                            user?.id && reacts.some((r) => r.senderUserId === user.id && (r.body.trim() || r.body) === emoji)
+                              ? ' dashboard-messenger__reaction-chip--mine'
+                              : ''
+                          }`}
+                          role={
+                            user?.id && reacts.some((r) => r.senderUserId === user.id && (r.body.trim() || r.body) === emoji)
+                              ? 'button'
+                              : undefined
+                          }
+                          tabIndex={
+                            user?.id && reacts.some((r) => r.senderUserId === user.id && (r.body.trim() || r.body) === emoji)
+                              ? 0
+                              : undefined
+                          }
+                          onClick={
+                            user?.id && reacts.some((r) => r.senderUserId === user.id && (r.body.trim() || r.body) === emoji)
+                              ? (e) => {
+                                  e.stopPropagation()
+                                  void onReactionChipTap(m.id, emoji)
+                                }
+                              : undefined
+                          }
+                          onKeyDown={
+                            user?.id && reacts.some((r) => r.senderUserId === user.id && (r.body.trim() || r.body) === emoji)
+                              ? (e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    void onReactionChipTap(m.id, emoji)
+                                  }
+                                }
+                              : undefined
+                          }
+                        >
+                          <span className="dashboard-messenger__reaction-emoji">{emoji}</span>
+                          {count > 1 ? <span className="dashboard-messenger__reaction-count">{count}</span> : null}
+                        </span>
+                      ))
+                    : null}
+                  {!viewerOnly ? (
+                    <>
+                      <button type="button" className="dashboard-messenger__reaction-add" onClick={() => setReactOpenFor(m.id)}>
+                        <FiRrIcon name="add" />
+                      </button>
+                      <button type="button" className="dashboard-messenger__reaction-add" onClick={() => setReplyTo(m)} title="Ответить">
+                        <FiRrIcon name="reply" />
+                      </button>
+                    </>
+                  ) : null}
                 </div>
               </article>
             )
@@ -482,45 +512,57 @@ export function GroupThreadPane({
         </div>
       ) : null}
 
-      <div className="dashboard-messenger__composer" role="region" aria-label="Новое сообщение">
-        <div className="dashboard-messenger__composer-main">
-          <textarea
-            ref={composerTextareaRef}
-            className="dashboard-messenger__input"
-            rows={2}
-            placeholder="Сообщение…"
-            value={draft}
-            disabled={threadLoading}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                void sendText()
-              }
-            }}
-          />
-          <div className="dashboard-messenger__composer-side">
-            <input
-              ref={photoInputRef}
-              type="file"
-              accept="image/*"
-              style={{ display: 'none' }}
-              onChange={(e) => {
-                const f = e.target.files?.[0]
-                if (!f) return
-                e.target.value = ''
-                void sendPhotoFile(f)
+      {!viewerOnly ? (
+        <div className="dashboard-messenger__composer" role="region" aria-label="Новое сообщение">
+          <div className="dashboard-messenger__composer-main">
+            <textarea
+              ref={composerTextareaRef}
+              className="dashboard-messenger__input"
+              rows={2}
+              placeholder="Сообщение…"
+              value={draft}
+              disabled={threadLoading}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  void sendText()
+                }
               }}
             />
-            <button type="button" className="dashboard-topbar__action" disabled={threadLoading || photoUploading} onClick={() => photoInputRef.current?.click()}>
-              <FiRrIcon name="image" />
-            </button>
-            <button type="button" className="dashboard-topbar__action dashboard-topbar__action--primary" disabled={!draft.trim() || sending || threadLoading} onClick={() => void sendText()}>
-              Отправить
-            </button>
+            <div className="dashboard-messenger__composer-side">
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (!f) return
+                  e.target.value = ''
+                  void sendPhotoFile(f)
+                }}
+              />
+              <button
+                type="button"
+                className="dashboard-topbar__action"
+                disabled={threadLoading || photoUploading}
+                onClick={() => photoInputRef.current?.click()}
+              >
+                <FiRrIcon name="image" />
+              </button>
+              <button
+                type="button"
+                className="dashboard-topbar__action dashboard-topbar__action--primary"
+                disabled={!draft.trim() || sending || threadLoading}
+                onClick={() => void sendText()}
+              >
+                Отправить
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
 
       {reactOpenFor ? (
         <div className="confirm-dialog-root">

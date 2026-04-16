@@ -33,6 +33,12 @@ export type MessengerForwardMeta = {
   author_avatar_url?: string | null
   source_title?: string
   source_avatar_url?: string | null
+  /** Идентификатор исходного чата (для клика по пересланной цитате). */
+  source_conversation_id?: string
+  /** Идентификатор исходного сообщения/поста. */
+  source_message_id?: string
+  /** Для комментариев канала: id поста-родителя (reply_to_message_id). */
+  source_parent_message_id?: string
   snippet: string
   source_kind: 'text' | 'image'
   image_thumb_path?: string | null
@@ -118,10 +124,25 @@ function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
       const snippet = typeof f.snippet === 'string' ? f.snippet : ''
       const sk = f.source_kind === 'image' ? 'image' : 'text'
       const itp = f.image_thumb_path
+      const scid =
+        typeof f.source_conversation_id === 'string' && f.source_conversation_id.trim()
+          ? f.source_conversation_id.trim()
+          : undefined
+      const smid =
+        typeof f.source_message_id === 'string' && f.source_message_id.trim()
+          ? f.source_message_id.trim()
+          : undefined
+      const spid =
+        typeof f.source_parent_message_id === 'string' && f.source_parent_message_id.trim()
+          ? f.source_parent_message_id.trim()
+          : undefined
       forward = {
         from,
         snippet,
         source_kind: sk,
+        ...(scid ? { source_conversation_id: scid } : {}),
+        ...(smid ? { source_message_id: smid } : {}),
+        ...(spid ? { source_parent_message_id: spid } : {}),
         ...(typeof f.author_name === 'string' && f.author_name.trim() ? { author_name: f.author_name.trim() } : {}),
         ...(typeof f.author_avatar_url === 'string' && f.author_avatar_url.trim()
           ? { author_avatar_url: f.author_avatar_url.trim() }
