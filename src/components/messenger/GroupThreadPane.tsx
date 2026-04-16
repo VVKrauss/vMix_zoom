@@ -183,13 +183,13 @@ export function GroupThreadPane({
       requestAnimationFrame(() => {
         const el = messagesScrollRef.current
         if (el) el.scrollTop = el.scrollHeight
-        composerTextareaRef.current?.focus()
+        if (isGroupMember) composerTextareaRef.current?.focus()
       })
     })
     return () => {
       active = false
     }
-  }, [conversationId, user?.id, canView, viewerOnly])
+  }, [conversationId, user?.id, canView, viewerOnly, isGroupMember])
 
   const updatePinnedToBottom = useCallback(() => {
     const el = messagesScrollRef.current
@@ -265,7 +265,7 @@ export function GroupThreadPane({
     async (targetMessageId: string, emoji: ReactionEmoji) => {
       const cid = conversationId.trim()
       const uid = user?.id
-      if (viewerOnly || !cid || !uid || !isAllowedReactionEmoji(emoji)) return
+      if (!isGroupMember || !cid || !uid || !isAllowedReactionEmoji(emoji)) return
       const opKey = `${cid}::${targetMessageId}::${emoji}`
       if (reactionOpInFlightRef.current.has(opKey)) return
       reactionOpInFlightRef.current.add(opKey)
@@ -300,7 +300,7 @@ export function GroupThreadPane({
         reactionOpInFlightRef.current.delete(opKey)
       }
     },
-    [conversationId, toast, user?.id, profile?.display_name, removeMessageById, viewerOnly],
+    [conversationId, toast, user?.id, profile?.display_name, removeMessageById, isGroupMember],
   )
 
   const onReactionChipTap = useCallback(
@@ -314,7 +314,7 @@ export function GroupThreadPane({
   const sendText = useCallback(async () => {
     const cid = conversationId.trim()
     const body = draft.trim()
-    if (viewerOnly || !user?.id || !cid || !body || sending || threadLoading) return
+    if (!isGroupMember || !user?.id || !cid || !body || sending || threadLoading) return
     setSending(true)
     setError(null)
     const replyId = replyTo?.id ?? null
@@ -343,12 +343,12 @@ export function GroupThreadPane({
     setMessages((prev) => prev.map((m) => (m.id === optimistic.id ? { ...optimistic, id: finalId, createdAt: finalAt } : m)))
     onTouchTail?.({ lastMessageAt: finalAt, lastMessagePreview: body })
     setSending(false)
-  }, [conversationId, draft, sending, threadLoading, user?.id, replyTo?.id, profile?.display_name, onTouchTail])
+  }, [conversationId, draft, sending, threadLoading, user?.id, replyTo?.id, profile?.display_name, onTouchTail, isGroupMember])
 
   const sendPhotoFile = useCallback(
     async (file: File) => {
       const cid = conversationId.trim()
-      if (viewerOnly || !user?.id || !cid || photoUploading || threadLoading) return
+      if (!isGroupMember || !user?.id || !cid || photoUploading || threadLoading) return
       if (file.size > GROUP_PHOTO_MAX_BYTES) {
         toast.push({
           tone: 'warning',
@@ -394,7 +394,7 @@ export function GroupThreadPane({
       setMessages((prev) => [...prev, newMsg].sort(sortChrono))
       onTouchTail?.({ lastMessageAt: createdAt, lastMessagePreview: preview })
     },
-    [conversationId, user?.id, photoUploading, threadLoading, draft, replyTo?.id, profile?.display_name, onTouchTail, viewerOnly],
+    [conversationId, user?.id, photoUploading, threadLoading, draft, replyTo?.id, profile?.display_name, onTouchTail, isGroupMember],
   )
 
   const onComposerPaste = useCallback(
@@ -409,7 +409,7 @@ export function GroupThreadPane({
   )
 
   const onMobileClipboardImage = useCallback(async () => {
-    if (threadLoading || photoUploading || viewerOnly) return
+    if (threadLoading || photoUploading || !isGroupMember) return
     const file = await readClipboardImageFileFromClipboardApi()
     if (!file) {
       toast.push({
@@ -420,7 +420,7 @@ export function GroupThreadPane({
       return
     }
     void sendPhotoFile(file)
-  }, [photoUploading, sendPhotoFile, threadLoading, toast, viewerOnly])
+  }, [photoUploading, sendPhotoFile, threadLoading, toast, isGroupMember])
 
   useLayoutEffect(() => {
     const el = messageMenuWrapRef.current
@@ -629,15 +629,18 @@ export function GroupThreadPane({
                       void onReactionChipTap(targetId, emoji)
                     }}
                     quickReactEnabled={Boolean(
-                      user?.id && (m.kind === 'text' || m.kind === 'image') && !m.id.startsWith('local-'),
+                      isGroupMember &&
+                        user?.id &&
+                        (m.kind === 'text' || m.kind === 'image') &&
+                        !m.id.startsWith('local-'),
                     )}
                     onQuickHeart={() => void toggleReaction(m.id, QUICK_REACTION_EMOJI)}
-                    swipeReplyEnabled={isMobileMessenger}
+                    swipeReplyEnabled={isMobileMessenger && isGroupMember}
                     onSwipeReply={() => setReplyTo(m)}
                     menuOpen={messageMenu?.message.id === m.id}
                     onMenuButtonClick={(e) => {
                       e.stopPropagation()
-                      if (viewerOnly || m.id.startsWith('local-')) return
+                      if (!isGroupMember || m.id.startsWith('local-')) return
                       const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
                       setMessageMenu((cur) => {
                         if (cur?.message.id === m.id) return null
@@ -646,7 +649,7 @@ export function GroupThreadPane({
                     }}
                     onBubbleContextMenu={(e) => {
                       e.preventDefault()
-                      if (viewerOnly || m.id.startsWith('local-')) return
+                      if (!isGroupMember || m.id.startsWith('local-')) return
                       setMessageMenu((cur) => {
                         if (cur?.message.id === m.id) return null
                         return { message: m, anchor: { left: e.clientX, top: e.clientY, right: e.clientX, bottom: e.clientY } }
@@ -672,7 +675,7 @@ export function GroupThreadPane({
         </div>
       </div>
 
-      {!viewerOnly ? (
+      {isGroupMember ? (
         <div className="dashboard-messenger__composer" role="region" aria-label="Новое сообщение">
           {replyTo ? (
             <div className="dashboard-messenger__composer-reply">
@@ -748,7 +751,7 @@ export function GroupThreadPane({
                     className="dashboard-messenger__composer-icon-btn"
                     title="Вставить фото из буфера"
                     aria-label="Вставить фото из буфера"
-                    disabled={threadLoading || photoUploading || viewerOnly}
+                    disabled={threadLoading || photoUploading}
                     onClick={() => void onMobileClipboardImage()}
                   >
                     <FiRrIcon name="clipboard" />

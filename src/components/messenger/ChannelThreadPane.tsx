@@ -180,7 +180,7 @@ export function ChannelThreadPane({
   }, [])
 
   const canModerateChannel = Boolean(myChannelMemberRole && CHANNEL_STAFF_ROLES.has(myChannelMemberRole))
-  const canCreatePosts = canView && !viewerOnly && (postingMode === 'everyone' || canModerateChannel)
+  const canCreatePosts = isChannelMember && (postingMode === 'everyone' || canModerateChannel)
 
   useEffect(() => {
     if (!error) return
@@ -560,7 +560,7 @@ export function ChannelThreadPane({
   const sendComment = useCallback(async (postId: string) => {
     const cid = conversationId.trim()
     const body = (draftCommentByPostId[postId] ?? '').trim()
-    if (!user?.id || !cid || !postId || !body || sendingCommentPostId) return
+    if (!isChannelMember || !user?.id || !cid || !postId || !body || sendingCommentPostId) return
     setSendingCommentPostId(postId)
     const quoteId =
       quoteToComment?.id && quoteToComment.replyToMessageId?.trim() === postId.trim()
@@ -605,13 +605,13 @@ export function ChannelThreadPane({
     } finally {
       setSendingCommentPostId(null)
     }
-  }, [conversationId, draftCommentByPostId, sendingCommentPostId, user?.id, quoteToComment])
+  }, [conversationId, draftCommentByPostId, sendingCommentPostId, user?.id, quoteToComment, isChannelMember])
 
   const toggleReaction = useCallback(
     async (targetMessageId: string, emoji: ReactionEmoji) => {
       const cid = conversationId.trim()
       const uid = user?.id
-      if (viewerOnly || !cid || !uid || !isAllowedReactionEmoji(emoji)) return
+      if (!isChannelMember || !cid || !uid || !isAllowedReactionEmoji(emoji)) return
       const opKey = `${cid}::${targetMessageId}::${emoji}`
       if (reactionOpInFlightRef.current.has(opKey)) return
       reactionOpInFlightRef.current.add(opKey)
@@ -651,7 +651,7 @@ export function ChannelThreadPane({
         reactionOpInFlightRef.current.delete(opKey)
       }
     },
-    [conversationId, toast, user, removeReactionMessageEverywhere, viewerOnly],
+    [conversationId, toast, user, removeReactionMessageEverywhere, isChannelMember],
   )
 
   const onReactionChipTap = useCallback(
@@ -1144,16 +1144,19 @@ export function ChannelThreadPane({
         currentUserId={user?.id ?? null}
         onReactionChipTap={onReactionChipTap}
         quickReactEnabled={Boolean(
-          user?.id && !m.id.startsWith('local-') && (m.kind === 'text' || m.kind === 'image'),
+          isChannelMember &&
+            user?.id &&
+            !m.id.startsWith('local-') &&
+            (m.kind === 'text' || m.kind === 'image'),
         )}
         isMobileMessenger={isMobileMessenger}
         onQuickHeart={() => void toggleReaction(m.id, QUICK_REACTION_EMOJI)}
-        swipeReplyEnabled={isMobileMessenger}
+        swipeReplyEnabled={isMobileMessenger && isChannelMember}
         onSwipeReply={() => setQuoteToComment(m)}
         menuOpen={commentMenu?.message.id === m.id}
         onMenuButtonClick={(e) => {
           e.stopPropagation()
-          if (viewerOnly || m.id.startsWith('local-')) return
+          if (!isChannelMember || m.id.startsWith('local-')) return
           const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
           setCommentMenu((cur) => {
             if (cur?.message.id === m.id) return null
@@ -1162,7 +1165,7 @@ export function ChannelThreadPane({
         }}
         onBubbleContextMenu={(e) => {
           e.preventDefault()
-          if (viewerOnly || m.id.startsWith('local-')) return
+          if (!isChannelMember || m.id.startsWith('local-')) return
           setCommentMenu((cur) => {
             if (cur?.message.id === m.id) return null
             return { message: m, anchor: { left: e.clientX, top: e.clientY, right: e.clientX, bottom: e.clientY } }
@@ -1188,7 +1191,7 @@ export function ChannelThreadPane({
         }}
         onContextMenu={(e) => {
           e.preventDefault()
-          if (viewerOnly) return
+          if (!isChannelMember) return
           if (p.id.startsWith('local-')) return
           setReactionPick({
             targetId: p.id,
@@ -1197,7 +1200,7 @@ export function ChannelThreadPane({
         }}
       >
         <DoubleTapHeartSurface
-          enabled={Boolean(!viewerOnly && user?.id && !p.id.startsWith('local-'))}
+          enabled={Boolean(isChannelMember && user?.id && !p.id.startsWith('local-'))}
           isMobileViewport={isMobileMessenger}
           onHeart={() => void toggleReaction(p.id, QUICK_REACTION_EMOJI)}
         >
@@ -1245,7 +1248,7 @@ export function ChannelThreadPane({
                     }
                   })
                 }}
-                disabled={viewerOnly || p.id.startsWith('local-')}
+                disabled={p.id.startsWith('local-')}
               >
                 <span className="dashboard-messenger__channel-post-more-icon" aria-hidden>
                   ⋮
@@ -1480,7 +1483,7 @@ export function ChannelThreadPane({
           </div>
         </div>
 
-        {!viewerOnly ? (
+        {isChannelMember ? (
           <div className="dashboard-messenger__composer" role="region" aria-label="Новый комментарий">
             {quoteToComment && quoteToComment.replyToMessageId?.trim() === commentsModalPostId ? (
               <div className="dashboard-messenger__composer-reply">

@@ -185,8 +185,15 @@ export function DashboardMessengerPage() {
   const [inviteLoading, setInviteLoading] = useState(false)
   const [inviteError, setInviteError] = useState<string | null>(null)
   const [inviteJoinBusy, setInviteJoinBusy] = useState(false)
-  /** Мобильный режим «только дерево чатов» — не подставлять chat в URL и не грузить тред */
-  const listOnlyMobile = isMobileMessenger && searchParams.get('view') === 'list'
+  /** Есть цель для треда (deep link): при view=list всё равно показываем чат, а не только дерево. */
+  const hasMobileOpenTarget =
+    Boolean(inviteToken.trim()) ||
+    Boolean(searchConversationId.trim()) ||
+    Boolean(routeConversationId.trim()) ||
+    Boolean(targetUserId.trim())
+  /** Мобильный режим «только дерево» — только если явно view=list и в URL нет chat/invite/with/сегмента диалога */
+  const listOnlyMobile =
+    isMobileMessenger && searchParams.get('view') === 'list' && !hasMobileOpenTarget
   const conversationId = inviteToken && invitePreview?.id ? invitePreview.id : urlConversationId
 
   const [pushUi, setPushUi] = useState<'absent' | 'unconfigured' | 'off' | 'on' | 'denied'>('absent')
@@ -302,12 +309,13 @@ export function DashboardMessengerPage() {
     }
   }, [inviteToken, user?.id])
 
+  /** Участник открыл invite-ссылку: сразу ?chat=id (без /messenger/:id → ?chat), иначе на мобилке гонка — пустой URL и только дерево. */
   useEffect(() => {
     const cid = invitePreview?.id?.trim()
     const token = inviteToken.trim()
     if (!token || !cid) return
     if (items.some((i) => i.id === cid)) {
-      navigate(`/dashboard/messenger/${encodeURIComponent(cid)}`, { replace: true })
+      navigate(`/dashboard/messenger?chat=${encodeURIComponent(cid)}`, { replace: true })
     }
   }, [invitePreview?.id, inviteToken, items, navigate])
 
@@ -635,8 +643,15 @@ export function DashboardMessengerPage() {
         const hasChatBoot = Boolean(spBoot.get('chat')?.trim())
         const hasWithBoot = Boolean(spBoot.get('with')?.trim())
         const hasInviteBoot = Boolean(spBoot.get('invite')?.trim())
-        // Не подменять URL на ?view=list, если открыта ссылка-приглашение — иначе теряется invite.
-        if (!hasChatBoot && !hasWithBoot && !hasInviteBoot && spBoot.get('view') !== 'list') {
+        const hasRouteConversationBoot = Boolean(routeConversationId.trim())
+        // Не уводить на ?view=list, если уже есть цель: invite, chat, with или /messenger/:id в пути.
+        if (
+          !hasChatBoot &&
+          !hasWithBoot &&
+          !hasInviteBoot &&
+          !hasRouteConversationBoot &&
+          spBoot.get('view') !== 'list'
+        ) {
           navigate('/dashboard/messenger?view=list', { replace: true })
           if (active) setLoading(false)
           return
@@ -644,7 +659,10 @@ export function DashboardMessengerPage() {
       }
 
       const treeOnlyReturn =
-        isMobileMessenger && searchParams.get('view') === 'list' && listLoadedOnceRef.current
+        isMobileMessenger &&
+        searchParams.get('view') === 'list' &&
+        listLoadedOnceRef.current &&
+        !hasMobileOpenTarget
       if (treeOnlyReturn) {
         if (active) {
           setLoading(false)
@@ -719,11 +737,13 @@ export function DashboardMessengerPage() {
       active = false
     }
   }, [
+    hasMobileOpenTarget,
     inviteError,
     invitePreview?.id,
     inviteToken,
     isMobileMessenger,
     navigate,
+    routeConversationId,
     searchConversationId,
     searchParams,
     targetTitle,
@@ -1082,8 +1102,14 @@ export function DashboardMessengerPage() {
     return () => ro.disconnect()
   }, [activeConversationId, listOnlyMobile, threadLoading])
 
-  const showListPane = !isMobileMessenger || !activeConversationId
-  const showThreadPane = !isMobileMessenger || Boolean(activeConversationId)
+  /** На мобильных список на весь экран только без открытого чата и без deep link (?chat / invite / with / :id). */
+  const showListPane =
+    !isMobileMessenger ||
+    (!(activeConversationId || '').trim() && !hasMobileOpenTarget)
+  const showThreadPane =
+    !isMobileMessenger ||
+    Boolean((activeConversationId || '').trim()) ||
+    hasMobileOpenTarget
 
   /** Новые сообщения в открытом треде без полной перезагрузки списка */
   useEffect(() => {
@@ -3195,7 +3221,12 @@ export function DashboardMessengerPage() {
               <div
                 className={`dashboard-messenger__thread${isMobileMessenger ? ' dashboard-messenger__thread--mobile' : ''}`}
               >
-                {loading && !threadHeadConversation ? (
+                {(loading ||
+                  (Boolean(inviteToken.trim()) &&
+                    inviteLoading &&
+                    !invitePreview?.id &&
+                    !inviteError)) &&
+                !threadHeadConversation ? (
                   <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…">
                     <BrandLogoLoader size={56} />
                   </div>
