@@ -5840,6 +5840,17 @@ span.dashboard-messenger__thread-avatar {
   min-width: 0;
 }
 
+/* Личка: удалённое сообщение — одна строка без «пузыря». */
+.dashboard-messenger__dm-deleted-plain {
+  justify-self: center;
+  max-width: 100%;
+  padding: 4px 8px;
+  font-size: var(--dm-meta-font, 12px);
+  color: var(--text-dim);
+  text-align: center;
+  line-height: 1.35;
+}
+
 .dashboard-messenger__thread-loading {
   min-height: 180px;
   display: flex;

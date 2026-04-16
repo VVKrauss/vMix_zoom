@@ -45,6 +45,7 @@ import {
   toggleDirectMessageReaction,
   uploadMessengerImage,
   getMessengerImageSignedUrl,
+  isDmSoftDeletedStub,
 } from '../lib/messenger'
 import {
   listMessengerConversations,
@@ -225,6 +226,8 @@ const QUICK_REACTION_EMOJI: ReactionEmoji = '❤️'
 type MessengerDmBubbleProps = {
   message: DirectMessage
   isOwn: boolean
+  /** Личный диалог: не показывать имена/аватары в шапке бабла и в цитате (ни у собеседника, ни у себя). */
+  dmMutePeerLabels?: boolean
   reactions: DirectMessage[]
   formatDt: (iso: string) => string
   replyPreview: MessengerReplyPreview | null
@@ -252,6 +255,7 @@ type MessengerDmBubbleProps = {
 function MessengerDmBubble({
   message,
   isOwn,
+  dmMutePeerLabels,
   reactions,
   formatDt,
   replyPreview,
@@ -339,21 +343,25 @@ function MessengerDmBubble({
     [message, onSwipeReply],
   )
 
+  const showPeerInReplyQuote = !dmMutePeerLabels
+
   const replyQuoteInner =
     replyPreview ? (
       <span className="dashboard-messenger__reply-quote-inner">
-        {replyPreview.quotedAvatarUrl ? (
-          <img
-            src={replyPreview.quotedAvatarUrl}
-            alt=""
-            className="dashboard-messenger__reply-quote-avatar"
-            draggable={false}
-          />
-        ) : (
-          <span className="dashboard-messenger__reply-quote-avatar dashboard-messenger__reply-quote-avatar--fallback" aria-hidden>
-            {(replyPreview.quotedName ?? '?').trim().slice(0, 1).toUpperCase() || '?'}
-          </span>
-        )}
+        {showPeerInReplyQuote ? (
+          replyPreview.quotedAvatarUrl ? (
+            <img
+              src={replyPreview.quotedAvatarUrl}
+              alt=""
+              className="dashboard-messenger__reply-quote-avatar"
+              draggable={false}
+            />
+          ) : (
+            <span className="dashboard-messenger__reply-quote-avatar dashboard-messenger__reply-quote-avatar--fallback" aria-hidden>
+              {(replyPreview.quotedName ?? '?').trim().slice(0, 1).toUpperCase() || '?'}
+            </span>
+          )
+        ) : null}
         {replyPreview.kind === 'image' && replyPreview.thumbPath ? (
           <MessengerReplyMiniThumb thumbPath={replyPreview.thumbPath} onThumbLayout={onReplyThumbLayout} />
         ) : null}
@@ -362,9 +370,25 @@ function MessengerDmBubble({
     ) : null
 
   const replyQuoteAria =
-    replyPreview?.quotedName?.trim()
-      ? `К цитируемому сообщению: ${replyPreview.quotedName.trim()}`
-      : 'К цитируемому сообщению'
+    dmMutePeerLabels || !replyPreview?.quotedName?.trim()
+      ? 'К цитируемому сообщению'
+      : `К цитируемому сообщению: ${replyPreview.quotedName.trim()}`
+
+  const showAuthorInMeta = !dmMutePeerLabels
+
+  if (isDmSoftDeletedStub(message)) {
+    return (
+      <div
+        ref={(el) => {
+          bindMessageAnchor(message.id, el)
+        }}
+        className="dashboard-messenger__dm-deleted-plain"
+        aria-label="Сообщение удалено"
+      >
+        сообщение удалено
+      </div>
+    )
+  }
 
   return (
     <article
@@ -425,7 +449,9 @@ function MessengerDmBubble({
     >
       <div className="dashboard-messenger__message-meta">
         <div className="dashboard-messenger__message-meta-main">
-          <span className="dashboard-messenger__message-author">{message.senderNameSnapshot}</span>
+          {showAuthorInMeta ? (
+            <span className="dashboard-messenger__message-author">{message.senderNameSnapshot}</span>
+          ) : null}
           <time dateTime={message.createdAt}>{formatDt(message.createdAt)}</time>
           {message.editedAt ? <span className="dashboard-messenger__edited">изм.</span> : null}
         </div>
@@ -3193,6 +3219,7 @@ export function DashboardMessengerPage() {
                                   key={message.id}
                                   message={message}
                                   isOwn={isOwn}
+                                  dmMutePeerLabels={threadHeadConversation?.kind === 'direct'}
                                   reactions={reactions}
                                   formatDt={formatDateTime}
                                   replyPreview={replyPreview}

@@ -47,6 +47,8 @@ export type DirectMessage = {
     link?: { url: string; title?: string; description?: string; image?: string; siteName?: string }
     /** Редактор поста канала v1 */
     postDraft?: PostDraftV1
+    /** Личка: soft-delete заменил сообщение системной заглушкой */
+    deleted?: boolean
   } | null
 }
 
@@ -92,13 +94,23 @@ function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
   const pd = o.postDraft
   if (isPostDraftV1(pd)) postDraft = pd
 
-  if (!react && !image && !linkMeta && !postDraft) return null
+  const deleted = o.deleted === true
+
+  if (!react && !image && !linkMeta && !postDraft && !deleted) return null
   return {
+    ...(deleted ? { deleted: true } : {}),
     ...(react ? { react_to: react } : {}),
     ...(image ? { image } : {}),
     ...(linkMeta ? { link: linkMeta } : {}),
     ...(postDraft ? { postDraft } : {}),
   }
+}
+
+/** Личка: сообщение заменено заглушкой после удаления автором. */
+export function isDmSoftDeletedStub(msg: Pick<DirectMessage, 'kind' | 'body' | 'meta'>): boolean {
+  if (msg.kind !== 'system') return false
+  if (msg.meta?.deleted === true) return true
+  return /^сообщение\s+удалено$/i.test(msg.body.trim())
 }
 
 /** Строка из PostgREST / Realtime (snake_case). */
