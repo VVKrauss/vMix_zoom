@@ -61,6 +61,8 @@ import {
   DM_PAGE_SIZE,
   conversationInitial,
   copyTextToClipboard,
+  extractClipboardImageFile,
+  readClipboardImageFileFromClipboardApi,
   formatDateTime,
   formatMessengerListRowTime,
   itemMatchesMessengerListSearch,
@@ -1642,29 +1644,27 @@ export function DashboardMessengerPage() {
   const onComposerPaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       if (threadLoading || photoUploading) return
-      const dt = e.clipboardData
-      if (!dt?.items || dt.items.length === 0) return
-      let file: File | null = null
-      for (const it of Array.from(dt.items)) {
-        if (it.kind !== 'file') continue
-        if (!it.type || !it.type.startsWith('image/')) continue
-        const f = it.getAsFile()
-        if (f) {
-          file = f
-          break
-        }
-      }
+      const file = extractClipboardImageFile(e.clipboardData)
       if (!file) return
-      const okTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
-      if (file.type && !okTypes.has(file.type)) {
-        toast.push({ tone: 'warning', message: 'Формат изображения не поддерживается.', ms: 3200 })
-        return
-      }
       e.preventDefault()
       void sendPhotoFile(file)
     },
-    [photoUploading, sendPhotoFile, threadLoading, toast],
+    [photoUploading, sendPhotoFile, threadLoading],
   )
+
+  const onMobileClipboardImage = useCallback(async () => {
+    if (threadLoading || photoUploading || editingMessageId) return
+    const file = await readClipboardImageFileFromClipboardApi()
+    if (!file) {
+      toast.push({
+        tone: 'info',
+        message: 'В буфере нет изображения или браузер не дал доступ. Разрешите вставку или выберите файл.',
+        ms: 3800,
+      })
+      return
+    }
+    void sendPhotoFile(file)
+  }, [editingMessageId, photoUploading, sendPhotoFile, threadLoading, toast])
 
   const [conversationKindFilter, setConversationKindFilter] = useState<
     'all' | MessengerConversationKind
@@ -2910,6 +2910,18 @@ export function DashboardMessengerPage() {
             >
               <AttachmentIcon />
             </button>
+            {isMobileMessenger ? (
+              <button
+                type="button"
+                className="dashboard-messenger__composer-icon-btn"
+                title="Вставить фото из буфера"
+                aria-label="Вставить фото из буфера"
+                disabled={threadLoading || photoUploading || Boolean(editingMessageId)}
+                onClick={() => void onMobileClipboardImage()}
+              >
+                <FiRrIcon name="clipboard" />
+              </button>
+            ) : null}
             <input
               ref={photoInputRef}
               type="file"

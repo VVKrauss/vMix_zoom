@@ -158,3 +158,71 @@ export function messengerStaffRoleShortLabel(role: string): string {
       return 'участник'
   }
 }
+
+const MESSENGER_PASTE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+
+function coerceClipboardFileToImage(f: File): File | null {
+  if (!f?.size) return null
+  const t = (f.type || '').toLowerCase()
+  if (MESSENGER_PASTE_IMAGE_TYPES.has(t)) return f
+  if (!t) {
+    const next = new File([f], 'clipboard.png', { type: 'image/png' })
+    return MESSENGER_PASTE_IMAGE_TYPES.has(next.type) ? next : null
+  }
+  return null
+}
+
+/**
+ * Файл картинки из события paste (DataTransfer).
+ * Учитывает clipboardData.files (Android/Chrome), items + getAsFile (в т.ч. Safari iOS).
+ */
+export function extractClipboardImageFile(dt: DataTransfer | null): File | null {
+  if (!dt) return null
+
+  const fromFileList = (list: FileList | null | undefined): File | null => {
+    if (!list?.length) return null
+    return coerceClipboardFileToImage(list[0]!)
+  }
+
+  const direct = fromFileList(dt.files)
+  if (direct) return direct
+
+  const items = dt.items
+  if (!items?.length) return null
+
+  for (const it of Array.from(items)) {
+    const t = (it.type || '').toLowerCase()
+    if (it.kind === 'file' || t.startsWith('image/')) {
+      if (t && !t.startsWith('image/')) continue
+      const f = it.getAsFile()
+      const coerced = f ? coerceClipboardFileToImage(f) : null
+      if (coerced) return coerced
+    }
+  }
+  return null
+}
+
+/**
+ * Чтение картинки через Clipboard API (удобно на мобильных, когда paste в textarea не отдаёт файлы).
+ * Нужен жест пользователя (кнопка). Secure context.
+ */
+export async function readClipboardImageFileFromClipboardApi(): Promise<File | null> {
+  if (typeof navigator === 'undefined' || !navigator.clipboard?.read) return null
+  try {
+    const items = await navigator.clipboard.read()
+    for (const item of items) {
+      for (const type of item.types) {
+        if (!type.toLowerCase().startsWith('image/')) continue
+        const blob = await item.getType(type)
+        if (!blob?.size) continue
+        const ext = type.split('/')[1]?.split('+')[0] || 'png'
+        const safeExt = /^[a-z0-9]+$/i.test(ext) ? ext : 'png'
+        const f = new File([blob], `clipboard.${safeExt}`, { type })
+        return coerceClipboardFileToImage(f)
+      }
+    }
+  } catch {
+    return null
+  }
+  return null
+}

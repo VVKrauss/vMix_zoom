@@ -21,7 +21,8 @@ import {
 } from '../../lib/groups'
 import type { ReactionEmoji } from '../../types/roomComms'
 import { MessengerMessageMenuPopover } from '../MessengerMessageMenuPopover'
-import { AttachmentIcon } from '../icons'
+import { AttachmentIcon, FiRrIcon } from '../icons'
+import { extractClipboardImageFile, readClipboardImageFileFromClipboardApi } from '../../lib/messengerDashboardUtils'
 import { ThreadMessageBubble } from './ThreadMessageBubble'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
 
@@ -399,29 +400,27 @@ export function GroupThreadPane({
   const onComposerPaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       if (threadLoading || photoUploading) return
-      const dt = e.clipboardData
-      if (!dt?.items || dt.items.length === 0) return
-      let file: File | null = null
-      for (const it of Array.from(dt.items)) {
-        if (it.kind !== 'file') continue
-        if (!it.type || !it.type.startsWith('image/')) continue
-        const f = it.getAsFile()
-        if (f) {
-          file = f
-          break
-        }
-      }
+      const file = extractClipboardImageFile(e.clipboardData)
       if (!file) return
-      const okTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
-      if (file.type && !okTypes.has(file.type)) {
-        toast.push({ tone: 'warning', message: 'Формат изображения не поддерживается.', ms: 3200 })
-        return
-      }
       e.preventDefault()
       void sendPhotoFile(file)
     },
-    [photoUploading, sendPhotoFile, threadLoading, toast],
+    [photoUploading, sendPhotoFile, threadLoading],
   )
+
+  const onMobileClipboardImage = useCallback(async () => {
+    if (threadLoading || photoUploading || viewerOnly) return
+    const file = await readClipboardImageFileFromClipboardApi()
+    if (!file) {
+      toast.push({
+        tone: 'info',
+        message: 'В буфере нет изображения или браузер не дал доступ. Разрешите вставку или выберите файл.',
+        ms: 3800,
+      })
+      return
+    }
+    void sendPhotoFile(file)
+  }, [photoUploading, sendPhotoFile, threadLoading, toast, viewerOnly])
 
   useLayoutEffect(() => {
     const el = messageMenuWrapRef.current
@@ -743,6 +742,18 @@ export function GroupThreadPane({
                 >
                   <AttachmentIcon />
                 </button>
+                {isMobileMessenger ? (
+                  <button
+                    type="button"
+                    className="dashboard-messenger__composer-icon-btn"
+                    title="Вставить фото из буфера"
+                    aria-label="Вставить фото из буфера"
+                    disabled={threadLoading || photoUploading || viewerOnly}
+                    onClick={() => void onMobileClipboardImage()}
+                  >
+                    <FiRrIcon name="clipboard" />
+                  </button>
+                ) : null}
                 <input
                   ref={photoInputRef}
                   type="file"
