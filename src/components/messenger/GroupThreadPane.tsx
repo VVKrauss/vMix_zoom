@@ -96,6 +96,37 @@ export function GroupThreadPane({
   cidRef.current = conversationId
   const reactionOpInFlightRef = useRef<Set<string>>(new Set())
 
+  const [myGroupMemberRole, setMyGroupMemberRole] = useState<string | null>(null)
+
+  const hasAccess = myGroupMemberRole !== null
+
+  useEffect(() => {
+    let cancelled = false
+    const cid = conversationId.trim()
+    if (!user?.id || !cid) {
+      setMyGroupMemberRole(null)
+      return
+    }
+    void supabase
+      .from('chat_conversation_members')
+      .select('role')
+      .eq('conversation_id', cid)
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error || !data) {
+          setMyGroupMemberRole(null)
+          return
+        }
+        const r = typeof (data as { role?: unknown }).role === 'string' ? (data as { role: string }).role.trim() : null
+        setMyGroupMemberRole(r)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [conversationId, user?.id])
+
   const removeMessageById = useCallback((messageId: string) => {
     const id = messageId.trim()
     if (!id) return
@@ -118,7 +149,7 @@ export function GroupThreadPane({
   useEffect(() => {
     let active = true
     const cid = conversationId.trim()
-    if (!user?.id || !cid) return
+    if (!user?.id || !cid || !hasAccess) return
     setThreadLoading(true)
     setError(null)
     setMessages([])
@@ -137,11 +168,11 @@ export function GroupThreadPane({
     return () => {
       active = false
     }
-  }, [conversationId, user?.id, viewerOnly])
+  }, [conversationId, user?.id, hasAccess, viewerOnly])
 
   useEffect(() => {
     const cid = conversationId.trim()
-    if (!cid || !user?.id) return
+    if (!cid || !user?.id || !hasAccess) return
     const channel = supabase.channel(`group-thread:${cid}`)
     const filter = `conversation_id=eq.${cid}`
 
@@ -375,7 +406,9 @@ export function GroupThreadPane({
       {error ? <p className="join-error">{error}</p> : null}
 
       <div className="dashboard-messenger__messages-scroll" role="region" aria-label="Сообщения группы">
-        {messages.filter((m) => m.kind !== 'reaction').length === 0 ? (
+        {!hasAccess ? (
+          <div className="dashboard-chats-empty">Группа закрыта или у вас нет доступа.</div>
+        ) : messages.filter((m) => m.kind !== 'reaction').length === 0 ? (
           <div className="dashboard-chats-empty">Пока нет сообщений.</div>
         ) : (
           messages.map((m) => {
