@@ -4,7 +4,6 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useUserPeek } from '../context/UserPeekContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
-import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import {
   MESSENGER_BG_MESSAGE_EVENT,
   type MessengerBgMessageDetail,
@@ -35,7 +34,6 @@ import {
   ensureSelfDirectConversation,
   getDirectConversationForUser,
   isDirectReactionEmoji,
-  listDirectConversationsForUser,
   listDirectMessagesPage,
   mapDirectMessageFromRow,
   deleteDirectMessage,
@@ -94,7 +92,6 @@ import {
   BellIcon,
   BellOffIcon,
   FiRrIcon,
-  ChatBubbleIcon,
   ChevronLeftIcon,
   DashboardIcon,
   HomeIcon,
@@ -325,7 +322,6 @@ function MessengerDmBubble({
       onForwardQuoteNavigate,
   )
   const replyNavOk = Boolean(!forwardStrip && replyScrollTargetId && onReplyQuoteNavigate)
-  const quoteNavigable = Boolean(forwardNavOk || replyNavOk)
 
   const canSwipeReply =
     Boolean(swipeReplyEnabled && onSwipeReply) &&
@@ -509,18 +505,24 @@ function MessengerDmBubble({
         </button>
       </div>
       {quotePreview ? (
-        quoteNavigable ? (
+        forwardNavOk ? (
+          <div className="dashboard-messenger__reply-quote" role="note">
+            {replyQuoteInner}
+            <button
+              type="button"
+              className="dashboard-messenger__reply-quote-button"
+              aria-label={replyQuoteAria}
+              onClick={() => onForwardQuoteNavigate?.(message.meta!.forward!)}
+            >
+              Прочитать
+            </button>
+          </div>
+        ) : replyNavOk ? (
           <button
             type="button"
             className="dashboard-messenger__reply-quote dashboard-messenger__reply-quote--action"
             aria-label={replyQuoteAria}
-            onClick={() => {
-              if (forwardNavOk) {
-                onForwardQuoteNavigate?.(message.meta!.forward!)
-                return
-              }
-              onReplyQuoteNavigate?.(replyScrollTargetId!)
-            }}
+            onClick={() => onReplyQuoteNavigate?.(replyScrollTargetId!)}
           >
             {replyQuoteInner}
           </button>
@@ -608,7 +610,6 @@ export function DashboardMessengerPage() {
   const { profile } = useProfile()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const isMobileMessenger = useMediaQuery('(max-width: 900px)')
-  const headerMessengerUnread = useMessengerUnreadCount()
   const [soundEnabled, setSoundEnabled] = useState(() => isMessengerSoundEnabled())
   const [messengerFontPreset, setMessengerFontPresetState] = useState<MessengerFontPreset>(() =>
     getMessengerFontPreset(),

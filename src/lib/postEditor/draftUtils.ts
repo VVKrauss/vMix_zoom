@@ -1,4 +1,4 @@
-import type { PostBlock, PostDraftV1, PostMaterial } from './types'
+import type { PostBlock, PostDraftV1 } from './types'
 import { newBlockId } from './types'
 
 export function createEmptyDraft(): PostDraftV1 {

@@ -24,7 +24,6 @@ import {
   CamIcon,
   CamOffIcon,
   InviteIcon,
-  EndCallIcon,
   FiRrIcon,
   ChatBubbleIcon,
 } from './icons'
@@ -125,11 +124,11 @@ interface Props {
   roomChatVisibility?: SpaceRoomChatVisibility
   onRoomChatVisibilityChange?: (v: SpaceRoomChatVisibility) => void
   showRoomChatPolicySettings?: boolean
+  /** Ссылка «Админка» в мобильном листе (superadmin / platform_admin / support_admin). */
+  showAdminPanelLink?: boolean
   /** Режим доступа в комнату (для хоста). */
   roomAccessMode?: SpaceRoomAccessMode
   onRoomAccessModeChange?: (v: SpaceRoomAccessMode) => void
-  /** Ссылка «Админка» в мобильном листе (superadmin / platform_admin / support_admin). */
-  showAdminPanelLink?: boolean
   /** Камера в плитках: true — без полей (cover), false — весь кадр (contain). */
   hideVideoLetterboxing: boolean
   onHideVideoLetterboxingChange: (value: boolean) => void
@@ -282,7 +281,6 @@ export function ControlsBar({
   showRoomChatPolicySettings = false,
   roomAccessMode,
   onRoomAccessModeChange,
-  showAdminPanelLink = false,
   hideVideoLetterboxing,
   onHideVideoLetterboxingChange,
   canManageVmixProgramIngress = false,

@@ -6461,6 +6461,30 @@ button.dashboard-messenger__reply-quote--action:focus-visible {
   min-width: 0;
 }
 
+.dashboard-messenger__reply-quote-button {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.dashboard-messenger__reply-quote-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(159, 214, 255, 0.35);
+}
+
+.dashboard-messenger__reply-quote-button:focus-visible {
+  outline: 2px solid rgba(159, 214, 255, 0.45);
+  outline-offset: 2px;
+}
+
 .dashboard-messenger__reply-quote-avatar {
   width: 22px;
   height: 22px;

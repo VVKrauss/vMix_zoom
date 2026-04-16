@@ -19,7 +19,6 @@ import {
     FiRrIcon,
   } from './icons'
 import { useAuth } from '../context/AuthContext'
-import { useUserPeek } from '../context/UserPeekContext'
 import { shouldClosePopoverOnOutsidePointer } from '../utils/popoverOutsideClick'
 import { useAudioOutputs } from '../hooks/useAudioOutputs'
 import { useDevices } from '../hooks/useDevices'
@@ -805,7 +804,6 @@ export function RoomPage({
 
   const avatarUrl = user?.user_metadata?.avatar_url as string | undefined
   const messengerUnreadCount = useMessengerUnreadCount()
-  const { openUserPeek } = useUserPeek()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
   const [roomMobileChromeMenuOpen, setRoomMobileChromeMenuOpen] = useState(false)
