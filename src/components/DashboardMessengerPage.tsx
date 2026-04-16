@@ -99,6 +99,7 @@ import type { ReactionEmoji } from '../types/roomComms'
 import { DirectThreadPane } from './messenger/DirectThreadPane'
 import { GroupThreadPane } from './messenger/GroupThreadPane'
 import { ChannelThreadPane } from './messenger/ChannelThreadPane'
+import { DoubleTapHeartSurface } from './messenger/DoubleTapHeartSurface'
 
 function formatDateTime(value: string): string {
   const dt = new Date(value)
@@ -218,6 +219,9 @@ const SWIPE_REPLY_DECIDE_PX = 26
 const SWIPE_REPLY_MAX_SHIFT_PX = 80
 const LIGHTBOX_SWIPE_CLOSE_PX = 52
 
+/** Двойной тап / двойной клик по пузырю: «лайк», не 👍. */
+const QUICK_REACTION_EMOJI: ReactionEmoji = '❤️'
+
 type MessengerDmBubbleProps = {
   message: DirectMessage
   isOwn: boolean
@@ -239,6 +243,10 @@ type MessengerDmBubbleProps = {
   onOpenImageLightbox: (imageUrl: string) => void
   onInlineImageLayout?: () => void
   onReplyThumbLayout?: () => void
+  /** Двойной тап по телу сообщения: только добавить лайк (без снятия). */
+  quickReactEnabled?: boolean
+  isMobileMessenger?: boolean
+  onQuickHeart?: () => void
 }
 
 function MessengerDmBubble({
@@ -260,6 +268,9 @@ function MessengerDmBubble({
   onOpenImageLightbox,
   onInlineImageLayout,
   onReplyThumbLayout,
+  quickReactEnabled,
+  isMobileMessenger,
+  onQuickHeart,
 }: MessengerDmBubbleProps) {
   const [swipeTx, setSwipeTx] = useState(0)
   const swipeRef = useRef<{
@@ -445,13 +456,18 @@ function MessengerDmBubble({
           </div>
         )
       ) : null}
-      <div className="dashboard-messenger__message-body">
+      <DoubleTapHeartSurface
+        enabled={Boolean(quickReactEnabled && onQuickHeart)}
+        isMobileViewport={Boolean(isMobileMessenger)}
+        onHeart={() => onQuickHeart?.()}
+        className="dashboard-messenger__message-body"
+      >
         <MessengerBubbleBody
           message={message}
           onOpenImageLightbox={onOpenImageLightbox}
           onInlineImageLayout={onInlineImageLayout}
         />
-      </div>
+      </DoubleTapHeartSurface>
       {reactionCounts.size > 0 ? (
         <div
           className="dashboard-messenger__message-reactions"
@@ -751,6 +767,7 @@ export function DashboardMessengerPage() {
   itemsRef.current = items
   const messagesRef = useRef(messages)
   messagesRef.current = messages
+  const reactionOpInFlightRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     let active = true
@@ -1779,67 +1796,74 @@ export function DashboardMessengerPage() {
     async (targetMessageId: string, emoji: ReactionEmoji) => {
       const convId = activeConversationId.trim()
       if (!user?.id || !convId || threadLoading) return
+      const opKey = `${convId}::${targetMessageId}::${emoji}`
+      if (reactionOpInFlightRef.current.has(opKey)) return
+      reactionOpInFlightRef.current.add(opKey)
 
       const snapshot = messagesRef.current
       const sortedBefore = [...snapshot].sort(sortDirectMessagesChrono)
       const tailIdBefore = sortedBefore[sortedBefore.length - 1]?.id ?? null
 
-      const res = await toggleDirectMessageReaction(convId, targetMessageId, emoji)
-      if (conversationIdRef.current.trim() !== convId) return
+      try {
+        const res = await toggleDirectMessageReaction(convId, targetMessageId, emoji)
+        if (conversationIdRef.current.trim() !== convId) return
 
-      if (res.error) {
-        setError(res.error)
-        return
-      }
-      const payload = res.data
-      if (!payload) return
-
-      if (payload.action === 'removed') {
-        const removedId = payload.messageId
-        reactionDeleteSidebarSyncedRef.current.add(removedId)
-        setMessages((prev) => prev.filter((m) => m.id !== removedId))
-        const touchedLatest = removedId === tailIdBefore
-        if (touchedLatest) {
-          const next = snapshot.filter((m) => m.id !== removedId)
-          const sorted = [...next].sort(sortDirectMessagesChrono)
-          const tailAny = sorted[sorted.length - 1] ?? null
-          const tailPreview = lastNonReactionBody(next)
-          syncThreadListAfterReaction(convId, {
-            messageCountDelta: -1,
-            touchTail: true,
-            tailAt: tailAny?.createdAt ?? null,
-            tailPreview,
-          })
-        } else {
-          syncThreadListAfterReaction(convId, { messageCountDelta: -1, touchTail: false })
+        if (res.error) {
+          setError(res.error)
+          return
         }
-        return
-      }
+        const payload = res.data
+        if (!payload) return
 
-      const createdAt = payload.createdAt ?? new Date().toISOString()
-      const snap = profile?.display_name?.trim() || 'Вы'
-      const newRow: DirectMessage = {
-        id: payload.messageId,
-        senderUserId: user.id,
-        senderNameSnapshot: snap,
-        kind: 'reaction',
-        body: emoji,
-        createdAt,
-        meta: { react_to: targetMessageId },
-      }
+        if (payload.action === 'removed') {
+          const removedId = payload.messageId
+          reactionDeleteSidebarSyncedRef.current.add(removedId)
+          setMessages((prev) => prev.filter((m) => m.id !== removedId))
+          const touchedLatest = removedId === tailIdBefore
+          if (touchedLatest) {
+            const next = snapshot.filter((m) => m.id !== removedId)
+            const sorted = [...next].sort(sortDirectMessagesChrono)
+            const tailAny = sorted[sorted.length - 1] ?? null
+            const tailPreview = lastNonReactionBody(next)
+            syncThreadListAfterReaction(convId, {
+              messageCountDelta: -1,
+              touchTail: true,
+              tailAt: tailAny?.createdAt ?? null,
+              tailPreview,
+            })
+          } else {
+            syncThreadListAfterReaction(convId, { messageCountDelta: -1, touchTail: false })
+          }
+          return
+        }
 
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === newRow.id)) return prev
-        return [...prev, newRow].sort(sortDirectMessagesChrono)
-      })
-      const mergedForPreview = [...snapshot, newRow]
-      const textPreview = lastNonReactionBody(mergedForPreview)
-      syncThreadListAfterReaction(convId, {
-        messageCountDelta: 1,
-        touchTail: true,
-        tailAt: createdAt,
-        tailPreview: textPreview ?? null,
-      })
+        const createdAt = payload.createdAt ?? new Date().toISOString()
+        const snap = profile?.display_name?.trim() || 'Вы'
+        const newRow: DirectMessage = {
+          id: payload.messageId,
+          senderUserId: user.id,
+          senderNameSnapshot: snap,
+          kind: 'reaction',
+          body: emoji,
+          createdAt,
+          meta: { react_to: targetMessageId },
+        }
+
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === newRow.id)) return prev
+          return [...prev, newRow].sort(sortDirectMessagesChrono)
+        })
+        const mergedForPreview = [...snapshot, newRow]
+        const textPreview = lastNonReactionBody(mergedForPreview)
+        syncThreadListAfterReaction(convId, {
+          messageCountDelta: 1,
+          touchTail: true,
+          tailAt: createdAt,
+          tailPreview: textPreview ?? null,
+        })
+      } finally {
+        reactionOpInFlightRef.current.delete(opKey)
+      }
     },
     [activeConversationId, profile?.display_name, syncThreadListAfterReaction, threadLoading, user?.id],
   )
@@ -2261,6 +2285,22 @@ export function DashboardMessengerPage() {
     setConversationInfoError(null)
     setConversationInfoLogoFile(null)
   }, [])
+
+  const cancelConversationInfoEdit = useCallback(() => {
+    const id = conversationInfoId?.trim()
+    if (!id) return
+    const conv = sortedItems.find((i) => i.id === id) ?? (activeConversation?.id === id ? activeConversation : null)
+    if (!conv || conv.kind === 'direct') return
+    setConversationInfoEdit(false)
+    setConversationInfoError(null)
+    setConversationInfoLogoFile(null)
+    setConversationInfoTitle(conv.title)
+    setConversationInfoNick((conv.publicNick ?? '').trim())
+    setConversationInfoIsOpen(conv.isPublic !== false)
+    if (conv.kind === 'channel') {
+      setConversationInfoChannelComments(conv.commentsMode === 'disabled' ? 'reactions_only' : 'comments')
+    }
+  }, [activeConversation, conversationInfoId, sortedItems])
 
   const shareConversationInvite = useCallback(async () => {
     const cid = conversationInfoId?.trim() ?? ''
@@ -3185,6 +3225,13 @@ export function DashboardMessengerPage() {
                                   onReactionChipTap={(targetId, emoji) => {
                                     void toggleMessengerReaction(targetId, emoji)
                                   }}
+                                  quickReactEnabled={Boolean(
+                                    user?.id &&
+                                      (message.kind === 'text' || message.kind === 'image') &&
+                                      !message.id.startsWith('local-'),
+                                  )}
+                                  isMobileMessenger={isMobileMessenger}
+                                  onQuickHeart={() => void toggleMessengerReaction(message.id, QUICK_REACTION_EMOJI)}
                                   swipeReplyEnabled={isMobileMessenger}
                                   onSwipeReply={(m) => {
                                     setReplyTo(m)
@@ -3545,63 +3592,66 @@ export function DashboardMessengerPage() {
                       <p className="messenger-settings-modal__hint">Только a-z, 0-9, _ (3–32). Можно оставить пустым.</p>
                     </div>
 
-                    <div className="messenger-settings-modal__section">
-                      <span className="messenger-settings-modal__label">Доступ</span>
-                      <div className="messenger-settings-modal__segment" role="group" aria-label="Доступ">
-                        <button
-                          type="button"
-                          className={`messenger-settings-modal__segment-btn${
-                            conversationInfoIsOpen ? ' messenger-settings-modal__segment-btn--active' : ''
-                          }`}
-                          onClick={() => setConversationInfoIsOpen(true)}
-                          disabled={conversationInfoLoading}
-                        >
-                          Открыто
-                        </button>
-                        <button
-                          type="button"
-                          className={`messenger-settings-modal__segment-btn${
-                            !conversationInfoIsOpen ? ' messenger-settings-modal__segment-btn--active' : ''
-                          }`}
-                          onClick={() => setConversationInfoIsOpen(false)}
-                          disabled={conversationInfoLoading}
-                        >
-                          Закрыто
-                        </button>
-                      </div>
-                    </div>
-
                     {conversationInfoConv.kind === 'channel' ? (
+                      <>
+                        <div className="messenger-settings-modal__section">
+                          <div className="messenger-settings-modal__push-row">
+                            <span className="messenger-settings-modal__label">Доступ</span>
+                            <PillToggle
+                              compact
+                              checked={conversationInfoIsOpen}
+                              onCheckedChange={(next) => setConversationInfoIsOpen(next)}
+                              offLabel="Закрыто"
+                              onLabel="Открыто"
+                              ariaLabel="Канал: открыт для всех или только по ссылке"
+                              disabled={conversationInfoLoading}
+                            />
+                          </div>
+                        </div>
+                        <div className="messenger-settings-modal__section">
+                          <div className="messenger-settings-modal__push-row">
+                            <span className="messenger-settings-modal__label">Обсуждение</span>
+                            <PillToggle
+                              compact
+                              checked={conversationInfoChannelComments === 'comments'}
+                              onCheckedChange={(next) =>
+                                setConversationInfoChannelComments(next ? 'comments' : 'reactions_only')
+                              }
+                              offLabel="Только реакции"
+                              onLabel="Комментарии"
+                              ariaLabel="Комментарии к постам канала"
+                              disabled={conversationInfoLoading}
+                            />
+                          </div>
+                        </div>
+                      </>
+                    ) : (
                       <div className="messenger-settings-modal__section">
-                        <span className="messenger-settings-modal__label">Обсуждение</span>
-                        <div className="messenger-settings-modal__segment" role="group" aria-label="Обсуждение">
+                        <span className="messenger-settings-modal__label">Доступ</span>
+                        <div className="messenger-settings-modal__segment" role="group" aria-label="Доступ">
                           <button
                             type="button"
                             className={`messenger-settings-modal__segment-btn${
-                              conversationInfoChannelComments === 'comments'
-                                ? ' messenger-settings-modal__segment-btn--active'
-                                : ''
+                              conversationInfoIsOpen ? ' messenger-settings-modal__segment-btn--active' : ''
                             }`}
-                            onClick={() => setConversationInfoChannelComments('comments')}
+                            onClick={() => setConversationInfoIsOpen(true)}
                             disabled={conversationInfoLoading}
                           >
-                            Комментарии
+                            Открыто
                           </button>
                           <button
                             type="button"
                             className={`messenger-settings-modal__segment-btn${
-                              conversationInfoChannelComments === 'reactions_only'
-                                ? ' messenger-settings-modal__segment-btn--active'
-                                : ''
+                              !conversationInfoIsOpen ? ' messenger-settings-modal__segment-btn--active' : ''
                             }`}
-                            onClick={() => setConversationInfoChannelComments('reactions_only')}
+                            onClick={() => setConversationInfoIsOpen(false)}
                             disabled={conversationInfoLoading}
                           >
-                            Только реакции
+                            Закрыто
                           </button>
                         </div>
                       </div>
-                    ) : null}
+                    )}
 
                     <div className="messenger-settings-modal__section">
                       <span className="messenger-settings-modal__label">Логотип</span>
@@ -3624,16 +3674,30 @@ export function DashboardMessengerPage() {
                   </>
                 ) : null}
 
-                <div className="messenger-settings-modal__actions">
+                <div
+                  className={`messenger-settings-modal__actions${
+                    conversationInfoEdit ? ' messenger-settings-modal__actions--split' : ''
+                  }`}
+                >
                   {conversationInfoEdit ? (
-                    <button
-                      type="button"
-                      className="messenger-settings-modal__done"
-                      onClick={() => void saveConversationInfo()}
-                      disabled={conversationInfoLoading}
-                    >
-                      {conversationInfoLoading ? 'Сохраняем…' : 'Сохранить'}
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        className="dashboard-topbar__action"
+                        onClick={cancelConversationInfoEdit}
+                        disabled={conversationInfoLoading}
+                      >
+                        Отмена
+                      </button>
+                      <button
+                        type="button"
+                        className="messenger-settings-modal__done"
+                        onClick={() => void saveConversationInfo()}
+                        disabled={conversationInfoLoading}
+                      >
+                        {conversationInfoLoading ? 'Сохраняем…' : 'Сохранить'}
+                      </button>
+                    </>
                   ) : (
                     <button type="button" className="messenger-settings-modal__done" onClick={closeConversationInfo}>
                       Готово

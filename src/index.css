@@ -2435,10 +2435,20 @@ html.app-root--room #root {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
+  row-gap: 10px;
+  min-width: 0;
 }
 
 .messenger-settings-modal__push-row .messenger-settings-modal__label {
   margin: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* Второй ряд при узкой модалке: тумблер у правого края */
+.messenger-settings-modal__push-row .pill-toggle {
+  margin-left: auto;
 }
 
 .messenger-settings-modal__hint {
@@ -2536,7 +2546,18 @@ html.app-root--room #root {
 .messenger-settings-modal__actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   padding-top: 4px;
+}
+
+.messenger-settings-modal__actions--split {
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.messenger-settings-modal__actions .dashboard-topbar__action {
+  flex-shrink: 0;
 }
 
 .messenger-settings-modal__done {

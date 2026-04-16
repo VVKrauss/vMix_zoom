@@ -213,7 +213,13 @@ function parseToggleReaction(data: unknown): ToggleGroupReactionResult | null {
   if (!data || typeof data !== 'object') return null
   const r = data as Record<string, unknown>
   const action = r.action === 'removed' ? 'removed' : r.action === 'added' ? 'added' : null
-  const messageId = typeof r.message_id === 'string' && r.message_id.trim() ? r.message_id.trim() : null
+  const rawId = r.message_id
+  const messageId =
+    typeof rawId === 'string' && rawId.trim()
+      ? rawId.trim()
+      : rawId != null && String(rawId).trim()
+        ? String(rawId).trim()
+        : null
   if (!action || !messageId) return null
   return { action, messageId, createdAt: typeof r.created_at === 'string' ? r.created_at : null }
 }

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { shouldClosePopoverOnOutsidePointer } from '../../utils/popoverOutsideClick'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
+import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { supabase } from '../../lib/supabase'
 import { mapDirectMessageFromRow, type DirectMessage } from '../../lib/messenger'
 import { getMessengerImageSignedUrl } from '../../lib/messenger'
@@ -25,6 +26,7 @@ import { MessengerMessageMenuPopover } from '../MessengerMessageMenuPopover'
 import { PostDraftReadView, PostPublicationLine } from '../postEditor/PostDraftReadView'
 import { PostEditorModal } from '../postEditor/PostEditorModal'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
+import { DoubleTapHeartSurface } from './DoubleTapHeartSurface'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -46,6 +48,20 @@ function sortChrono(a: DirectMessage, b: DirectMessage): number {
   return a.id.localeCompare(b.id)
 }
 
+/** Realtime DELETE: `old.id` иногда приходит не как string. */
+function chatMessageDeleteRowId(oldRow: Record<string, unknown>): string | null {
+  const raw = oldRow.id
+  if (typeof raw === 'string') {
+    const t = raw.trim()
+    return t || null
+  }
+  if (raw != null) {
+    const t = String(raw).trim()
+    return t || null
+  }
+  return null
+}
+
 function formatChannelBubbleTime(iso: string): string {
   const dt = new Date(iso)
   if (Number.isNaN(dt.getTime())) return '—'
@@ -56,6 +72,7 @@ function formatChannelBubbleTime(iso: string): string {
 }
 
 const CHANNEL_STAFF_ROLES = new Set(['owner', 'admin', 'moderator'])
+const QUICK_REACTION_EMOJI: ReactionEmoji = '❤️'
 
 export function ChannelThreadPane({
   conversationId,
@@ -66,6 +83,7 @@ export function ChannelThreadPane({
 }) {
   const { user } = useAuth()
   const toast = useToast()
+  const isMobileMessenger = useMediaQuery('(max-width: 900px)')
 
   const [error, setError] = useState<string | null>(null)
   const [threadLoading, setThreadLoading] = useState(false)
@@ -107,6 +125,27 @@ export function ChannelThreadPane({
 
   const cidRef = useRef(conversationId)
   cidRef.current = conversationId
+  const reactionOpInFlightRef = useRef<Set<string>>(new Set())
+
+  const removeReactionMessageEverywhere = useCallback((messageId: string) => {
+    const id = messageId.trim()
+    if (!id) return
+    setReactions((prev) => prev.filter((r) => r.id !== id))
+    setPosts((prev) => prev.filter((p) => p.id !== id))
+    setCommentsByPostId((prev) => {
+      let touched = false
+      const next: Record<string, DirectMessage[]> = { ...prev }
+      for (const key of Object.keys(next)) {
+        const cur = next[key]!
+        const filtered = cur.filter((c) => c.id !== id)
+        if (filtered.length !== cur.length) {
+          next[key] = filtered
+          touched = true
+        }
+      }
+      return touched ? next : prev
+    })
+  }, [])
 
   const canModerateChannel = Boolean(myChannelMemberRole && CHANNEL_STAFF_ROLES.has(myChannelMemberRole))
 
@@ -238,14 +277,14 @@ export function ChannelThreadPane({
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'chat_messages', filter }, (payload) => {
         const oldRow = payload.old as Record<string, unknown>
-        const id = typeof oldRow.id === 'string' ? oldRow.id : ''
+        const id = chatMessageDeleteRowId(oldRow)
         if (!id || cidRef.current.trim() !== cid) return
         const kind = typeof oldRow.kind === 'string' ? oldRow.kind : ''
         const replyToRaw = oldRow.reply_to_message_id
         const replyTo = typeof replyToRaw === 'string' && replyToRaw.trim() ? replyToRaw.trim() : null
 
         if (kind === 'reaction') {
-          setReactions((prev) => prev.filter((r) => r.id !== id))
+          removeReactionMessageEverywhere(id)
           return
         }
 
@@ -269,7 +308,7 @@ export function ChannelThreadPane({
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [conversationId, user?.id, onTouchTail])
+  }, [conversationId, user?.id, onTouchTail, removeReactionMessageEverywhere])
 
   useEffect(() => {
     let active = true
@@ -298,12 +337,19 @@ export function ChannelThreadPane({
     }
   }, [posts, commentsByPostId, signedUrlByPath])
 
+  /** Реакции: одна строка — один id (не дублировать между posts / comments / realtime). */
   const allMessagesForReactions = useMemo(() => {
-    const m: DirectMessage[] = []
-    for (const p of posts) m.push(p)
-    for (const arr of Object.values(commentsByPostId)) m.push(...arr)
-    for (const r of reactions) m.push(r)
-    return m
+    const byId = new Map<string, DirectMessage>()
+    const take = (x: DirectMessage) => {
+      if (x.kind !== 'reaction' || !x.id) return
+      byId.set(x.id, x)
+    }
+    for (const p of posts) take(p)
+    for (const arr of Object.values(commentsByPostId)) {
+      for (const c of arr) take(c)
+    }
+    for (const r of reactions) take(r)
+    return [...byId.values()].sort(sortChrono)
   }, [posts, commentsByPostId, reactions])
 
   const reactionsByTargetId = useMemo(() => {
@@ -423,30 +469,51 @@ export function ChannelThreadPane({
     }
   }, [conversationId, draftCommentByPostId, sendingCommentPostId, user?.id])
 
-  const toggleReaction = useCallback(async (targetMessageId: string, emoji: ReactionEmoji) => {
-    const cid = conversationId.trim()
-    if (!cid || !isAllowedReactionEmoji(emoji)) return
-    const res = await toggleChannelMessageReaction(cid, targetMessageId, emoji)
-    if (res.error) toast.push({ tone: 'error', message: res.error, ms: 2600 })
-  }, [conversationId, toast])
-
-  /** Добавить реакцию (ПКМ / меню / + у комментария). Повторно ту же эмодзи нельзя — только снять со своего чипа. */
-  const addReactionOnly = useCallback(
+  const toggleReaction = useCallback(
     async (targetMessageId: string, emoji: ReactionEmoji) => {
       const cid = conversationId.trim()
-      if (!cid || !user?.id || !isAllowedReactionEmoji(emoji)) return
-      const reacts = reactionsByTargetId.get(targetMessageId) ?? []
-      const already = reacts.some(
-        (r) => r.senderUserId === user.id && (r.body.trim() || r.body) === emoji,
-      )
-      if (already) {
-        toast.push({ tone: 'info', message: 'Эта реакция уже стоит', ms: 2200 })
-        return
+      const uid = user?.id
+      if (!cid || !uid || !isAllowedReactionEmoji(emoji)) return
+      const opKey = `${cid}::${targetMessageId}::${emoji}`
+      if (reactionOpInFlightRef.current.has(opKey)) return
+      reactionOpInFlightRef.current.add(opKey)
+      try {
+        const res = await toggleChannelMessageReaction(cid, targetMessageId, emoji)
+        if (res.error) {
+          toast.push({ tone: 'error', message: res.error, ms: 2600 })
+          return
+        }
+        const payload = res.data
+        if (!payload) return
+
+        if (payload.action === 'removed') {
+          removeReactionMessageEverywhere(payload.messageId)
+          return
+        }
+
+        const target = targetMessageId.trim()
+        const um = user.user_metadata ?? {}
+        const snap =
+          (typeof um.display_name === 'string' && um.display_name.trim()) ||
+          (typeof um.full_name === 'string' && um.full_name.trim()) ||
+          (typeof um.name === 'string' && um.name.trim()) ||
+          (user.email?.split('@')[0] ?? 'Вы')
+        const createdAt = payload.createdAt ?? new Date().toISOString()
+        const newRow: DirectMessage = {
+          id: payload.messageId,
+          senderUserId: uid,
+          senderNameSnapshot: snap.slice(0, 200),
+          kind: 'reaction',
+          body: emoji,
+          createdAt,
+          meta: { react_to: target },
+        }
+        setReactions((prev) => (prev.some((r) => r.id === newRow.id) ? prev : [...prev, newRow].sort(sortChrono)))
+      } finally {
+        reactionOpInFlightRef.current.delete(opKey)
       }
-      const res = await toggleChannelMessageReaction(cid, targetMessageId, emoji)
-      if (res.error) toast.push({ tone: 'error', message: res.error, ms: 2600 })
     },
-    [conversationId, reactionsByTargetId, toast, user?.id],
+    [conversationId, toast, user, removeReactionMessageEverywhere],
   )
 
   const onReactionChipTap = useCallback(
@@ -926,9 +993,17 @@ export function ChannelThreadPane({
             </div>
           </div>
         ) : (
-          <div className="dashboard-messenger__message-body">{renderMarkdownAndPreview(m)}</div>
+          <DoubleTapHeartSurface
+            enabled={Boolean(
+              user?.id && !m.id.startsWith('local-') && (m.kind === 'text' || m.kind === 'image'),
+            )}
+            isMobileViewport={isMobileMessenger}
+            onHeart={() => void toggleReaction(m.id, QUICK_REACTION_EMOJI)}
+          >
+            <div className="dashboard-messenger__message-body">{renderMarkdownAndPreview(m)}</div>
+          </DoubleTapHeartSurface>
         )}
-        {renderReactionChips(m, 'dashboard-messenger__message-reactions')}
+        {renderReactionChips(m, 'dashboard-messenger__message-reactions', { showAddButton: false })}
       </article>
     )
   }
@@ -951,6 +1026,11 @@ export function ChannelThreadPane({
           })
         }}
       >
+        <DoubleTapHeartSurface
+          enabled={Boolean(user?.id && !p.id.startsWith('local-'))}
+          isMobileViewport={isMobileMessenger}
+          onHeart={() => void toggleReaction(p.id, QUICK_REACTION_EMOJI)}
+        >
         <div className="dashboard-messenger__channel-post-inner">
           <button
             type="button"
@@ -987,6 +1067,7 @@ export function ChannelThreadPane({
             </>
           )}
         </div>
+        </DoubleTapHeartSurface>
         <div className="dashboard-messenger__channel-post-footer">
           {renderReactionChips(p, 'dashboard-messenger__channel-post-reactions', { showAddButton: false })}
           <button
@@ -1076,7 +1157,7 @@ export function ChannelThreadPane({
                 }}
                 onPickReaction={(em) => {
                   if (!postMenu.post.id || !isAllowedReactionEmoji(em)) return
-                  void addReactionOnly(postMenu.post.id, em)
+                  void toggleReaction(postMenu.post.id, em)
                   setPostMenu(null)
                 }}
               />
@@ -1108,7 +1189,7 @@ export function ChannelThreadPane({
                 onReply={() => {}}
                 onPickReaction={(em) => {
                   if (!commentMenu.message.id || !isAllowedReactionEmoji(em)) return
-                  void addReactionOnly(commentMenu.message.id, em)
+                  void toggleReaction(commentMenu.message.id, em)
                   setCommentMenu(null)
                 }}
               />
@@ -1130,7 +1211,7 @@ export function ChannelThreadPane({
                 onClose={() => setReactionPick(null)}
                 onPick={(em) => {
                   if (!reactionPick.targetId || !isAllowedReactionEmoji(em)) return
-                  void addReactionOnly(reactionPick.targetId, em as ReactionEmoji)
+                  void toggleReaction(reactionPick.targetId, em as ReactionEmoji)
                   setReactionPick(null)
                 }}
               />

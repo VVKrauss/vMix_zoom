@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useProfile } from '../../hooks/useProfile'
+import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { useToast } from '../../context/ToastContext'
 import { supabase } from '../../lib/supabase'
 import { truncateMessengerReplySnippet } from '../../lib/messengerUi'
@@ -18,12 +19,28 @@ import { REACTION_EMOJI_WHITELIST } from '../../types/roomComms'
 import { MessengerBubbleBody } from '../MessengerBubbleBody'
 import { FiRrIcon } from '../icons'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
+import { DoubleTapHeartSurface } from './DoubleTapHeartSurface'
+
+const QUICK_REACTION_EMOJI: ReactionEmoji = '❤️'
 
 function sortChrono(a: DirectMessage, b: DirectMessage): number {
   const ta = new Date(a.createdAt).getTime()
   const tb = new Date(b.createdAt).getTime()
   if (ta !== tb) return ta - tb
   return a.id.localeCompare(b.id)
+}
+
+function chatMessageDeleteRowId(oldRow: Record<string, unknown>): string | null {
+  const raw = oldRow.id
+  if (typeof raw === 'string') {
+    const t = raw.trim()
+    return t || null
+  }
+  if (raw != null) {
+    const t = String(raw).trim()
+    return t || null
+  }
+  return null
 }
 
 export function GroupThreadPane({
@@ -36,6 +53,7 @@ export function GroupThreadPane({
   const { user } = useAuth()
   const { profile } = useProfile()
   const toast = useToast()
+  const isMobileMessenger = useMediaQuery('(max-width: 900px)')
 
   const [threadLoading, setThreadLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -50,6 +68,13 @@ export function GroupThreadPane({
 
   const cidRef = useRef(conversationId)
   cidRef.current = conversationId
+  const reactionOpInFlightRef = useRef<Set<string>>(new Set())
+
+  const removeMessageById = useCallback((messageId: string) => {
+    const id = messageId.trim()
+    if (!id) return
+    setMessages((prev) => prev.filter((m) => m.id !== id))
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -100,12 +125,17 @@ export function GroupThreadPane({
         if (!msg.id) return
         setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m)))
       })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'chat_messages', filter }, (payload) => {
+        const id = chatMessageDeleteRowId(payload.old as Record<string, unknown>)
+        if (!id || cidRef.current.trim() !== cid) return
+        removeMessageById(id)
+      })
       .subscribe()
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [conversationId, user?.id, onTouchTail])
+  }, [conversationId, user?.id, onTouchTail, removeMessageById])
 
   const reactionsByTargetId = useMemo(() => {
     const map = new Map<string, DirectMessage[]>()
@@ -124,11 +154,43 @@ export function GroupThreadPane({
   const toggleReaction = useCallback(
     async (targetMessageId: string, emoji: ReactionEmoji) => {
       const cid = conversationId.trim()
-      if (!cid || !isAllowedReactionEmoji(emoji)) return
-      const res = await toggleGroupMessageReaction(cid, targetMessageId, emoji)
-      if (res.error) toast.push({ tone: 'error', message: res.error, ms: 2600 })
+      const uid = user?.id
+      if (!cid || !uid || !isAllowedReactionEmoji(emoji)) return
+      const opKey = `${cid}::${targetMessageId}::${emoji}`
+      if (reactionOpInFlightRef.current.has(opKey)) return
+      reactionOpInFlightRef.current.add(opKey)
+      try {
+        const res = await toggleGroupMessageReaction(cid, targetMessageId, emoji)
+        if (res.error) {
+          toast.push({ tone: 'error', message: res.error, ms: 2600 })
+          return
+        }
+        const payload = res.data
+        if (!payload) return
+
+        if (payload.action === 'removed') {
+          removeMessageById(payload.messageId)
+          return
+        }
+
+        const target = targetMessageId.trim()
+        const snap = profile?.display_name?.trim() || 'Вы'
+        const createdAt = payload.createdAt ?? new Date().toISOString()
+        const newRow: DirectMessage = {
+          id: payload.messageId,
+          senderUserId: uid,
+          senderNameSnapshot: snap.slice(0, 200),
+          kind: 'reaction',
+          body: emoji,
+          createdAt,
+          meta: { react_to: target },
+        }
+        setMessages((prev) => (prev.some((m) => m.id === newRow.id) ? prev : [...prev, newRow].sort(sortChrono)))
+      } finally {
+        reactionOpInFlightRef.current.delete(opKey)
+      }
     },
-    [conversationId, toast],
+    [conversationId, toast, user?.id, profile?.display_name, removeMessageById],
   )
 
   const onReactionChipTap = useCallback(
@@ -241,9 +303,17 @@ export function GroupThreadPane({
                     <span className="messenger-reply-mini__text">{truncateMessengerReplySnippet(replyTarget.body, 42)}</span>
                   </div>
                 ) : null}
-                <div className="dashboard-messenger__message-body">
-                  <MessengerBubbleBody message={m} />
-                </div>
+                <DoubleTapHeartSurface
+                  enabled={Boolean(
+                    user?.id && (m.kind === 'text' || m.kind === 'image') && !m.id.startsWith('local-'),
+                  )}
+                  isMobileViewport={isMobileMessenger}
+                  onHeart={() => void toggleReaction(m.id, QUICK_REACTION_EMOJI)}
+                >
+                  <div className="dashboard-messenger__message-body">
+                    <MessengerBubbleBody message={m} />
+                  </div>
+                </DoubleTapHeartSurface>
                 <div className="dashboard-messenger__message-reactions">
                   {rows.map(([emoji, count]) => (
                     <span
