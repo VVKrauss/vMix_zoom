@@ -77,9 +77,12 @@ const QUICK_REACTION_EMOJI: ReactionEmoji = '❤️'
 export function ChannelThreadPane({
   conversationId,
   onTouchTail,
+  onForwardMessage,
 }: {
   conversationId: string
   onTouchTail?: (patch: { lastMessageAt: string; lastMessagePreview: string }) => void
+  /** Переслать текст/фото в личный чат (открывает модалку на уровне страницы). */
+  onForwardMessage?: (message: DirectMessage) => void
 }) {
   const { user } = useAuth()
   const toast = useToast()
@@ -1160,6 +1163,16 @@ export function ChannelThreadPane({
                   void toggleReaction(postMenu.post.id, em)
                   setPostMenu(null)
                 }}
+                onForward={
+                  onForwardMessage &&
+                  !postMenu.post.id.startsWith('local-') &&
+                  (postMenu.post.kind === 'text' || postMenu.post.kind === 'image')
+                    ? () => {
+                        onForwardMessage(postMenu.post)
+                        setPostMenu(null)
+                      }
+                    : undefined
+                }
               />
             </div>,
             document.body,
@@ -1192,6 +1205,16 @@ export function ChannelThreadPane({
                   void toggleReaction(commentMenu.message.id, em)
                   setCommentMenu(null)
                 }}
+                onForward={
+                  onForwardMessage &&
+                  !commentMenu.message.id.startsWith('local-') &&
+                  (commentMenu.message.kind === 'text' || commentMenu.message.kind === 'image')
+                    ? () => {
+                        onForwardMessage(commentMenu.message)
+                        setCommentMenu(null)
+                      }
+                    : undefined
+                }
               />
             </div>,
             document.body,

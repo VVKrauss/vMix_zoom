@@ -21,6 +21,21 @@ export function setMessengerFontPreset(p: MessengerFontPreset): void {
   }
 }
 
+/** Аватар автора цитаты в ЛС (я / собеседник). */
+export function resolveQuotedAvatarForDm(
+  quotedUserId: string | null | undefined,
+  currentUserId: string | undefined,
+  profileAvatar: string | null | undefined,
+  conv: { otherUserId: string | null; avatarUrl: string | null } | null,
+): string | null {
+  const qid = quotedUserId?.trim()
+  if (!qid) return null
+  if (currentUserId && qid === currentUserId) return profileAvatar?.trim() || null
+  if (conv?.otherUserId?.trim() === qid) return conv.avatarUrl?.trim() || null
+  if (currentUserId && qid !== currentUserId && conv?.avatarUrl?.trim()) return conv.avatarUrl.trim()
+  return null
+}
+
 /** Короткая подпись цитаты в ответе (без дублирования всего текста). */
 export function truncateMessengerReplySnippet(text: string, maxChars = 20): string {
   const t = text.replace(/\s+/g, ' ').trim()

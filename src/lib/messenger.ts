@@ -26,6 +26,18 @@ export type DirectConversationSummary = {
 
 export type DirectMessageKind = 'text' | 'system' | 'reaction' | 'image'
 
+/** Переслано в ЛС: источник и отображение «шапки» как у цитаты. */
+export type MessengerForwardMeta = {
+  from: 'direct' | 'group' | 'channel'
+  author_name?: string
+  author_avatar_url?: string | null
+  source_title?: string
+  source_avatar_url?: string | null
+  snippet: string
+  source_kind: 'text' | 'image'
+  image_thumb_path?: string | null
+}
+
 export type DirectMessage = {
   id: string
   senderUserId: string | null
@@ -49,6 +61,7 @@ export type DirectMessage = {
     postDraft?: PostDraftV1
     /** Личка: soft-delete заменил сообщение системной заглушкой */
     deleted?: boolean
+    forward?: MessengerForwardMeta
   } | null
 }
 
@@ -96,9 +109,40 @@ function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
 
   const deleted = o.deleted === true
 
-  if (!react && !image && !linkMeta && !postDraft && !deleted) return null
+  let forward: MessengerForwardMeta | undefined
+  const rawFwd = o.forward
+  if (rawFwd && typeof rawFwd === 'object') {
+    const f = rawFwd as Record<string, unknown>
+    const from = f.from
+    if (from === 'direct' || from === 'group' || from === 'channel') {
+      const snippet = typeof f.snippet === 'string' ? f.snippet : ''
+      const sk = f.source_kind === 'image' ? 'image' : 'text'
+      const itp = f.image_thumb_path
+      forward = {
+        from,
+        snippet,
+        source_kind: sk,
+        ...(typeof f.author_name === 'string' && f.author_name.trim() ? { author_name: f.author_name.trim() } : {}),
+        ...(typeof f.author_avatar_url === 'string' && f.author_avatar_url.trim()
+          ? { author_avatar_url: f.author_avatar_url.trim() }
+          : f.author_avatar_url === null
+            ? { author_avatar_url: null }
+            : {}),
+        ...(typeof f.source_title === 'string' && f.source_title.trim() ? { source_title: f.source_title.trim() } : {}),
+        ...(typeof f.source_avatar_url === 'string' && f.source_avatar_url.trim()
+          ? { source_avatar_url: f.source_avatar_url.trim() }
+          : f.source_avatar_url === null
+            ? { source_avatar_url: null }
+            : {}),
+        ...(typeof itp === 'string' && itp.trim() ? { image_thumb_path: itp.trim() } : {}),
+      }
+    }
+  }
+
+  if (!react && !image && !linkMeta && !postDraft && !deleted && !forward) return null
   return {
     ...(deleted ? { deleted: true } : {}),
+    ...(forward ? { forward } : {}),
     ...(react ? { react_to: react } : {}),
     ...(image ? { image } : {}),
     ...(linkMeta ? { link: linkMeta } : {}),
@@ -123,6 +167,8 @@ function mapMessageKind(raw: unknown): DirectMessageKind {
  * Строка превью хвоста диалога в списке для сообщения (в т.ч. фото без подписи — имя файла или метка).
  */
 export function previewTextForDirectMessageTail(msg: Pick<DirectMessage, 'kind' | 'body' | 'meta'>): string {
+  const sn = msg.meta?.forward?.snippet?.trim()
+  if (sn) return `↪ ${sn}`
   if (msg.kind !== 'image') return msg.body
   const cap = msg.body.replace(/\s+/g, ' ').trim()
   if (cap) return cap

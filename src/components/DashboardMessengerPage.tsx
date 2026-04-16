@@ -53,6 +53,12 @@ import {
   type MessengerConversationSummary,
 } from '../lib/messengerConversations'
 import {
+  listConversationStaffMembers,
+  setConversationMemberStaffRole,
+  type ConversationStaffMember,
+  type ConversationStaffRole,
+} from '../lib/conversationStaff'
+import {
   createGroupChat,
   getOrCreateConversationInvite,
   joinConversationByInvite,
@@ -63,10 +69,17 @@ import {
 import { createChannel, updateChannelProfile } from '../lib/channels'
 import {
   getMessengerFontPreset,
+  resolveQuotedAvatarForDm,
   setMessengerFontPreset,
   truncateMessengerReplySnippet,
   type MessengerFontPreset,
 } from '../lib/messengerUi'
+import {
+  buildForwardMetaFromChannelOrGroup,
+  buildForwardMetaFromDirectMessage,
+  forwardMetaToQuotedStrip,
+} from '../lib/messengerForward'
+import type { MessengerForwardMeta } from '../lib/messenger'
 import { MESSENGER_COMPOSER_EMOJIS } from '../lib/messengerComposerEmojis'
 import { setPendingHostClaim, stashSpaceRoomCreateOptions } from '../lib/spaceRoom'
 import { getContactStatuses, setContactPin, type ContactStatus } from '../lib/socialGraph'
@@ -93,6 +106,7 @@ import {
 import { DashboardShell } from './DashboardShell'
 import { MessengerBubbleBody } from './MessengerBubbleBody'
 import { MessengerReplyMiniThumb } from './MessengerReplyMiniThumb'
+import { MessengerForwardToDmModal } from './MessengerForwardToDmModal'
 import { MessengerMessageMenuPopover } from './MessengerMessageMenuPopover'
 import { PillToggle } from './PillToggle'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
@@ -201,20 +215,6 @@ type MessengerReplyPreview =
   | { snippet: string; kind: 'text'; quotedAvatarUrl: string | null; quotedName?: string }
   | { snippet: string; kind: 'image'; thumbPath?: string; quotedAvatarUrl: string | null; quotedName?: string }
 
-function resolveQuotedAvatarForDm(
-  quotedUserId: string | null | undefined,
-  currentUserId: string | undefined,
-  profileAvatar: string | null | undefined,
-  conv: DirectConversationSummary | null,
-): string | null {
-  const qid = quotedUserId?.trim()
-  if (!qid) return null
-  if (currentUserId && qid === currentUserId) return profileAvatar?.trim() || null
-  if (conv?.otherUserId?.trim() === qid) return conv.avatarUrl?.trim() || null
-  if (currentUserId && qid !== currentUserId && conv?.avatarUrl?.trim()) return conv.avatarUrl.trim()
-  return null
-}
-
 const SWIPE_REPLY_THRESHOLD_PX = 52
 const SWIPE_REPLY_DECIDE_PX = 26
 const SWIPE_REPLY_MAX_SHIFT_PX = 80
@@ -222,6 +222,17 @@ const LIGHTBOX_SWIPE_CLOSE_PX = 52
 
 /** Двойной тап / двойной клик по пузырю: «лайк», не 👍. */
 const QUICK_REACTION_EMOJI: ReactionEmoji = '❤️'
+
+function messengerStaffRoleShortLabel(role: string): string {
+  switch (role) {
+    case 'admin':
+      return 'админ'
+    case 'moderator':
+      return 'модератор'
+    default:
+      return 'участник'
+  }
+}
 
 type MessengerDmBubbleProps = {
   message: DirectMessage
@@ -301,7 +312,9 @@ function MessengerDmBubble({
     reactionCounts.set(key, (reactionCounts.get(key) ?? 0) + 1)
   }
 
-  const quoteNavigable = Boolean(replyScrollTargetId && onReplyQuoteNavigate)
+  const forwardStrip = forwardMetaToQuotedStrip(message.meta?.forward)
+
+  const quoteNavigable = Boolean(!forwardStrip && replyScrollTargetId && onReplyQuoteNavigate)
 
   const canSwipeReply =
     Boolean(swipeReplyEnabled && onSwipeReply) &&
@@ -343,36 +356,54 @@ function MessengerDmBubble({
     [message, onSwipeReply],
   )
 
-  const showPeerInReplyQuote = !dmMutePeerLabels
+  const quotePreview: MessengerReplyPreview | null = forwardStrip
+    ? forwardStrip.kind === 'image'
+      ? {
+          snippet: forwardStrip.snippet,
+          kind: 'image',
+          quotedAvatarUrl: forwardStrip.quotedAvatarUrl,
+          quotedName: forwardStrip.quotedName,
+          ...(forwardStrip.thumbPath ? { thumbPath: forwardStrip.thumbPath } : {}),
+        }
+      : {
+          snippet: forwardStrip.snippet,
+          kind: 'text',
+          quotedAvatarUrl: forwardStrip.quotedAvatarUrl,
+          quotedName: forwardStrip.quotedName,
+        }
+    : replyPreview
+
+  const showPeerInReplyQuote = !dmMutePeerLabels || forwardStrip != null
 
   const replyQuoteInner =
-    replyPreview ? (
+    quotePreview ? (
       <span className="dashboard-messenger__reply-quote-inner">
         {showPeerInReplyQuote ? (
-          replyPreview.quotedAvatarUrl ? (
+          quotePreview.quotedAvatarUrl ? (
             <img
-              src={replyPreview.quotedAvatarUrl}
+              src={quotePreview.quotedAvatarUrl}
               alt=""
               className="dashboard-messenger__reply-quote-avatar"
               draggable={false}
             />
           ) : (
             <span className="dashboard-messenger__reply-quote-avatar dashboard-messenger__reply-quote-avatar--fallback" aria-hidden>
-              {(replyPreview.quotedName ?? '?').trim().slice(0, 1).toUpperCase() || '?'}
+              {(quotePreview.quotedName ?? '?').trim().slice(0, 1).toUpperCase() || '?'}
             </span>
           )
         ) : null}
-        {replyPreview.kind === 'image' && replyPreview.thumbPath ? (
-          <MessengerReplyMiniThumb thumbPath={replyPreview.thumbPath} onThumbLayout={onReplyThumbLayout} />
+        {quotePreview.kind === 'image' && quotePreview.thumbPath ? (
+          <MessengerReplyMiniThumb thumbPath={quotePreview.thumbPath} onThumbLayout={onReplyThumbLayout} />
         ) : null}
-        <span className="dashboard-messenger__reply-quote-snippet">{replyPreview.snippet}</span>
+        <span className="dashboard-messenger__reply-quote-snippet">{quotePreview.snippet}</span>
       </span>
     ) : null
 
-  const replyQuoteAria =
-    dmMutePeerLabels || !replyPreview?.quotedName?.trim()
+  const replyQuoteAria = forwardStrip
+    ? 'Пересланное сообщение'
+    : dmMutePeerLabels || !quotePreview?.quotedName?.trim()
       ? 'К цитируемому сообщению'
-      : `К цитируемому сообщению: ${replyPreview.quotedName.trim()}`
+      : `К цитируемому сообщению: ${quotePreview.quotedName.trim()}`
 
   const showAuthorInMeta = !dmMutePeerLabels
 
@@ -466,7 +497,7 @@ function MessengerDmBubble({
           ⋮
         </button>
       </div>
-      {replyPreview ? (
+      {quotePreview ? (
         quoteNavigable ? (
           <button
             type="button"
@@ -733,6 +764,11 @@ export function DashboardMessengerPage() {
   const [conversationInfoIsOpen, setConversationInfoIsOpen] = useState(true)
   const [conversationInfoChannelComments, setConversationInfoChannelComments] = useState<'comments' | 'reactions_only'>('comments')
   const [conversationInfoLogoFile, setConversationInfoLogoFile] = useState<File | null>(null)
+  const [conversationStaffRows, setConversationStaffRows] = useState<ConversationStaffMember[]>([])
+  const [conversationStaffLoading, setConversationStaffLoading] = useState(false)
+  const [conversationStaffTargetUserId, setConversationStaffTargetUserId] = useState('')
+  const [conversationStaffNewRole, setConversationStaffNewRole] = useState<ConversationStaffRole>('moderator')
+  const [conversationStaffMutating, setConversationStaffMutating] = useState(false)
   const [sending, setSending] = useState(false)
   const [photoUploading, setPhotoUploading] = useState(false)
   /** Ответ на сообщение (цитата над композером). */
@@ -749,6 +785,9 @@ export function DashboardMessengerPage() {
     anchorX: number
     anchorY: number
   } | null>(null)
+  const [forwardDmModal, setForwardDmModal] = useState<{ forward: MessengerForwardMeta; sendBody: string } | null>(null)
+  const [forwardDmComment, setForwardDmComment] = useState('')
+  const [forwardDmSending, setForwardDmSending] = useState(false)
   const msgMenuWrapRef = useRef<HTMLDivElement | null>(null)
   const [messengerImageLightboxUrl, setMessengerImageLightboxUrl] = useState<string | null>(null)
   const messengerLightboxSwipeRef = useRef<{
@@ -1750,6 +1789,34 @@ export function DashboardMessengerPage() {
   >('all')
 
   const sortedItems = useMemo(() => sortConversationsByActivity(items), [items])
+
+  /** Шапка треда: сразу из списка по URL, пока грузится полная карточка с сервера */
+  const threadHeadConversation =
+    sortedItems.find((i) => i.id === activeConversationId) ?? activeConversation
+
+  const conversationInfoConv =
+    conversationInfoId?.trim()
+      ? sortedItems.find((i) => i.id === conversationInfoId) ??
+        (activeConversation?.id === conversationInfoId ? activeConversation : null)
+      : null
+
+  const activeAvatarUrl =
+    threadHeadConversation?.kind === 'direct'
+      ? threadHeadConversation.avatarUrl ??
+        (threadHeadConversation.otherUserId ? null : profile?.avatar_url ?? null)
+      : null
+
+  const forwardDmPickItems = useMemo(
+    () =>
+      sortedItems
+        .filter((it) => it.kind === 'direct')
+        .map((it) => ({
+          id: it.id,
+          title: it.title,
+          avatarUrl: it.avatarUrl ?? (!it.otherUserId ? profile?.avatar_url ?? null : null),
+        })),
+    [sortedItems, profile?.avatar_url],
+  )
   const chatListSearchNorm = useMemo(() => normalizeMessengerListSearch(chatListSearch), [chatListSearch])
   const filteredSortedItems = useMemo(() => {
     const filteredByKind =
@@ -1896,6 +1963,78 @@ export function DashboardMessengerPage() {
 
   const closeMessageActionMenu = useCallback(() => setMessageMenu(null), [])
 
+  const openForwardFromDmMessage = useCallback(
+    (m: DirectMessage) => {
+      if (!threadHeadConversation || threadHeadConversation.kind !== 'direct') return
+      const conv = threadHeadConversation
+      const built = buildForwardMetaFromDirectMessage(m, {
+        currentUserId: user?.id,
+        profileAvatar: profile?.avatar_url ?? null,
+        directConv: {
+          otherUserId: conv.otherUserId ?? null,
+          avatarUrl: conv.avatarUrl ?? null,
+        },
+      })
+      setForwardDmComment('')
+      setForwardDmModal(built)
+      closeMessageActionMenu()
+    },
+    [closeMessageActionMenu, profile?.avatar_url, threadHeadConversation, user?.id],
+  )
+
+  const handleForwardFromChannelMessage = useCallback(
+    (message: DirectMessage) => {
+      if (!threadHeadConversation || threadHeadConversation.kind !== 'channel') return
+      const title = threadHeadConversation.title?.trim() || 'Канал'
+      const avatar = conversationAvatarUrlById[activeConversationId] ?? null
+      const built = buildForwardMetaFromChannelOrGroup(message, 'channel', { sourceTitle: title, sourceAvatarUrl: avatar })
+      setForwardDmComment('')
+      setForwardDmModal(built)
+    },
+    [activeConversationId, conversationAvatarUrlById, threadHeadConversation],
+  )
+
+  const handleForwardFromGroupMessage = useCallback(
+    (message: DirectMessage) => {
+      if (!threadHeadConversation || threadHeadConversation.kind !== 'group') return
+      const title = threadHeadConversation.title?.trim() || 'Группа'
+      const avatar = conversationAvatarUrlById[activeConversationId] ?? null
+      const built = buildForwardMetaFromChannelOrGroup(message, 'group', { sourceTitle: title, sourceAvatarUrl: avatar })
+      setForwardDmComment('')
+      setForwardDmModal(built)
+    },
+    [activeConversationId, conversationAvatarUrlById, threadHeadConversation],
+  )
+
+  const finishForwardToDm = useCallback(
+    async (targetConvId: string) => {
+      if (!forwardDmModal || forwardDmSending) return
+      const tid = targetConvId.trim()
+      if (!tid) return
+      const comment = forwardDmComment.trim()
+      const base = forwardDmModal.sendBody.trim() || '…'
+      const body = comment ? `${comment}\n\n${base}` : base
+      setForwardDmSending(true)
+      try {
+        const res = await appendDirectMessage(tid, body, {
+          meta: { forward: forwardDmModal.forward as unknown as Record<string, unknown> },
+        })
+        if (res.error) {
+          toast.push({ tone: 'error', message: res.error, ms: 3200 })
+          return
+        }
+        requestMessengerUnreadRefresh()
+        toast.push({ tone: 'success', message: 'Сообщение переслано.', ms: 2200 })
+        setForwardDmModal(null)
+        setForwardDmComment('')
+        navigate(buildMessengerUrl(tid))
+      } finally {
+        setForwardDmSending(false)
+      }
+    },
+    [appendDirectMessage, forwardDmComment, forwardDmModal, forwardDmSending, navigate, toast],
+  )
+
   const deleteMessageFromMenu = useCallback(async () => {
     const convId = activeConversationId.trim()
     const m = messageMenu?.message
@@ -2041,21 +2180,6 @@ export function DashboardMessengerPage() {
       el.removeEventListener('touchcancel', onTouchCancel)
     }
   }, [messengerImageLightboxUrl, closeMessengerImageLightbox])
-
-  /** Шапка треда: сразу из списка по URL, пока грузится полная карточка с сервера */
-  const threadHeadConversation =
-    sortedItems.find((i) => i.id === activeConversationId) ?? activeConversation
-
-  const conversationInfoConv =
-    conversationInfoId?.trim()
-      ? sortedItems.find((i) => i.id === conversationInfoId) ?? (activeConversation?.id === conversationInfoId ? activeConversation : null)
-      : null
-
-  const activeAvatarUrl =
-    threadHeadConversation?.kind === 'direct'
-      ? threadHeadConversation.avatarUrl ??
-        (threadHeadConversation.otherUserId ? null : profile?.avatar_url ?? null)
-      : null
 
   const adjustMobileComposerHeight = useCallback(() => {
     const ta = composerTextareaRef.current
@@ -2310,6 +2434,11 @@ export function DashboardMessengerPage() {
     setConversationInfoEdit(false)
     setConversationInfoError(null)
     setConversationInfoLogoFile(null)
+    setConversationStaffRows([])
+    setConversationStaffTargetUserId('')
+    setConversationStaffNewRole('moderator')
+    setConversationStaffLoading(false)
+    setConversationStaffMutating(false)
   }, [])
 
   const cancelConversationInfoEdit = useCallback(() => {
@@ -2326,7 +2455,84 @@ export function DashboardMessengerPage() {
     if (conv.kind === 'channel') {
       setConversationInfoChannelComments(conv.commentsMode === 'disabled' ? 'reactions_only' : 'comments')
     }
+    setConversationStaffRows([])
+    setConversationStaffTargetUserId('')
+    setConversationStaffNewRole('moderator')
+    setConversationStaffLoading(false)
+    setConversationStaffMutating(false)
   }, [activeConversation, conversationInfoId, sortedItems])
+
+  useEffect(() => {
+    if (!conversationInfoEdit) {
+      setConversationStaffRows([])
+      setConversationStaffTargetUserId('')
+      setConversationStaffNewRole('moderator')
+      setConversationStaffLoading(false)
+      return
+    }
+    const id = conversationInfoId?.trim()
+    if (
+      !id ||
+      !user?.id ||
+      !conversationInfoConv ||
+      (conversationInfoConv.kind !== 'group' && conversationInfoConv.kind !== 'channel')
+    ) {
+      return
+    }
+    if (!conversationInfoRole || !['owner', 'admin'].includes(conversationInfoRole)) {
+      return
+    }
+    let cancelled = false
+    setConversationStaffLoading(true)
+    void listConversationStaffMembers(id).then((r) => {
+      if (cancelled) return
+      setConversationStaffLoading(false)
+      if (r.error) {
+        setConversationStaffRows([])
+        return
+      }
+      setConversationStaffRows(r.data ?? [])
+      setConversationStaffTargetUserId('')
+      setConversationStaffNewRole('moderator')
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [
+    conversationInfoEdit,
+    conversationInfoId,
+    conversationInfoConv?.id,
+    conversationInfoConv?.kind,
+    conversationInfoRole,
+    user?.id,
+  ])
+
+  const applyConversationStaffRole = useCallback(async () => {
+    const cid = conversationInfoId?.trim() ?? ''
+    const tid = conversationStaffTargetUserId.trim()
+    if (!user?.id || !cid || !tid || conversationStaffMutating) return
+    setConversationStaffMutating(true)
+    try {
+      const res = await setConversationMemberStaffRole(cid, tid, conversationStaffNewRole)
+      if (res.error) {
+        toast.push({ tone: 'error', message: res.error, ms: 3200 })
+        return
+      }
+      toast.push({ tone: 'success', message: 'Роль обновлена.', ms: 2200 })
+      const list = await listConversationStaffMembers(cid)
+      if (!list.error) setConversationStaffRows(list.data ?? [])
+      setConversationStaffTargetUserId('')
+    } finally {
+      setConversationStaffMutating(false)
+    }
+  }, [
+    conversationInfoId,
+    conversationStaffMutating,
+    conversationStaffNewRole,
+    conversationStaffTargetUserId,
+    toast,
+    user?.id,
+  ])
 
   const shareConversationInvite = useCallback(async () => {
     const cid = conversationInfoId?.trim() ?? ''
@@ -2978,6 +3184,7 @@ export function DashboardMessengerPage() {
                                 ),
                               )
                             }}
+                            onForwardMessage={handleForwardFromGroupMessage}
                           />
                         ) : (
                           <ChannelThreadPane
@@ -2991,6 +3198,7 @@ export function DashboardMessengerPage() {
                                 ),
                               )
                             }}
+                            onForwardMessage={handleForwardFromChannelMessage}
                           />
                         )}
                       </div>
@@ -3320,6 +3528,13 @@ export function DashboardMessengerPage() {
                                 setReplyTo(messageMenu.message)
                                 closeMessageActionMenu()
                               }}
+                              onForward={
+                                threadHeadConversation?.kind === 'direct' &&
+                                !messageMenu.message.id.startsWith('local-') &&
+                                (messageMenu.message.kind === 'text' || messageMenu.message.kind === 'image')
+                                  ? () => openForwardFromDmMessage(messageMenu.message)
+                                  : undefined
+                              }
                               onPickReaction={(emoji) => {
                                 if (!isDirectReactionEmoji(emoji)) return
                                 void toggleMessengerReaction(messageMenu.message.id, emoji)
@@ -3445,6 +3660,27 @@ export function DashboardMessengerPage() {
           </>
         ) : null}
       </section>
+
+      {forwardDmModal
+        ? createPortal(
+            <MessengerForwardToDmModal
+              open
+              onClose={() => {
+                if (!forwardDmSending) {
+                  setForwardDmModal(null)
+                  setForwardDmComment('')
+                }
+              }}
+              items={forwardDmPickItems}
+              excludeConversationId={threadHeadConversation?.kind === 'direct' ? activeConversationId : null}
+              comment={forwardDmComment}
+              onCommentChange={setForwardDmComment}
+              onSend={(id) => void finishForwardToDm(id)}
+              sending={forwardDmSending}
+            />,
+            document.body,
+          )
+        : null}
 
       {messengerImageLightboxUrl
         ? createPortal(
@@ -3698,6 +3934,68 @@ export function DashboardMessengerPage() {
                         <p className="messenger-settings-modal__hint">Опционально.</p>
                       )}
                     </div>
+
+                    {conversationInfoRole && ['owner', 'admin'].includes(conversationInfoRole) ? (
+                      <div className="messenger-settings-modal__section">
+                        <span className="messenger-settings-modal__label">Роли и модерация</span>
+                        <p className="messenger-settings-modal__hint">
+                          Назначьте участнику роль модератора или администратора для работы с контентом
+                          {conversationInfoConv.kind === 'channel'
+                            ? ' канала (посты, комментарии, реакции).'
+                            : ' группы (настройки по-прежнему только у владельца и админов).'}
+                        </p>
+                        {conversationStaffLoading ? (
+                          <p className="messenger-settings-modal__hint">Загрузка списка…</p>
+                        ) : conversationStaffRows.length === 0 ? (
+                          <p className="messenger-settings-modal__hint">Нет других участников для назначения.</p>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <select
+                              className="dashboard-messenger__list-search-input"
+                              value={conversationStaffTargetUserId}
+                              onChange={(e) => setConversationStaffTargetUserId(e.target.value)}
+                              disabled={conversationInfoLoading || conversationStaffMutating}
+                              aria-label="Участник"
+                            >
+                              <option value="">— Выберите участника —</option>
+                              {conversationStaffRows.map((r) => (
+                                <option key={r.user_id} value={r.user_id}>
+                                  {r.display_name}
+                                  {r.member_role && r.member_role !== 'member'
+                                    ? ` (${messengerStaffRoleShortLabel(r.member_role)})`
+                                    : ''}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              className="dashboard-messenger__list-search-input"
+                              value={conversationStaffNewRole}
+                              onChange={(e) => setConversationStaffNewRole(e.target.value as ConversationStaffRole)}
+                              disabled={conversationInfoLoading || conversationStaffMutating}
+                              aria-label="Новая роль"
+                            >
+                              <option value="member">Участник</option>
+                              <option value="moderator">Модератор</option>
+                              <option value="admin" disabled={conversationInfoRole !== 'owner'}>
+                                Администратор
+                              </option>
+                            </select>
+                            <button
+                              type="button"
+                              className="dashboard-topbar__action dashboard-topbar__action--primary"
+                              disabled={
+                                conversationInfoLoading ||
+                                conversationStaffMutating ||
+                                !conversationStaffTargetUserId.trim()
+                              }
+                              onClick={() => void applyConversationStaffRole()}
+                            >
+                              {conversationStaffMutating ? '…' : 'Назначить или изменить роль'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
                   </>
                 ) : null}
 

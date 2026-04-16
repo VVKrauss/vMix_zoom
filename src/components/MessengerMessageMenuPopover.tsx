@@ -11,6 +11,7 @@ export function MessengerMessageMenuPopover({
   onDelete,
   onReply,
   onPickReaction,
+  onForward,
   showAddPin,
   pinActive,
   pinBusy,
@@ -24,6 +25,8 @@ export function MessengerMessageMenuPopover({
   onDelete: () => void
   onReply: () => void
   onPickReaction: (emoji: ReactionEmoji) => void
+  /** Переслать в личный чат (канал/группа/ЛС). */
+  onForward?: () => void
   /** Скрыть пункт «Ответить» (например, комментарии к посту канала). */
   hideReply?: boolean
   showAddPin?: boolean
@@ -79,6 +82,19 @@ export function MessengerMessageMenuPopover({
       {!hideReply ? (
         <button type="button" className="messenger-msg-menu__item" role="menuitem" onClick={onReply}>
           Ответить
+        </button>
+      ) : null}
+      {onForward ? (
+        <button
+          type="button"
+          className="messenger-msg-menu__item"
+          role="menuitem"
+          onClick={() => {
+            onForward()
+            onClose()
+          }}
+        >
+          Переслать
         </button>
       ) : null}
       {showAddPin && onTogglePin ? (

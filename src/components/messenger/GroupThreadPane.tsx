@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { shouldClosePopoverOnOutsidePointer } from '../../utils/popoverOutsideClick'
 import { useAuth } from '../../context/AuthContext'
 import { useProfile } from '../../hooks/useProfile'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
@@ -17,11 +19,21 @@ import {
 import type { ReactionEmoji } from '../../types/roomComms'
 import { REACTION_EMOJI_WHITELIST } from '../../types/roomComms'
 import { MessengerBubbleBody } from '../MessengerBubbleBody'
+import { MessengerMessageMenuPopover } from '../MessengerMessageMenuPopover'
 import { FiRrIcon } from '../icons'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
 import { DoubleTapHeartSurface } from './DoubleTapHeartSurface'
 
 const QUICK_REACTION_EMOJI: ReactionEmoji = '❤️'
+
+function formatGroupBubbleTime(iso: string): string {
+  const dt = new Date(iso)
+  if (Number.isNaN(dt.getTime())) return '—'
+  return dt.toLocaleString('ru-RU', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  })
+}
 
 function sortChrono(a: DirectMessage, b: DirectMessage): number {
   const ta = new Date(a.createdAt).getTime()
@@ -46,9 +58,11 @@ function chatMessageDeleteRowId(oldRow: Record<string, unknown>): string | null 
 export function GroupThreadPane({
   conversationId,
   onTouchTail,
+  onForwardMessage,
 }: {
   conversationId: string
   onTouchTail?: (patch: { lastMessageAt: string; lastMessagePreview: string }) => void
+  onForwardMessage?: (message: DirectMessage) => void
 }) {
   const { user } = useAuth()
   const { profile } = useProfile()
@@ -65,6 +79,11 @@ export function GroupThreadPane({
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [replyTo, setReplyTo] = useState<DirectMessage | null>(null)
   const [reactOpenFor, setReactOpenFor] = useState<string | null>(null)
+  const [messageMenu, setMessageMenu] = useState<{
+    message: DirectMessage
+    anchor: { left: number; top: number; right: number; bottom: number }
+  } | null>(null)
+  const messageMenuWrapRef = useRef<HTMLDivElement | null>(null)
 
   const cidRef = useRef(conversationId)
   cidRef.current = conversationId
@@ -278,6 +297,58 @@ export function GroupThreadPane({
     [conversationId, user?.id, photoUploading, threadLoading, draft, replyTo?.id, profile?.display_name, onTouchTail],
   )
 
+  useLayoutEffect(() => {
+    const el = messageMenuWrapRef.current
+    if (!el || !messageMenu) return
+    const { anchor } = messageMenu
+    const place = () => {
+      const rect = el.getBoundingClientRect()
+      if (rect.width < 2 || rect.height < 2) {
+        requestAnimationFrame(place)
+        return
+      }
+      const pad = 10
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      let left = anchor.left
+      let top = anchor.bottom + 6
+      if (left + rect.width > vw - pad) left = vw - pad - rect.width
+      if (left < pad) left = pad
+      if (top + rect.height > vh - pad) top = anchor.top - rect.height - 6
+      if (top < pad) top = pad
+      el.style.left = `${left}px`
+      el.style.top = `${top}px`
+      el.style.visibility = 'visible'
+    }
+    el.style.visibility = 'hidden'
+    place()
+  }, [messageMenu])
+
+  useEffect(() => {
+    if (!messageMenu) return
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      const target =
+        'touches' in e && e.touches[0] ? (e.touches[0]!.target as EventTarget) : (e as MouseEvent).target
+      if (shouldClosePopoverOnOutsidePointer(messageMenuWrapRef.current, target)) setMessageMenu(null)
+    }
+    const touchOpts: AddEventListenerOptions = { capture: true, passive: true }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('touchstart', onDown, touchOpts)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown, touchOpts)
+    }
+  }, [messageMenu])
+
+  useEffect(() => {
+    if (!messageMenu) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMessageMenu(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [messageMenu])
+
   return (
     <div className="dashboard-messenger__thread-body">
       {threadLoading ? <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" /> : null}
@@ -295,14 +366,43 @@ export function GroupThreadPane({
             const rows = [...counts.entries()]
             const replyId = m.replyToMessageId?.trim() ?? ''
             const replyTarget = replyId ? messages.find((x) => x.id === replyId) ?? null : null
+            const isOwn = Boolean(user?.id && m.senderUserId === user.id)
+            const menuOpen = messageMenu?.message.id === m.id
             return (
-              <article key={m.id} className="dashboard-messenger__message">
+              <article
+                key={m.id}
+                className={`dashboard-messenger__message${isOwn ? ' dashboard-messenger__message--own' : ''}`}
+              >
                 {replyTarget ? (
                   <div className="messenger-reply-mini">
                     <span className="messenger-reply-mini__author">{replyTarget.senderNameSnapshot}</span>
                     <span className="messenger-reply-mini__text">{truncateMessengerReplySnippet(replyTarget.body, 42)}</span>
                   </div>
                 ) : null}
+                <div className="dashboard-messenger__message-meta">
+                  <div className="dashboard-messenger__message-meta-main">
+                    <span className="dashboard-messenger__message-author">{m.senderNameSnapshot}</span>
+                    <time dateTime={m.createdAt}>{formatGroupBubbleTime(m.createdAt)}</time>
+                    {m.editedAt ? <span className="dashboard-messenger__edited">изм.</span> : null}
+                  </div>
+                  <button
+                    type="button"
+                    className={`dashboard-messenger__msg-more${menuOpen ? ' dashboard-messenger__msg-more--open' : ''}`}
+                    aria-label="Действия с сообщением"
+                    aria-expanded={menuOpen}
+                    aria-haspopup="menu"
+                    disabled={m.id.startsWith('local-')}
+                    onClick={(e) => {
+                      const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
+                      setMessageMenu((cur) => {
+                        if (cur?.message.id === m.id) return null
+                        return { message: m, anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } }
+                      })
+                    }}
+                  >
+                    ⋮
+                  </button>
+                </div>
                 <DoubleTapHeartSurface
                   enabled={Boolean(
                     user?.id && (m.kind === 'text' || m.kind === 'image') && !m.id.startsWith('local-'),
@@ -439,6 +539,44 @@ export function GroupThreadPane({
           </div>
         </div>
       ) : null}
+
+      {messageMenu
+        ? createPortal(
+            <div
+              ref={messageMenuWrapRef}
+              className="messenger-msg-menu-wrap"
+              style={{ position: 'fixed', left: 0, top: 0, zIndex: 26500, visibility: 'hidden' }}
+            >
+              <MessengerMessageMenuPopover
+                canEdit={false}
+                canDelete={false}
+                onClose={() => setMessageMenu(null)}
+                onEdit={() => setMessageMenu(null)}
+                onDelete={() => setMessageMenu(null)}
+                onReply={() => {
+                  setReplyTo(messageMenu.message)
+                  setMessageMenu(null)
+                }}
+                onPickReaction={(em) => {
+                  if (!messageMenu.message.id || !isAllowedReactionEmoji(em)) return
+                  void toggleReaction(messageMenu.message.id, em)
+                  setMessageMenu(null)
+                }}
+                onForward={
+                  onForwardMessage &&
+                  !messageMenu.message.id.startsWith('local-') &&
+                  (messageMenu.message.kind === 'text' || messageMenu.message.kind === 'image')
+                    ? () => {
+                        onForwardMessage(messageMenu.message)
+                        setMessageMenu(null)
+                      }
+                    : undefined
+                }
+              />
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   )
 }
