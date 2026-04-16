@@ -87,6 +87,8 @@ export function GroupThreadPane({
   const [photoUploading, setPhotoUploading] = useState(false)
   const photoInputRef = useRef<HTMLInputElement | null>(null)
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const messagesScrollRef = useRef<HTMLDivElement | null>(null)
+  const pinnedToBottomRef = useRef(true)
   const composerEmojiWrapRef = useRef<HTMLDivElement | null>(null)
   const [composerEmojiOpen, setComposerEmojiOpen] = useState(false)
   const [replyTo, setReplyTo] = useState<DirectMessage | null>(null)
@@ -170,12 +172,24 @@ export function GroupThreadPane({
       }
       setMessages(res.data ?? [])
       if (!viewerOnly) void markGroupRead(cid)
-      requestAnimationFrame(() => composerTextareaRef.current?.focus())
+      pinnedToBottomRef.current = true
+      requestAnimationFrame(() => {
+        const el = messagesScrollRef.current
+        if (el) el.scrollTop = el.scrollHeight
+        composerTextareaRef.current?.focus()
+      })
     })
     return () => {
       active = false
     }
   }, [conversationId, user?.id, canView, viewerOnly])
+
+  const updatePinnedToBottom = useCallback(() => {
+    const el = messagesScrollRef.current
+    if (!el) return
+    const slack = 48
+    pinnedToBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - slack
+  }, [])
 
   useEffect(() => {
     const cid = conversationId.trim()
@@ -195,6 +209,12 @@ export function GroupThreadPane({
         })
         const preview = previewTextForDirectMessageTail(msg)
         onTouchTail?.({ lastMessageAt: msg.createdAt, lastMessagePreview: preview })
+        if (pinnedToBottomRef.current && msg.kind !== 'reaction') {
+          requestAnimationFrame(() => {
+            const el = messagesScrollRef.current
+            if (el) el.scrollTop = el.scrollHeight
+          })
+        }
         if (!viewerOnly && document.visibilityState === 'visible') void markGroupRead(cid)
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages', filter }, (payload) => {
@@ -523,7 +543,13 @@ export function GroupThreadPane({
       {threadLoading ? <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" /> : null}
       {error ? <p className="join-error">{error}</p> : null}
 
-      <div className="dashboard-messenger__messages-scroll" role="region" aria-label="Сообщения группы">
+      <div
+        ref={messagesScrollRef}
+        className="dashboard-messenger__messages-scroll"
+        role="region"
+        aria-label="Сообщения группы"
+        onScroll={updatePinnedToBottom}
+      >
         <div className="dashboard-messenger__messages">
           {!canView ? (
             joinRequestPending ? (

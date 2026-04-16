@@ -142,6 +142,8 @@ export function ChannelThreadPane({
   const [signedUrlByPath, setSignedUrlByPath] = useState<Record<string, string>>({})
   const postAnchorRef = useRef<Map<string, HTMLElement>>(new Map())
   const commentAnchorRef = useRef<Map<string, HTMLElement>>(new Map())
+  const commentsScrollRef = useRef<HTMLDivElement | null>(null)
+  const commentsPinnedToBottomRef = useRef(true)
 
   const cidRef = useRef(conversationId)
   cidRef.current = conversationId
@@ -304,6 +306,12 @@ export function ChannelThreadPane({
             if (cur.some((c) => c.id === msg.id)) return prev
             return { ...prev, [postId]: [...cur, msg].sort(sortChrono) }
           })
+          if (commentsPinnedToBottomRef.current && commentsModalPostId?.trim() === postId.trim()) {
+            requestAnimationFrame(() => {
+              const el = commentsScrollRef.current
+              if (el) el.scrollTop = el.scrollHeight
+            })
+          }
         }
         if (document.visibilityState === 'visible') void markChannelRead(cid)
       })
@@ -446,6 +454,7 @@ export function ChannelThreadPane({
     const cid = conversationId.trim()
     if (!cid || !postId) return
     setCommentsModalPostId(postId)
+    commentsPinnedToBottomRef.current = true
 
     let skipFetch = false
     setCommentsByPostId((prev) => {
@@ -472,10 +481,30 @@ export function ChannelThreadPane({
       } else {
         setCommentCountByPostId((prev) => ({ ...prev, [postId]: nonR.length }))
       }
+      requestAnimationFrame(() => {
+        const el = commentsScrollRef.current
+        if (el) el.scrollTop = el.scrollHeight
+      })
     } finally {
       setCommentsLoadingPostId(null)
     }
   }, [conversationId, viewerOnly])
+
+  const updateCommentsPinned = useCallback(() => {
+    const el = commentsScrollRef.current
+    if (!el) return
+    const slack = 48
+    commentsPinnedToBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - slack
+  }, [])
+
+  useEffect(() => {
+    if (!commentsModalPostId) return
+    commentsPinnedToBottomRef.current = true
+    requestAnimationFrame(() => {
+      const el = commentsScrollRef.current
+      if (el) el.scrollTop = el.scrollHeight
+    })
+  }, [commentsModalPostId])
 
   useEffect(() => {
     const mid = jumpToMessageId?.trim() ?? ''
@@ -1386,7 +1415,12 @@ export function ChannelThreadPane({
           </div>
         )}
 
-        <div className="dashboard-messenger__messages-scroll" style={{ flex: '1 1 auto' }}>
+        <div
+          ref={commentsScrollRef}
+          className="dashboard-messenger__messages-scroll"
+          style={{ flex: '1 1 auto' }}
+          onScroll={updateCommentsPinned}
+        >
           <div className="dashboard-messenger__messages dashboard-messenger__messages--channel-comments-modal">
             {list.map((c) => renderChannelComment(c))}
             {list.length === 0 ? <div className="dashboard-chats-empty" style={{ padding: 8 }}>Пока нет комментариев.</div> : null}
