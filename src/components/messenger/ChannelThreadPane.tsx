@@ -1296,9 +1296,21 @@ export function ChannelThreadPane({
           <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" />
         ) : !canView ? (
           joinRequestPending ? (
-            <div className="dashboard-chats-empty">Запрос на вступление отправлен. Ожидайте подтверждения от администратора.</div>
+            <div className="messenger-join-gate messenger-join-gate--embed">
+              <div className="messenger-join-gate__card messenger-join-gate__card--compact">
+                <h2 className="messenger-join-gate__title messenger-join-gate__title--sm">Заявка отправлена</h2>
+                <p className="messenger-join-gate__text">
+                  Ожидайте подтверждения от администратора — после одобрения посты появятся здесь.
+                </p>
+              </div>
+            </div>
           ) : (
-            <div className="dashboard-chats-empty">Канал закрыт или у вас нет доступа.</div>
+            <div className="messenger-join-gate messenger-join-gate--embed">
+              <div className="messenger-join-gate__card messenger-join-gate__card--compact">
+                <h2 className="messenger-join-gate__title messenger-join-gate__title--sm">Нет доступа</h2>
+                <p className="messenger-join-gate__text">Канал закрыт или у вас нет доступа к содержимому.</p>
+              </div>
+            </div>
           )
         ) : posts.filter((m) => m.kind !== 'reaction').length === 0 ? (
           <div className="dashboard-chats-empty">Пока нет постов.</div>

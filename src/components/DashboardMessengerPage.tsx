@@ -46,6 +46,7 @@ import {
   isDmSoftDeletedStub,
 } from '../lib/messenger'
 import {
+  buildJoinRequestPendingSidebarStub,
   listMessengerConversations,
   type MessengerConversationKind,
   type MessengerConversationSummary,
@@ -56,7 +57,11 @@ import {
   type ConversationStaffMember,
   type ConversationStaffRole,
 } from '../lib/conversationStaff'
-import { listConversationMembersForManagement, type ConversationMemberRow } from '../lib/conversationMembers'
+import {
+  listConversationMembersForManagement,
+  removeConversationMemberByStaff,
+  type ConversationMemberRow,
+} from '../lib/conversationMembers'
 import {
   createGroupChat,
   getOrCreateConversationInvite,
@@ -195,6 +200,14 @@ function itemMatchesMessengerListSearch(item: MessengerConversationSummary, need
   const title = item.title.toLowerCase()
   const preview = (item.lastMessagePreview ?? '').toLowerCase()
   return title.includes(needle) || preview.includes(needle)
+}
+
+function memberKickAllowed(callerRole: string | null, myUserId: string | null, m: ConversationMemberRow): boolean {
+  if (!myUserId || m.userId === myUserId) return false
+  if (m.role === 'owner') return false
+  if (callerRole === 'owner') return true
+  if (callerRole === 'admin') return m.role === 'member' || m.role === 'moderator'
+  return false
 }
 
 /** Последнее text/system в треде — для превью в списке (реакции не считаются «последним сообщением»). */
@@ -382,6 +395,10 @@ export function DashboardMessengerPage() {
   const [threadLoading, setThreadLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [items, setItems] = useState<MessengerConversationSummary[]>([])
+  /** Чаты с отправленной заявкой: держим строку в дереве до появления в ответе сервера. */
+  const [pendingJoinSidebarById, setPendingJoinSidebarById] = useState<
+    Record<string, MessengerConversationSummary>
+  >({})
   const [conversationAvatarUrlById, setConversationAvatarUrlById] = useState<Record<string, string>>({})
   const [activeConversation, setActiveConversation] = useState<MessengerConversationSummary | null>(null)
   const [messages, setMessages] = useState<DirectMessage[]>([])
@@ -480,6 +497,7 @@ export function DashboardMessengerPage() {
   const [conversationMembers, setConversationMembers] = useState<ConversationMemberRow[]>([])
   const [membersLoading, setMembersLoading] = useState(false)
   const [joinRequestInFlight, setJoinRequestInFlight] = useState(false)
+  const [kickMemberBusyId, setKickMemberBusyId] = useState<string | null>(null)
   const [pendingJoinRequest, setPendingJoinRequest] = useState<boolean | null>(null)
   const [joinRequestError, setJoinRequestError] = useState<string | null>(null)
   const [activeJoinRequestId, setActiveJoinRequestId] = useState<string | null>(null)
@@ -534,10 +552,25 @@ export function DashboardMessengerPage() {
       // Closed conversations: backend returns requested=true (no membership yet).
       if (res.data.requested) {
         setPendingJoinRequest(true)
+        if (invitePreview?.id === res.data.conversationId) {
+          setPendingJoinSidebarById((prev) => ({
+            ...prev,
+            [invitePreview.id]: buildJoinRequestPendingSidebarStub({
+              id: invitePreview.id,
+              kind: invitePreview.kind,
+              title: invitePreview.title,
+              isPublic: invitePreview.isPublic,
+              publicNick: invitePreview.publicNick,
+              avatarPath: invitePreview.avatarPath,
+              avatarThumbPath: invitePreview.avatarThumbPath,
+              memberCount: invitePreview.memberCount,
+              postingMode: invitePreview.postingMode,
+              commentsMode: invitePreview.commentsMode,
+            }),
+          }))
+        }
         toast.push({ tone: 'success', message: 'Запрос на вступление отправлен. Ожидайте подтверждения.', ms: 3200 })
-        navigate(`/dashboard/messenger/${encodeURIComponent(res.data.conversationId)}?invite=${encodeURIComponent(token)}`, {
-          replace: true,
-        })
+        navigate(`/dashboard/messenger/${encodeURIComponent(res.data.conversationId)}`, { replace: true })
         return
       }
       const listRes = await listMessengerConversations()
@@ -546,7 +579,7 @@ export function DashboardMessengerPage() {
     } finally {
       setInviteJoinBusy(false)
     }
-  }, [inviteJoinBusy, inviteToken, navigate, setItems, setPendingJoinRequest, toast, user?.id])
+  }, [inviteJoinBusy, invitePreview, inviteToken, navigate, setItems, setPendingJoinRequest, toast, user?.id])
 
   const messengerSenderUserIds = useMemo(() => {
     const s = new Set<string>()
@@ -576,6 +609,32 @@ export function DashboardMessengerPage() {
   conversationIdRef.current = conversationId
   const itemsRef = useRef(items)
   itemsRef.current = items
+
+  const mergedItems = useMemo(() => {
+    const out = [...items]
+    const ids = new Set(items.map((i) => i.id))
+    for (const stub of Object.values(pendingJoinSidebarById)) {
+      if (!ids.has(stub.id)) out.push(stub)
+    }
+    return out
+  }, [items, pendingJoinSidebarById])
+
+  const mergedItemsRef = useRef(mergedItems)
+  mergedItemsRef.current = mergedItems
+
+  useEffect(() => {
+    setPendingJoinSidebarById((prev) => {
+      let changed = false
+      const next = { ...prev }
+      for (const id of Object.keys(prev)) {
+        if (items.some((i) => i.id === id)) {
+          delete next[id]
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [items])
   const messagesRef = useRef(messages)
   messagesRef.current = messages
   const reactionOpInFlightRef = useRef<Set<string>>(new Set())
@@ -810,7 +869,7 @@ export function DashboardMessengerPage() {
 
       const token = inviteToken.trim()
       const preview = invitePreview
-      if (token && preview?.id && !itemsRef.current.some((i) => i.id === preview.id)) {
+      if (token && preview?.id && !mergedItemsRef.current.some((i) => i.id === preview.id && !i.joinRequestPending)) {
         setError(null)
         setThreadLoading(false)
         setActiveConversation({
@@ -843,7 +902,7 @@ export function DashboardMessengerPage() {
         return
       }
       const startedTarget =
-        conversationId.trim() || pickDefaultConversationId(itemsRef.current, null) || ''
+        conversationId.trim() || pickDefaultConversationId(mergedItemsRef.current, null) || ''
       if (!startedTarget) {
         lastFetchedThreadIdRef.current = null
         setActiveConversation(null)
@@ -854,7 +913,18 @@ export function DashboardMessengerPage() {
         return
       }
 
-      const startedSummary = itemsRef.current.find((i) => i.id === startedTarget) ?? null
+      const startedSummary = mergedItemsRef.current.find((i) => i.id === startedTarget) ?? null
+
+      const inviteWait =
+        inviteToken.trim() &&
+        startedTarget === urlConversationId.trim() &&
+        (inviteLoading || !invitePreview?.id) &&
+        !mergedItemsRef.current.some((i) => i.id === startedTarget && !i.joinRequestPending)
+      if (inviteWait) {
+        setError(null)
+        setThreadLoading(inviteLoading)
+        return
+      }
       const pendingPlaceholder =
         !startedSummary &&
         pendingJump?.conversationId.trim() === startedTarget &&
@@ -933,7 +1003,7 @@ export function DashboardMessengerPage() {
         ])
 
         const wantNow =
-          conversationIdRef.current.trim() || pickDefaultConversationId(itemsRef.current, null) || ''
+          conversationIdRef.current.trim() || pickDefaultConversationId(mergedItemsRef.current, null) || ''
         if (wantNow !== startedTarget) return
 
         if (conversationRes.error) {
@@ -943,7 +1013,13 @@ export function DashboardMessengerPage() {
           setHasMoreOlder(false)
           lastFetchedThreadIdRef.current = null
         } else if (!conversationRes.data) {
-          setError('Чат не найден или у вас нет к нему доступа.')
+          const looksLikeGroupOrChannelWait =
+            inviteToken.trim() &&
+            startedTarget === urlConversationId.trim() &&
+            (inviteLoading || !invitePreview?.id)
+          if (!looksLikeGroupOrChannelWait) {
+            setError('Чат не найден или у вас нет к нему доступа.')
+          }
           setActiveConversation(null)
           setMessages([])
           setHasMoreOlder(false)
@@ -975,14 +1051,24 @@ export function DashboardMessengerPage() {
     }
 
     void run()
-  }, [conversationId, invitePreview, inviteToken, listOnlyMobile, loading, user?.id])
+  }, [
+    conversationId,
+    inviteLoading,
+    invitePreview,
+    inviteToken,
+    listOnlyMobile,
+    loading,
+    pendingJoinSidebarById,
+    urlConversationId,
+    user?.id,
+  ])
 
   const activeConversationId = listOnlyMobile ? '' : conversationId || activeConversation?.id || ''
   const inviteJoinMode = Boolean(
     inviteToken.trim() &&
       invitePreview?.id &&
       activeConversationId === invitePreview.id &&
-      !items.some((i) => i.id === invitePreview.id) &&
+      !mergedItems.some((i) => i.id === invitePreview.id && !i.joinRequestPending) &&
       invitePreview.isPublic !== true,
   )
 
@@ -1700,7 +1786,7 @@ export function DashboardMessengerPage() {
     'all' | MessengerConversationKind
   >('all')
 
-  const sortedItems = useMemo(() => sortConversationsByActivity(items), [items])
+  const sortedItems = useMemo(() => sortConversationsByActivity(mergedItems), [mergedItems])
 
   /** Шапка треда: сразу из списка по URL, пока грузится полная карточка с сервера */
   const threadHeadConversation =
@@ -1853,6 +1939,24 @@ export function DashboardMessengerPage() {
         return
       }
       setPendingJoinRequest(true)
+      if (threadHeadConversation && (threadHeadConversation.kind === 'group' || threadHeadConversation.kind === 'channel')) {
+        const k = threadHeadConversation.kind
+        setPendingJoinSidebarById((prev) => ({
+          ...prev,
+          [cid]: buildJoinRequestPendingSidebarStub({
+            id: cid,
+            kind: k,
+            title: threadHeadConversation.title,
+            isPublic: threadHeadConversation.isPublic ?? false,
+            publicNick: threadHeadConversation.publicNick ?? null,
+            avatarPath: threadHeadConversation.avatarPath ?? null,
+            avatarThumbPath: threadHeadConversation.avatarThumbPath ?? null,
+            memberCount: threadHeadConversation.memberCount ?? 0,
+            postingMode: threadHeadConversation.kind === 'channel' ? threadHeadConversation.postingMode : undefined,
+            commentsMode: threadHeadConversation.kind === 'channel' ? threadHeadConversation.commentsMode : undefined,
+          }),
+        }))
+      }
       toast.push({ tone: 'success', message: 'Запрос на вступление отправлен. Ожидайте подтверждения.', ms: 3200 })
     } finally {
       setJoinRequestInFlight(false)
@@ -1913,6 +2017,28 @@ export function DashboardMessengerPage() {
     [activeConversationId, joinRequestInFlight, toast],
   )
 
+  const kickConversationMember = useCallback(
+    async (targetUserId: string) => {
+      const cid = activeConversationId.trim()
+      if (!cid || !targetUserId.trim() || kickMemberBusyId) return
+      if (!window.confirm('Удалить участника из чата?')) return
+      setKickMemberBusyId(targetUserId.trim())
+      try {
+        const res = await removeConversationMemberByStaff(cid, targetUserId.trim())
+        if (res.error) {
+          toast.push({ tone: 'error', message: res.error, ms: 3200 })
+          return
+        }
+        toast.push({ tone: 'success', message: 'Участник удалён из чата.', ms: 2200 })
+        const listRes = await listConversationMembersForManagement(cid)
+        if (!listRes.error) setConversationMembers(listRes.data ?? [])
+      } finally {
+        setKickMemberBusyId(null)
+      }
+    },
+    [activeConversationId, kickMemberBusyId, toast],
+  )
+
   const forwardDmPickItems = useMemo(
     () =>
       sortedItems
@@ -1935,10 +2061,10 @@ export function DashboardMessengerPage() {
   /** Сумма непрочитанных во всех диалогах, кроме активного — для бейджа «Назад к чатам». */
   const totalOtherUnread = useMemo(
     () =>
-      items
-        .filter((i) => i.id !== activeConversationId)
+      mergedItems
+        .filter((i) => i.id !== activeConversationId && !i.joinRequestPending)
         .reduce((sum, i) => sum + i.unreadCount, 0),
-    [items, activeConversationId],
+    [mergedItems, activeConversationId],
   )
 
   const timelineMessages = useMemo(
@@ -3198,7 +3324,7 @@ export function DashboardMessengerPage() {
                                   >
                                     {formatMessengerListRowTime(item.lastMessageAt ?? item.createdAt)}
                                   </time>
-                                  {item.unreadCount > 0 ? (
+                                  {!item.joinRequestPending && item.unreadCount > 0 ? (
                                     <span className="dashboard-messenger__row-badge">
                                       {item.unreadCount > 99 ? '99+' : item.unreadCount}
                                     </span>
@@ -3229,7 +3355,7 @@ export function DashboardMessengerPage() {
                 ) : threadHeadConversation ? (
                   threadHeadConversation.kind === 'group' || threadHeadConversation.kind === 'channel' ? (
                     inviteJoinMode ? (
-                      <div className="dashboard-messenger__thread-body">
+                      <div className="dashboard-messenger__thread-body dashboard-messenger__thread-body--join-gate">
                         <div className="dashboard-messenger__thread-head">
                           {isMobileMessenger ? (
                             <header className="dashboard-messenger__list-head dashboard-messenger__list-head--thread">
@@ -3265,18 +3391,39 @@ export function DashboardMessengerPage() {
                           )}
                         </div>
 
-                        {inviteLoading ? <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" /> : null}
-
-                        <div className="dashboard-chats-empty" style={{ paddingTop: 0 }}>
-                          <button
-                            type="button"
-                            className="dashboard-topbar__action dashboard-topbar__action--primary"
-                            onClick={() => void joinFromInvite()}
-                            disabled={inviteJoinBusy || inviteLoading}
-                          >
-                            {inviteJoinBusy ? 'Вступаем…' : 'Вступить'}
-                          </button>
-                        </div>
+                        {inviteLoading ? (
+                          <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" />
+                        ) : (
+                          <div className="messenger-join-gate">
+                            <div className="messenger-join-gate__card">
+                              <div className="messenger-join-gate__avatar" aria-hidden>
+                                {invitePreview && conversationAvatarUrlById[invitePreview.id] ? (
+                                  <img src={conversationAvatarUrlById[invitePreview.id] ?? undefined} alt="" />
+                                ) : (
+                                  <span>{conversationInitial(threadHeadConversation.title)}</span>
+                                )}
+                              </div>
+                              <p className="messenger-join-gate__eyebrow">
+                                {threadHeadConversation.kind === 'channel' ? 'Канал' : 'Группа'}
+                                {typeof invitePreview?.memberCount === 'number'
+                                  ? ` · ${invitePreview.memberCount} участн.`
+                                  : ''}
+                              </p>
+                              <h2 className="messenger-join-gate__title">{threadHeadConversation.title}</h2>
+                              <p className="messenger-join-gate__text">
+                                Закрытое сообщество. Отправьте заявку — администраторы примут решение и дадут доступ.
+                              </p>
+                              <button
+                                type="button"
+                                className="messenger-join-gate__cta"
+                                onClick={() => void joinFromInvite()}
+                                disabled={inviteJoinBusy || inviteLoading}
+                              >
+                                {inviteJoinBusy ? 'Отправка…' : 'Запросить вступление'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="dashboard-messenger__thread-body">
@@ -3318,7 +3465,7 @@ export function DashboardMessengerPage() {
                                 </div>
                               </button>
                               <div className="dashboard-messenger__list-head-actions">
-                                {canRequestJoin ? (
+                                {canRequestJoin && viewerOnly && pendingJoinRequest !== true ? (
                                   <button
                                     type="button"
                                     className="dashboard-messenger__list-head-btn dashboard-messenger__list-head-btn--primary dashboard-messenger__thread-head-join"
@@ -3382,7 +3529,7 @@ export function DashboardMessengerPage() {
                                 </div>
                               </button>
                               <div className="dashboard-messenger__thread-head-actions-desktop">
-                                {canRequestJoin ? (
+                                {canRequestJoin && viewerOnly && pendingJoinRequest !== true ? (
                                   <button
                                     type="button"
                                     className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__thread-head-join"
@@ -3414,7 +3561,36 @@ export function DashboardMessengerPage() {
                           )}
                         </div>
 
-                        {threadHeadConversation.kind === 'group' ? (
+                        {canRequestJoin && !inviteJoinMode && !viewerOnly && pendingJoinRequest !== true ? (
+                          <div className="messenger-join-gate messenger-join-gate--embed">
+                            <div className="messenger-join-gate__card">
+                              <div className="messenger-join-gate__avatar" aria-hidden>
+                                {conversationAvatarUrlById[activeConversationId] ? (
+                                  <img src={conversationAvatarUrlById[activeConversationId] ?? undefined} alt="" />
+                                ) : (
+                                  <span>{conversationInitial(threadHeadConversation.title)}</span>
+                                )}
+                              </div>
+                              <p className="messenger-join-gate__eyebrow">
+                                {threadHeadConversation.kind === 'channel' ? 'Канал' : 'Группа'}
+                                {` · ${threadHeadConversation.memberCount ?? 0} участн.`}
+                              </p>
+                              <h2 className="messenger-join-gate__title">{threadHeadConversation.title}</h2>
+                              <p className="messenger-join-gate__text">
+                                Чтобы видеть переписку, отправьте заявку — после одобрения администратором чат откроется
+                                полностью.
+                              </p>
+                              <button
+                                type="button"
+                                className="messenger-join-gate__cta"
+                                onClick={() => void joinOpenConversation()}
+                                disabled={joinActionDisabled || inviteLoading}
+                              >
+                                {joinActionDisabled ? '…' : joinActionLabel}
+                              </button>
+                            </div>
+                          </div>
+                        ) : threadHeadConversation.kind === 'group' ? (
                           <GroupThreadPane
                             conversationId={activeConversationId}
                             isMemberHint={isMemberOfActiveConversation}
@@ -3526,7 +3702,9 @@ export function DashboardMessengerPage() {
                                 {formatMessengerListRowTime(
                                   threadHeadConversation.lastMessageAt ?? threadHeadConversation.createdAt,
                                 )}
-                                {threadHeadConversation.unreadCount > 0 ? (
+                                {isMemberOfActiveConversation &&
+                                !threadHeadConversation.joinRequestPending &&
+                                threadHeadConversation.unreadCount > 0 ? (
                                   <>
                                     {' · '}
                                     <span className="dashboard-messenger__row-badge dashboard-messenger__row-badge--inline">
@@ -3595,7 +3773,9 @@ export function DashboardMessengerPage() {
                               <div className="dashboard-section__subtitle" role="heading" aria-level={3}>
                                 {threadHeadConversation.title}
                               </div>
-                              {threadHeadConversation.unreadCount > 0 ? (
+                              {isMemberOfActiveConversation &&
+                              !threadHeadConversation.joinRequestPending &&
+                              threadHeadConversation.unreadCount > 0 ? (
                                 <span className="dashboard-messenger__row-badge">
                                   {threadHeadConversation.unreadCount > 99
                                     ? '99+'
@@ -4018,6 +4198,18 @@ export function DashboardMessengerPage() {
                                   : 'Участник'}
                               </div>
                             </div>
+                            {memberKickAllowed(activeConversationRole, user?.id ?? null, m) ? (
+                              <div className="dashboard-messenger-join-requests-dialog__item-actions">
+                                <button
+                                  type="button"
+                                  className="dashboard-messenger-join-requests-dialog__kick"
+                                  disabled={Boolean(kickMemberBusyId)}
+                                  onClick={() => void kickConversationMember(m.userId)}
+                                >
+                                  {kickMemberBusyId === m.userId ? '…' : 'Исключить'}
+                                </button>
+                              </div>
+                            ) : null}
                           </li>
                         ))}
                       </ul>

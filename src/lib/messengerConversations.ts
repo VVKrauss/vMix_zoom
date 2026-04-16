@@ -30,6 +30,41 @@ export type MessengerConversationSummary = {
   /** Для channel */
   postingMode?: 'admins_only' | 'everyone'
   commentsMode?: 'everyone' | 'disabled'
+  /** Локальная строка в списке: заявка отправлена, пользователь ещё не участник */
+  joinRequestPending?: boolean
+}
+
+export function buildJoinRequestPendingSidebarStub(args: {
+  id: string
+  kind: 'group' | 'channel'
+  title: string
+  isPublic: boolean
+  publicNick?: string | null
+  avatarPath?: string | null
+  avatarThumbPath?: string | null
+  memberCount?: number
+  postingMode?: 'admins_only' | 'everyone'
+  commentsMode?: 'everyone' | 'disabled'
+}): MessengerConversationSummary {
+  const now = new Date().toISOString()
+  return {
+    id: args.id,
+    kind: args.kind,
+    title: args.title,
+    createdAt: now,
+    lastMessageAt: now,
+    lastMessagePreview: 'Запрос на вступление отправлен',
+    messageCount: 0,
+    unreadCount: 0,
+    joinRequestPending: true,
+    isPublic: args.isPublic,
+    publicNick: args.publicNick ?? null,
+    avatarPath: args.avatarPath ?? null,
+    avatarThumbPath: args.avatarThumbPath ?? null,
+    memberCount: args.memberCount ?? 0,
+    postingMode: args.kind === 'channel' ? args.postingMode ?? 'admins_only' : undefined,
+    commentsMode: args.kind === 'channel' ? args.commentsMode ?? 'everyone' : undefined,
+  }
 }
 
 function mapDirect(c: DirectConversationSummary): MessengerConversationSummary {

@@ -1,0 +1,30 @@
+---
+description: Как применять SQL к Supabase через MCP, если db push ломается
+alwaysApply: true
+---
+
+# Supabase: MCP вместо сломанного `db push`
+
+## Когда так делать
+
+Если `npx supabase db push` / `db push --include-all` падает из‑за расхождения истории миграций с удалённой БД (например `cannot change return type of existing function`), **не блокируйся на CLI**: применяй DDL через MCP.
+
+## Параметры проекта
+
+- **`project_id`**: из [`supabase/config.toml`](supabase/config.toml) поле `project_id` (например `dbhrmaabotdaagmiuzum`).
+- **MCP-сервер в Cursor**: идентификатор **`user-supabase`** (папка `mcps/user-supabase`); вызывать инструменты именно у этого сервера, не `supabase`.
+
+## Инструменты MCP (Supabase)
+
+1. **`list_migrations`** — `{ "project_id": "<id>" }` — что уже записано в истории миграций проекта.
+2. **`apply_migration`** — для DDL: `{ "project_id", "name": "snake_case_имя", "query": "<полный SQL файла>" }` — выполняет SQL **и** добавляет запись в историю (предпочтительно для новых миграций).
+3. **`execute_sql`** — сырой SQL без записи в историю миграций; только если нужна разовая правка или проверка.
+
+## Проверка после применения
+
+- Снова **`list_migrations`** — новая миграция в списке.
+- Или **`execute_sql`**: например поиск функции в `pg_proc` по `proname`.
+
+## Локальные файлы
+
+Файлы в `supabase/migrations/` остаются источником правды для репозитория; имя/версия на удалённой стороне после `apply_migration` может отличаться от имени файла — это нормально, главное — совпадение SQL и наличие записи в истории.
