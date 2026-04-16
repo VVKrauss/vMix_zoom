@@ -5644,7 +5644,7 @@ button.dashboard-messenger__row-avatar {
 
 .dashboard-messenger__channel-post-inner {
   position: relative;
-  padding: 12px 44px 10px 12px;
+  padding: 12px 12px 10px 12px;
   min-width: 0;
 }
 
@@ -5668,9 +5668,6 @@ button.dashboard-messenger__row-avatar {
 }
 
 .dashboard-messenger__channel-post-more {
-  position: absolute;
-  top: 8px;
-  right: 8px;
   width: 30px;
   min-width: 30px;
   height: 30px;
@@ -5686,6 +5683,12 @@ button.dashboard-messenger__row-avatar {
   justify-content: center;
   font-family: inherit;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.dashboard-messenger__channel-post-more--footer {
+  position: static;
+  top: auto;
+  right: auto;
 }
 
 .dashboard-messenger__channel-post-more:hover {
@@ -5710,6 +5713,13 @@ button.dashboard-messenger__row-avatar {
   padding: 8px 12px 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   min-width: 0;
+}
+
+.dashboard-messenger__channel-post-footer-actions {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .dashboard-messenger__channel-post-reactions {
@@ -5745,6 +5755,7 @@ button.dashboard-messenger__row-avatar {
 .dashboard-messenger__channel-post-comments i.fi {
   font-size: 14px;
   opacity: 0.92;
+  transform: translateX(-1px);
 }
 
 .dashboard-messenger__channel-post-comments-count {

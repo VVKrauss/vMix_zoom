@@ -1641,6 +1641,33 @@ export function DashboardMessengerPage() {
     })
   }
 
+  const onComposerPaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      if (threadLoading || photoUploading) return
+      const dt = e.clipboardData
+      if (!dt?.items || dt.items.length === 0) return
+      let file: File | null = null
+      for (const it of Array.from(dt.items)) {
+        if (it.kind !== 'file') continue
+        if (!it.type || !it.type.startsWith('image/')) continue
+        const f = it.getAsFile()
+        if (f) {
+          file = f
+          break
+        }
+      }
+      if (!file) return
+      const okTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+      if (file.type && !okTypes.has(file.type)) {
+        toast.push({ tone: 'warning', message: 'Формат изображения не поддерживается.', ms: 3200 })
+        return
+      }
+      e.preventDefault()
+      void sendPhotoFile(file)
+    },
+    [photoUploading, sendPhotoFile, threadLoading, toast],
+  )
+
   const [conversationKindFilter, setConversationKindFilter] = useState<
     'all' | MessengerConversationKind
   >('all')
@@ -2849,6 +2876,7 @@ export function DashboardMessengerPage() {
           placeholder={editingMessageId ? 'Исправьте текст…' : 'Напиши сообщение…'}
           value={draft}
           disabled={threadLoading || photoUploading}
+          onPaste={onComposerPaste}
           onChange={(e) => {
             setDraft(e.target.value)
             if (isMobileMessenger) queueMicrotask(() => adjustMobileComposerHeight())

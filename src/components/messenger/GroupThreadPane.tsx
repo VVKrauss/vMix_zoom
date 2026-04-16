@@ -316,6 +316,15 @@ export function GroupThreadPane({
     async (file: File) => {
       const cid = conversationId.trim()
       if (viewerOnly || !user?.id || !cid || photoUploading || threadLoading) return
+      if (file.size > GROUP_PHOTO_MAX_BYTES) {
+        toast.push({
+          tone: 'warning',
+          title: 'Слишком большой файл',
+          message: 'Файл больше 2 МБ. Выберите изображение меньшего размера.',
+          ms: 4200,
+        })
+        return
+      }
       setPhotoUploading(true)
       setError(null)
       const up = await uploadMessengerImage(cid, file)
@@ -353,6 +362,33 @@ export function GroupThreadPane({
       onTouchTail?.({ lastMessageAt: createdAt, lastMessagePreview: preview })
     },
     [conversationId, user?.id, photoUploading, threadLoading, draft, replyTo?.id, profile?.display_name, onTouchTail, viewerOnly],
+  )
+
+  const onComposerPaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      if (threadLoading || photoUploading) return
+      const dt = e.clipboardData
+      if (!dt?.items || dt.items.length === 0) return
+      let file: File | null = null
+      for (const it of Array.from(dt.items)) {
+        if (it.kind !== 'file') continue
+        if (!it.type || !it.type.startsWith('image/')) continue
+        const f = it.getAsFile()
+        if (f) {
+          file = f
+          break
+        }
+      }
+      if (!file) return
+      const okTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+      if (file.type && !okTypes.has(file.type)) {
+        toast.push({ tone: 'warning', message: 'Формат изображения не поддерживается.', ms: 3200 })
+        return
+      }
+      e.preventDefault()
+      void sendPhotoFile(file)
+    },
+    [photoUploading, sendPhotoFile, threadLoading, toast],
   )
 
   useLayoutEffect(() => {
@@ -586,6 +622,7 @@ export function GroupThreadPane({
               placeholder="Напиши сообщение…"
               value={draft}
               disabled={threadLoading || photoUploading}
+              onPaste={onComposerPaste}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {

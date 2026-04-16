@@ -191,9 +191,9 @@ export async function listGroupMessagesPage(
     p_before_id: before?.id ?? null,
   })
   if (error) return { data: null, error: error.message, hasMoreOlder: false }
-  const newestFirst = mapMessagesFromRows(data)
-  const chronological = [...newestFirst].reverse()
-  return { data: chronological, error: null, hasMoreOlder: newestFirst.length === limit }
+  // DB function returns chronological order already (ASC).
+  const chronological = mapMessagesFromRows(data)
+  return { data: chronological, error: null, hasMoreOlder: chronological.length === limit }
 }
 
 function parseOkMessageResult(data: unknown): { messageId: string | null; createdAt: string | null } {

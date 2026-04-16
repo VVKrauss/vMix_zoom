@@ -1159,27 +1159,6 @@ export function ChannelThreadPane({
           onHeart={() => void toggleReaction(p.id, QUICK_REACTION_EMOJI)}
         >
         <div className="dashboard-messenger__channel-post-inner">
-          <button
-            type="button"
-            className="dashboard-messenger__channel-post-more"
-            aria-label="Действия с постом"
-            title="Действия"
-            onClick={(e) => {
-              const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
-              setPostMenu((cur) => {
-                if (cur?.post.id === p.id) return null
-                return {
-                  post: p,
-                  anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
-                }
-              })
-            }}
-            disabled={viewerOnly || p.id.startsWith('local-')}
-          >
-            <span className="dashboard-messenger__channel-post-more-icon" aria-hidden>
-              ⋮
-            </span>
-          </button>
           {p.meta?.postDraft ? (
             <PostDraftReadView
               draft={p.meta.postDraft}
@@ -1198,15 +1177,38 @@ export function ChannelThreadPane({
         <div className="dashboard-messenger__channel-post-footer">
           {renderReactionChips(p, 'dashboard-messenger__channel-post-reactions', { showAddButton: false })}
           {!viewerOnly ? (
-            <button
-              type="button"
-              className="dashboard-messenger__channel-post-comments"
-              aria-label={`Комментарии, ${countLabel}`}
-              onClick={() => void openCommentsModal(p.id)}
-            >
-              <FiRrIcon name="comment" />
-              <span className="dashboard-messenger__channel-post-comments-count">{countLabel}</span>
-            </button>
+            <div className="dashboard-messenger__channel-post-footer-actions">
+              <button
+                type="button"
+                className="dashboard-messenger__channel-post-comments"
+                aria-label={`Комментарии, ${countLabel}`}
+                onClick={() => void openCommentsModal(p.id)}
+              >
+                <FiRrIcon name="comment" />
+                <span className="dashboard-messenger__channel-post-comments-count">{countLabel}</span>
+              </button>
+              <button
+                type="button"
+                className="dashboard-messenger__channel-post-more dashboard-messenger__channel-post-more--footer"
+                aria-label="Действия с постом"
+                title="Действия"
+                onClick={(e) => {
+                  const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
+                  setPostMenu((cur) => {
+                    if (cur?.post.id === p.id) return null
+                    return {
+                      post: p,
+                      anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+                    }
+                  })
+                }}
+                disabled={viewerOnly || p.id.startsWith('local-')}
+              >
+                <span className="dashboard-messenger__channel-post-more-icon" aria-hidden>
+                  ⋮
+                </span>
+              </button>
+            </div>
           ) : null}
         </div>
       </article>
