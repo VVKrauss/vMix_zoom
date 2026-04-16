@@ -3200,37 +3200,19 @@ export function DashboardMessengerPage() {
                               </div>
                             </header>
                           ) : (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 16 }}>
-                              {canRequestJoin ? (
-                                <button
-                                  type="button"
-                                  className="dashboard-topbar__action dashboard-topbar__action--primary"
-                                  onClick={() => void joinOpenConversation()}
-                                  disabled={joinActionDisabled || inviteLoading}
-                                  title={joinActionLabel}
-                                >
-                                  {joinActionDisabled ? '…' : joinActionLabel}
-                                </button>
-                              ) : null}
-                              {canManageConversationJoinRequests ? (
-                                <button
-                                  type="button"
-                                  className="dashboard-topbar__action"
-                                  onClick={() => setJoinRequestsOpen(true)}
-                                  title="Запросы на вступление"
-                                >
-                                  <JoinRequestsIcon />
-                                  {conversationJoinRequests.length > 0 ? (
-                                    <span className="dashboard-topbar__badge">
-                                      {conversationJoinRequests.length}
-                                    </span>
-                                  ) : null}
-                                </button>
-                              ) : null}
+                            <div className="dashboard-messenger__thread-head-main-desktop">
+                              <button
+                                type="button"
+                                className="dashboard-messenger__thread-head-back-btn"
+                                aria-label="К списку чатов"
+                                title="К списку чатов"
+                                onClick={() => navigate('/dashboard/messenger?view=list', { replace: true })}
+                              >
+                                <ChevronLeftIcon />
+                              </button>
                               <button
                                 type="button"
                                 className="dashboard-messenger__thread-head-center dashboard-messenger__thread-head-center--tappable"
-                                style={{ padding: 0 }}
                                 aria-label="Информация о чате"
                                 onClick={() => void openConversationInfo(activeConversationId)}
                               >
@@ -3242,13 +3224,44 @@ export function DashboardMessengerPage() {
                                   )}
                                 </span>
                                 <div className="dashboard-messenger__thread-head-center-text">
-                                  <div className="dashboard-messenger__thread-head-center-title">{threadHeadConversation.title}</div>
+                                  <div className="dashboard-messenger__thread-head-center-title">
+                                    {threadHeadConversation.title}
+                                  </div>
                                   <div className="dashboard-messenger__thread-head-center-meta">
                                     {(threadHeadConversation.kind === 'channel' ? 'Канал' : 'Группа') + ' · '}
                                     {threadHeadConversation.memberCount ?? 0} участн.
                                   </div>
                                 </div>
                               </button>
+                              <div className="dashboard-messenger__thread-head-actions-desktop">
+                                {canRequestJoin ? (
+                                  <button
+                                    type="button"
+                                    className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__thread-head-join"
+                                    onClick={() => void joinOpenConversation()}
+                                    disabled={joinActionDisabled || inviteLoading}
+                                    title={joinActionLabel}
+                                  >
+                                    {joinActionDisabled ? '…' : joinActionLabel}
+                                  </button>
+                                ) : null}
+                                {canManageConversationJoinRequests ? (
+                                  <button
+                                    type="button"
+                                    className="dashboard-topbar__action"
+                                    onClick={() => setJoinRequestsOpen(true)}
+                                    title="Запросы на вступление"
+                                    aria-label="Запросы на вступление"
+                                  >
+                                    <JoinRequestsIcon />
+                                    {conversationJoinRequests.length > 0 ? (
+                                      <span className="dashboard-topbar__badge">
+                                        {conversationJoinRequests.length > 99 ? '99+' : conversationJoinRequests.length}
+                                      </span>
+                                    ) : null}
+                                  </button>
+                                ) : null}
+                              </div>
                             </div>
                           )}
                         </div>

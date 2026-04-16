@@ -6911,6 +6911,44 @@ html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
   padding-right: 8px;
 }
 
+.dashboard-messenger__thread-head-main-desktop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+}
+
+.dashboard-messenger__thread-head-back-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.dashboard-messenger__thread-head-back-btn:hover {
+  border-color: rgba(159, 214, 255, 0.25);
+  background: var(--surface);
+}
+
+.dashboard-messenger__thread-head-main-desktop .dashboard-messenger__thread-head-center--tappable {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dashboard-messenger__thread-head-actions-desktop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .dashboard-messenger__list-head-btn--icon-badge {
   position: relative;
 }
@@ -7248,9 +7286,36 @@ html[data-theme='light'] .dashboard-messenger-join-requests-dialog__close:hover 
 
 .dashboard-messenger__channel-comments-thread-head {
   position: relative;
-  padding: 14px 16px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
+}
+
+.dashboard-messenger__channel-comments-thread-back {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.dashboard-messenger__channel-comments-thread-back:hover {
+  border-color: rgba(159, 214, 255, 0.25);
+  background: var(--surface);
+}
+
+.dashboard-messenger__channel-comments-thread-head-main {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .dashboard-messenger__channel-comments-thread-title {

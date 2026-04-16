@@ -1342,9 +1342,20 @@ export function ChannelThreadPane({
           </header>
         ) : (
           <div className="dashboard-messenger__channel-comments-thread-head">
-            <div className="dashboard-messenger__channel-comments-thread-title">Комментарии</div>
-            <div className="dashboard-messenger__channel-comments-thread-subtitle">
-              {selectedPostTitle}{selectedPostMeta ? ` · ${selectedPostMeta}` : ''}
+            <button
+              type="button"
+              className="dashboard-messenger__channel-comments-thread-back"
+              aria-label="К постам"
+              title="К постам"
+              onClick={() => setCommentsModalPostId(null)}
+            >
+              <ChevronLeftIcon />
+            </button>
+            <div className="dashboard-messenger__channel-comments-thread-head-main">
+              <div className="dashboard-messenger__channel-comments-thread-title">Комментарии</div>
+              <div className="dashboard-messenger__channel-comments-thread-subtitle">
+                {selectedPostTitle}{selectedPostMeta ? ` · ${selectedPostMeta}` : ''}
+              </div>
             </div>
             <button
               type="button"
@@ -1367,6 +1378,25 @@ export function ChannelThreadPane({
 
         {!viewerOnly ? (
           <div className="dashboard-messenger__composer" role="region" aria-label="Новый комментарий">
+            {quoteToComment && quoteToComment.replyToMessageId?.trim() === commentsModalPostId ? (
+              <div className="dashboard-messenger__composer-reply">
+                <div className="dashboard-messenger__composer-reply-text">
+                  <span className="dashboard-messenger__composer-reply-label">Ответ</span>{' '}
+                  <strong>{quoteToComment.senderNameSnapshot}</strong>
+                  <span className="dashboard-messenger__composer-reply-snippet">
+                    <span>{quoteToComment.body?.trim() ? quoteToComment.body : '…'}</span>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="dashboard-messenger__composer-reply-cancel"
+                  aria-label="Отменить ответ"
+                  onClick={() => setQuoteToComment(null)}
+                >
+                  ✕
+                </button>
+              </div>
+            ) : null}
             <div className="dashboard-messenger__composer-main">
               <textarea
                 className="dashboard-messenger__input"

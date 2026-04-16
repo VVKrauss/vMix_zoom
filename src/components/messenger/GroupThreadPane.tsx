@@ -557,20 +557,27 @@ export function GroupThreadPane({
         </div>
       </div>
 
-      {replyTo ? (
-        <div className="messenger-reply-banner">
-          <span className="messenger-reply-banner__title">Ответ</span>
-          <span className="messenger-reply-banner__text">
-            {replyTo.senderNameSnapshot}: {truncateMessengerReplySnippet(replyTo.body, 48)}
-          </span>
-          <button type="button" className="messenger-reply-banner__close" onClick={() => setReplyTo(null)} aria-label="Отменить ответ">
-            ×
-          </button>
-        </div>
-      ) : null}
-
       {!viewerOnly ? (
         <div className="dashboard-messenger__composer" role="region" aria-label="Новое сообщение">
+          {replyTo ? (
+            <div className="dashboard-messenger__composer-reply">
+              <div className="dashboard-messenger__composer-reply-text">
+                <span className="dashboard-messenger__composer-reply-label">Ответ</span>{' '}
+                <strong>{replyTo.senderNameSnapshot}</strong>
+                <span className="dashboard-messenger__composer-reply-snippet">
+                  <span>{truncateMessengerReplySnippet(replyTo.body, 48) || '…'}</span>
+                </span>
+              </div>
+              <button
+                type="button"
+                className="dashboard-messenger__composer-reply-cancel"
+                aria-label="Отменить ответ"
+                onClick={() => setReplyTo(null)}
+              >
+                ✕
+              </button>
+            </div>
+          ) : null}
           <div className="dashboard-messenger__composer-main">
             <textarea
               ref={composerTextareaRef}
