@@ -79,6 +79,7 @@ export function ChannelThreadPane({
   onTouchTail,
   onForwardMessage,
   viewerOnly,
+  joinRequestPending,
   jumpToMessageId,
   jumpToParentMessageId,
   onJumpHandled,
@@ -88,6 +89,7 @@ export function ChannelThreadPane({
   /** Переслать текст/фото в личный чат (открывает модалку на уровне страницы). */
   onForwardMessage?: (message: DirectMessage) => void
   viewerOnly?: boolean
+  joinRequestPending?: boolean
   jumpToMessageId?: string | null
   /** Для комментариев канала: id поста-родителя. */
   jumpToParentMessageId?: string | null
@@ -1168,7 +1170,11 @@ export function ChannelThreadPane({
         {threadLoading ? (
           <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" />
         ) : !canView ? (
-          <div className="dashboard-chats-empty">Канал закрыт или у вас нет доступа.</div>
+          joinRequestPending ? (
+            <div className="dashboard-chats-empty">Запрос на вступление отправлен. Ожидайте подтверждения от администратора.</div>
+          ) : (
+            <div className="dashboard-chats-empty">Канал закрыт или у вас нет доступа.</div>
+          )
         ) : posts.filter((m) => m.kind !== 'reaction').length === 0 ? (
           <div className="dashboard-chats-empty">Пока нет постов.</div>
         ) : (

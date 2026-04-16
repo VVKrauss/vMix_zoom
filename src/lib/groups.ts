@@ -16,6 +16,7 @@ export type GroupChatSummary = {
   avatarPath: string | null
   avatarThumbPath: string | null
   memberCount: number
+  requiredSubscriptionPlan?: string | null
 }
 
 function mapGroupRow(row: Record<string, unknown>): GroupChatSummary {
@@ -35,6 +36,10 @@ function mapGroupRow(row: Record<string, unknown>): GroupChatSummary {
     avatarThumbPath:
       typeof row.avatar_thumb_path === 'string' && row.avatar_thumb_path.trim() ? row.avatar_thumb_path.trim() : null,
     memberCount: typeof row.member_count === 'number' ? row.member_count : Number(row.member_count ?? 0) || 0,
+    requiredSubscriptionPlan:
+      typeof row.required_subscription_plan === 'string' && row.required_subscription_plan.trim()
+        ? row.required_subscription_plan.trim()
+        : null,
   }
 }
 

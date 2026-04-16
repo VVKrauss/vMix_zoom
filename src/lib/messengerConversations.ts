@@ -26,6 +26,7 @@ export type MessengerConversationSummary = {
   avatarThumbPath?: string | null
   /** Для group/channel */
   memberCount?: number
+  requiredSubscriptionPlan?: string | null
   /** Для channel */
   postingMode?: 'admins_only' | 'everyone'
   commentsMode?: 'everyone' | 'disabled'
@@ -50,6 +51,7 @@ function mapGroup(g: GroupChatSummary): MessengerConversationSummary {
     avatarPath: g.avatarPath,
     avatarThumbPath: g.avatarThumbPath,
     memberCount: g.memberCount,
+    requiredSubscriptionPlan: g.requiredSubscriptionPlan,
   }
 }
 
@@ -68,6 +70,7 @@ function mapChannel(ch: ChannelSummary): MessengerConversationSummary {
     avatarPath: ch.avatarPath,
     avatarThumbPath: ch.avatarThumbPath,
     memberCount: ch.memberCount,
+    requiredSubscriptionPlan: ch.requiredSubscriptionPlan,
     postingMode: ch.postingMode,
     commentsMode: ch.commentsMode,
   }

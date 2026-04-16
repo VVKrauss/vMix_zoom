@@ -60,6 +60,7 @@ export function GroupThreadPane({
   onTouchTail,
   onForwardMessage,
   viewerOnly,
+  joinRequestPending,
   jumpToMessageId,
   onJumpHandled,
 }: {
@@ -67,6 +68,7 @@ export function GroupThreadPane({
   onTouchTail?: (patch: { lastMessageAt: string; lastMessagePreview: string }) => void
   onForwardMessage?: (message: DirectMessage) => void
   viewerOnly?: boolean
+  joinRequestPending?: boolean
   jumpToMessageId?: string | null
   onJumpHandled?: () => void
 }) {
@@ -408,7 +410,11 @@ export function GroupThreadPane({
 
       <div className="dashboard-messenger__messages-scroll" role="region" aria-label="Сообщения группы">
         {!canView ? (
-          <div className="dashboard-chats-empty">Группа закрыта или у вас нет доступа.</div>
+          joinRequestPending ? (
+            <div className="dashboard-chats-empty">Запрос на вступление отправлен. Ожидайте подтверждения от администратора.</div>
+          ) : (
+            <div className="dashboard-chats-empty">Группа закрыта или у вас нет доступа.</div>
+          )
         ) : messages.filter((m) => m.kind !== 'reaction').length === 0 ? (
           <div className="dashboard-chats-empty">Пока нет сообщений.</div>
         ) : (

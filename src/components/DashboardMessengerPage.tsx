@@ -75,6 +75,14 @@ import {
   type MessengerFontPreset,
 } from '../lib/messengerUi'
 import {
+  approveConversationJoinRequest,
+  denyConversationJoinRequest,
+  hasPendingConversationJoinRequest,
+  listConversationJoinRequests,
+  requestConversationJoin,
+  type ConversationJoinRequest,
+} from '../lib/chatRequests'
+import {
   buildForwardMetaFromChannelOrGroup,
   buildForwardMetaFromDirectMessage,
   forwardMetaToQuotedStrip,
@@ -95,6 +103,7 @@ import {
   ChevronLeftIcon,
   DashboardIcon,
   HomeIcon,
+  JoinRequestsIcon,
   LogOutIcon,
   MenuBurgerIcon,
   ParticipantsBadgeIcon,
@@ -817,6 +826,15 @@ export function DashboardMessengerPage() {
     sourceTitle?: string
     sourceAvatarUrl?: string | null
   } | null>(null)
+  const [conversationJoinRequests, setConversationJoinRequests] = useState<ConversationJoinRequest[]>([])
+  const [joinRequestsLoading, setJoinRequestsLoading] = useState(false)
+  const [joinRequestsOpen, setJoinRequestsOpen] = useState(false)
+  const [joinRequestInFlight, setJoinRequestInFlight] = useState(false)
+  const [pendingJoinRequest, setPendingJoinRequest] = useState<boolean | null>(null)
+  const [joinRequestError, setJoinRequestError] = useState<string | null>(null)
+  const [activeJoinRequestId, setActiveJoinRequestId] = useState<string | null>(null)
+  const [activeConversationRole, setActiveConversationRole] = useState<string | null>(null)
+  const [activeConversationRoleLoading, setActiveConversationRoleLoading] = useState(false)
   const msgMenuWrapRef = useRef<HTMLDivElement | null>(null)
   const [messengerImageLightboxUrl, setMessengerImageLightboxUrl] = useState<string | null>(null)
   const messengerLightboxSwipeRef = useRef<{
@@ -1268,6 +1286,79 @@ export function DashboardMessengerPage() {
       !items.some((i) => i.id === invitePreview.id) &&
       invitePreview.isPublic !== true,
   )
+
+  useEffect(() => {
+    let active = true
+    const cid = activeConversationId.trim()
+    if (!user?.id || !cid) {
+      setActiveConversationRole(null)
+      setPendingJoinRequest(null)
+      return
+    }
+
+    setActiveConversationRoleLoading(true)
+    setActiveConversationRole(null)
+    setPendingJoinRequest(null)
+
+    void Promise.all([
+      supabase
+        .from('chat_conversation_members')
+        .select('role')
+        .eq('conversation_id', cid)
+        .eq('user_id', user.id)
+        .maybeSingle(),
+      hasPendingConversationJoinRequest(cid),
+    ]).then(([memberRes, pendingRes]) => {
+      if (!active) return
+      if (!memberRes.error && memberRes.data) {
+        const role = typeof (memberRes.data as { role?: unknown })?.role === 'string'
+          ? String((memberRes.data as { role: string }).role).trim()
+          : null
+        setActiveConversationRole(role)
+      } else {
+        setActiveConversationRole(null)
+      }
+      if (pendingRes.error) {
+        setPendingJoinRequest(null)
+        setJoinRequestError(pendingRes.error)
+      } else {
+        setPendingJoinRequest(Boolean(pendingRes.data))
+      }
+    }).finally(() => {
+      if (active) setActiveConversationRoleLoading(false)
+    })
+
+    return () => {
+      active = false
+    }
+  }, [activeConversationId, items, user?.id])
+
+  useEffect(() => {
+    if (!user?.id || !activeConversationId.trim() || !activeConversationRole || !['owner', 'admin'].includes(activeConversationRole)) {
+      setConversationJoinRequests([])
+      return
+    }
+
+    let active = true
+    setJoinRequestsLoading(true)
+    setConversationJoinRequests([])
+
+    void listConversationJoinRequests(activeConversationId.trim()).then((res) => {
+      if (!active) return
+      if (res.error) {
+        setJoinRequestError(res.error)
+        setConversationJoinRequests([])
+      } else {
+        setConversationJoinRequests(res.data ?? [])
+      }
+    }).finally(() => {
+      if (active) setJoinRequestsLoading(false)
+    })
+
+    return () => {
+      active = false
+    }
+  }, [activeConversationId, activeConversationRole, user?.id])
 
   useEffect(() => {
     messengerPinnedToBottomRef.current = true
@@ -1883,6 +1974,19 @@ export function DashboardMessengerPage() {
       activeIsPublic &&
       !isMemberOfActiveConversation,
   )
+  const canRequestJoin = Boolean(
+    threadHeadConversation &&
+      (threadHeadConversation.kind === 'group' || threadHeadConversation.kind === 'channel') &&
+      !isMemberOfActiveConversation,
+  )
+  const joinActionLabel = inviteJoinMode
+    ? 'Вступить'
+    : activeIsPublic
+    ? 'Вступить'
+    : pendingJoinRequest
+    ? 'Запрос отправлен'
+    : 'Запросить доступ'
+  const joinActionDisabled = inviteJoinBusy || joinRequestInFlight || pendingJoinRequest === true
 
   const conversationInfoConv =
     conversationInfoId?.trim()
@@ -1898,33 +2002,61 @@ export function DashboardMessengerPage() {
 
   const joinOpenConversation = useCallback(async () => {
     if (!threadHeadConversation || (threadHeadConversation.kind !== 'group' && threadHeadConversation.kind !== 'channel')) return
-    if (!viewerOnly || inviteJoinBusy) return
+    if (inviteJoinBusy || joinRequestInFlight) return
     if (inviteToken.trim() && invitePreview?.id && invitePreview.id === activeConversationId) {
       await joinFromInvite()
       return
     }
-    setInviteJoinBusy(true)
-    setInviteError(null)
-    try {
-      const cid = activeConversationId.trim()
-      if (!cid) return
-      if (threadHeadConversation.kind === 'group') {
-        const res = await joinPublicGroupChat(cid)
-        if (res.error) {
-          setInviteError(res.error)
-          return
+
+    const cid = activeConversationId.trim()
+    if (!cid) return
+
+    if (viewerOnly) {
+      setInviteJoinBusy(true)
+      setInviteError(null)
+      try {
+        if (threadHeadConversation.kind === 'group') {
+          const res = await joinPublicGroupChat(cid)
+          if (res.error) {
+            setInviteError(res.error)
+            return
+          }
+        } else {
+          const res = await joinPublicChannel(cid)
+          if (res.error) {
+            setInviteError(res.error)
+            return
+          }
         }
-      } else {
-        const res = await joinPublicChannel(cid)
-        if (res.error) {
-          setInviteError(res.error)
-          return
-        }
+        const listRes = await listMessengerConversations()
+        if (!listRes.error && listRes.data) setItems(listRes.data)
+      } finally {
+        setInviteJoinBusy(false)
       }
-      const listRes = await listMessengerConversations()
-      if (!listRes.error && listRes.data) setItems(listRes.data)
+      return
+    }
+
+    setJoinRequestInFlight(true)
+    setJoinRequestError(null)
+    try {
+      const res = await requestConversationJoin(cid)
+      if (res.error) {
+        setJoinRequestError(res.error)
+        return
+      }
+      if (res.data?.already_member) {
+        const listRes = await listMessengerConversations()
+        if (!listRes.error && listRes.data) setItems(listRes.data)
+        return
+      }
+      if (res.data?.required_plan) {
+        setJoinRequestError(`Требуется подписка «${res.data.required_plan}».`)
+        return
+      }
+      setPendingJoinRequest(true)
+      toast.push({ tone: 'success', message: 'Запрос на вступление отправлен. Ожидайте подтверждения.', ms: 3200 })
     } finally {
-      setInviteJoinBusy(false)
+      setJoinRequestInFlight(false)
     }
   }, [
     activeConversationId,
@@ -1935,7 +2067,52 @@ export function DashboardMessengerPage() {
     setItems,
     threadHeadConversation,
     viewerOnly,
+    requestConversationJoin,
+    setJoinRequestError,
+    setPendingJoinRequest,
+    setJoinRequestInFlight,
+    toast,
   ])
+
+  const approveJoinRequest = useCallback(
+    async (requestId: string) => {
+      if (joinRequestInFlight) return
+      setJoinRequestInFlight(true)
+      try {
+        const res = await approveConversationJoinRequest(requestId)
+        if (res.error) {
+          toast.push({ tone: 'error', message: res.error, ms: 3200 })
+          return
+        }
+        toast.push({ tone: 'success', message: 'Заявка принята.', ms: 2200 })
+        const listRes = await listConversationJoinRequests(activeConversationId.trim())
+        if (!listRes.error) setConversationJoinRequests(listRes.data ?? [])
+      } finally {
+        setJoinRequestInFlight(false)
+      }
+    },
+    [activeConversationId, joinRequestInFlight, toast],
+  )
+
+  const denyJoinRequest = useCallback(
+    async (requestId: string) => {
+      if (joinRequestInFlight) return
+      setJoinRequestInFlight(true)
+      try {
+        const res = await denyConversationJoinRequest(requestId)
+        if (res.error) {
+          toast.push({ tone: 'error', message: res.error, ms: 3200 })
+          return
+        }
+        toast.push({ tone: 'success', message: 'Заявка отклонена.', ms: 2200 })
+        const listRes = await listConversationJoinRequests(activeConversationId.trim())
+        if (!listRes.error) setConversationJoinRequests(listRes.data ?? [])
+      } finally {
+        setJoinRequestInFlight(false)
+      }
+    },
+    [activeConversationId, joinRequestInFlight, toast],
+  )
 
   const forwardDmPickItems = useMemo(
     () =>
@@ -3328,15 +3505,30 @@ export function DashboardMessengerPage() {
                                   <ChevronLeftIcon />
                                 </button>
                               </div>
-                              {viewerOnly ? (
+                              {canRequestJoin ? (
                                 <button
                                   type="button"
                                   className="dashboard-topbar__action dashboard-topbar__action--primary"
                                   onClick={() => void joinOpenConversation()}
-                                  disabled={inviteJoinBusy || inviteLoading}
-                                  title="Вступить"
+                                  disabled={joinActionDisabled || inviteLoading}
+                                  title={joinActionLabel}
                                 >
-                                  {inviteJoinBusy ? '…' : 'Вступить'}
+                                  {joinActionDisabled ? '…' : joinActionLabel}
+                                </button>
+                              ) : null}
+                              {activeConversationRole && ['owner', 'admin'].includes(activeConversationRole) ? (
+                                <button
+                                  type="button"
+                                  className="dashboard-topbar__action"
+                                  onClick={() => setJoinRequestsOpen(true)}
+                                  title="Запросы на вступление"
+                                >
+                                  <JoinRequestsIcon />
+                                  {conversationJoinRequests.length > 0 ? (
+                                    <span className="dashboard-topbar__badge">
+                                      {conversationJoinRequests.length}
+                                    </span>
+                                  ) : null}
                                 </button>
                               ) : null}
                               <button
@@ -3365,15 +3557,30 @@ export function DashboardMessengerPage() {
                             </header>
                           ) : (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 16 }}>
-                              {viewerOnly ? (
+                              {canRequestJoin ? (
                                 <button
                                   type="button"
                                   className="dashboard-topbar__action dashboard-topbar__action--primary"
                                   onClick={() => void joinOpenConversation()}
-                                  disabled={inviteJoinBusy || inviteLoading}
-                                  title="Вступить"
+                                  disabled={joinActionDisabled || inviteLoading}
+                                  title={joinActionLabel}
                                 >
-                                  {inviteJoinBusy ? '…' : 'Вступить'}
+                                  {joinActionDisabled ? '…' : joinActionLabel}
+                                </button>
+                              ) : null}
+                              {activeConversationRole && ['owner', 'admin'].includes(activeConversationRole) ? (
+                                <button
+                                  type="button"
+                                  className="dashboard-topbar__action"
+                                  onClick={() => setJoinRequestsOpen(true)}
+                                  title="Запросы на вступление"
+                                >
+                                  <JoinRequestsIcon />
+                                  {conversationJoinRequests.length > 0 ? (
+                                    <span className="dashboard-topbar__badge">
+                                      {conversationJoinRequests.length}
+                                    </span>
+                                  ) : null}
                                 </button>
                               ) : null}
                               <button
@@ -3402,10 +3609,13 @@ export function DashboardMessengerPage() {
                           )}
                         </div>
 
+                        {joinRequestError ? <p className="join-error" style={{ padding: '0 16px' }}>{joinRequestError}</p> : null}
+
                         {threadHeadConversation.kind === 'group' ? (
                           <GroupThreadPane
                             conversationId={activeConversationId}
                             viewerOnly={viewerOnly}
+                            joinRequestPending={pendingJoinRequest === true}
                             jumpToMessageId={
                               pendingJump && pendingJump.conversationId.trim() === activeConversationId.trim()
                                 ? pendingJump.messageId
@@ -3427,6 +3637,7 @@ export function DashboardMessengerPage() {
                           <ChannelThreadPane
                             conversationId={activeConversationId}
                             viewerOnly={viewerOnly}
+                            joinRequestPending={pendingJoinRequest === true}
                             jumpToMessageId={
                               pendingJump && pendingJump.conversationId.trim() === activeConversationId.trim()
                                 ? pendingJump.messageId
@@ -3931,6 +4142,80 @@ export function DashboardMessengerPage() {
             document.body,
           )
         : null}
+
+      {joinRequestsOpen ?
+        createPortal(
+          <div
+            className="messenger-settings-modal-root"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="join-requests-title"
+          >
+            <button
+              type="button"
+              className="messenger-settings-modal-backdrop"
+              aria-label="Закрыть"
+              onClick={() => setJoinRequestsOpen(false)}
+            />
+            <div className="messenger-settings-modal">
+              <div className="messenger-settings-modal__header">
+                <h2 id="join-requests-title">Запросы на вступление</h2>
+                <button
+                  type="button"
+                  className="messenger-settings-modal__close"
+                  aria-label="Закрыть"
+                  onClick={() => setJoinRequestsOpen(false)}
+                >
+                  <XCloseIcon />
+                </button>
+              </div>
+              <div className="messenger-settings-modal__body">
+                {joinRequestsLoading ? (
+                  <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" />
+                ) : conversationJoinRequests.length === 0 ? (
+                  <p>Нет новых запросов на вступление.</p>
+                ) : (
+                  <ul className="join-requests-list">
+                    {conversationJoinRequests.map((request) => (
+                      <li key={request.requestId} className="join-request-row">
+                        <div>
+                          <div className="join-request-row__name">{request.displayName}</div>
+                          <div className="join-request-row__meta">
+                            {new Date(request.createdAt).toLocaleString('ru-RU', {
+                              dateStyle: 'medium',
+                              timeStyle: 'short',
+                            })}
+                          </div>
+                        </div>
+                        <div className="join-request-row__actions">
+                          <button
+                            type="button"
+                            className="dashboard-topbar__action"
+                            disabled={joinRequestInFlight}
+                            onClick={() => void approveJoinRequest(request.requestId)}
+                          >
+                            Одобрить
+                          </button>
+                          <button
+                            type="button"
+                            className="dashboard-topbar__action dashboard-topbar__action--danger"
+                            disabled={joinRequestInFlight}
+                            onClick={() => void denyJoinRequest(request.requestId)}
+                          >
+                            Отклонить
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {joinRequestError ? <p className="join-error">{joinRequestError}</p> : null}
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )
+      : null}
 
       {messengerImageLightboxUrl
         ? createPortal(
