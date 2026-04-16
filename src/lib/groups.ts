@@ -149,14 +149,20 @@ export async function resolveConversationByInvite(token: string): Promise<{ data
   return { data: mapped, error: null }
 }
 
-export async function joinConversationByInvite(token: string): Promise<{ data: { conversationId: string; kind: 'group' | 'channel' } | null; error: string | null }> {
+export async function joinConversationByInvite(token: string): Promise<{
+  data: { conversationId: string; kind: 'group' | 'channel'; joined?: boolean; requested?: boolean } | null
+  error: string | null
+}> {
   const { data, error } = await supabase.rpc('join_conversation_by_invite', { p_token: token.trim() })
   if (error) return { data: null, error: error.message }
   const row = data as Record<string, unknown> | null
   if (!row || row.ok !== true) return { data: null, error: typeof row?.error === 'string' ? row.error : 'not_joined' }
   const conversationId = typeof row.conversation_id === 'string' ? row.conversation_id : ''
   const kind = row.kind === 'channel' ? 'channel' : 'group'
-  return conversationId ? { data: { conversationId, kind }, error: null } : { data: null, error: 'not_joined' }
+  if (!conversationId) return { data: null, error: 'not_joined' }
+  const joined = row.joined === true || row.already_member === true
+  const requested = row.requested === true
+  return { data: { conversationId, kind, ...(joined ? { joined: true } : {}), ...(requested ? { requested: true } : {}) }, error: null }
 }
 
 export async function getOrCreateConversationInvite(conversationId: string): Promise<{ data: { token: string } | null; error: string | null }> {

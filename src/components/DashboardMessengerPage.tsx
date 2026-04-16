@@ -428,25 +428,6 @@ export function DashboardMessengerPage() {
     }
   }, [invitePreview?.id, inviteToken, items, navigate])
 
-  const joinFromInvite = useCallback(async () => {
-    const token = inviteToken.trim()
-    if (!user?.id || !token || inviteJoinBusy) return
-    setInviteJoinBusy(true)
-    setInviteError(null)
-    try {
-      const res = await joinConversationByInvite(token)
-      if (res.error || !res.data?.conversationId) {
-        setInviteError(res.error ?? 'Не удалось вступить.')
-        return
-      }
-      const listRes = await listMessengerConversations()
-      if (!listRes.error && listRes.data) setItems(listRes.data)
-      navigate(`/dashboard/messenger/${encodeURIComponent(res.data.conversationId)}`, { replace: true })
-    } finally {
-      setInviteJoinBusy(false)
-    }
-  }, [inviteJoinBusy, inviteToken, navigate, setItems, user?.id])
-
   const [conversationInfoOpen, setConversationInfoOpen] = useState(false)
   const [conversationInfoId, setConversationInfoId] = useState<string | null>(null)
   const [conversationInfoRole, setConversationInfoRole] = useState<string | null>(null)
@@ -519,6 +500,53 @@ export function DashboardMessengerPage() {
   const [pinBusyUserId, setPinBusyUserId] = useState<string | null>(null)
   /** Снятие реакции уже отразили в списке диалогов после RPC — пропускаем дубль из realtime DELETE. */
   const reactionDeleteSidebarSyncedRef = useRef(new Set<string>())
+
+  // Convert inline messenger errors to project toasts.
+  useEffect(() => {
+    if (!error) return
+    toast.push({ tone: 'error', message: error, ms: 3800 })
+    setError(null)
+  }, [error, toast])
+
+  useEffect(() => {
+    if (!inviteError) return
+    toast.push({ tone: 'error', message: inviteError, ms: 3800 })
+    setInviteError(null)
+  }, [inviteError, toast])
+
+  useEffect(() => {
+    if (!joinRequestError) return
+    toast.push({ tone: 'error', message: joinRequestError, ms: 3800 })
+    setJoinRequestError(null)
+  }, [joinRequestError, toast])
+
+  const joinFromInvite = useCallback(async () => {
+    const token = inviteToken.trim()
+    if (!user?.id || !token || inviteJoinBusy) return
+    setInviteJoinBusy(true)
+    setInviteError(null)
+    try {
+      const res = await joinConversationByInvite(token)
+      if (res.error || !res.data?.conversationId) {
+        setInviteError(res.error ?? 'Не удалось вступить.')
+        return
+      }
+      // Closed conversations: backend returns requested=true (no membership yet).
+      if (res.data.requested) {
+        setPendingJoinRequest(true)
+        toast.push({ tone: 'success', message: 'Запрос на вступление отправлен. Ожидайте подтверждения.', ms: 3200 })
+        navigate(`/dashboard/messenger/${encodeURIComponent(res.data.conversationId)}?invite=${encodeURIComponent(token)}`, {
+          replace: true,
+        })
+        return
+      }
+      const listRes = await listMessengerConversations()
+      if (!listRes.error && listRes.data) setItems(listRes.data)
+      navigate(`/dashboard/messenger/${encodeURIComponent(res.data.conversationId)}`, { replace: true })
+    } finally {
+      setInviteJoinBusy(false)
+    }
+  }, [inviteJoinBusy, inviteToken, navigate, setItems, setPendingJoinRequest, toast, user?.id])
 
   const messengerSenderUserIds = useMemo(() => {
     const s = new Set<string>()
@@ -2987,10 +3015,7 @@ export function DashboardMessengerPage() {
           isMobileMessenger ? ' dashboard-messenger--mobile-chromeless' : ''
         }`}
       >
-        {error ? <p className="join-error">{error}</p> : null}
-
-        {!error ? (
-          <>
+        <>
           <div className="dashboard-messenger__layout">
             {showListPane ? (
               <aside className="dashboard-messenger__list" aria-label="Список диалогов">
@@ -3241,7 +3266,6 @@ export function DashboardMessengerPage() {
                         </div>
 
                         {inviteLoading ? <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" /> : null}
-                        {inviteError ? <p className="join-error">{inviteError}</p> : null}
 
                         <div className="dashboard-chats-empty" style={{ paddingTop: 0 }}>
                           <button
@@ -3390,11 +3414,10 @@ export function DashboardMessengerPage() {
                           )}
                         </div>
 
-                        {joinRequestError ? <p className="join-error" style={{ padding: '0 16px' }}>{joinRequestError}</p> : null}
-
                         {threadHeadConversation.kind === 'group' ? (
                           <GroupThreadPane
                             conversationId={activeConversationId}
+                            isMemberHint={isMemberOfActiveConversation}
                             viewerOnly={viewerOnly}
                             joinRequestPending={pendingJoinRequest === true}
                             jumpToMessageId={
@@ -3417,6 +3440,8 @@ export function DashboardMessengerPage() {
                         ) : (
                           <ChannelThreadPane
                             conversationId={activeConversationId}
+                            isMemberHint={isMemberOfActiveConversation}
+                            postingMode={threadHeadConversation?.postingMode}
                             viewerOnly={viewerOnly}
                             joinRequestPending={pendingJoinRequest === true}
                             jumpToMessageId={
@@ -3782,8 +3807,7 @@ export function DashboardMessengerPage() {
               </div>
             ) : null}
           </div>
-          </>
-        ) : null}
+        </>
 
         {messengerMenuOpen ? (
           <>
@@ -3999,7 +4023,6 @@ export function DashboardMessengerPage() {
                       </ul>
                     )}
                   </div>
-                  {joinRequestError ? <p className="join-error">{joinRequestError}</p> : null}
                 </div>
               </div>
             </div>,

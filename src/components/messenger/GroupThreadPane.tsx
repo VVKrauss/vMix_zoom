@@ -61,6 +61,7 @@ export function GroupThreadPane({
   conversationId,
   onTouchTail,
   onForwardMessage,
+  isMemberHint,
   viewerOnly,
   joinRequestPending,
   jumpToMessageId,
@@ -69,6 +70,8 @@ export function GroupThreadPane({
   conversationId: string
   onTouchTail?: (patch: { lastMessageAt: string; lastMessagePreview: string }) => void
   onForwardMessage?: (message: DirectMessage) => void
+  /** Хинт из родителя: если диалог уже есть в списке, считаем что участник (убирает рассинхрон после вступления). */
+  isMemberHint?: boolean
   viewerOnly?: boolean
   joinRequestPending?: boolean
   jumpToMessageId?: string | null
@@ -106,7 +109,7 @@ export function GroupThreadPane({
 
   const [myGroupMemberRole, setMyGroupMemberRole] = useState<string | null>(null)
 
-  const isGroupMember = myGroupMemberRole !== null
+  const isGroupMember = myGroupMemberRole !== null || isMemberHint === true
   const canView = viewerOnly || isGroupMember
 
   useEffect(() => {
@@ -190,6 +193,12 @@ export function GroupThreadPane({
     const slack = 48
     pinnedToBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - slack
   }, [])
+
+  useEffect(() => {
+    if (!error) return
+    toast.push({ tone: 'error', message: error, ms: 3800 })
+    setError(null)
+  }, [error, toast])
 
   useEffect(() => {
     const cid = conversationId.trim()
@@ -541,7 +550,6 @@ export function GroupThreadPane({
   return (
     <div className="dashboard-messenger__thread-body">
       {threadLoading ? <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" /> : null}
-      {error ? <p className="join-error">{error}</p> : null}
 
       <div
         ref={messagesScrollRef}

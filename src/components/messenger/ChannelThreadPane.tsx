@@ -81,6 +81,8 @@ export function ChannelThreadPane({
   conversationId,
   onTouchTail,
   onForwardMessage,
+  isMemberHint,
+  postingMode,
   viewerOnly,
   joinRequestPending,
   jumpToMessageId,
@@ -91,6 +93,9 @@ export function ChannelThreadPane({
   onTouchTail?: (patch: { lastMessageAt: string; lastMessagePreview: string }) => void
   /** Переслать текст/фото в личный чат (открывает модалку на уровне страницы). */
   onForwardMessage?: (message: DirectMessage) => void
+  /** Хинт из родителя: если диалог уже есть в списке, считаем что участник (убирает рассинхрон после вступления). */
+  isMemberHint?: boolean
+  postingMode?: 'admins_only' | 'everyone'
   viewerOnly?: boolean
   joinRequestPending?: boolean
   jumpToMessageId?: string | null
@@ -149,7 +154,7 @@ export function ChannelThreadPane({
   cidRef.current = conversationId
   const reactionOpInFlightRef = useRef<Set<string>>(new Set())
 
-  const isChannelMember = myChannelMemberRole !== null
+  const isChannelMember = myChannelMemberRole !== null || isMemberHint === true
   const canView = viewerOnly || isChannelMember
 
   const removeReactionMessageEverywhere = useCallback((messageId: string) => {
@@ -173,6 +178,13 @@ export function ChannelThreadPane({
   }, [])
 
   const canModerateChannel = Boolean(myChannelMemberRole && CHANNEL_STAFF_ROLES.has(myChannelMemberRole))
+  const canCreatePosts = canView && !viewerOnly && (postingMode === 'everyone' || canModerateChannel)
+
+  useEffect(() => {
+    if (!error) return
+    toast.push({ tone: 'error', message: error, ms: 3800 })
+    setError(null)
+  }, [error, toast])
 
   useEffect(() => {
     setQuoteToComment(null)
@@ -1300,7 +1312,7 @@ export function ChannelThreadPane({
       </div>
 
       <div className="dashboard-messenger__thread-footer">
-        {!viewerOnly ? (
+        {canCreatePosts ? (
           <button
             type="button"
             className="dashboard-topbar__action dashboard-topbar__action--primary"
@@ -1349,7 +1361,7 @@ export function ChannelThreadPane({
               )
             })}
         </div>
-        {!viewerOnly ? (
+        {canCreatePosts ? (
           <div className="dashboard-messenger__channel-comments-posts-footer">
             <button
               type="button"
@@ -1490,8 +1502,6 @@ export function ChannelThreadPane({
 
   return (
     <div className="dashboard-messenger__thread-body">
-      {error ? <p className="join-error">{error}</p> : null}
-
       {commentsModalPostId ? renderChannelCommentsView() : renderChannelPostsView()}
 
       {postMenu
