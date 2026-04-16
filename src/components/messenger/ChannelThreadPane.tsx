@@ -15,6 +15,7 @@ import {
   editChannelComment,
   isAllowedReactionEmoji,
   listChannelCommentsPage,
+  listChannelCommentCounts,
   listChannelPostsPage,
   markChannelRead,
   toggleChannelMessageReaction,
@@ -251,9 +252,23 @@ export function ChannelThreadPane({
         setError(res.error)
         return
       }
+      const nextPosts = (res.data ?? []).filter((m) => m.kind !== 'reaction')
       setPosts(res.data ?? [])
       setHasMoreOlder(res.hasMoreOlder)
       void markChannelRead(cid)
+
+      // Fill comment counts immediately for visible posts
+      const postIds = nextPosts.map((p) => p.id).filter(Boolean)
+      void listChannelCommentCounts(cid, postIds).then((cc) => {
+        if (!active) return
+        if (cc.error || !cc.data) return
+        setCommentCountByPostId((prev) => ({ ...prev, ...cc.data! }))
+        setCommentCountHasMoreByPostId((prev) => {
+          const patch: Record<string, boolean> = {}
+          for (const id of Object.keys(cc.data!)) patch[id] = false
+          return { ...prev, ...patch }
+        })
+      })
     })
     return () => {
       active = false

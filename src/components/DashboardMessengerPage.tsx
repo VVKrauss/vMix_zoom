@@ -56,6 +56,7 @@ import {
   type ConversationStaffMember,
   type ConversationStaffRole,
 } from '../lib/conversationStaff'
+import { listConversationMembersForManagement, type ConversationMemberRow } from '../lib/conversationMembers'
 import {
   createGroupChat,
   getOrCreateConversationInvite,
@@ -227,6 +228,36 @@ const LIGHTBOX_SWIPE_CLOSE_PX = 52
 
 /** Двойной тап / двойной клик по пузырю: «лайк», не 👍. */
 const QUICK_REACTION_EMOJI: ReactionEmoji = '❤️'
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  const v = text ?? ''
+  if (!v) return false
+  try {
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(v)
+      return true
+    }
+  } catch {
+    // fallback below
+  }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = v
+    ta.setAttribute('readonly', 'true')
+    ta.style.position = 'fixed'
+    ta.style.left = '-9999px'
+    ta.style.top = '0'
+    document.body.appendChild(ta)
+    ta.focus()
+    ta.select()
+    ta.setSelectionRange(0, ta.value.length)
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    return ok
+  } catch {
+    return false
+  }
+}
 
 function messengerStaffRoleShortLabel(role: string): string {
   switch (role) {
@@ -465,12 +496,16 @@ export function DashboardMessengerPage() {
   const [conversationJoinRequests, setConversationJoinRequests] = useState<ConversationJoinRequest[]>([])
   const [joinRequestsLoading, setJoinRequestsLoading] = useState(false)
   const [joinRequestsOpen, setJoinRequestsOpen] = useState(false)
+  const [conversationMembers, setConversationMembers] = useState<ConversationMemberRow[]>([])
+  const [membersLoading, setMembersLoading] = useState(false)
   const [joinRequestInFlight, setJoinRequestInFlight] = useState(false)
   const [pendingJoinRequest, setPendingJoinRequest] = useState<boolean | null>(null)
   const [joinRequestError, setJoinRequestError] = useState<string | null>(null)
   const [activeJoinRequestId, setActiveJoinRequestId] = useState<string | null>(null)
   const [activeConversationRole, setActiveConversationRole] = useState<string | null>(null)
   const [activeConversationRoleLoading, setActiveConversationRoleLoading] = useState(false)
+  const [activeConversationIsPublic, setActiveConversationIsPublic] = useState<boolean | null>(null)
+  const [activeConversationIsPublicLoading, setActiveConversationIsPublicLoading] = useState(false)
   const msgMenuWrapRef = useRef<HTMLDivElement | null>(null)
   const [messengerImageLightboxUrl, setMessengerImageLightboxUrl] = useState<string | null>(null)
   const messengerLightboxSwipeRef = useRef<{
@@ -967,7 +1002,7 @@ export function DashboardMessengerPage() {
     return () => {
       active = false
     }
-  }, [activeConversationId, items, user?.id])
+  }, [activeConversationId, user?.id])
 
   useEffect(() => {
     if (
@@ -977,12 +1012,15 @@ export function DashboardMessengerPage() {
       !MESSENGER_JOIN_REQUEST_MANAGER_ROLES.has(activeConversationRole)
     ) {
       setConversationJoinRequests([])
+      setConversationMembers([])
       return
     }
 
     let active = true
     setJoinRequestsLoading(true)
     setConversationJoinRequests([])
+    setMembersLoading(true)
+    setConversationMembers([])
 
     void listConversationJoinRequests(activeConversationId.trim()).then((res) => {
       if (!active) return
@@ -994,6 +1032,17 @@ export function DashboardMessengerPage() {
       }
     }).finally(() => {
       if (active) setJoinRequestsLoading(false)
+    })
+
+    void listConversationMembersForManagement(activeConversationId.trim()).then((res) => {
+      if (!active) return
+      if (res.error) {
+        setConversationMembers([])
+      } else {
+        setConversationMembers(res.data ?? [])
+      }
+    }).finally(() => {
+      if (active) setMembersLoading(false)
     })
 
     return () => {
@@ -1602,13 +1651,63 @@ export function DashboardMessengerPage() {
   const threadHeadConversation =
     sortedItems.find((i) => i.id === activeConversationId) ?? activeConversation
 
+  useEffect(() => {
+    let active = true
+    const cid = activeConversationId.trim()
+    if (!user?.id || !cid) {
+      setActiveConversationIsPublic(null)
+      setActiveConversationIsPublicLoading(false)
+      return
+    }
+    if (!threadHeadConversation || (threadHeadConversation.kind !== 'group' && threadHeadConversation.kind !== 'channel')) {
+      setActiveConversationIsPublic(null)
+      setActiveConversationIsPublicLoading(false)
+      return
+    }
+    setActiveConversationIsPublicLoading(true)
+    supabase
+      .from('chat_conversations')
+      .select('kind, group_is_public, channel_is_public')
+      .eq('id', cid)
+      .maybeSingle()
+      .then(
+        ({ data, error }) => {
+          if (!active) return
+          if (error || !data) {
+            setActiveConversationIsPublic(null)
+            return
+          }
+          const row = data as { kind?: unknown; group_is_public?: unknown; channel_is_public?: unknown }
+          const kind = typeof row.kind === 'string' ? row.kind : ''
+          const isPublic = kind === 'channel' ? row.channel_is_public === true : row.group_is_public === true
+          setActiveConversationIsPublic(Boolean(isPublic))
+        },
+        () => {
+          if (!active) return
+          setActiveConversationIsPublic(null)
+        },
+      )
+      .then(() => {
+        if (!active) return
+        setActiveConversationIsPublicLoading(false)
+      }, () => {
+        if (!active) return
+        setActiveConversationIsPublicLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [activeConversationId, threadHeadConversation?.kind, user?.id])
+
   const isMemberOfActiveConversation = useMemo(
     () => Boolean(activeConversationId.trim() && items.some((i) => i.id === activeConversationId)),
     [activeConversationId, items],
   )
   const activeIsPublic = Boolean(
     (threadHeadConversation?.kind === 'group' || threadHeadConversation?.kind === 'channel') &&
-      (threadHeadConversation?.isPublic === true || invitePreview?.isPublic === true),
+      ((activeConversationIsPublic ?? null) === true ||
+        (activeConversationIsPublic == null &&
+          (threadHeadConversation?.isPublic === true || invitePreview?.isPublic === true))),
   )
   const viewerOnly = Boolean(
     (threadHeadConversation?.kind === 'group' || threadHeadConversation?.kind === 'channel') &&
@@ -2571,12 +2670,9 @@ export function DashboardMessengerPage() {
       return
     }
     const url = `${window.location.origin}/dashboard/messenger?invite=${encodeURIComponent(res.data.token)}`
-    try {
-      await navigator.clipboard.writeText(url)
-      toast.push({ tone: 'success', message: 'Ссылка скопирована.', ms: 2200 })
-    } catch {
-      toast.push({ tone: 'info', message: url, ms: 4200 })
-    }
+    const ok = await copyTextToClipboard(url)
+    if (ok) toast.push({ tone: 'success', message: 'Ссылка скопирована.', ms: 2200 })
+    else toast.push({ tone: 'info', message: url, ms: 4200 })
   }, [conversationInfoId, toast])
 
   const saveConversationInfo = useCallback(async () => {
@@ -3803,45 +3899,78 @@ export function DashboardMessengerPage() {
                   </button>
                 </div>
                 <div className="dashboard-messenger-join-requests-dialog__body">
-                  {joinRequestsLoading ? (
-                    <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" />
-                  ) : conversationJoinRequests.length === 0 ? (
-                    <p className="dashboard-messenger-join-requests-dialog__empty">Нет новых запросов на вступление.</p>
-                  ) : (
-                    <ul className="dashboard-messenger-join-requests-dialog__list">
-                      {conversationJoinRequests.map((request) => (
-                        <li key={request.requestId} className="dashboard-messenger-join-requests-dialog__item">
-                          <div className="dashboard-messenger-join-requests-dialog__item-main">
-                            <div className="dashboard-messenger-join-requests-dialog__name">{request.displayName}</div>
-                            <div className="dashboard-messenger-join-requests-dialog__meta">
-                              {new Date(request.createdAt).toLocaleString('ru-RU', {
-                                dateStyle: 'medium',
-                                timeStyle: 'short',
-                              })}
+                  <div className="dashboard-messenger-join-requests-dialog__section">
+                    <div className="dashboard-messenger-join-requests-dialog__section-title">Запросы</div>
+                    {joinRequestsLoading ? (
+                      <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" />
+                    ) : conversationJoinRequests.length === 0 ? (
+                      <p className="dashboard-messenger-join-requests-dialog__empty">Нет новых запросов на вступление.</p>
+                    ) : (
+                      <ul className="dashboard-messenger-join-requests-dialog__list">
+                        {conversationJoinRequests.map((request) => (
+                          <li key={request.requestId} className="dashboard-messenger-join-requests-dialog__item">
+                            <div className="dashboard-messenger-join-requests-dialog__item-main">
+                              <div className="dashboard-messenger-join-requests-dialog__name">{request.displayName}</div>
+                              <div className="dashboard-messenger-join-requests-dialog__meta">
+                                {new Date(request.createdAt).toLocaleString('ru-RU', {
+                                  dateStyle: 'medium',
+                                  timeStyle: 'short',
+                                })}
+                              </div>
                             </div>
-                          </div>
-                          <div className="dashboard-messenger-join-requests-dialog__item-actions">
-                            <button
-                              type="button"
-                              className="dashboard-messenger-join-requests-dialog__approve"
-                              disabled={joinRequestInFlight}
-                              onClick={() => void approveJoinRequest(request.requestId)}
-                            >
-                              Одобрить
-                            </button>
-                            <button
-                              type="button"
-                              className="dashboard-messenger-join-requests-dialog__deny"
-                              disabled={joinRequestInFlight}
-                              onClick={() => void denyJoinRequest(request.requestId)}
-                            >
-                              Отклонить
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                            <div className="dashboard-messenger-join-requests-dialog__item-actions">
+                              <button
+                                type="button"
+                                className="dashboard-messenger-join-requests-dialog__approve"
+                                disabled={joinRequestInFlight}
+                                onClick={() => void approveJoinRequest(request.requestId)}
+                              >
+                                Одобрить
+                              </button>
+                              <button
+                                type="button"
+                                className="dashboard-messenger-join-requests-dialog__deny"
+                                disabled={joinRequestInFlight}
+                                onClick={() => void denyJoinRequest(request.requestId)}
+                              >
+                                Отклонить
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div className="dashboard-messenger-join-requests-dialog__section">
+                    <div className="dashboard-messenger-join-requests-dialog__section-title">
+                      Участники{conversationMembers.length > 0 ? ` (${conversationMembers.length})` : ''}
+                    </div>
+                    {membersLoading ? (
+                      <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" />
+                    ) : conversationMembers.length === 0 ? (
+                      <p className="dashboard-messenger-join-requests-dialog__empty">Список участников пуст.</p>
+                    ) : (
+                      <ul className="dashboard-messenger-join-requests-dialog__list">
+                        {conversationMembers.map((m) => (
+                          <li key={m.userId} className="dashboard-messenger-join-requests-dialog__item">
+                            <div className="dashboard-messenger-join-requests-dialog__item-main">
+                              <div className="dashboard-messenger-join-requests-dialog__name">{m.displayName}</div>
+                              <div className="dashboard-messenger-join-requests-dialog__meta">
+                                {m.role === 'owner'
+                                  ? 'Владелец'
+                                  : m.role === 'admin'
+                                  ? 'Администратор'
+                                  : m.role === 'moderator'
+                                  ? 'Модератор'
+                                  : 'Участник'}
+                              </div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                   {joinRequestError ? <p className="join-error">{joinRequestError}</p> : null}
                 </div>
               </div>

@@ -158,6 +158,30 @@ export async function listChannelCommentsPage(
   return { data: chronological, error: null, hasMoreOlder: newestFirst.length === limit }
 }
 
+export async function listChannelCommentCounts(
+  conversationId: string,
+  postIds: string[],
+): Promise<{ data: Record<string, number> | null; error: string | null }> {
+  const cid = conversationId.trim()
+  const ids = postIds.map((x) => x.trim()).filter(Boolean)
+  if (!cid || ids.length === 0) return { data: {}, error: null }
+  const { data, error } = await supabase.rpc('list_channel_comment_counts', {
+    p_conversation_id: cid,
+    p_post_ids: ids,
+  })
+  if (error) return { data: null, error: error.message }
+  const out: Record<string, number> = {}
+  const rows = Array.isArray(data) ? data : []
+  for (const r of rows) {
+    const row = r as Record<string, unknown>
+    const pid = typeof row.post_id === 'string' ? row.post_id : String(row.post_id ?? '')
+    if (!pid) continue
+    const n = typeof row.comment_count === 'number' ? row.comment_count : Number(row.comment_count ?? 0) || 0
+    out[pid] = n
+  }
+  return { data: out, error: null }
+}
+
 function parseOkMessageResult(data: unknown): { messageId: string | null; createdAt: string | null } {
   if (!data || typeof data !== 'object') return { messageId: null, createdAt: null }
   const r = data as Record<string, unknown>

@@ -7093,6 +7093,25 @@ html[data-theme='light'] .dashboard-messenger-join-requests-dialog__close:hover 
   -webkit-overflow-scrolling: touch;
 }
 
+.dashboard-messenger-join-requests-dialog__section {
+  display: block;
+}
+
+.dashboard-messenger-join-requests-dialog__section + .dashboard-messenger-join-requests-dialog__section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.dashboard-messenger-join-requests-dialog__section-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin: 4px 0 8px;
+}
+
 .dashboard-messenger-join-requests-dialog__empty {
   margin: 0;
   padding: 18px 4px;
