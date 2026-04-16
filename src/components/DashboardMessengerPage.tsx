@@ -74,6 +74,7 @@ import {
   truncateMessengerReplySnippet,
   type MessengerFontPreset,
 } from '../lib/messengerUi'
+import { buildQuotePreview } from '../lib/messengerQuotePreview'
 import {
   approveConversationJoinRequest,
   denyConversationJoinRequest,
@@ -112,17 +113,20 @@ import {
   RoomsIcon,
 } from './icons'
 import { DashboardShell } from './DashboardShell'
-import { MessengerBubbleBody } from './MessengerBubbleBody'
-import { MessengerReplyMiniThumb } from './MessengerReplyMiniThumb'
 import { MessengerForwardToDmModal } from './MessengerForwardToDmModal'
 import { MessengerMessageMenuPopover } from './MessengerMessageMenuPopover'
+import { MessengerReplyMiniThumb } from './MessengerReplyMiniThumb'
 import { PillToggle } from './PillToggle'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
+import { ThreadMessageBubble } from './messenger/ThreadMessageBubble'
 import type { ReactionEmoji } from '../types/roomComms'
 import { DirectThreadPane } from './messenger/DirectThreadPane'
 import { GroupThreadPane } from './messenger/GroupThreadPane'
 import { ChannelThreadPane } from './messenger/ChannelThreadPane'
 import { DoubleTapHeartSurface } from './messenger/DoubleTapHeartSurface'
+
+/** Роли, которым доступна очередь запросов на вступление в группу/канал. */
+const MESSENGER_JOIN_REQUEST_MANAGER_ROLES = new Set(['owner', 'admin', 'moderator'])
 
 function formatDateTime(value: string): string {
   const dt = new Date(value)
@@ -219,13 +223,6 @@ function pickDefaultConversationId(
   return sorted[0]?.id || fallbackId?.trim() || ''
 }
 
-type MessengerReplyPreview =
-  | { snippet: string; kind: 'text'; quotedAvatarUrl: string | null; quotedName?: string }
-  | { snippet: string; kind: 'image'; thumbPath?: string; quotedAvatarUrl: string | null; quotedName?: string }
-
-const SWIPE_REPLY_THRESHOLD_PX = 52
-const SWIPE_REPLY_DECIDE_PX = 26
-const SWIPE_REPLY_MAX_SHIFT_PX = 80
 const LIGHTBOX_SWIPE_CLOSE_PX = 52
 
 /** Двойной тап / двойной клик по пузырю: «лайк», не 👍. */
@@ -240,367 +237,6 @@ function messengerStaffRoleShortLabel(role: string): string {
     default:
       return 'участник'
   }
-}
-
-type MessengerDmBubbleProps = {
-  message: DirectMessage
-  isOwn: boolean
-  /** Личный диалог: не показывать имена/аватары в шапке бабла и в цитате (ни у собеседника, ни у себя). */
-  dmMutePeerLabels?: boolean
-  reactions: DirectMessage[]
-  formatDt: (iso: string) => string
-  replyPreview: MessengerReplyPreview | null
-  /** Если цитируемое сообщение есть в ленте — прокрутка к нему по клику. */
-  replyScrollTargetId: string | null
-  onReplyQuoteNavigate?: (messageId: string) => void
-  onForwardQuoteNavigate?: (forward: MessengerForwardMeta) => void
-  bindMessageAnchor: (messageId: string, el: HTMLElement | null) => void
-  currentUserId: string | null
-  onReactionChipTap?: (targetMessageId: string, emoji: ReactionEmoji) => void
-  /** Мобилка: свайп пузыря влево — ответить на сообщение. */
-  swipeReplyEnabled?: boolean
-  onSwipeReply?: (message: DirectMessage) => void
-  menuOpen: boolean
-  onMenuButtonClick: (e: React.MouseEvent<HTMLButtonElement>) => void
-  onBubbleContextMenu: (e: React.MouseEvent<HTMLElement>) => void
-  onOpenImageLightbox: (imageUrl: string) => void
-  onInlineImageLayout?: () => void
-  onReplyThumbLayout?: () => void
-  /** Двойной тап по телу сообщения: только добавить лайк (без снятия). */
-  quickReactEnabled?: boolean
-  isMobileMessenger?: boolean
-  onQuickHeart?: () => void
-}
-
-function MessengerDmBubble({
-  message,
-  isOwn,
-  dmMutePeerLabels,
-  reactions,
-  formatDt,
-  replyPreview,
-  replyScrollTargetId,
-  onReplyQuoteNavigate,
-  onForwardQuoteNavigate,
-  bindMessageAnchor,
-  currentUserId,
-  onReactionChipTap,
-  swipeReplyEnabled,
-  onSwipeReply,
-  menuOpen,
-  onMenuButtonClick,
-  onBubbleContextMenu,
-  onOpenImageLightbox,
-  onInlineImageLayout,
-  onReplyThumbLayout,
-  quickReactEnabled,
-  isMobileMessenger,
-  onQuickHeart,
-}: MessengerDmBubbleProps) {
-  const [swipeTx, setSwipeTx] = useState(0)
-  const swipeRef = useRef<{
-    pointerId: number | null
-    x0: number
-    y0: number
-    active: boolean
-    decided: boolean
-    cancelled: boolean
-    captured: boolean
-  }>({
-    pointerId: null,
-    x0: 0,
-    y0: 0,
-    active: false,
-    decided: false,
-    cancelled: false,
-    captured: false,
-  })
-
-  const reactionCounts = new Map<string, number>()
-  for (const r of reactions) {
-    const key = r.body.trim() || r.body
-    reactionCounts.set(key, (reactionCounts.get(key) ?? 0) + 1)
-  }
-
-  const forwardStrip = forwardMetaToQuotedStrip(message.meta?.forward)
-
-  const forwardNavOk = Boolean(
-    forwardStrip &&
-      message.meta?.forward?.source_conversation_id?.trim() &&
-      message.meta?.forward?.source_message_id?.trim() &&
-      onForwardQuoteNavigate,
-  )
-  const replyNavOk = Boolean(!forwardStrip && replyScrollTargetId && onReplyQuoteNavigate)
-
-  const canSwipeReply =
-    Boolean(swipeReplyEnabled && onSwipeReply) &&
-    (message.kind === 'text' || message.kind === 'image') &&
-    !message.id.startsWith('local-')
-
-  const endSwipeGesture = useCallback(
-    (e: React.PointerEvent<HTMLElement>, el: HTMLElement) => {
-      const s = swipeRef.current
-      if (!s.active || e.pointerId !== s.pointerId) return
-      const dx = e.clientX - s.x0
-      const dy = e.clientY - s.y0
-      s.active = false
-      if (s.captured) {
-        try {
-          el.releasePointerCapture(e.pointerId)
-        } catch {
-          /* already released */
-        }
-      }
-      swipeRef.current = {
-        pointerId: null,
-        x0: 0,
-        y0: 0,
-        active: false,
-        decided: false,
-        cancelled: false,
-        captured: false,
-      }
-      setSwipeTx(0)
-      const horizontalIntent =
-        Math.abs(dx) > Math.abs(dy) &&
-        dx <= -SWIPE_REPLY_THRESHOLD_PX &&
-        Math.abs(dx) >= SWIPE_REPLY_THRESHOLD_PX
-      if (!s.cancelled && horizontalIntent) {
-        onSwipeReply?.(message)
-      }
-    },
-    [message, onSwipeReply],
-  )
-
-  const quotePreview: MessengerReplyPreview | null = forwardStrip
-    ? forwardStrip.kind === 'image'
-      ? {
-          snippet: forwardStrip.snippet,
-          kind: 'image',
-          quotedAvatarUrl: forwardStrip.quotedAvatarUrl,
-          quotedName: forwardStrip.quotedName,
-          ...(forwardStrip.thumbPath ? { thumbPath: forwardStrip.thumbPath } : {}),
-        }
-      : {
-          snippet: forwardStrip.snippet,
-          kind: 'text',
-          quotedAvatarUrl: forwardStrip.quotedAvatarUrl,
-          quotedName: forwardStrip.quotedName,
-        }
-    : replyPreview
-
-  const showPeerInReplyQuote = !dmMutePeerLabels || forwardStrip != null
-
-  const replyQuoteInner =
-    quotePreview ? (
-      <span className="dashboard-messenger__reply-quote-inner">
-        {showPeerInReplyQuote ? (
-          quotePreview.quotedAvatarUrl ? (
-            <img
-              src={quotePreview.quotedAvatarUrl}
-              alt=""
-              className="dashboard-messenger__reply-quote-avatar"
-              draggable={false}
-            />
-          ) : (
-            <span className="dashboard-messenger__reply-quote-avatar dashboard-messenger__reply-quote-avatar--fallback" aria-hidden>
-              {(quotePreview.quotedName ?? '?').trim().slice(0, 1).toUpperCase() || '?'}
-            </span>
-          )
-        ) : null}
-        {quotePreview.kind === 'image' && quotePreview.thumbPath ? (
-          <MessengerReplyMiniThumb thumbPath={quotePreview.thumbPath} onThumbLayout={onReplyThumbLayout} />
-        ) : null}
-        <span className="dashboard-messenger__reply-quote-snippet">{quotePreview.snippet}</span>
-      </span>
-    ) : null
-
-  const replyQuoteAria = forwardStrip
-    ? 'Пересланное сообщение'
-    : dmMutePeerLabels || !quotePreview?.quotedName?.trim()
-      ? 'К цитируемому сообщению'
-      : `К цитируемому сообщению: ${quotePreview.quotedName.trim()}`
-
-  const showAuthorInMeta = !dmMutePeerLabels
-
-  if (isDmSoftDeletedStub(message)) {
-    return (
-      <div
-        ref={(el) => {
-          bindMessageAnchor(message.id, el)
-        }}
-        className="dashboard-messenger__dm-deleted-plain"
-        aria-label="Сообщение удалено"
-      >
-        сообщение удалено
-      </div>
-    )
-  }
-
-  return (
-    <article
-      ref={(el) => {
-        bindMessageAnchor(message.id, el)
-      }}
-      className={`dashboard-messenger__message${isOwn ? ' dashboard-messenger__message--own' : ''}${
-        canSwipeReply ? ' dashboard-messenger__message--swipe-reply' : ''
-      }`}
-      style={
-        swipeTx !== 0
-          ? { transform: `translateX(${swipeTx}px)`, transition: 'none' }
-          : { transform: undefined, transition: 'transform 0.18s ease-out' }
-      }
-      onPointerDown={(e) => {
-        if (!canSwipeReply || e.button !== 0) return
-        const t = e.target as HTMLElement
-        if (
-          t.closest(
-            'button, a, .messenger-message-img-trigger, .dashboard-messenger__reaction-chip, .messenger-message-link',
-          )
-        ) {
-          return
-        }
-        swipeRef.current = {
-          pointerId: e.pointerId,
-          x0: e.clientX,
-          y0: e.clientY,
-          active: true,
-          decided: false,
-          cancelled: false,
-          captured: false,
-        }
-      }}
-      onPointerMove={(e) => {
-        const s = swipeRef.current
-        if (!canSwipeReply || !s.active || e.pointerId !== s.pointerId) return
-        const dx = e.clientX - s.x0
-        const dy = e.clientY - s.y0
-        if (!s.decided && (Math.abs(dx) > SWIPE_REPLY_DECIDE_PX || Math.abs(dy) > SWIPE_REPLY_DECIDE_PX)) {
-          s.decided = true
-          /* Вертикаль (скролл ленты) или без явного смещения влево — не ответ */
-          if (Math.abs(dy) >= Math.abs(dx) || dx > -SWIPE_REPLY_DECIDE_PX) {
-            s.cancelled = true
-            setSwipeTx(0)
-            return
-          }
-          s.captured = true
-          ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-        }
-        if (s.cancelled || !s.decided) return
-        const tx = Math.max(-SWIPE_REPLY_MAX_SHIFT_PX, Math.min(0, dx))
-        setSwipeTx(tx)
-      }}
-      onPointerUp={(e) => endSwipeGesture(e, e.currentTarget)}
-      onPointerCancel={(e) => endSwipeGesture(e, e.currentTarget)}
-      onContextMenu={onBubbleContextMenu}
-    >
-      <div className="dashboard-messenger__message-meta">
-        <div className="dashboard-messenger__message-meta-main">
-          {showAuthorInMeta ? (
-            <span className="dashboard-messenger__message-author">{message.senderNameSnapshot}</span>
-          ) : null}
-          <time dateTime={message.createdAt}>{formatDt(message.createdAt)}</time>
-          {message.editedAt ? <span className="dashboard-messenger__edited">изм.</span> : null}
-        </div>
-        <button
-          type="button"
-          className={`dashboard-messenger__msg-more${menuOpen ? ' dashboard-messenger__msg-more--open' : ''}`}
-          aria-label="Действия с сообщением"
-          aria-expanded={menuOpen}
-          aria-haspopup="menu"
-          onClick={onMenuButtonClick}
-        >
-          ⋮
-        </button>
-      </div>
-      {quotePreview ? (
-        forwardNavOk ? (
-          <div className="dashboard-messenger__reply-quote" role="note">
-            {replyQuoteInner}
-            <button
-              type="button"
-              className="dashboard-messenger__reply-quote-button"
-              aria-label={replyQuoteAria}
-              onClick={() => onForwardQuoteNavigate?.(message.meta!.forward!)}
-            >
-              Прочитать
-            </button>
-          </div>
-        ) : replyNavOk ? (
-          <button
-            type="button"
-            className="dashboard-messenger__reply-quote dashboard-messenger__reply-quote--action"
-            aria-label={replyQuoteAria}
-            onClick={() => onReplyQuoteNavigate?.(replyScrollTargetId!)}
-          >
-            {replyQuoteInner}
-          </button>
-        ) : (
-          <div className="dashboard-messenger__reply-quote" role="note">
-            {replyQuoteInner}
-          </div>
-        )
-      ) : null}
-      <DoubleTapHeartSurface
-        enabled={Boolean(quickReactEnabled && onQuickHeart)}
-        isMobileViewport={Boolean(isMobileMessenger)}
-        onHeart={() => onQuickHeart?.()}
-        className="dashboard-messenger__message-body"
-      >
-        <MessengerBubbleBody
-          message={message}
-          onOpenImageLightbox={onOpenImageLightbox}
-          onInlineImageLayout={onInlineImageLayout}
-        />
-      </DoubleTapHeartSurface>
-      {reactionCounts.size > 0 ? (
-        <div
-          className="dashboard-messenger__message-reactions"
-          aria-label="Реакции"
-          onDoubleClick={(e) => e.stopPropagation()}
-        >
-          {[...reactionCounts.entries()].map(([emoji, count]) => {
-            const mine = Boolean(
-              currentUserId &&
-                reactions.some(
-                  (r) => r.senderUserId === currentUserId && (r.body.trim() || r.body) === emoji,
-                ),
-            )
-            return (
-              <span
-                key={emoji}
-                className={`dashboard-messenger__reaction-chip${mine ? ' dashboard-messenger__reaction-chip--mine' : ''}`}
-                role={mine ? 'button' : undefined}
-                tabIndex={mine ? 0 : undefined}
-                onClick={
-                  mine
-                    ? (e) => {
-                        e.stopPropagation()
-                        if (isDirectReactionEmoji(emoji)) onReactionChipTap?.(message.id, emoji)
-                      }
-                    : undefined
-                }
-                onKeyDown={
-                  mine
-                    ? (e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          if (isDirectReactionEmoji(emoji)) onReactionChipTap?.(message.id, emoji)
-                        }
-                      }
-                    : undefined
-                }
-              >
-                <span className="dashboard-messenger__reaction-emoji">{emoji}</span>
-                {count > 1 ? <span className="dashboard-messenger__reaction-count">{count}</span> : null}
-              </span>
-            )
-          })}
-        </div>
-      ) : null}
-    </article>
-  )
 }
 
 export function DashboardMessengerPage() {
@@ -1334,7 +970,12 @@ export function DashboardMessengerPage() {
   }, [activeConversationId, items, user?.id])
 
   useEffect(() => {
-    if (!user?.id || !activeConversationId.trim() || !activeConversationRole || !['owner', 'admin'].includes(activeConversationRole)) {
+    if (
+      !user?.id ||
+      !activeConversationId.trim() ||
+      !activeConversationRole ||
+      !MESSENGER_JOIN_REQUEST_MANAGER_ROLES.has(activeConversationRole)
+    ) {
       setConversationJoinRequests([])
       return
     }
@@ -1987,6 +1628,10 @@ export function DashboardMessengerPage() {
     ? 'Запрос отправлен'
     : 'Запросить доступ'
   const joinActionDisabled = inviteJoinBusy || joinRequestInFlight || pendingJoinRequest === true
+
+  const canManageConversationJoinRequests = Boolean(
+    activeConversationRole && MESSENGER_JOIN_REQUEST_MANAGER_ROLES.has(activeConversationRole),
+  )
 
   const conversationInfoConv =
     conversationInfoId?.trim()
@@ -3226,7 +2871,7 @@ export function DashboardMessengerPage() {
             {showListPane ? (
               <aside className="dashboard-messenger__list" aria-label="Список диалогов">
                 {isMobileMessenger ? (
-                  <header className="dashboard-messenger__list-head">
+                  <header className="dashboard-messenger__list-head dashboard-messenger__list-head--chats-toolbar">
                     <Link
                       to="/dashboard"
                       className="dashboard-messenger__list-head-back"
@@ -3305,40 +2950,33 @@ export function DashboardMessengerPage() {
                     />
                   </div>
                 ) : null}
-                <div className="dashboard-messenger__list-search" style={{ paddingTop: 0 }}>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }} aria-label="Фильтр бесед">
-                    <button
-                      type="button"
-                      className="dashboard-topbar__action"
-                      aria-pressed={conversationKindFilter === 'all'}
-                      onClick={() => setConversationKindFilter('all')}
-                    >
-                      Все
-                    </button>
-                    <button
-                      type="button"
-                      className="dashboard-topbar__action"
-                      aria-pressed={conversationKindFilter === 'direct'}
-                      onClick={() => setConversationKindFilter('direct')}
-                    >
-                      Лички
-                    </button>
-                    <button
-                      type="button"
-                      className="dashboard-topbar__action"
-                      aria-pressed={conversationKindFilter === 'group'}
-                      onClick={() => setConversationKindFilter('group')}
-                    >
-                      Группы
-                    </button>
-                    <button
-                      type="button"
-                      className="dashboard-topbar__action"
-                      aria-pressed={conversationKindFilter === 'channel'}
-                      onClick={() => setConversationKindFilter('channel')}
-                    >
-                      Каналы
-                    </button>
+                <div
+                  className={`dashboard-messenger__list-search${
+                    isMobileMessenger ? ' dashboard-messenger__list-search--kind-tabs-only' : ''
+                  }`}
+                >
+                  <div className="dashboard-messenger__kind-tabs" role="tablist" aria-label="Фильтр бесед">
+                    {(
+                      [
+                        { id: 'all' as const, label: 'Все' },
+                        { id: 'direct' as const, label: 'Лички' },
+                        { id: 'group' as const, label: 'Группы' },
+                        { id: 'channel' as const, label: 'Каналы' },
+                      ] as const
+                    ).map(({ id, label }) => (
+                      <button
+                        key={id}
+                        type="button"
+                        role="tab"
+                        className={`dashboard-messenger__kind-tab${
+                          conversationKindFilter === id ? ' dashboard-messenger__kind-tab--active' : ''
+                        }`}
+                        aria-selected={conversationKindFilter === id}
+                        onClick={() => setConversationKindFilter(id)}
+                      >
+                        {label}
+                      </button>
+                    ))}
                   </div>
                 </div>
                 <div className="dashboard-messenger__list-scroll">
@@ -3445,17 +3083,19 @@ export function DashboardMessengerPage() {
                       <div className="dashboard-messenger__thread-body">
                         <div className="dashboard-messenger__thread-head">
                           {isMobileMessenger ? (
-                            <header className="dashboard-messenger__list-head">
-                              <button
-                                type="button"
-                                className="dashboard-messenger__list-head-btn"
-                                aria-label="К списку чатов"
-                                title="К списку чатов"
-                                onClick={() => navigate('/dashboard/messenger?view=list', { replace: true })}
-                              >
-                                <ChevronLeftIcon />
-                              </button>
-                              <div className="dashboard-messenger__thread-head-center">
+                            <header className="dashboard-messenger__list-head dashboard-messenger__list-head--thread">
+                              <div className="dashboard-messenger__thread-head-back-wrap">
+                                <button
+                                  type="button"
+                                  className="dashboard-messenger__list-head-btn"
+                                  aria-label="К списку чатов"
+                                  title="К списку чатов"
+                                  onClick={() => navigate('/dashboard/messenger?view=list', { replace: true })}
+                                >
+                                  <ChevronLeftIcon />
+                                </button>
+                              </div>
+                              <div className="dashboard-messenger__thread-head-center dashboard-messenger__thread-head-center--thread-block">
                                 <div className="dashboard-messenger__thread-head-center-meta">
                                   {threadHeadConversation.kind === 'channel' ? 'Канал' : 'Группа'}
                                 </div>
@@ -3463,6 +3103,7 @@ export function DashboardMessengerPage() {
                                   {threadHeadConversation.title}
                                 </div>
                               </div>
+                              <div className="dashboard-messenger__list-head-actions" aria-hidden="true" />
                             </header>
                           ) : (
                             <div className="dashboard-messenger__thread-head-center" style={{ padding: 16 }}>
@@ -3493,7 +3134,7 @@ export function DashboardMessengerPage() {
                       <div className="dashboard-messenger__thread-body">
                         <div className="dashboard-messenger__thread-head">
                           {isMobileMessenger ? (
-                            <header className="dashboard-messenger__list-head">
+                            <header className="dashboard-messenger__list-head dashboard-messenger__list-head--thread">
                               <div className="dashboard-messenger__thread-head-back-wrap">
                                 <button
                                   type="button"
@@ -3505,32 +3146,6 @@ export function DashboardMessengerPage() {
                                   <ChevronLeftIcon />
                                 </button>
                               </div>
-                              {canRequestJoin ? (
-                                <button
-                                  type="button"
-                                  className="dashboard-topbar__action dashboard-topbar__action--primary"
-                                  onClick={() => void joinOpenConversation()}
-                                  disabled={joinActionDisabled || inviteLoading}
-                                  title={joinActionLabel}
-                                >
-                                  {joinActionDisabled ? '…' : joinActionLabel}
-                                </button>
-                              ) : null}
-                              {activeConversationRole && ['owner', 'admin'].includes(activeConversationRole) ? (
-                                <button
-                                  type="button"
-                                  className="dashboard-topbar__action"
-                                  onClick={() => setJoinRequestsOpen(true)}
-                                  title="Запросы на вступление"
-                                >
-                                  <JoinRequestsIcon />
-                                  {conversationJoinRequests.length > 0 ? (
-                                    <span className="dashboard-topbar__badge">
-                                      {conversationJoinRequests.length}
-                                    </span>
-                                  ) : null}
-                                </button>
-                              ) : null}
                               <button
                                 type="button"
                                 className="dashboard-messenger__thread-head-center dashboard-messenger__thread-head-center--tappable"
@@ -3554,6 +3169,35 @@ export function DashboardMessengerPage() {
                                   </div>
                                 </div>
                               </button>
+                              <div className="dashboard-messenger__list-head-actions">
+                                {canRequestJoin ? (
+                                  <button
+                                    type="button"
+                                    className="dashboard-messenger__list-head-btn dashboard-messenger__list-head-btn--primary dashboard-messenger__thread-head-join"
+                                    onClick={() => void joinOpenConversation()}
+                                    disabled={joinActionDisabled || inviteLoading}
+                                    title={joinActionLabel}
+                                  >
+                                    {joinActionDisabled ? '…' : joinActionLabel}
+                                  </button>
+                                ) : null}
+                                {canManageConversationJoinRequests ? (
+                                  <button
+                                    type="button"
+                                    className="dashboard-messenger__list-head-btn dashboard-messenger__list-head-btn--icon-badge"
+                                    onClick={() => setJoinRequestsOpen(true)}
+                                    title="Запросы на вступление"
+                                    aria-label="Запросы на вступление"
+                                  >
+                                    <JoinRequestsIcon />
+                                    {conversationJoinRequests.length > 0 ? (
+                                      <span className="dashboard-messenger__list-head-btn__badge">
+                                        {conversationJoinRequests.length > 99 ? '99+' : conversationJoinRequests.length}
+                                      </span>
+                                    ) : null}
+                                  </button>
+                                ) : null}
+                              </div>
                             </header>
                           ) : (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 16 }}>
@@ -3568,7 +3212,7 @@ export function DashboardMessengerPage() {
                                   {joinActionDisabled ? '…' : joinActionLabel}
                                 </button>
                               ) : null}
-                              {activeConversationRole && ['owner', 'admin'].includes(activeConversationRole) ? (
+                              {canManageConversationJoinRequests ? (
                                 <button
                                   type="button"
                                   className="dashboard-topbar__action"
@@ -3667,7 +3311,7 @@ export function DashboardMessengerPage() {
                   <DirectThreadPane>
                     <div className="dashboard-messenger__thread-head">
                       {isMobileMessenger ? (
-                        <header className="dashboard-messenger__list-head">
+                        <header className="dashboard-messenger__list-head dashboard-messenger__list-head--thread">
                           <div className="dashboard-messenger__thread-head-back-wrap">
                             <button
                               type="button"
@@ -3837,53 +3481,23 @@ export function DashboardMessengerPage() {
                             timelineMessages.map((message) => {
                               const isOwn = Boolean(user?.id && message.senderUserId === user.id)
                               const reactions = reactionsByTargetId.get(message.id) ?? []
-                              const rid = message.replyToMessageId?.trim()
-                              let replyPreview: MessengerReplyPreview | null = null
-                              let replyScrollTargetId: string | null = null
-                              if (rid) {
-                                const src = messages.find((m) => m.id === rid)
-                                if (src) {
-                                  replyScrollTargetId = rid
-                                  const quotedAvatarUrl = resolveQuotedAvatarForDm(
-                                    src.senderUserId,
+                              const rid =
+                                message.quoteToMessageId?.trim() || message.replyToMessageId?.trim() || null
+                              const { preview: replyPreview, scrollTargetId: replyScrollTargetId } = buildQuotePreview({
+                                quotedMessageId: rid,
+                                messageById: (id) => messages.find((m) => m.id === id),
+                                resolveQuotedAvatarUrl: (senderUserId) =>
+                                  resolveQuotedAvatarForDm(
+                                    senderUserId,
                                     user?.id,
                                     profile?.avatar_url,
                                     threadHeadConversation?.kind === 'direct'
                                       ? (threadHeadConversation as unknown as DirectConversationSummary)
                                       : null,
-                                  )
-                                  const quotedName = src.senderNameSnapshot?.trim() || undefined
-                                  if (src.kind === 'image') {
-                                    const thumbPath =
-                                      src.meta?.image?.thumbPath?.trim() ||
-                                      src.meta?.image?.path?.trim() ||
-                                      ''
-                                    replyPreview = {
-                                      quotedAvatarUrl,
-                                      quotedName,
-                                      snippet: truncateMessengerReplySnippet(src.body),
-                                      kind: 'image',
-                                      ...(thumbPath ? { thumbPath } : {}),
-                                    }
-                                  } else {
-                                    replyPreview = {
-                                      quotedAvatarUrl,
-                                      quotedName,
-                                      snippet: truncateMessengerReplySnippet(src.body) || '…',
-                                      kind: 'text',
-                                    }
-                                  }
-                                } else {
-                                  replyPreview = {
-                                    quotedAvatarUrl: null,
-                                    quotedName: undefined,
-                                    snippet: 'Нет в загруженной истории',
-                                    kind: 'text',
-                                  }
-                                }
-                              }
+                                  ),
+                              })
                               return (
-                                <MessengerDmBubble
+                                <ThreadMessageBubble
                                   key={message.id}
                                   message={message}
                                   isOwn={isOwn}
@@ -3919,6 +3533,7 @@ export function DashboardMessengerPage() {
                                   }}
                                   currentUserId={user?.id ?? null}
                                   onReactionChipTap={(targetId, emoji) => {
+                                    if (!isDirectReactionEmoji(emoji)) return
                                     void toggleMessengerReaction(targetId, emoji)
                                   }}
                                   quickReactEnabled={Boolean(
@@ -4143,79 +3758,84 @@ export function DashboardMessengerPage() {
           )
         : null}
 
-      {joinRequestsOpen ?
-        createPortal(
-          <div
-            className="messenger-settings-modal-root"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="join-requests-title"
-          >
-            <button
-              type="button"
-              className="messenger-settings-modal-backdrop"
-              aria-label="Закрыть"
-              onClick={() => setJoinRequestsOpen(false)}
-            />
-            <div className="messenger-settings-modal">
-              <div className="messenger-settings-modal__header">
-                <h2 id="join-requests-title">Запросы на вступление</h2>
-                <button
-                  type="button"
-                  className="messenger-settings-modal__close"
-                  aria-label="Закрыть"
-                  onClick={() => setJoinRequestsOpen(false)}
-                >
-                  <XCloseIcon />
-                </button>
-              </div>
-              <div className="messenger-settings-modal__body">
-                {joinRequestsLoading ? (
-                  <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" />
-                ) : conversationJoinRequests.length === 0 ? (
-                  <p>Нет новых запросов на вступление.</p>
-                ) : (
-                  <ul className="join-requests-list">
-                    {conversationJoinRequests.map((request) => (
-                      <li key={request.requestId} className="join-request-row">
-                        <div>
-                          <div className="join-request-row__name">{request.displayName}</div>
-                          <div className="join-request-row__meta">
-                            {new Date(request.createdAt).toLocaleString('ru-RU', {
-                              dateStyle: 'medium',
-                              timeStyle: 'short',
-                            })}
+      {joinRequestsOpen
+        ? createPortal(
+            <div
+              className="confirm-dialog-root dashboard-messenger-join-requests-root"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="join-requests-title"
+            >
+              <button
+                type="button"
+                className="confirm-dialog-backdrop"
+                aria-label="Закрыть"
+                onClick={() => setJoinRequestsOpen(false)}
+              />
+              <div
+                className="confirm-dialog dashboard-messenger-join-requests-dialog"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="dashboard-messenger-join-requests-dialog__header">
+                  <h2 id="join-requests-title" className="dashboard-messenger-join-requests-dialog__title">
+                    Запросы на вступление
+                  </h2>
+                  <button
+                    type="button"
+                    className="dashboard-messenger-join-requests-dialog__close"
+                    aria-label="Закрыть"
+                    onClick={() => setJoinRequestsOpen(false)}
+                  >
+                    <XCloseIcon />
+                  </button>
+                </div>
+                <div className="dashboard-messenger-join-requests-dialog__body">
+                  {joinRequestsLoading ? (
+                    <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" />
+                  ) : conversationJoinRequests.length === 0 ? (
+                    <p className="dashboard-messenger-join-requests-dialog__empty">Нет новых запросов на вступление.</p>
+                  ) : (
+                    <ul className="dashboard-messenger-join-requests-dialog__list">
+                      {conversationJoinRequests.map((request) => (
+                        <li key={request.requestId} className="dashboard-messenger-join-requests-dialog__item">
+                          <div className="dashboard-messenger-join-requests-dialog__item-main">
+                            <div className="dashboard-messenger-join-requests-dialog__name">{request.displayName}</div>
+                            <div className="dashboard-messenger-join-requests-dialog__meta">
+                              {new Date(request.createdAt).toLocaleString('ru-RU', {
+                                dateStyle: 'medium',
+                                timeStyle: 'short',
+                              })}
+                            </div>
                           </div>
-                        </div>
-                        <div className="join-request-row__actions">
-                          <button
-                            type="button"
-                            className="dashboard-topbar__action"
-                            disabled={joinRequestInFlight}
-                            onClick={() => void approveJoinRequest(request.requestId)}
-                          >
-                            Одобрить
-                          </button>
-                          <button
-                            type="button"
-                            className="dashboard-topbar__action dashboard-topbar__action--danger"
-                            disabled={joinRequestInFlight}
-                            onClick={() => void denyJoinRequest(request.requestId)}
-                          >
-                            Отклонить
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {joinRequestError ? <p className="join-error">{joinRequestError}</p> : null}
+                          <div className="dashboard-messenger-join-requests-dialog__item-actions">
+                            <button
+                              type="button"
+                              className="dashboard-messenger-join-requests-dialog__approve"
+                              disabled={joinRequestInFlight}
+                              onClick={() => void approveJoinRequest(request.requestId)}
+                            >
+                              Одобрить
+                            </button>
+                            <button
+                              type="button"
+                              className="dashboard-messenger-join-requests-dialog__deny"
+                              disabled={joinRequestInFlight}
+                              onClick={() => void denyJoinRequest(request.requestId)}
+                            >
+                              Отклонить
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {joinRequestError ? <p className="join-error">{joinRequestError}</p> : null}
+                </div>
               </div>
-            </div>
-          </div>,
-          document.body,
-        )
-      : null}
+            </div>,
+            document.body,
+          )
+        : null}
 
       {messengerImageLightboxUrl
         ? createPortal(

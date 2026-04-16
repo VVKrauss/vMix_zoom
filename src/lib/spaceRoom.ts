@@ -289,12 +289,6 @@ export async function getSpaceRoomJoinStatus(
   return { joinable: true, denial: 'none', isDbHost: false }
 }
 
-/** @deprecated Используйте getSpaceRoomJoinStatus для различения причин отказа. */
-export async function isSpaceRoomJoinable(slug: string, authUserId?: string | null): Promise<boolean> {
-  const { joinable } = await getSpaceRoomJoinStatus(slug, authUserId)
-  return joinable
-}
-
 /** Постоянные комнаты пользователя как хоста (`retain_instance`), для кабинета «Мои комнаты». */
 export type PersistentSpaceRoomRow = {
   slug: string

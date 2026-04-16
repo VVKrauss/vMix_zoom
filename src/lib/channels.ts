@@ -167,18 +167,6 @@ function parseOkMessageResult(data: unknown): { messageId: string | null; create
   }
 }
 
-export async function appendChannelPost(
-  conversationId: string,
-  body: string,
-): Promise<{ data: { messageId: string | null; createdAt: string | null } | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('append_channel_post', {
-    p_conversation_id: conversationId.trim(),
-    p_body: body,
-  })
-  if (error) return { data: null, error: error.message }
-  return { data: parseOkMessageResult(data), error: null }
-}
-
 export async function appendChannelPostRich(
   conversationId: string,
   body: string,
@@ -197,11 +185,13 @@ export async function appendChannelComment(
   conversationId: string,
   postId: string,
   body: string,
+  options?: { quoteToMessageId?: string | null },
 ): Promise<{ data: { messageId: string | null; createdAt: string | null } | null; error: string | null }> {
   const { data, error } = await supabase.rpc('append_channel_comment', {
     p_conversation_id: conversationId.trim(),
     p_reply_to_message_id: postId.trim(),
     p_body: body,
+    p_quote_to_message_id: options?.quoteToMessageId?.trim() || null,
   })
   if (error) return { data: null, error: error.message }
   return { data: parseOkMessageResult(data), error: null }
@@ -234,22 +224,6 @@ export async function deleteChannelComment(
   if (error) return { error: error.message }
   const row = data as Record<string, unknown> | null
   if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_deleted' }
-  return { error: null }
-}
-
-export async function editChannelPost(
-  conversationId: string,
-  messageId: string,
-  newBody: string,
-): Promise<{ error: string | null }> {
-  const { data, error } = await supabase.rpc('edit_channel_post', {
-    p_conversation_id: conversationId.trim(),
-    p_message_id: messageId.trim(),
-    p_new_body: newBody,
-  })
-  if (error) return { error: error.message }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_edited' }
   return { error: null }
 }
 

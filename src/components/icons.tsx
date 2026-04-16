@@ -115,21 +115,6 @@ export function StarIcon({ filled = false }: { filled?: boolean }) {
   )
 }
 
-/** Завершить звонок — трубка в круге (Flaticon). */
-export function EndCallIcon() {
-  return <FiRrIcon name="circle-phone-hangup" />
-}
-
-/** Во весь экран — четыре угла «наружу», одинаковый отступ от края viewBox. */
-export function FullscreenEnterIcon() {
-  return <FiRrIcon name="expand" />
-}
-
-/** Выйти из полноэкранного — углы «внутрь», симметрично enter. */
-export function FullscreenExitIcon() {
-  return <FiRrIcon name="compress" />
-}
-
 /** Участники в шапке комнаты: силуэты гостей. */
 export function ParticipantsBadgeIcon() {
   return <FiRrIcon name="users" />

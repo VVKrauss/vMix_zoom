@@ -7,6 +7,7 @@ import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { supabase } from '../../lib/supabase'
 import { mapDirectMessageFromRow, type DirectMessage } from '../../lib/messenger'
 import { getMessengerImageSignedUrl } from '../../lib/messenger'
+import { buildQuotePreview } from '../../lib/messengerQuotePreview'
 import {
   appendChannelComment,
   deleteChannelComment,
@@ -21,12 +22,13 @@ import {
 import { collectStoragePathsFromDraft } from '../../lib/postEditor/draftUtils'
 import type { ReactionEmoji } from '../../types/roomComms'
 import { REACTION_EMOJI_WHITELIST } from '../../types/roomComms'
-import { FiRrIcon } from '../icons'
+import { ChevronLeftIcon, FiRrIcon, XCloseIcon } from '../icons'
 import { MessengerMessageMenuPopover } from '../MessengerMessageMenuPopover'
 import { PostDraftReadView, PostPublicationLine } from '../postEditor/PostDraftReadView'
 import { PostEditorModal } from '../postEditor/PostEditorModal'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
 import { DoubleTapHeartSurface } from './DoubleTapHeartSurface'
+import { ThreadMessageBubble } from './ThreadMessageBubble'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -113,6 +115,7 @@ export function ChannelThreadPane({
   const [commentsLoadingPostId, setCommentsLoadingPostId] = useState<string | null>(null)
   const [draftCommentByPostId, setDraftCommentByPostId] = useState<Record<string, string>>({})
   const [sendingCommentPostId, setSendingCommentPostId] = useState<string | null>(null)
+  const [quoteToComment, setQuoteToComment] = useState<DirectMessage | null>(null)
   const [reactionPick, setReactionPick] = useState<{
     targetId: string
     anchor: { left: number; top: number; right: number; bottom: number }
@@ -167,6 +170,20 @@ export function ChannelThreadPane({
   }, [])
 
   const canModerateChannel = Boolean(myChannelMemberRole && CHANNEL_STAFF_ROLES.has(myChannelMemberRole))
+
+  useEffect(() => {
+    setQuoteToComment(null)
+  }, [commentsModalPostId])
+
+  const scrollToQuotedMessage = useCallback((quotedId: string) => {
+    const el = commentAnchorRef.current.get(quotedId) ?? postAnchorRef.current.get(quotedId)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('dashboard-messenger__message--highlight')
+    window.setTimeout(() => {
+      el.classList.remove('dashboard-messenger__message--highlight')
+    }, 1400)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -487,6 +504,10 @@ export function ChannelThreadPane({
     const body = (draftCommentByPostId[postId] ?? '').trim()
     if (!user?.id || !cid || !postId || !body || sendingCommentPostId) return
     setSendingCommentPostId(postId)
+    const quoteId =
+      quoteToComment?.id && quoteToComment.replyToMessageId?.trim() === postId.trim()
+        ? quoteToComment.id
+        : null
     const optimistic: DirectMessage = {
       id: `local-${Date.now()}`,
       senderUserId: user.id,
@@ -495,6 +516,7 @@ export function ChannelThreadPane({
       body,
       createdAt: new Date().toISOString(),
       replyToMessageId: postId,
+      quoteToMessageId: quoteId,
     }
     setCommentsByPostId((prev) => {
       const cur = prev[postId] ?? []
@@ -503,7 +525,7 @@ export function ChannelThreadPane({
     setCommentCountByPostId((prev) => ({ ...prev, [postId]: (prev[postId] ?? 0) + 1 }))
     setDraftCommentByPostId((prev) => ({ ...prev, [postId]: '' }))
     try {
-      const res = await appendChannelComment(cid, postId, body)
+      const res = await appendChannelComment(cid, postId, body, { quoteToMessageId: quoteId })
       if (res.error) {
         setError(res.error)
         setCommentCountByPostId((prev) => ({ ...prev, [postId]: Math.max(0, (prev[postId] ?? 1) - 1) }))
@@ -521,10 +543,11 @@ export function ChannelThreadPane({
         const cur = prev[postId] ?? []
         return { ...prev, [postId]: cur.map((m) => (m.id === optimistic.id ? { ...optimistic, id: finalId, createdAt: finalAt } : m)).sort(sortChrono) }
       })
+      setQuoteToComment(null)
     } finally {
       setSendingCommentPostId(null)
     }
-  }, [conversationId, draftCommentByPostId, sendingCommentPostId, user?.id])
+  }, [conversationId, draftCommentByPostId, sendingCommentPostId, user?.id, quoteToComment])
 
   const toggleReaction = useCallback(
     async (targetMessageId: string, emoji: ReactionEmoji) => {
@@ -979,52 +1002,27 @@ export function ChannelThreadPane({
   const renderChannelComment = (m: DirectMessage) => {
     if (m.kind === 'reaction') return null
     const isOwn = Boolean(user?.id && m.senderUserId === user.id)
-    const menuOpen = commentMenu?.message.id === m.id
     const isEditing = editingCommentId === m.id
 
-    return (
-      <article
-        key={m.id}
-        className={`dashboard-messenger__message dashboard-messenger__message--reply${isOwn ? ' dashboard-messenger__message--own' : ''}`}
-        ref={(el) => {
-          if (el) commentAnchorRef.current.set(m.id, el)
-          else commentAnchorRef.current.delete(m.id)
-        }}
-        onContextMenu={(e) => {
-          e.preventDefault()
-          if (viewerOnly) return
-          if (m.id.startsWith('local-')) return
-          setReactionPick({
-            targetId: m.id,
-            anchor: { left: e.clientX, top: e.clientY, right: e.clientX, bottom: e.clientY },
-          })
-        }}
-      >
-        <div className="dashboard-messenger__message-meta">
-          <div className="dashboard-messenger__message-meta-main">
-            <span className="dashboard-messenger__message-author">{m.senderNameSnapshot}</span>
-            <time dateTime={m.createdAt}>{formatChannelBubbleTime(m.createdAt)}</time>
-            {m.editedAt ? <span className="dashboard-messenger__edited">изм.</span> : null}
+    if (isEditing) {
+      return (
+        <article
+          key={m.id}
+          className={`dashboard-messenger__message dashboard-messenger__message--reply${
+            isOwn ? ' dashboard-messenger__message--own' : ''
+          }`}
+          ref={(el) => {
+            if (el) commentAnchorRef.current.set(m.id, el)
+            else commentAnchorRef.current.delete(m.id)
+          }}
+        >
+          <div className="dashboard-messenger__message-meta">
+            <div className="dashboard-messenger__message-meta-main">
+              <span className="dashboard-messenger__message-author">{m.senderNameSnapshot}</span>
+              <time dateTime={m.createdAt}>{formatChannelBubbleTime(m.createdAt)}</time>
+              {m.editedAt ? <span className="dashboard-messenger__edited">изм.</span> : null}
+            </div>
           </div>
-          <button
-            type="button"
-            className={`dashboard-messenger__msg-more${menuOpen ? ' dashboard-messenger__msg-more--open' : ''}`}
-            aria-label="Действия с комментарием"
-            aria-expanded={menuOpen}
-            aria-haspopup="menu"
-            disabled={viewerOnly || m.id.startsWith('local-')}
-            onClick={(e) => {
-              const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
-              setCommentMenu((cur) => {
-                if (cur?.message.id === m.id) return null
-                return { message: m, anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } }
-              })
-            }}
-          >
-            ⋮
-          </button>
-        </div>
-        {isEditing ? (
           <div className="dashboard-messenger__message-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <textarea
               className="dashboard-messenger__input"
@@ -1055,19 +1053,65 @@ export function ChannelThreadPane({
               </button>
             </div>
           </div>
-        ) : (
-          <DoubleTapHeartSurface
-            enabled={Boolean(
-              user?.id && !m.id.startsWith('local-') && (m.kind === 'text' || m.kind === 'image'),
-            )}
-            isMobileViewport={isMobileMessenger}
-            onHeart={() => void toggleReaction(m.id, QUICK_REACTION_EMOJI)}
-          >
-            <div className="dashboard-messenger__message-body">{renderMarkdownAndPreview(m)}</div>
-          </DoubleTapHeartSurface>
+        </article>
+      )
+    }
+
+    const reacts = reactionsByTargetId.get(m.id) ?? []
+    const pid = m.replyToMessageId?.trim() ?? ''
+
+    const { preview: replyPreview, scrollTargetId: replyScrollTargetId } = buildQuotePreview({
+      quotedMessageId: m.quoteToMessageId?.trim() || null,
+      messageById: (id) => {
+        const cur = pid ? (commentsByPostId[pid] ?? []) : []
+        return cur.find((x) => x.id === id) ?? posts.find((p) => p.id === id)
+      },
+      resolveQuotedAvatarUrl: () => null,
+    })
+
+    return (
+      <ThreadMessageBubble
+        key={m.id}
+        message={m}
+        isOwn={isOwn}
+        reactions={reacts}
+        formatDt={formatChannelBubbleTime}
+        replyPreview={replyPreview}
+        replyScrollTargetId={replyScrollTargetId}
+        onReplyQuoteNavigate={scrollToQuotedMessage}
+        bindMessageAnchor={(id, el) => {
+          if (el) commentAnchorRef.current.set(id, el)
+          else commentAnchorRef.current.delete(id)
+        }}
+        currentUserId={user?.id ?? null}
+        onReactionChipTap={onReactionChipTap}
+        quickReactEnabled={Boolean(
+          user?.id && !m.id.startsWith('local-') && (m.kind === 'text' || m.kind === 'image'),
         )}
-        {renderReactionChips(m, 'dashboard-messenger__message-reactions', { showAddButton: false })}
-      </article>
+        isMobileMessenger={isMobileMessenger}
+        onQuickHeart={() => void toggleReaction(m.id, QUICK_REACTION_EMOJI)}
+        swipeReplyEnabled={isMobileMessenger}
+        onSwipeReply={() => setQuoteToComment(m)}
+        menuOpen={commentMenu?.message.id === m.id}
+        onMenuButtonClick={(e) => {
+          e.stopPropagation()
+          if (viewerOnly || m.id.startsWith('local-')) return
+          const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
+          setCommentMenu((cur) => {
+            if (cur?.message.id === m.id) return null
+            return { message: m, anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } }
+          })
+        }}
+        onBubbleContextMenu={(e) => {
+          e.preventDefault()
+          if (viewerOnly || m.id.startsWith('local-')) return
+          setCommentMenu((cur) => {
+            if (cur?.message.id === m.id) return null
+            return { message: m, anchor: { left: e.clientX, top: e.clientY, right: e.clientX, bottom: e.clientY } }
+          })
+        }}
+        renderBody={(msg) => renderMarkdownAndPreview(msg)}
+      />
     )
   }
 
@@ -1154,10 +1198,33 @@ export function ChannelThreadPane({
     )
   }
 
-  return (
-    <div className="dashboard-messenger__thread-body">
-      {error ? <p className="join-error">{error}</p> : null}
+  const selectedCommentsPost = useMemo(
+    () => (commentsModalPostId ? posts.find((p) => p.id === commentsModalPostId) ?? null : null),
+    [commentsModalPostId, posts],
+  )
 
+  const selectedPostTitle = useMemo(() => {
+    const p = selectedCommentsPost
+    if (!p) return 'Пост'
+    const raw = (p.body ?? '').replace(/\s+/g, ' ').trim()
+    if (!raw) return 'Пост'
+    const cut = raw.length > 72 ? `${raw.slice(0, 72).trim()}…` : raw
+    return cut || 'Пост'
+  }, [selectedCommentsPost])
+
+  const selectedPostMeta = useMemo(() => {
+    const p = selectedCommentsPost
+    if (!p) return ''
+    const dt = formatChannelBubbleTime(p.createdAt)
+    const edited = p.editedAt ? ' · изм.' : ''
+    const n = commentCountByPostId[p.id] ?? 0
+    const capped = commentCountHasMoreByPostId[p.id] ?? false
+    const count = capped ? `${n}+` : String(n)
+    return `${dt}${edited} · ${count} комм.`
+  }, [commentCountByPostId, commentCountHasMoreByPostId, selectedCommentsPost])
+
+  const renderChannelPostsView = () => (
+    <>
       <div className="dashboard-messenger__messages-scroll" role="region" aria-label="Посты канала">
         {hasMoreOlder ? (
           <div style={{ padding: 10, textAlign: 'center' }}>
@@ -1199,6 +1266,152 @@ export function ChannelThreadPane({
           </button>
         ) : null}
       </div>
+    </>
+  )
+
+  const renderChannelCommentsView = () => {
+    if (!commentsModalPostId) return null
+    const list = (commentsByPostId[commentsModalPostId] ?? []).filter((m) => m.kind !== 'reaction')
+    const draft = draftCommentByPostId[commentsModalPostId] ?? ''
+    const sending = sendingCommentPostId === commentsModalPostId
+    const canSend = Boolean(draft.trim()) && !sending
+    const isDesktopSplit = !isMobileMessenger
+
+    const postsCompact = (
+      <div className="dashboard-messenger__channel-comments-posts" role="region" aria-label="Посты канала">
+        <div className="dashboard-messenger__channel-comments-posts-scroll">
+          {posts
+            .filter((m) => m.kind !== 'reaction')
+            .map((p) => {
+              const n = commentCountByPostId[p.id] ?? 0
+              const capped = commentCountHasMoreByPostId[p.id] ?? false
+              const label = capped ? `${n}+` : String(n)
+              const raw = (p.body ?? '').replace(/\s+/g, ' ').trim()
+              const title = raw ? (raw.length > 64 ? `${raw.slice(0, 64).trim()}…` : raw) : 'Пост'
+              const active = p.id === commentsModalPostId
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={`dashboard-messenger__channel-comments-post-row${active ? ' dashboard-messenger__channel-comments-post-row--active' : ''}`}
+                  onClick={() => void openCommentsModal(p.id)}
+                  title={title}
+                >
+                  <span className="dashboard-messenger__channel-comments-post-row__title">{title}</span>
+                  <span className="dashboard-messenger__channel-comments-post-row__count">{label}</span>
+                </button>
+              )
+            })}
+        </div>
+        {!viewerOnly ? (
+          <div className="dashboard-messenger__channel-comments-posts-footer">
+            <button
+              type="button"
+              className="dashboard-topbar__action dashboard-topbar__action--primary"
+              onClick={() => setPostEditor({ mode: 'create' })}
+              disabled={threadLoading}
+              style={{ width: '100%' }}
+            >
+              Добавить пост
+            </button>
+          </div>
+        ) : null}
+      </div>
+    )
+
+    const commentsPane = (
+      <div className="dashboard-messenger__channel-comments-thread" role="region" aria-label="Комментарии к посту">
+        {isMobileMessenger ? (
+          <header className="dashboard-messenger__list-head dashboard-messenger__list-head--thread">
+            <div className="dashboard-messenger__thread-head-back-wrap">
+              <button
+                type="button"
+                className="dashboard-messenger__list-head-btn"
+                aria-label="К постам"
+                title="К постам"
+                onClick={() => setCommentsModalPostId(null)}
+              >
+                <ChevronLeftIcon />
+              </button>
+            </div>
+            <div className="dashboard-messenger__thread-head-center dashboard-messenger__thread-head-center--thread-block">
+              <div className="dashboard-messenger__thread-head-center-meta">{selectedPostMeta || 'Комментарии'}</div>
+              <div className="dashboard-messenger__thread-head-center-title">{selectedPostTitle}</div>
+            </div>
+            <div className="dashboard-messenger__list-head-actions" aria-hidden="true" />
+          </header>
+        ) : (
+          <div className="dashboard-messenger__channel-comments-thread-head">
+            <div className="dashboard-messenger__channel-comments-thread-title">Комментарии</div>
+            <div className="dashboard-messenger__channel-comments-thread-subtitle">
+              {selectedPostTitle}{selectedPostMeta ? ` · ${selectedPostMeta}` : ''}
+            </div>
+            <button
+              type="button"
+              className="dashboard-messenger__channel-comments-thread-close"
+              aria-label="Закрыть комментарии"
+              title="Закрыть"
+              onClick={() => setCommentsModalPostId(null)}
+            >
+              <XCloseIcon />
+            </button>
+          </div>
+        )}
+
+        <div className="dashboard-messenger__messages-scroll" style={{ flex: '1 1 auto' }}>
+          <div className="dashboard-messenger__messages dashboard-messenger__messages--channel-comments-modal">
+            {list.map((c) => renderChannelComment(c))}
+            {list.length === 0 ? <div className="dashboard-chats-empty" style={{ padding: 8 }}>Пока нет комментариев.</div> : null}
+          </div>
+        </div>
+
+        {!viewerOnly ? (
+          <div className="dashboard-messenger__composer" role="region" aria-label="Новый комментарий">
+            <div className="dashboard-messenger__composer-main">
+              <textarea
+                className="dashboard-messenger__input"
+                rows={isMobileMessenger ? 1 : 2}
+                value={draft}
+                placeholder="Комментарий…"
+                onChange={(e) => setDraftCommentByPostId((prev) => ({ ...prev, [commentsModalPostId]: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault()
+                    void sendComment(commentsModalPostId)
+                  }
+                }}
+              />
+              <div className="dashboard-messenger__composer-side">
+                <button
+                  type="button"
+                  className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
+                  disabled={!canSend}
+                  onClick={() => void sendComment(commentsModalPostId)}
+                >
+                  {sending ? '…' : 'Отправить'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    )
+
+    return isDesktopSplit ? (
+      <div className="dashboard-messenger__channel-comments-layout">
+        {postsCompact}
+        {commentsPane}
+      </div>
+    ) : (
+      commentsPane
+    )
+  }
+
+  return (
+    <div className="dashboard-messenger__thread-body">
+      {error ? <p className="join-error">{error}</p> : null}
+
+      {commentsModalPostId ? renderChannelCommentsView() : renderChannelPostsView()}
 
       {postMenu
         ? createPortal(
@@ -1262,7 +1475,6 @@ export function ChannelThreadPane({
               style={{ position: 'fixed', left: 0, top: 0, zIndex: 26500, visibility: 'hidden' }}
             >
               <MessengerMessageMenuPopover
-                hideReply
                 canEdit={canEditOrDeleteComment(commentMenu.message)}
                 canDelete={canEditOrDeleteComment(commentMenu.message)}
                 onClose={() => setCommentMenu(null)}
@@ -1274,7 +1486,10 @@ export function ChannelThreadPane({
                 onDelete={() => {
                   void runDeleteComment(commentMenu.message)
                 }}
-                onReply={() => {}}
+                onReply={() => {
+                  setQuoteToComment(commentMenu.message)
+                  setCommentMenu(null)
+                }}
                 onPickReaction={(em) => {
                   if (!commentMenu.message.id || !isAllowedReactionEmoji(em)) return
                   void toggleReaction(commentMenu.message.id, em)
@@ -1317,58 +1532,6 @@ export function ChannelThreadPane({
             document.body,
           )
         : null}
-
-      {commentsModalPostId ? (
-        <div className="confirm-dialog-root">
-          <button type="button" className="confirm-dialog-backdrop" aria-label="Закрыть" onClick={() => setCommentsModalPostId(null)} />
-          <div
-            className="confirm-dialog channel-comments-modal"
-            role="dialog"
-            aria-modal="true"
-            onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', maxHeight: 'min(88vh, 720px)' }}
-          >
-            <h3 style={{ marginTop: 0 }}>Комментарии</h3>
-            {commentsLoadingPostId === commentsModalPostId ? (
-              <div className="auth-loading auth-loading--inline" aria-label="Загрузка..." />
-            ) : null}
-            <div className="channel-comments-modal__scroll" style={{ flex: 1, minHeight: 0, overflow: 'auto', maxHeight: 'min(52vh, 480px)' }}>
-              {(commentsByPostId[commentsModalPostId] ?? [])
-                .filter((m) => m.kind !== 'reaction')
-                .map((c) => renderChannelComment(c))}
-              {(commentsByPostId[commentsModalPostId] ?? []).filter((m) => m.kind !== 'reaction').length === 0 ? (
-                <div className="dashboard-chats-empty" style={{ padding: 8 }}>
-                  Пока нет комментариев.
-                </div>
-              ) : null}
-            </div>
-            <div style={{ display: 'flex', gap: 10, marginTop: 10, alignItems: 'flex-end' }}>
-              <textarea
-                className="dashboard-messenger__input"
-                rows={2}
-                style={{ flex: 1, resize: 'vertical', minHeight: 44 }}
-                value={draftCommentByPostId[commentsModalPostId] ?? ''}
-                placeholder="Комментарий…"
-                onChange={(e) => setDraftCommentByPostId((prev) => ({ ...prev, [commentsModalPostId]: e.target.value }))}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                    e.preventDefault()
-                    void sendComment(commentsModalPostId)
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className="dashboard-topbar__action dashboard-topbar__action--primary"
-                disabled={sendingCommentPostId === commentsModalPostId || !(draftCommentByPostId[commentsModalPostId] ?? '').trim()}
-                onClick={() => void sendComment(commentsModalPostId)}
-              >
-                Отправить
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       <PostEditorModal
         open={postEditor !== null}

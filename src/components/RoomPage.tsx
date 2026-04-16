@@ -8,16 +8,16 @@ import { ParticipantCard } from './ParticipantCard'
 import { DraggablePip } from './DraggablePip'
 import { AudioMeter } from './AudioMeter'
 import {
-    MicOffIcon,
-    DashboardIcon,
-    InviteIcon,
-    JoinRequestsIcon,
-    ParticipantsBadgeIcon,
-    ChatBubbleIcon,
-    ChevronLeftIcon,
-    MenuBurgerIcon,
-    FiRrIcon,
-  } from './icons'
+  ChatBubbleIcon,
+  ChevronLeftIcon,
+  DashboardIcon,
+  FiRrIcon,
+  InviteIcon,
+  JoinRequestsIcon,
+  MenuBurgerIcon,
+  MicOffIcon,
+  ParticipantsBadgeIcon,
+} from './icons'
 import { useAuth } from '../context/AuthContext'
 import { shouldClosePopoverOnOutsidePointer } from '../utils/popoverOutsideClick'
 import { useAudioOutputs } from '../hooks/useAudioOutputs'
@@ -71,8 +71,8 @@ import { PillToggle } from './PillToggle'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useActiveSpeaker } from '../hooks/useActiveSpeaker'
 import { buildRoomInviteAbsoluteUrl } from '../utils/soloViewerParams'
-  import { useTouchDoubleTap } from '../hooks/useTouchDoubleTap'
-  import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
+import { useTouchDoubleTap } from '../hooks/useTouchDoubleTap'
+import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import { nextLayoutMode } from '../config/layoutModeCycle'
 import { useRoomUiSync } from '../hooks/useRoomUiSync'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'

@@ -255,3 +255,17 @@ export async function toggleGroupMessageReaction(
   return { data: parseToggleReaction(data), error: null }
 }
 
+export async function deleteGroupMessage(
+  conversationId: string,
+  messageId: string,
+): Promise<{ error: string | null }> {
+  const { data, error } = await supabase.rpc('delete_group_message', {
+    p_conversation_id: conversationId.trim(),
+    p_message_id: messageId.trim(),
+  })
+  if (error) return { error: error.message }
+  const row = data as Record<string, unknown> | null
+  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_deleted' }
+  return { error: null }
+}
+

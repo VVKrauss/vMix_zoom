@@ -53,6 +53,8 @@ export type DirectMessage = {
   createdAt: string
   editedAt?: string | null
   replyToMessageId?: string | null
+  /** Отдельная ссылка на цитируемое сообщение (для channel comments: replyTo = post, quoteTo = comment). */
+  quoteToMessageId?: string | null
   /**
    * Meta из базы (jsonb):
    * - reaction: react_to
@@ -216,6 +218,11 @@ export function mapDirectMessageFromRow(row: Record<string, unknown>): DirectMes
     replyToMessageId:
       typeof row.reply_to_message_id === 'string' && row.reply_to_message_id.trim()
         ? row.reply_to_message_id.trim()
+        : null,
+    quoteToMessageId:
+      typeof (row as Record<string, unknown>).quote_to_message_id === 'string' &&
+      String((row as Record<string, unknown>).quote_to_message_id).trim()
+        ? String((row as Record<string, unknown>).quote_to_message_id).trim()
         : null,
     meta: mapMetaFromRow(row.meta),
   }
