@@ -141,7 +141,8 @@ export function ChannelThreadPane({
   cidRef.current = conversationId
   const reactionOpInFlightRef = useRef<Set<string>>(new Set())
 
-  const hasAccess = myChannelMemberRole !== null
+  const isChannelMember = myChannelMemberRole !== null
+  const canView = viewerOnly || isChannelMember
 
   const removeReactionMessageEverywhere = useCallback((messageId: string) => {
     const id = messageId.trim()
@@ -194,7 +195,7 @@ export function ChannelThreadPane({
 
   const reloadPosts = useCallback(() => {
     const cid = conversationId.trim()
-    if (!user?.id || !cid || !hasAccess) return
+    if (!user?.id || !cid || !canView) return
     void listChannelPostsPage(cid, { limit: 30 }).then((res) => {
       if (res.error) {
         setError(res.error)
@@ -209,12 +210,12 @@ export function ChannelThreadPane({
         onTouchTail?.({ lastMessageAt: tail.createdAt, lastMessagePreview: tail.body })
       }
     })
-  }, [conversationId, user?.id, onTouchTail])
+  }, [conversationId, user?.id, onTouchTail, canView])
 
   useEffect(() => {
     let active = true
     const cid = conversationId.trim()
-    if (!user?.id || !cid || !hasAccess) return
+    if (!user?.id || !cid || !canView) return
     setThreadLoading(true)
     setError(null)
     setPosts([])
@@ -238,11 +239,11 @@ export function ChannelThreadPane({
     return () => {
       active = false
     }
-  }, [conversationId, user?.id, hasAccess])
+  }, [conversationId, user?.id, canView])
 
   useEffect(() => {
     const cid = conversationId.trim()
-    if (!cid || !user?.id || !hasAccess) return
+    if (!cid || !user?.id || !canView) return
     const channel = supabase.channel(`channel-thread:${cid}`)
     const filter = `conversation_id=eq.${cid}`
     channel
@@ -1166,7 +1167,7 @@ export function ChannelThreadPane({
 
         {threadLoading ? (
           <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" />
-        ) : !hasAccess ? (
+        ) : !canView ? (
           <div className="dashboard-chats-empty">Канал закрыт или у вас нет доступа.</div>
         ) : posts.filter((m) => m.kind !== 'reaction').length === 0 ? (
           <div className="dashboard-chats-empty">Пока нет постов.</div>

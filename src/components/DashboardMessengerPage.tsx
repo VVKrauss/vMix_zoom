@@ -813,6 +813,9 @@ export function DashboardMessengerPage() {
     conversationId: string
     messageId: string
     parentMessageId?: string | null
+    conversationKind?: MessengerConversationKind
+    sourceTitle?: string
+    sourceAvatarUrl?: string | null
   } | null>(null)
   const msgMenuWrapRef = useRef<HTMLDivElement | null>(null)
   const [messengerImageLightboxUrl, setMessengerImageLightboxUrl] = useState<string | null>(null)
@@ -952,7 +955,14 @@ export function DashboardMessengerPage() {
       const smid = forward.source_message_id?.trim() ?? ''
       const spid = forward.source_parent_message_id?.trim() ?? ''
       if (!scid || !smid) return
-      setPendingJump({ conversationId: scid, messageId: smid, parentMessageId: spid || null })
+      setPendingJump({
+        conversationId: scid,
+        messageId: smid,
+        parentMessageId: spid || null,
+        conversationKind: forward.from === 'channel' || forward.from === 'group' ? forward.from : undefined,
+        sourceTitle: forward.source_title?.trim() || undefined,
+        sourceAvatarUrl: forward.source_avatar_url?.trim() || null,
+      })
       navigate(buildMessengerUrl(scid))
     },
     [navigate],
@@ -1128,9 +1138,35 @@ export function DashboardMessengerPage() {
       }
 
       const startedSummary = itemsRef.current.find((i) => i.id === startedTarget) ?? null
-      if (startedSummary && startedSummary.kind !== 'direct') {
+      const pendingPlaceholder =
+        !startedSummary &&
+        pendingJump?.conversationId.trim() === startedTarget &&
+        (pendingJump.conversationKind === 'group' || pendingJump.conversationKind === 'channel')
+          ? {
+              id: startedTarget,
+              kind: pendingJump.conversationKind,
+              title:
+                pendingJump.sourceTitle?.trim() ||
+                (pendingJump.conversationKind === 'channel' ? 'Канал' : 'Группа'),
+              createdAt: new Date(0).toISOString(),
+              lastMessageAt: null,
+              lastMessagePreview: null,
+              messageCount: 0,
+              unreadCount: 0,
+              isPublic: true,
+              publicNick: null,
+              avatarPath: null,
+              avatarThumbPath: null,
+              memberCount: 0,
+              ...(pendingJump.conversationKind === 'channel'
+                ? { postingMode: 'admins_only' as const, commentsMode: 'everyone' as const }
+                : {}),
+            }
+          : null
+      const nonDirectSummary = startedSummary ?? pendingPlaceholder
+      if (nonDirectSummary && nonDirectSummary.kind !== 'direct') {
         setError(null)
-        setActiveConversation(startedSummary)
+        setActiveConversation(nonDirectSummary)
         setThreadLoading(false)
         lastFetchedThreadIdRef.current = null
         // direct-only state: очищаем, чтобы не мешало UI других типов.

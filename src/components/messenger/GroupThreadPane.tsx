@@ -98,7 +98,8 @@ export function GroupThreadPane({
 
   const [myGroupMemberRole, setMyGroupMemberRole] = useState<string | null>(null)
 
-  const hasAccess = myGroupMemberRole !== null
+  const isGroupMember = myGroupMemberRole !== null
+  const canView = viewerOnly || isGroupMember
 
   useEffect(() => {
     let cancelled = false
@@ -149,7 +150,7 @@ export function GroupThreadPane({
   useEffect(() => {
     let active = true
     const cid = conversationId.trim()
-    if (!user?.id || !cid || !hasAccess) return
+    if (!user?.id || !cid || !canView) return
     setThreadLoading(true)
     setError(null)
     setMessages([])
@@ -168,11 +169,11 @@ export function GroupThreadPane({
     return () => {
       active = false
     }
-  }, [conversationId, user?.id, hasAccess, viewerOnly])
+  }, [conversationId, user?.id, canView, viewerOnly])
 
   useEffect(() => {
     const cid = conversationId.trim()
-    if (!cid || !user?.id || !hasAccess) return
+    if (!cid || !user?.id || !canView) return
     const channel = supabase.channel(`group-thread:${cid}`)
     const filter = `conversation_id=eq.${cid}`
 
@@ -406,7 +407,7 @@ export function GroupThreadPane({
       {error ? <p className="join-error">{error}</p> : null}
 
       <div className="dashboard-messenger__messages-scroll" role="region" aria-label="Сообщения группы">
-        {!hasAccess ? (
+        {!canView ? (
           <div className="dashboard-chats-empty">Группа закрыта или у вас нет доступа.</div>
         ) : messages.filter((m) => m.kind !== 'reaction').length === 0 ? (
           <div className="dashboard-chats-empty">Пока нет сообщений.</div>
