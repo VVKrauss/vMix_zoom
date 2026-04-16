@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronRightIcon, RoomsIcon } from './icons'
+import { MessengerInlineInviteCard } from './messenger/MessengerInlineInviteCard'
 
 const INVITE_AT_START = /^Приглашаю в комнату:\s*\[([^\]]+)\]/
 const URL_AT_START = /^(https?:\/\/[^\s<>\]]+|www\.[^\s<>\]]+)/i
@@ -25,25 +25,6 @@ function parseMessengerInviteFromRawUrl(rawFull: string): { token: string } | nu
   } catch {
     return null
   }
-}
-
-function MessengerInlineInviteCard({ inviteToken }: { inviteToken: string }) {
-  const to = `/dashboard/messenger?invite=${encodeURIComponent(inviteToken)}`
-  return (
-    <Link to={to} className="messenger-inline-invite-card">
-      <span className="messenger-inline-invite-card__avatar" aria-hidden>
-        <RoomsIcon />
-      </span>
-      <span className="messenger-inline-invite-card__text">
-        <span className="messenger-inline-invite-card__kind">Группа или канал</span>
-        <span className="messenger-inline-invite-card__title">По приглашению</span>
-      </span>
-      <span className="messenger-inline-invite-card__go">
-        Перейти
-        <ChevronRightIcon />
-      </span>
-    </Link>
-  )
 }
 
 function buildChildren(text: string): ReactNode[] {

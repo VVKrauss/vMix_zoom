@@ -7399,9 +7399,9 @@ html[data-theme='light'] .messenger-join-gate__card {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  max-width: min(100%, 320px);
+  max-width: min(100%, 340px);
   margin: 4px 0;
-  padding: 8px 10px 8px 8px;
+  padding: 6px 8px 6px 6px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--surface2);
@@ -7431,48 +7431,43 @@ html[data-theme='light'] .messenger-inline-invite-card:hover {
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text-dim);
+  overflow: hidden;
 }
 
-.messenger-inline-invite-card__avatar svg {
-  width: 18px;
-  height: 18px;
+.messenger-inline-invite-card__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-.messenger-inline-invite-card__text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.messenger-inline-invite-card__kind {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-dim);
+.messenger-inline-invite-card__avatar-fallback {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .messenger-inline-invite-card__title {
+  flex: 1;
+  min-width: 0;
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
-  line-height: 1.25;
+  line-height: 1.35;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
-.messenger-inline-invite-card__go {
+.messenger-inline-invite-card__arrow {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  font-weight: 600;
+  justify-content: center;
   color: var(--accent, #22c55e);
 }
 
-.messenger-inline-invite-card__go svg {
-  width: 14px;
-  height: 14px;
+.messenger-inline-invite-card__arrow svg {
+  width: 16px;
+  height: 16px;
 }
 
 .dashboard-messenger__messages--channel-comments-modal {

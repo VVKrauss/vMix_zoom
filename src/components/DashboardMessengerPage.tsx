@@ -632,7 +632,9 @@ export function DashboardMessengerPage() {
         const spBoot = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
         const hasChatBoot = Boolean(spBoot.get('chat')?.trim())
         const hasWithBoot = Boolean(spBoot.get('with')?.trim())
-        if (!hasChatBoot && !hasWithBoot && spBoot.get('view') !== 'list') {
+        const hasInviteBoot = Boolean(spBoot.get('invite')?.trim())
+        // Не подменять URL на ?view=list, если открыта ссылка-приглашение — иначе теряется invite.
+        if (!hasChatBoot && !hasWithBoot && !hasInviteBoot && spBoot.get('view') !== 'list') {
           navigate('/dashboard/messenger?view=list', { replace: true })
           if (active) setLoading(false)
           return
