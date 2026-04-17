@@ -3946,7 +3946,7 @@ html.app-root--room #root {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 10px 14px 10px 18px;
+  padding: 10px 14px;
   border-radius: 10px;
   border: 1px solid transparent;
   background: transparent;
@@ -3961,26 +3961,9 @@ html.app-root--room #root {
     border-color 0.15s;
 }
 
-.admin-sidebar__link::after {
-  content: '';
-  position: absolute;
-  left: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 2px;
-  height: 1.15em;
-  border-radius: 1px;
-  background: rgba(255, 255, 255, 0.22);
-  transition: background 0.15s;
-}
-
 .admin-sidebar__link:hover {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text);
-}
-
-.admin-sidebar__link:hover:not(.admin-sidebar__link--active)::after {
-  background: rgba(255, 255, 255, 0.32);
 }
 
 .admin-sidebar__link--active {
@@ -3989,8 +3972,9 @@ html.app-root--room #root {
   border-color: var(--border);
 }
 
-.admin-sidebar__link--active::after {
-  background: var(--red);
+.admin-sidebar__link:focus-visible {
+  outline: 2px solid rgba(207, 44, 44, 0.55);
+  outline-offset: 2px;
 }
 
 .admin-main {
@@ -4249,13 +4233,24 @@ button.admin-stat-card--interactive:disabled {
 
   .admin-sidebar__nav {
     flex-direction: row;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .admin-sidebar__nav::-webkit-scrollbar {
+    display: none;
   }
 
   .admin-sidebar__link {
     width: auto;
     flex: 1 1 auto;
-    min-width: 96px;
+    min-width: 120px;
+    min-height: 40px;
+    padding: 10px 12px;
     text-align: center;
   }
 }
