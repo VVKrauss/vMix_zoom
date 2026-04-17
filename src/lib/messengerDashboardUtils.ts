@@ -15,23 +15,40 @@ export function formatDateTime(value: string): string {
   })
 }
 
-/** Время в строке списка чатов: сегодня — только часы, иначе короткая дата + время. */
+/** Сколько календарных дней дата `dt` раньше `ref` (0 — тот же день, 1 — вчера). */
+function calendarDaysAgo(dt: Date, ref: Date): number {
+  const a = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime()
+  const b = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate()).getTime()
+  return Math.round((b - a) / 86400000)
+}
+
+/**
+ * Время в строке списка чатов: сегодня — только время; вчера / позавчера — слова;
+ * с третьего дня назад — только дата (число и месяц).
+ */
 export function formatMessengerListRowTime(iso: string): string {
   const dt = new Date(iso)
   if (Number.isNaN(dt.getTime())) return '—'
   const now = new Date()
-  const sameDay =
-    dt.getDate() === now.getDate() &&
-    dt.getMonth() === now.getMonth() &&
-    dt.getFullYear() === now.getFullYear()
-  if (sameDay) {
+  const daysAgo = calendarDaysAgo(dt, now)
+  if (daysAgo < 0) {
+    return dt.toLocaleString('ru-RU', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }
+  if (daysAgo === 0) {
     return dt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
   }
-  return dt.toLocaleString('ru-RU', {
+  if (daysAgo === 1) return 'вчера'
+  if (daysAgo === 2) return 'позавчера'
+  const sameYear = dt.getFullYear() === now.getFullYear()
+  return dt.toLocaleDateString('ru-RU', {
     day: 'numeric',
     month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
+    ...(sameYear ? {} : { year: 'numeric' as const }),
   })
 }
 

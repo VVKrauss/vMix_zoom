@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { DirectMessage } from '../lib/messenger'
 import { getMessengerImageAttachments, getMessengerImageSignedUrl } from '../lib/messenger'
 import { MessengerMessageBody } from './MessengerMessageBody'
+import { MessengerLinkPreviewCard } from './messenger/MessengerLinkPreviewCard'
 
 export type MessengerImageLightboxOpen = {
   urls: string[]
@@ -202,5 +203,13 @@ export function MessengerBubbleBody({
       </div>
     )
   }
-  return <MessengerMessageBody text={message.body} onMentionSlug={onMentionSlug} />
+  const link = message.kind === 'text' && message.meta?.link?.url?.trim() ? message.meta.link : null
+  return (
+    <div
+      className={`messenger-bubble-stack messenger-bubble-stack--text${link ? ' messenger-bubble-stack--link-first' : ''}`}
+    >
+      {link ? <MessengerLinkPreviewCard link={link} /> : null}
+      <MessengerMessageBody text={message.body} onMentionSlug={onMentionSlug} />
+    </div>
+  )
 }

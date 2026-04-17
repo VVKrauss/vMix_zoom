@@ -1,4 +1,5 @@
-import { useMemo, type ReactNode } from 'react'
+import { cloneElement, Fragment, isValidElement, useMemo, type ReactNode } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { Link } from 'react-router-dom'
 import { normalizeProfileSlug, validateProfileSlugInput } from '../lib/profileSlug'
 import { MessengerInlineInviteCard } from './messenger/MessengerInlineInviteCard'
@@ -46,6 +47,39 @@ function parseMessengerInviteFromRawUrl(rawFull: string): { token: string } | nu
   }
 }
 
+function mentionButtonIfAt(
+  text: string,
+  i: number,
+  onMentionSlug: (slug: string) => void,
+  reactKey: number,
+): { el: ReactNode; advance: number } | null {
+  const sub = text.slice(i)
+  if (sub[0] !== '@') return null
+  const boundaryOk = i === 0 || /\s/.test(text[i - 1]!)
+  if (!boundaryOk) return null
+  const atM = /^@([a-zA-Z0-9](?:[a-zA-Z0-9_-]*[a-zA-Z0-9])?)/.exec(sub)
+  if (!atM || !atM[1] || atM[1].length < 3 || validateProfileSlugInput(atM[1]) !== null) return null
+  const raw = atM[1]
+  const slug = normalizeProfileSlug(raw)
+  const display = `@${raw}`
+  return {
+    el: (
+      <button
+        key={reactKey}
+        type="button"
+        className="messenger-message-link messenger-message-mention"
+        onClick={(e) => {
+          e.preventDefault()
+          onMentionSlug(slug)
+        }}
+      >
+        {display}
+      </button>
+    ),
+    advance: display.length,
+  }
+}
+
 function buildChildren(text: string, onMentionSlug?: (slug: string) => void): ReactNode[] {
   const nodes: ReactNode[] = []
   let i = 0
@@ -54,31 +88,13 @@ function buildChildren(text: string, onMentionSlug?: (slug: string) => void): Re
 
   while (i < n) {
     const sub = text.slice(i)
-    if (onMentionSlug && sub[0] === '@') {
-      const boundaryOk = i === 0 || /\s/.test(text[i - 1]!)
-      if (boundaryOk) {
-        const atM = /^@([a-zA-Z0-9](?:[a-zA-Z0-9_-]*[a-zA-Z0-9])?)/.exec(sub)
-        if (atM && atM[1] && atM[1].length >= 3 && validateProfileSlugInput(atM[1]) === null) {
-          const raw = atM[1]
-          const slug = normalizeProfileSlug(raw)
-          const display = `@${raw}`
-          nodes.push(
-            <button
-              key={k}
-              type="button"
-              className="messenger-message-link messenger-message-mention"
-              onClick={(e) => {
-                e.preventDefault()
-                onMentionSlug(slug)
-              }}
-            >
-              {display}
-            </button>,
-          )
-          k += 1
-          i += display.length
-          continue
-        }
+    if (onMentionSlug) {
+      const m = mentionButtonIfAt(text, i, onMentionSlug, k)
+      if (m) {
+        nodes.push(m.el)
+        k += 1
+        i += m.advance
+        continue
       }
     }
     const inv = INVITE_AT_START.exec(sub)
@@ -181,7 +197,34 @@ function buildChildren(text: string, onMentionSlug?: (slug: string) => void): Re
 
     const rel = sub.search(/https?:\/\/|www\.|\/dashboard\/|\/r\/|Приглашаю в комнату:/)
     if (rel === -1) {
-      nodes.push(<span key={k}>{text.slice(i)}</span>)
+      // Без маркеров ссылок весь хвост нельзя класть одним span — иначе «текст @nick»
+      // никогда не проходит через ветку @ выше (она срабатывает только у sub[0]==='@').
+      while (i < n) {
+        const tail = text.slice(i)
+        if (onMentionSlug) {
+          const m = mentionButtonIfAt(text, i, onMentionSlug, k)
+          if (m) {
+            nodes.push(m.el)
+            k += 1
+            i += m.advance
+            continue
+          }
+        }
+        const nextAt = tail.indexOf('@', 1)
+        if (nextAt === -1) {
+          nodes.push(<span key={k}>{tail}</span>)
+          break
+        }
+        if (nextAt > 0) {
+          nodes.push(<span key={k}>{text.slice(i, i + nextAt)}</span>)
+          k += 1
+          i += nextAt
+          continue
+        }
+        nodes.push(<span key={k}>{text[i]}</span>)
+        k += 1
+        i += 1
+      }
       break
     }
     if (rel > 0) {
@@ -208,6 +251,45 @@ function buildChildren(text: string, onMentionSlug?: (slug: string) => void): Re
   }
 
   return nodes
+}
+
+function shouldSkipMentionScanInTree(node: ReactNode): boolean {
+  if (!isValidElement(node)) return false
+  const t = node.type
+  if (t === 'code' || t === 'pre' || t === 'kbd' || t === 'samp') return true
+  return false
+}
+
+/**
+ * После ReactMarkdown: разбить текстовые узлы на @упоминания (как в {@link MessengerMessageBody}).
+ * Пропускает inline/block code — там «@» не считается mention.
+ */
+export function injectMentionsInReactTree(node: ReactNode, onMentionSlug?: (slug: string) => void): ReactNode {
+  if (!onMentionSlug) return node
+  if (node == null || typeof node === 'boolean') return node
+  if (typeof node === 'string' || typeof node === 'number') {
+    const s = String(node)
+    const parts = buildChildren(s, onMentionSlug)
+    if (parts.length === 0) return node
+    if (parts.length === 1) return parts[0]
+    return <Fragment>{parts}</Fragment>
+  }
+  if (Array.isArray(node)) {
+    return node.map((n, i) => (
+      <Fragment key={i}>{injectMentionsInReactTree(n, onMentionSlug)}</Fragment>
+    ))
+  }
+  if (isValidElement(node)) {
+    if (shouldSkipMentionScanInTree(node)) return node
+    // react-markdown v10+: `children` must be the markdown source string; do not replace with React nodes.
+    if (node.type === ReactMarkdown) return node
+    const ch = (node.props as { children?: ReactNode }).children
+    if (ch === undefined) return node
+    const next = injectMentionsInReactTree(ch, onMentionSlug)
+    if (next === ch) return node
+    return cloneElement(node, { children: next } as never)
+  }
+  return node
 }
 
 /** Текст сообщения: ссылки, приглашение в комнату, ссылка-приглашение в мессенджер. */

@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useUserPeek } from '../context/UserPeekContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
@@ -100,6 +100,8 @@ function formatPeerGuestTime(iso: string | null): string {
 
 export function DashboardPage() {
   const { signOut, user } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
   const { openUserPeek } = useUserPeek()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const {
@@ -216,6 +218,13 @@ export function DashboardPage() {
     setSaveMsg(null)
     setSaveErr(null)
   }, [profileEditOpen, profile])
+
+  useEffect(() => {
+    const st = location.state as { openProfileEdit?: boolean } | null | undefined
+    if (!st?.openProfileEdit) return
+    setProfileEditOpen(true)
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: {} })
+  }, [location.state, location.pathname, location.search, navigate])
 
   useEffect(() => {
     let alive = true

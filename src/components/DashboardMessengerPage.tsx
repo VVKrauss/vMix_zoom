@@ -74,6 +74,8 @@ import {
   pickDefaultConversationId,
   sortDirectMessagesChrono,
 } from '../lib/messengerDashboardUtils'
+import { useLinkPreviewFromText } from '../hooks/useLinkPreviewFromText'
+import { buildLinkMetaForMessageBody, ensureLinkPreviewForBody } from '../lib/linkPreview'
 import {
   MESSENGER_MAX_PINNED_CHATS,
   readMessengerPinnedChatIds,
@@ -134,6 +136,12 @@ import {
   getMyConversationNotificationMutes,
   setConversationNotificationsMuted,
 } from '../lib/conversationNotifications'
+import {
+  deleteDirectConversationForAllClient,
+  deleteOwnedGroupOrChannelClient,
+  leaveDirectConversationClient,
+  leaveGroupOrChannelClient,
+} from '../lib/messengerConversationLifecycle'
 import { supabase } from '../lib/supabase'
 import { newRoomId } from '../utils/roomId'
 import { normalizeProfileSlug } from '../lib/profileSlug'
@@ -164,6 +172,7 @@ import { MessengerForwardToDmModal } from './MessengerForwardToDmModal'
 import { MessengerMessageMenuPopover } from './MessengerMessageMenuPopover'
 import { MessengerReplyMiniThumb } from './MessengerReplyMiniThumb'
 import { ReactionEmojiPopover } from './ReactionEmojiPopover'
+import { DraftLinkPreviewBar } from './messenger/DraftLinkPreviewBar'
 import { ThreadMessageBubble } from './messenger/ThreadMessageBubble'
 import type { ReactionEmoji } from '../types/roomComms'
 import { DirectThreadPane } from './messenger/DirectThreadPane'
@@ -198,6 +207,14 @@ export function DashboardMessengerPage() {
   )
   const [messengerSettingsOpen, setMessengerSettingsOpen] = useState(false)
   const [messengerMenuOpen, setMessengerMenuOpen] = useState(false)
+  const [messengerDeleteUi, setMessengerDeleteUi] = useState<
+    | null
+    | { step: 'dm-pick' }
+    | { step: 'confirm'; kind: 'dm-me' | 'dm-all' | 'leave-group' | 'leave-channel' | 'purge-gc' }
+  >(null)
+  const [deleteChatBusy, setDeleteChatBusy] = useState(false)
+  /** Если удаление запущено из дерева чатов — id цели; иначе используется активный тред. */
+  const [deleteFlowConversationId, setDeleteFlowConversationId] = useState<string | null>(null)
   const [chatListSearch, setChatListSearch] = useState('')
   const [chatListGlobalUsers, setChatListGlobalUsers] = useState<RegisteredUserSearchHit[]>([])
   const [chatListGlobalOpen, setChatListGlobalOpen] = useState<OpenPublicConversationSearchHit[]>([])
@@ -388,6 +405,13 @@ export function DashboardMessengerPage() {
   const [replyTo, setReplyTo] = useState<DirectMessage | null>(null)
   /** Редактирование своего сообщения: id сообщения. */
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
+  const {
+    preview: draftLinkPreview,
+    loading: draftLinkPreviewLoading,
+    dismiss: dismissDraftLinkPreview,
+  } = useLinkPreviewFromText(draft, {
+    enabled: !editingMessageId && pendingMessengerPhotos.length === 0,
+  })
   const [composerEmojiOpen, setComposerEmojiOpen] = useState(false)
   const [hasMoreOlder, setHasMoreOlder] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
@@ -1054,6 +1078,16 @@ export function DashboardMessengerPage() {
       invitePreview.isPublic !== true,
   )
 
+  /** Тип текущего открытого чата (из списка), чтобы не вызывать group-only RPC с устаревшей ролью после смены диалога. */
+  const activeOpenThreadKind = useMemo((): MessengerConversationKind | null => {
+    const id = activeConversationId.trim()
+    if (!id) return null
+    const fromList = mergedItems.find((i) => i.id === id)
+    if (fromList) return fromList.kind
+    if (activeConversation?.id === id) return activeConversation.kind
+    return null
+  }, [activeConversationId, mergedItems, activeConversation])
+
   useEffect(() => {
     let active = true
     const cid = activeConversationId.trim()
@@ -1112,7 +1146,8 @@ export function DashboardMessengerPage() {
       !user?.id ||
       !activeConversationId.trim() ||
       !activeConversationRole ||
-      !MESSENGER_JOIN_REQUEST_MANAGER_ROLES.has(activeConversationRole)
+      !MESSENGER_JOIN_REQUEST_MANAGER_ROLES.has(activeConversationRole) ||
+      (activeOpenThreadKind !== 'group' && activeOpenThreadKind !== 'channel')
     ) {
       setConversationJoinRequests([])
       setConversationMembers([])
@@ -1151,7 +1186,7 @@ export function DashboardMessengerPage() {
     return () => {
       active = false
     }
-  }, [activeConversationId, activeConversationRole, user?.id])
+  }, [activeConversationId, activeConversationRole, activeOpenThreadKind, user?.id])
 
   useEffect(() => {
     messengerPinnedToBottomRef.current = true
@@ -1767,6 +1802,8 @@ export function DashboardMessengerPage() {
     }
 
     setSending(true)
+    const effectiveLinkPreview = await ensureLinkPreviewForBody(trimmed, draftLinkPreview)
+    const linkMetaRecord = buildLinkMetaForMessageBody(trimmed, effectiveLinkPreview)
     const optimistic: DirectMessage = {
       id: `local-${Date.now()}`,
       senderUserId: user.id,
@@ -1775,12 +1812,16 @@ export function DashboardMessengerPage() {
       body: trimmed,
       createdAt: new Date().toISOString(),
       replyToMessageId: replyId,
+      ...(linkMetaRecord ? { meta: linkMetaRecord } : {}),
     }
     setMessages((prev) => [...prev, optimistic])
     setDraft('')
     setReplyTo(null)
 
-    const res = await appendDirectMessage(convId, trimmed, { replyToMessageId: replyId })
+    const res = await appendDirectMessage(convId, trimmed, {
+      replyToMessageId: replyId,
+      ...(linkMetaRecord ? { meta: linkMetaRecord as Record<string, unknown> } : {}),
+    })
     if (res.error) {
       setError(res.error)
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id))
@@ -1803,6 +1844,7 @@ export function DashboardMessengerPage() {
               createdAt: finalAt,
               senderNameSnapshot: snap,
               replyToMessageId: replyId,
+              meta: linkMetaRecord ?? optimistic.meta,
             }
           : m,
       ),
@@ -2179,6 +2221,22 @@ export function DashboardMessengerPage() {
     [sortedItems, profile?.avatar_url],
   )
   const chatListSearchNorm = useMemo(() => normalizeMessengerListSearch(chatListSearch), [chatListSearch])
+  const deleteFlowTargetListItem = useMemo((): MessengerConversationSummary | null => {
+    const tid = (deleteFlowConversationId ?? '').trim()
+    if (!tid) return null
+    return mergedItems.find((i) => i.id === tid) ?? null
+  }, [deleteFlowConversationId, mergedItems])
+
+  const deleteFlowPurgeGcKind = useMemo((): 'group' | 'channel' | null => {
+    if (deleteFlowTargetListItem?.kind === 'channel' || deleteFlowTargetListItem?.kind === 'group') {
+      return deleteFlowTargetListItem.kind
+    }
+    if (threadHeadConversation?.kind === 'channel' || threadHeadConversation?.kind === 'group') {
+      return threadHeadConversation.kind
+    }
+    return null
+  }, [deleteFlowTargetListItem, threadHeadConversation])
+
   const filteredSortedItems = useMemo(() => {
     const filteredByKind =
       conversationKindFilter === 'all' ? sortedItems : sortedItems.filter((i) => i.kind === conversationKindFilter)
@@ -2263,16 +2321,40 @@ export function DashboardMessengerPage() {
     async (rawSlug: string) => {
       const slug = normalizeProfileSlug(rawSlug)
       if (!slug) return
-      const res = await searchRegisteredUsers(slug, 20)
-      if (res.error || !res.data?.length) {
-        toast.push({ tone: 'error', message: 'Пользователь не найден', ms: 2600 })
+      /** Не `search_registered_users`: там исключён текущий пользователь — клик по своему @slug в «Сохранённом» давал «не найден». */
+      const { data, error: rpcErr } = await supabase.rpc('get_user_public_profile_by_slug', {
+        p_profile_slug: slug,
+      })
+      if (rpcErr) {
+        toast.push({ tone: 'error', message: rpcErr.message, ms: 2600 })
         return
       }
-      const hit = res.data.find((h) => (h.profileSlug ?? '').toLowerCase() === slug) ?? res.data[0]
+      const row = data as Record<string, unknown> | null
+      if (!row || row.ok !== true) {
+        const code = typeof row?.error === 'string' ? row.error : ''
+        toast.push({
+          tone: 'error',
+          message:
+            code === 'not_found' || code === 'slug_required'
+              ? 'Пользователь не найден'
+              : 'Не удалось открыть профиль',
+          ms: 2600,
+        })
+        return
+      }
+      const id = typeof row.id === 'string' ? row.id.trim() : ''
+      if (!id) {
+        toast.push({ tone: 'error', message: 'Не удалось открыть профиль', ms: 2600 })
+        return
+      }
       openUserPeek({
-        userId: hit.id,
-        displayName: hit.displayName,
-        avatarUrl: hit.avatarUrl ?? null,
+        userId: id,
+        displayName:
+          typeof row.display_name === 'string' && row.display_name.trim()
+            ? String(row.display_name).trim()
+            : null,
+        avatarUrl:
+          typeof row.avatar_url === 'string' && row.avatar_url.trim() ? row.avatar_url.trim() : null,
       })
     },
     [openUserPeek, toast],
@@ -2618,6 +2700,94 @@ export function DashboardMessengerPage() {
   const closeMessengerMenu = useCallback(() => {
     setMessengerMenuOpen(false)
   }, [])
+
+  const beginDeleteChatFromListItem = useCallback(
+    async (item: MessengerConversationSummary) => {
+      if (!user?.id || deleteChatBusy) return
+      if (item.joinRequestPending) {
+        toast.push({ tone: 'warning', message: 'Сначала дождитесь вступления в чат.', ms: 3200 })
+        return
+      }
+      setChatListRowMenu(null)
+      closeMessengerMenu()
+      const cid = item.id.trim()
+      if (!cid) return
+      setDeleteFlowConversationId(cid)
+
+      if (item.kind === 'direct') {
+        setMessengerDeleteUi({ step: 'dm-pick' })
+        return
+      }
+      if (item.kind !== 'group' && item.kind !== 'channel') {
+        setDeleteFlowConversationId(null)
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('chat_conversation_members')
+        .select('role')
+        .eq('conversation_id', cid)
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (error || !data) {
+        toast.push({ tone: 'error', message: 'Не удалось проверить роль в чате.', ms: 3200 })
+        setDeleteFlowConversationId(null)
+        return
+      }
+      const role =
+        typeof (data as { role?: unknown }).role === 'string'
+          ? String((data as { role: string }).role).trim()
+          : null
+      if (!role) {
+        toast.push({ tone: 'error', message: 'Вы не участник этого чата.', ms: 3200 })
+        setDeleteFlowConversationId(null)
+        return
+      }
+      if (role === 'owner') {
+        setMessengerDeleteUi({ step: 'confirm', kind: 'purge-gc' })
+      } else {
+        setMessengerDeleteUi({
+          step: 'confirm',
+          kind: item.kind === 'group' ? 'leave-group' : 'leave-channel',
+        })
+      }
+    },
+    [user?.id, deleteChatBusy, toast, closeMessengerMenu],
+  )
+
+  const executeDeleteChatAction = useCallback(
+    async (kind: 'dm-me' | 'dm-all' | 'leave-group' | 'leave-channel' | 'purge-gc') => {
+      const cid = (deleteFlowConversationId ?? activeConversationId).trim()
+      if (!cid) return
+      setDeleteChatBusy(true)
+      try {
+        let err: string | null = null
+        if (kind === 'dm-me') err = (await leaveDirectConversationClient(cid)).error
+        else if (kind === 'dm-all') err = (await deleteDirectConversationForAllClient(cid)).error
+        else if (kind === 'leave-group') err = (await leaveGroupOrChannelClient('group', cid)).error
+        else if (kind === 'leave-channel') err = (await leaveGroupOrChannelClient('channel', cid)).error
+        else if (kind === 'purge-gc') err = (await deleteOwnedGroupOrChannelClient(cid)).error
+
+        if (err) {
+          toast.push({ tone: 'error', message: err, ms: 3800 })
+          return
+        }
+        const listRes = await listMessengerConversations()
+        if (!listRes.error && listRes.data) setItems(listRes.data)
+        setMessages([])
+        setActiveConversation(null)
+        setMessengerDeleteUi(null)
+        setDeleteFlowConversationId(null)
+        requestMessengerUnreadRefresh()
+        navigate(isMobileMessenger ? '/dashboard/messenger?view=list' : '/dashboard/messenger', { replace: true })
+        toast.push({ tone: 'success', message: 'Чат удалён', ms: 2400 })
+      } finally {
+        setDeleteChatBusy(false)
+      }
+    },
+    [deleteFlowConversationId, activeConversationId, isMobileMessenger, navigate, toast],
+  )
 
   const bindMessageAnchor = useCallback((messageId: string, el: HTMLElement | null) => {
     if (el) messageAnchorRef.current.set(messageId, el)
@@ -3227,20 +3397,43 @@ export function DashboardMessengerPage() {
       ) : null}
       {pendingMessengerPhotos.length > 0 && !editingMessageId ? (
         <div className="dashboard-messenger__pending-photos">
-          {pendingMessengerPhotos.map((p) => (
+          {pendingMessengerPhotos.map((p, idx) => (
             <div key={p.id} className="dashboard-messenger__pending-photo">
-              <img src={p.previewUrl} alt="" />
+              <button
+                type="button"
+                className="dashboard-messenger__pending-photo-open"
+                title="Открыть"
+                aria-label="Открыть изображение"
+                onClick={() =>
+                  setMessengerImageLightbox({
+                    urls: pendingMessengerPhotos.map((x) => x.previewUrl),
+                    index: idx,
+                  })
+                }
+              >
+                <img src={p.previewUrl} alt="" />
+              </button>
               <button
                 type="button"
                 className="dashboard-messenger__pending-photo-remove"
                 aria-label="Убрать фото"
-                onClick={() => removePendingMessengerPhoto(p.id)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  removePendingMessengerPhoto(p.id)
+                }}
               >
                 ×
               </button>
             </div>
           ))}
         </div>
+      ) : null}
+      {!editingMessageId ? (
+        <DraftLinkPreviewBar
+          preview={draftLinkPreview}
+          loading={draftLinkPreviewLoading}
+          onDismiss={dismissDraftLinkPreview}
+        />
       ) : null}
       <div className="dashboard-messenger__composer-main">
         <textarea
@@ -3567,29 +3760,36 @@ export function DashboardMessengerPage() {
                                 {item.lastMessagePreview?.trim() || 'Пока без сообщений'}
                               </div>
                             </div>
+                            <div className="dashboard-messenger__row-trailing">
+                              <button
+                                type="button"
+                                className="dashboard-messenger__row-kebab"
+                                aria-label="Действия с чатом"
+                                title="Ещё"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  const r = e.currentTarget.getBoundingClientRect()
+                                  setChatListRowMenu((cur) =>
+                                    cur?.item.id === item.id
+                                      ? null
+                                      : {
+                                          item,
+                                          anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+                                        },
+                                  )
+                                }}
+                              >
+                                ⋮
+                              </button>
+                              {pinnedChatIds.includes(item.id) ? (
+                                <span className="dashboard-messenger__row-pin" aria-label="Закреплён" title="Закреплён">
+                                  <FiRrIcon name="thumbtack" />
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
                         </Link>
-                        <button
-                          type="button"
-                          className="dashboard-messenger__row-kebab"
-                          aria-label="Действия с чатом"
-                          title="Ещё"
-                          onClick={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            const r = e.currentTarget.getBoundingClientRect()
-                            setChatListRowMenu((cur) =>
-                              cur?.item.id === item.id
-                                ? null
-                                : {
-                                    item,
-                                    anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
-                                  },
-                            )
-                          }}
-                        >
-                          ⋮
-                        </button>
                         </div>
                       )
                     })}
@@ -3963,6 +4163,7 @@ export function DashboardMessengerPage() {
                             viewerOnly={viewerOnly}
                             publicJoinCta={publicBrowseJoinCta}
                             joinRequestPending={pendingJoinRequest === true}
+                            onMentionSlug={onMentionSlugOpenProfile}
                             jumpToMessageId={
                               pendingJump && pendingJump.conversationId.trim() === activeConversationId.trim()
                                 ? pendingJump.messageId
@@ -4070,73 +4271,65 @@ export function DashboardMessengerPage() {
                             >
                               <FiRrIcon name="circle-phone" />
                             </button>
-                            <button
-                              type="button"
-                              className={`dashboard-messenger__list-head-btn${messengerMenuOpen ? ' dashboard-messenger__list-head-btn--open' : ''}`}
-                              onClick={() => setMessengerMenuOpen((v) => !v)}
-                              aria-label={messengerMenuOpen ? 'Закрыть меню' : 'Меню'}
-                              title="Меню"
-                              aria-expanded={messengerMenuOpen}
-                            >
-                              <MenuBurgerIcon />
-                            </button>
                           </div>
                         </header>
                       ) : (
-                        <button
-                          type="button"
-                          className="dashboard-messenger__thread-head-main dashboard-messenger__thread-head-main--tappable"
-                          aria-label="Профиль в диалоге"
-                          onClick={() => {
-                            const oid = threadHeadConversation.otherUserId?.trim()
-                            if (oid) {
-                              openUserPeek({
-                                userId: oid,
-                                displayName: threadHeadConversation.title,
-                                avatarUrl: activeAvatarUrl,
-                              })
-                            } else if (user?.id) {
-                              openUserPeek({
-                                userId: user.id,
-                                displayName: profile?.display_name ?? threadHeadConversation.title,
-                                avatarUrl: profile?.avatar_url ?? null,
-                              })
-                            }
-                          }}
-                        >
-                          <span className="dashboard-messenger__thread-avatar" aria-hidden>
-                            {activeAvatarUrl ? (
-                              <img src={activeAvatarUrl ?? undefined} alt="" />
-                            ) : (
-                              <span>{conversationInitial(threadHeadConversation.title)}</span>
-                            )}
-                          </span>
-                          <div>
-                            <div className="dashboard-messenger__thread-titleline">
-                              <div className="dashboard-section__subtitle" role="heading" aria-level={3}>
-                                {threadHeadConversation.title}
+                        <div className="dashboard-messenger__thread-head-main-desktop">
+                          <button
+                            type="button"
+                            className="dashboard-messenger__thread-head-main dashboard-messenger__thread-head-main--tappable"
+                            aria-label="Профиль в диалоге"
+                            onClick={() => {
+                              const oid = threadHeadConversation.otherUserId?.trim()
+                              if (oid) {
+                                openUserPeek({
+                                  userId: oid,
+                                  displayName: threadHeadConversation.title,
+                                  avatarUrl: activeAvatarUrl,
+                                })
+                              } else if (user?.id) {
+                                openUserPeek({
+                                  userId: user.id,
+                                  displayName: profile?.display_name ?? threadHeadConversation.title,
+                                  avatarUrl: profile?.avatar_url ?? null,
+                                })
+                              }
+                            }}
+                          >
+                            <span className="dashboard-messenger__thread-avatar" aria-hidden>
+                              {activeAvatarUrl ? (
+                                <img src={activeAvatarUrl ?? undefined} alt="" />
+                              ) : (
+                                <span>{conversationInitial(threadHeadConversation.title)}</span>
+                              )}
+                            </span>
+                            <div>
+                              <div className="dashboard-messenger__thread-titleline">
+                                <div className="dashboard-section__subtitle" role="heading" aria-level={3}>
+                                  {threadHeadConversation.title}
+                                </div>
+                                {isMemberOfActiveConversation &&
+                                !threadHeadConversation.joinRequestPending &&
+                                threadHeadConversation.unreadCount > 0 ? (
+                                  <span className="dashboard-messenger__row-badge">
+                                    {threadHeadConversation.unreadCount > 99
+                                      ? '99+'
+                                      : threadHeadConversation.unreadCount}
+                                  </span>
+                                ) : null}
                               </div>
-                              {isMemberOfActiveConversation &&
-                              !threadHeadConversation.joinRequestPending &&
-                              threadHeadConversation.unreadCount > 0 ? (
-                                <span className="dashboard-messenger__row-badge">
-                                  {threadHeadConversation.unreadCount > 99
-                                    ? '99+'
-                                    : threadHeadConversation.unreadCount}
+                              <div className="dashboard-messenger__thread-meta">
+                                <span>{threadHeadConversation.messageCount} сообщ.</span>
+                                <span>
+                                  Последняя активность:{' '}
+                                  {formatDateTime(
+                                    threadHeadConversation.lastMessageAt ?? threadHeadConversation.createdAt,
+                                  )}
                                 </span>
-                              ) : null}
+                              </div>
                             </div>
-                            <div className="dashboard-messenger__thread-meta">
-                              <span>{threadHeadConversation.messageCount} сообщ.</span>
-                              <span>
-                                Последняя активность:{' '}
-                                {formatDateTime(
-                                  threadHeadConversation.lastMessageAt ?? threadHeadConversation.createdAt,
-                                )}
-                              </span>
-                            </div>
-                          </div>
-                        </button>
+                          </button>
+                        </div>
                       )}
                     </div>
 
@@ -4440,6 +4633,126 @@ export function DashboardMessengerPage() {
         ) : null}
       </section>
 
+      {messengerDeleteUi
+        ? createPortal(
+            <div className="confirm-dialog-root">
+              <button
+                type="button"
+                className="confirm-dialog-backdrop"
+                aria-label="Закрыть"
+                disabled={deleteChatBusy}
+                onClick={() => {
+                  if (!deleteChatBusy) {
+                    setMessengerDeleteUi(null)
+                    setDeleteFlowConversationId(null)
+                  }
+                }}
+              />
+              <div
+                className="confirm-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="messenger-delete-chat-title"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {messengerDeleteUi.step === 'dm-pick' ? (
+                  <>
+                    <h2 id="messenger-delete-chat-title" className="confirm-dialog__title">
+                      Удалить чат
+                    </h2>
+                    <p className="dashboard-messenger__delete-chat-hint">
+                      <strong>Только у себя</strong> — чат пропадёт в вашем списке; у собеседника переписка останется.
+                    </p>
+                    <p className="dashboard-messenger__delete-chat-hint">
+                      <strong>У всех</strong> — диалог удалится для обоих, история сообщений будет стёрта.
+                    </p>
+                    <div className="confirm-dialog__actions">
+                      <button
+                        type="button"
+                        className="confirm-dialog__btn confirm-dialog__btn--secondary"
+                        disabled={deleteChatBusy}
+                        onClick={() => {
+                          setMessengerDeleteUi(null)
+                          setDeleteFlowConversationId(null)
+                        }}
+                      >
+                        Отмена
+                      </button>
+                      <button
+                        type="button"
+                        className="confirm-dialog__btn"
+                        disabled={deleteChatBusy}
+                        onClick={() => setMessengerDeleteUi({ step: 'confirm', kind: 'dm-me' })}
+                      >
+                        Только у меня
+                      </button>
+                      <button
+                        type="button"
+                        className="confirm-dialog__btn confirm-dialog__btn--danger"
+                        disabled={deleteChatBusy}
+                        onClick={() => setMessengerDeleteUi({ step: 'confirm', kind: 'dm-all' })}
+                      >
+                        У всех
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <h2 id="messenger-delete-chat-title" className="confirm-dialog__title">
+                      {messengerDeleteUi.kind === 'dm-me'
+                        ? 'Убрать чат у себя?'
+                        : messengerDeleteUi.kind === 'dm-all'
+                          ? 'Удалить переписку у всех?'
+                          : messengerDeleteUi.kind === 'leave-group'
+                            ? 'Выйти из группы?'
+                            : messengerDeleteUi.kind === 'leave-channel'
+                              ? 'Выйти из канала?'
+                              : deleteFlowPurgeGcKind === 'channel'
+                                ? 'Удалить канал для всех?'
+                                : 'Удалить группу для всех?'}
+                    </h2>
+                    <p className="dashboard-messenger__delete-chat-hint">
+                      {messengerDeleteUi.kind === 'dm-me'
+                        ? 'Диалог исчезнет только у вас.'
+                        : messengerDeleteUi.kind === 'dm-all'
+                          ? 'Это действие нельзя отменить. Переписка будет удалена для всех участников личного чата.'
+                          : messengerDeleteUi.kind === 'leave-group' || messengerDeleteUi.kind === 'leave-channel'
+                            ? 'Вы перестанете быть участником. История останется у остальных.'
+                            : 'Чат будет удалён для всех участников. Это действие необратимо.'}
+                    </p>
+                    <div className="confirm-dialog__actions">
+                      <button
+                        type="button"
+                        className="confirm-dialog__btn confirm-dialog__btn--secondary"
+                        disabled={deleteChatBusy}
+                        onClick={() => {
+                          if (messengerDeleteUi.kind === 'dm-me' || messengerDeleteUi.kind === 'dm-all') {
+                            setMessengerDeleteUi({ step: 'dm-pick' })
+                          } else {
+                            setMessengerDeleteUi(null)
+                            setDeleteFlowConversationId(null)
+                          }
+                        }}
+                      >
+                        {messengerDeleteUi.kind === 'dm-me' || messengerDeleteUi.kind === 'dm-all' ? 'Назад' : 'Отмена'}
+                      </button>
+                      <button
+                        type="button"
+                        className="confirm-dialog__btn confirm-dialog__btn--danger"
+                        disabled={deleteChatBusy}
+                        onClick={() => void executeDeleteChatAction(messengerDeleteUi.kind)}
+                      >
+                        {deleteChatBusy ? '…' : 'Подтвердить'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+
       <MessengerForwardToDmModal
         open={forwardDmModal !== null}
         onClose={() => {
@@ -4496,6 +4809,11 @@ export function DashboardMessengerPage() {
                 }
                 onTogglePin={() => togglePinChatListItem(chatListRowMenu.item.id)}
                 onMarkRead={() => void markChatReadFromListMenu(chatListRowMenu.item)}
+                onDeleteChat={
+                  user?.id && !chatListRowMenu.item.joinRequestPending
+                    ? () => void beginDeleteChatFromListItem(chatListRowMenu.item)
+                    : undefined
+                }
               />
             </div>,
             document.body,

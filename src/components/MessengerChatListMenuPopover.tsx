@@ -7,6 +7,7 @@ export function MessengerChatListMenuPopover({
   pinDisabled,
   onTogglePin,
   onMarkRead,
+  onDeleteChat,
 }: {
   onClose: () => void
   pinned: boolean
@@ -14,6 +15,8 @@ export function MessengerChatListMenuPopover({
   pinDisabled: boolean
   onTogglePin: () => void
   onMarkRead: () => void
+  /** Удаление чата (тот же сценарий, что в быстром меню по бургеру). */
+  onDeleteChat?: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -60,6 +63,18 @@ export function MessengerChatListMenuPopover({
       >
         Отметить прочитанным
       </button>
+      {onDeleteChat ? (
+        <button
+          type="button"
+          className="messenger-chatlist-menu__item messenger-chatlist-menu__item--danger"
+          role="menuitem"
+          onClick={() => {
+            onDeleteChat()
+          }}
+        >
+          Удалить чат…
+        </button>
+      ) : null}
     </div>
   )
 }

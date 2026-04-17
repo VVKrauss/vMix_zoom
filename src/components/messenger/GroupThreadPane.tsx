@@ -29,8 +29,11 @@ import {
 } from '../../lib/messengerDashboardUtils'
 import { ThreadMessageBubble } from './ThreadMessageBubble'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
+import { useLinkPreviewFromText } from '../../hooks/useLinkPreviewFromText'
+import { buildLinkMetaForMessageBody, ensureLinkPreviewForBody } from '../../lib/linkPreview'
 import { useMessengerJumpToBottom } from '../../hooks/useMessengerJumpToBottom'
 import { MessengerJumpToBottomFab } from '../MessengerJumpToBottomFab'
+import { DraftLinkPreviewBar } from './DraftLinkPreviewBar'
 import { MessengerImageLightbox } from './MessengerImageLightbox'
 
 const QUICK_REACTION_EMOJI: ReactionEmoji = '❤️'
@@ -102,6 +105,11 @@ export function GroupThreadPane({
   const [sending, setSending] = useState(false)
   const [photoUploading, setPhotoUploading] = useState(false)
   const [pendingGroupPhotos, setPendingGroupPhotos] = useState<{ id: string; file: File; previewUrl: string }[]>([])
+  const {
+    preview: draftLinkPreview,
+    loading: draftLinkPreviewLoading,
+    dismiss: dismissDraftLinkPreview,
+  } = useLinkPreviewFromText(draft, { enabled: pendingGroupPhotos.length === 0 })
   const [groupImageLightbox, setGroupImageLightbox] = useState<{ urls: string[]; index: number } | null>(null)
   const photoInputRef = useRef<HTMLInputElement | null>(null)
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -448,6 +456,8 @@ export function GroupThreadPane({
 
     setSending(true)
     setError(null)
+    const effectiveLinkPreview = await ensureLinkPreviewForBody(body, draftLinkPreview)
+    const linkMetaRecord = buildLinkMetaForMessageBody(body, effectiveLinkPreview)
     const optimistic: DirectMessage = {
       id: `local-${Date.now()}`,
       senderUserId: user.id,
@@ -456,11 +466,17 @@ export function GroupThreadPane({
       body,
       createdAt: new Date().toISOString(),
       replyToMessageId: replyId,
+      ...(linkMetaRecord ? { meta: linkMetaRecord } : {}),
     }
     setMessages((prev) => [...prev, optimistic].sort(sortChrono))
     setDraft('')
     setReplyTo(null)
-    const res = await appendGroupMessage(cid, { kind: 'text', body, replyToMessageId: replyId })
+    const res = await appendGroupMessage(cid, {
+      kind: 'text',
+      body,
+      replyToMessageId: replyId,
+      ...(linkMetaRecord ? { meta: linkMetaRecord as Record<string, unknown> } : {}),
+    })
     if (res.error) {
       setError(res.error)
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id))
@@ -470,7 +486,11 @@ export function GroupThreadPane({
     }
     const finalId = res.data?.messageId ?? optimistic.id
     const finalAt = res.data?.createdAt ?? optimistic.createdAt
-    setMessages((prev) => prev.map((m) => (m.id === optimistic.id ? { ...optimistic, id: finalId, createdAt: finalAt } : m)))
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === optimistic.id ? { ...optimistic, id: finalId, createdAt: finalAt, meta: linkMetaRecord ?? optimistic.meta } : m,
+      ),
+    )
     onTouchTail?.({ lastMessageAt: finalAt, lastMessagePreview: body })
     setSending(false)
   }, [
@@ -484,6 +504,7 @@ export function GroupThreadPane({
     profile?.display_name,
     onTouchTail,
     isGroupMember,
+    draftLinkPreview,
   ])
 
   const onComposerPaste = useCallback(
@@ -778,14 +799,30 @@ export function GroupThreadPane({
           ) : null}
           {pendingGroupPhotos.length > 0 ? (
             <div className="dashboard-messenger__pending-photos">
-              {pendingGroupPhotos.map((p) => (
+              {pendingGroupPhotos.map((p, idx) => (
                 <div key={p.id} className="dashboard-messenger__pending-photo">
-                  <img src={p.previewUrl} alt="" />
+                  <button
+                    type="button"
+                    className="dashboard-messenger__pending-photo-open"
+                    title="Открыть"
+                    aria-label="Открыть изображение"
+                    onClick={() =>
+                      setGroupImageLightbox({
+                        urls: pendingGroupPhotos.map((x) => x.previewUrl),
+                        index: idx,
+                      })
+                    }
+                  >
+                    <img src={p.previewUrl} alt="" />
+                  </button>
                   <button
                     type="button"
                     className="dashboard-messenger__pending-photo-remove"
                     aria-label="Убрать фото"
-                    onClick={() => removePendingGroupPhoto(p.id)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      removePendingGroupPhoto(p.id)
+                    }}
                   >
                     ×
                   </button>
@@ -793,6 +830,11 @@ export function GroupThreadPane({
               ))}
             </div>
           ) : null}
+          <DraftLinkPreviewBar
+            preview={draftLinkPreview}
+            loading={draftLinkPreviewLoading}
+            onDismiss={dismissDraftLinkPreview}
+          />
           <div className="dashboard-messenger__composer-main">
             <textarea
               ref={composerTextareaRef}

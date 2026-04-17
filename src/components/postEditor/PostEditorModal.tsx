@@ -163,10 +163,11 @@ export function PostEditorModal({
   )
 
   const validatePublish = useCallback((): string | null => {
-    if (!(draft.title ?? '').trim()) return 'Укажите заголовок поста'
     if (!draftHasPublishableBody(draft)) return 'Добавьте текст, изображение, видео или другой блок'
     return null
   }, [draft])
+
+  const canPublish = useMemo(() => draftHasPublishableBody(draft), [draft])
 
   const handlePublish = useCallback(async () => {
     const err = validatePublish()
@@ -177,19 +178,21 @@ export function PostEditorModal({
     if (!cid) return
     setBusy(true)
     try {
-      const linkMeta = firstLinkCardMeta(draft.blocks)
+      const linkFromCard = firstLinkCardMeta(draft.blocks)
+      const linkForMerge =
+        linkFromCard?.url != null
+          ? {
+              url: linkFromCard.url,
+              ...(linkFromCard.title ? { title: linkFromCard.title } : {}),
+              ...(linkFromCard.description ? { description: linkFromCard.description } : {}),
+              ...(linkFromCard.image ? { image: linkFromCard.image } : {}),
+            }
+          : null
       const previewBody = draftToPreviewBody(draft)
       const meta = mergeMetaWithDraft(
         mode === 'edit' && editMessage?.meta ? (editMessage.meta as Record<string, unknown>) : null,
         { ...draft, status: 'published' },
-        linkMeta?.url
-          ? {
-              url: linkMeta.url,
-              title: linkMeta.title,
-              description: linkMeta.description,
-              image: linkMeta.image,
-            }
-          : null,
+        linkForMerge,
       )
       if (mode === 'edit' && editMessage?.id) {
         const res = await editChannelPostRich(cid, editMessage.id, previewBody, meta)
@@ -212,7 +215,16 @@ export function PostEditorModal({
     } finally {
       setBusy(false)
     }
-  }, [validatePublish, cid, draft, mode, editMessage, toast, onSaved, onClose])
+  }, [
+    validatePublish,
+    cid,
+    draft,
+    mode,
+    editMessage,
+    toast,
+    onSaved,
+    onClose,
+  ])
 
   const handleManualSave = useCallback(() => {
     try {
@@ -270,9 +282,11 @@ export function PostEditorModal({
         onClick={(e) => e.stopPropagation()}
       >
         <header className="post-editor-header">
-          <h2 id="post-editor-heading" className="post-editor-header__title">
-            {mode === 'edit' ? 'Редактирование поста' : 'Новый пост'}
-          </h2>
+          <div className="post-editor-header__title-wrap">
+            <h2 id="post-editor-heading" className="post-editor-header__title">
+              {mode === 'edit' ? 'Редактирование поста' : 'Оформленный пост'}
+            </h2>
+          </div>
           <span className="post-editor-header__status">{statusLabel}</span>
           <div className="post-editor-header__actions">
             <button type="button" className="dashboard-topbar__action" onClick={() => setPreview((p) => !p)} disabled={busy}>
@@ -285,7 +299,7 @@ export function PostEditorModal({
               type="button"
               className="dashboard-topbar__action dashboard-topbar__action--primary"
               onClick={() => void handlePublish()}
-              disabled={busy}
+              disabled={busy || !canPublish}
             >
               {busy ? 'Публикация…' : 'Опубликовать'}
             </button>

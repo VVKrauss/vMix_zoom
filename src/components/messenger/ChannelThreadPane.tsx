@@ -10,6 +10,7 @@ import { getMessengerImageSignedUrl } from '../../lib/messenger'
 import { buildQuotePreview } from '../../lib/messengerQuotePreview'
 import {
   appendChannelComment,
+  appendChannelFeedMessage,
   deleteChannelComment,
   deleteChannelPost,
   editChannelComment,
@@ -21,22 +22,36 @@ import {
   markChannelRead,
   toggleChannelMessageReaction,
 } from '../../lib/channels'
-import { copyTextToClipboard } from '../../lib/messengerDashboardUtils'
+import { useProfile } from '../../hooks/useProfile'
+import { useLinkPreviewFromText } from '../../hooks/useLinkPreviewFromText'
+import { buildLinkMetaForMessageBody, ensureLinkPreviewForBody } from '../../lib/linkPreview'
+import { uploadMessengerImage } from '../../lib/messenger'
+import { MESSENGER_COMPOSER_EMOJIS } from '../../lib/messengerComposerEmojis'
+import {
+  copyTextToClipboard,
+  extractClipboardImageFiles,
+  MESSENGER_GALLERY_MAX_ATTACH,
+} from '../../lib/messengerDashboardUtils'
 import { collectStoragePathsFromDraft } from '../../lib/postEditor/draftUtils'
 import type { ReactionEmoji } from '../../types/roomComms'
 import { REACTION_EMOJI_WHITELIST } from '../../types/roomComms'
-import { ChevronLeftIcon, FiRrIcon, XCloseIcon } from '../icons'
+import { AttachmentIcon, ChevronLeftIcon, FiRrIcon, XCloseIcon } from '../icons'
+import { MessengerBubbleBody } from '../MessengerBubbleBody'
 import { MessengerMessageMenuPopover } from '../MessengerMessageMenuPopover'
 import { PostDraftReadView, PostPublicationLine } from '../postEditor/PostDraftReadView'
 import { PostEditorModal } from '../postEditor/PostEditorModal'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
 import { DoubleTapHeartSurface } from './DoubleTapHeartSurface'
+import { MessengerLinkPreviewCard } from './MessengerLinkPreviewCard'
 import { ThreadMessageBubble } from './ThreadMessageBubble'
+import { injectMentionsInReactTree } from '../MessengerMessageBody'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Link } from 'react-router-dom'
 import { useMessengerJumpToBottom } from '../../hooks/useMessengerJumpToBottom'
 import { MessengerJumpToBottomFab } from '../MessengerJumpToBottomFab'
+import { DraftLinkPreviewBar } from './DraftLinkPreviewBar'
+import { MessengerImageLightbox } from './MessengerImageLightbox'
 
 function extractStoragePathsFromMarkdown(md: string): string[] {
   const out: string[] = []
@@ -81,11 +96,13 @@ function formatChannelBubbleTime(iso: string): string {
 
 const CHANNEL_STAFF_ROLES = new Set(['owner', 'admin', 'moderator'])
 const QUICK_REACTION_EMOJI: ReactionEmoji = '❤️'
+const CHANNEL_PHOTO_MAX_BYTES = 2 * 1024 * 1024
 
 export function ChannelThreadPane({
   conversationId,
   onTouchTail,
   onForwardMessage,
+  onMentionSlug,
   isMemberHint,
   postingMode,
   viewerOnly,
@@ -99,6 +116,8 @@ export function ChannelThreadPane({
   onTouchTail?: (patch: { lastMessageAt: string; lastMessagePreview: string }) => void
   /** Переслать текст/фото в личный чат (открывает модалку на уровне страницы). */
   onForwardMessage?: (message: DirectMessage) => void
+  /** Клик по @slug в теле поста/комментария (markdown). */
+  onMentionSlug?: (slug: string) => void
   /** Хинт из родителя: если диалог уже есть в списке, считаем что участник (убирает рассинхрон после вступления). */
   isMemberHint?: boolean
   postingMode?: 'admins_only' | 'everyone'
@@ -111,6 +130,7 @@ export function ChannelThreadPane({
   onJumpHandled?: () => void
 }) {
   const { user } = useAuth()
+  const { profile } = useProfile()
   const toast = useToast()
   const isMobileMessenger = useMediaQuery('(max-width: 900px)')
 
@@ -121,6 +141,20 @@ export function ChannelThreadPane({
   const [hasMoreOlder, setHasMoreOlder] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [postEditor, setPostEditor] = useState<null | { mode: 'create' } | { mode: 'edit'; message: DirectMessage }>(null)
+  const [feedDraft, setFeedDraft] = useState('')
+  const [feedSending, setFeedSending] = useState(false)
+  const [feedPhotoUploading, setFeedPhotoUploading] = useState(false)
+  const [pendingChannelPhotos, setPendingChannelPhotos] = useState<{ id: string; file: File; previewUrl: string }[]>([])
+  const {
+    preview: feedLinkPreview,
+    loading: feedLinkPreviewLoading,
+    dismiss: dismissFeedLinkPreview,
+  } = useLinkPreviewFromText(feedDraft, { enabled: pendingChannelPhotos.length === 0 })
+  const feedComposerTextareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const feedPhotoInputRef = useRef<HTMLInputElement | null>(null)
+  const feedComposerEmojiWrapRef = useRef<HTMLDivElement | null>(null)
+  const [feedComposerEmojiOpen, setFeedComposerEmojiOpen] = useState(false)
+  const [channelFeedLightbox, setChannelFeedLightbox] = useState<{ urls: string[]; index: number } | null>(null)
   const [commentsModalPostId, setCommentsModalPostId] = useState<string | null>(null)
   const [commentsByPostId, setCommentsByPostId] = useState<Record<string, DirectMessage[]>>({})
   const [commentCountByPostId, setCommentCountByPostId] = useState<Record<string, number>>({})
@@ -202,6 +236,14 @@ export function ChannelThreadPane({
   const canCreatePosts = isChannelMember && (postingMode === 'everyone' || canModerateChannel)
 
   useEffect(() => {
+    setPendingChannelPhotos((prev) => {
+      for (const p of prev) URL.revokeObjectURL(p.previewUrl)
+      return []
+    })
+    setFeedDraft('')
+  }, [conversationId])
+
+  useEffect(() => {
     if (!error) return
     toast.push({ tone: 'error', message: error, ms: 3800 })
     setError(null)
@@ -266,6 +308,221 @@ export function ChannelThreadPane({
       }
     })
   }, [conversationId, user?.id, onTouchTail, canView])
+
+  const addPendingChannelPhotoFiles = useCallback(
+    (files: File[]) => {
+      const imgs = files.filter((f) => f.type.startsWith('image/') && f.size > 0)
+      const tooBig = imgs.filter((f) => f.size > CHANNEL_PHOTO_MAX_BYTES)
+      if (tooBig.length > 0) {
+        toast.push({
+          tone: 'warning',
+          title: 'Слишком большой файл',
+          message: 'Каждое фото не больше 2 МБ.',
+          ms: 4200,
+        })
+      }
+      const allowed = imgs.filter((f) => f.size <= CHANNEL_PHOTO_MAX_BYTES)
+      setPendingChannelPhotos((prev) => {
+        const next = [...prev]
+        let skipped = 0
+        for (const f of allowed) {
+          if (next.length >= MESSENGER_GALLERY_MAX_ATTACH) {
+            skipped += 1
+            continue
+          }
+          next.push({
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+            file: f,
+            previewUrl: URL.createObjectURL(f),
+          })
+        }
+        if (skipped > 0) {
+          toast.push({
+            tone: 'warning',
+            message: `Не более ${MESSENGER_GALLERY_MAX_ATTACH} фото за раз`,
+            ms: 3200,
+          })
+        }
+        return next
+      })
+    },
+    [toast],
+  )
+
+  const removePendingChannelPhoto = useCallback((id: string) => {
+    setPendingChannelPhotos((prev) => {
+      const cur = prev.find((p) => p.id === id)
+      if (cur) URL.revokeObjectURL(cur.previewUrl)
+      return prev.filter((p) => p.id !== id)
+    })
+  }, [])
+
+  const sendChannelFeed = useCallback(async () => {
+    const cid = conversationId.trim()
+    const body = feedDraft.trim()
+    if (!canCreatePosts || !user?.id || !cid || feedSending || threadLoading) return
+    const hasPending = pendingChannelPhotos.length > 0
+    if (!hasPending && !body) return
+
+    const snap = profile?.display_name?.trim() || 'Вы'
+
+    if (hasPending) {
+      setFeedSending(true)
+      setFeedPhotoUploading(true)
+      setError(null)
+      const uploaded: Array<{ path: string; thumbPath?: string }> = []
+      for (const p of pendingChannelPhotos) {
+        const up = await uploadMessengerImage(cid, p.file)
+        if (up.error || !up.path) {
+          setError(up.error ?? 'Не удалось загрузить фото')
+          setFeedSending(false)
+          setFeedPhotoUploading(false)
+          return
+        }
+        uploaded.push({ path: up.path, ...(up.thumbPath ? { thumbPath: up.thumbPath } : {}) })
+      }
+      const imageMeta =
+        uploaded.length === 1 ? { image: uploaded[0]! } : { images: uploaded }
+      const res = await appendChannelFeedMessage(cid, {
+        kind: 'image',
+        body,
+        meta: imageMeta as Record<string, unknown>,
+      })
+      if (res.error) {
+        setError(res.error)
+        setFeedSending(false)
+        setFeedPhotoUploading(false)
+        return
+      }
+      for (const p of pendingChannelPhotos) URL.revokeObjectURL(p.previewUrl)
+      setPendingChannelPhotos([])
+      setFeedDraft('')
+      setFeedPhotoUploading(false)
+      setFeedSending(false)
+      const createdAt = res.data?.createdAt ?? new Date().toISOString()
+      const newMsg: DirectMessage = {
+        id: res.data?.messageId ?? `local-${Date.now()}`,
+        senderUserId: user.id,
+        senderNameSnapshot: snap,
+        kind: 'image',
+        body,
+        createdAt,
+        meta: imageMeta,
+      }
+      setPosts((prev) => [...prev, newMsg].sort(sortChrono))
+      onTouchTail?.({
+        lastMessageAt: createdAt,
+        lastMessagePreview: previewTextForDirectMessageTail({ kind: 'image', body, meta: imageMeta }),
+      })
+      requestAnimationFrame(() => {
+        const el = postsFeedScrollRef.current
+        if (el) el.scrollTop = el.scrollHeight
+      })
+      return
+    }
+
+    setFeedSending(true)
+    setError(null)
+    const effectivePreview = await ensureLinkPreviewForBody(body, feedLinkPreview)
+    const linkMeta = buildLinkMetaForMessageBody(body, effectivePreview)
+    const metaRecord = linkMeta ? (linkMeta as Record<string, unknown>) : null
+    const optimistic: DirectMessage = {
+      id: `local-${Date.now()}`,
+      senderUserId: user.id,
+      senderNameSnapshot: snap,
+      kind: 'text',
+      body,
+      createdAt: new Date().toISOString(),
+      ...(linkMeta ? { meta: linkMeta } : {}),
+    }
+    setPosts((prev) => [...prev, optimistic].sort(sortChrono))
+    setFeedDraft('')
+    const res = await appendChannelFeedMessage(cid, { kind: 'text', body, meta: metaRecord })
+    if (res.error) {
+      setError(res.error)
+      setPosts((prev) => prev.filter((m) => m.id !== optimistic.id))
+      setFeedDraft(body)
+      setFeedSending(false)
+      return
+    }
+    const finalId = res.data?.messageId ?? optimistic.id
+    const finalAt = res.data?.createdAt ?? optimistic.createdAt
+    setPosts((prev) =>
+      prev.map((m) =>
+        m.id === optimistic.id
+          ? {
+              ...optimistic,
+              id: finalId,
+              createdAt: finalAt,
+              meta: linkMeta ?? optimistic.meta,
+            }
+          : m,
+      ),
+    )
+    onTouchTail?.({ lastMessageAt: finalAt, lastMessagePreview: body })
+    setFeedSending(false)
+    requestAnimationFrame(() => {
+      const el = postsFeedScrollRef.current
+      if (el) el.scrollTop = el.scrollHeight
+    })
+  }, [
+    canCreatePosts,
+    user?.id,
+    conversationId,
+    feedDraft,
+    feedSending,
+    threadLoading,
+    pendingChannelPhotos,
+    profile?.display_name,
+    feedLinkPreview,
+    onTouchTail,
+  ])
+
+  const onFeedComposerPaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      if (threadLoading || feedPhotoUploading) return
+      const files = extractClipboardImageFiles(e.clipboardData)
+      if (files.length === 0) return
+      e.preventDefault()
+      addPendingChannelPhotoFiles(files)
+    },
+    [threadLoading, feedPhotoUploading, addPendingChannelPhotoFiles],
+  )
+
+  const insertEmojiInFeedDraft = useCallback(
+    (emoji: string) => {
+      const ta = feedComposerTextareaRef.current
+      const start = ta?.selectionStart ?? feedDraft.length
+      const end = ta?.selectionEnd ?? feedDraft.length
+      const next = feedDraft.slice(0, start) + emoji + feedDraft.slice(end)
+      setFeedDraft(next)
+      setFeedComposerEmojiOpen(false)
+      queueMicrotask(() => {
+        ta?.focus()
+        const p = start + emoji.length
+        ta?.setSelectionRange(p, p)
+      })
+    },
+    [feedDraft],
+  )
+
+  useEffect(() => {
+    if (!feedComposerEmojiOpen) return
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      const target =
+        'touches' in e && e.touches[0] ? (e.touches[0]!.target as EventTarget) : (e as MouseEvent).target
+      if (shouldClosePopoverOnOutsidePointer(feedComposerEmojiWrapRef.current, target)) {
+        setFeedComposerEmojiOpen(false)
+      }
+    }
+    const touchOpts: AddEventListenerOptions = { capture: true, passive: true }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('touchstart', onDown, touchOpts)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown, touchOpts)
+    }
+  }, [feedComposerEmojiOpen])
 
   useEffect(() => {
     let active = true
@@ -958,12 +1215,11 @@ export function ChannelThreadPane({
   const renderMarkdownAndPreview = (m: DirectMessage, bodyClassName?: string) => {
     if (m.kind === 'reaction') return null
     const link = m.meta?.link?.url?.trim() ? m.meta.link : null
-    const md = (
-      <>
-        <div className="messenger-message-md">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={{
+    const mdBlock = injectMentionsInReactTree(
+      <div className="messenger-message-md">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
               a: ({ href, children, ...props }) => {
                 const raw = (href ?? '').trim()
                 const to = (() => {
@@ -1014,49 +1270,16 @@ export function ChannelThreadPane({
           >
             {m.body}
           </ReactMarkdown>
-        </div>
-        {link ? (
-          <a
-            href={link.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="messenger-message-link"
-            style={{
-              display: 'block',
-              marginTop: 10,
-              padding: 10,
-              border: '1px solid var(--border)',
-              borderRadius: 12,
-              textDecoration: 'none',
-            }}
-          >
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              {link.image ? (
-                <img
-                  src={link.image}
-                  alt=""
-                  style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 10, flex: '0 0 auto' }}
-                  loading="lazy"
-                  decoding="async"
-                />
-              ) : null}
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {link.title ?? link.siteName ?? link.url}
-                </div>
-                {link.description ? (
-                  <div style={{ opacity: 0.85, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {link.description}
-                  </div>
-                ) : null}
-                <div style={{ opacity: 0.7, marginTop: 4, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {link.siteName ?? new URL(link.url).host}
-                </div>
-              </div>
-            </div>
-            </a>
-          ) : null}
-      </>
+      </div>,
+      onMentionSlug,
+    )
+    const md = link ? (
+      <div className="messenger-md-link-stack">
+        <MessengerLinkPreviewCard link={link} />
+        {mdBlock}
+      </div>
+    ) : (
+      <>{mdBlock}</>
     )
     if (bodyClassName) return <div className={bodyClassName}>{md}</div>
     return md
@@ -1284,7 +1507,16 @@ export function ChannelThreadPane({
           onHeart={() => void toggleReaction(p.id, QUICK_REACTION_EMOJI)}
         >
         <div className="dashboard-messenger__channel-post-inner">
-          {p.meta?.postDraft ? (
+          {p.kind === 'image' ? (
+            <>
+              <PostPublicationLine publishedAt={p.createdAt} editedAt={p.editedAt} />
+              <MessengerBubbleBody
+                message={p}
+                onMentionSlug={onMentionSlug}
+                onOpenImageLightbox={(ctx) => setChannelFeedLightbox({ urls: ctx.urls, index: ctx.initialIndex })}
+              />
+            </>
+          ) : p.meta?.postDraft ? (
             <PostDraftReadView
               draft={p.meta.postDraft}
               urlByStoragePath={signedUrlByPath}
@@ -1439,15 +1671,139 @@ export function ChannelThreadPane({
 
       <div className="dashboard-messenger__thread-footer">
         {canCreatePosts ? (
-          <button
-            type="button"
-            className="dashboard-topbar__action dashboard-topbar__action--primary"
-            onClick={() => setPostEditor({ mode: 'create' })}
-            disabled={threadLoading}
-            style={{ width: '100%' }}
-          >
-            Добавить пост
-          </button>
+          <div className="dashboard-messenger__composer" role="region" aria-label="Новый пост в канале">
+            {pendingChannelPhotos.length > 0 ? (
+              <div className="dashboard-messenger__pending-photos">
+                {pendingChannelPhotos.map((p, idx) => (
+                  <div key={p.id} className="dashboard-messenger__pending-photo">
+                    <button
+                      type="button"
+                      className="dashboard-messenger__pending-photo-open"
+                      title="Открыть"
+                      aria-label="Открыть изображение"
+                      onClick={() =>
+                        setChannelFeedLightbox({
+                          urls: pendingChannelPhotos.map((x) => x.previewUrl),
+                          index: idx,
+                        })
+                      }
+                    >
+                      <img src={p.previewUrl} alt="" />
+                    </button>
+                    <button
+                      type="button"
+                      className="dashboard-messenger__pending-photo-remove"
+                      aria-label="Убрать фото"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        removePendingChannelPhoto(p.id)
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <DraftLinkPreviewBar
+              preview={feedLinkPreview}
+              loading={feedLinkPreviewLoading}
+              onDismiss={dismissFeedLinkPreview}
+            />
+            <div className="dashboard-messenger__composer-main">
+              <textarea
+                ref={feedComposerTextareaRef}
+                className="dashboard-messenger__input"
+                rows={isMobileMessenger ? 1 : 3}
+                placeholder="Напиши пост…"
+                value={feedDraft}
+                disabled={threadLoading || feedPhotoUploading}
+                onPaste={onFeedComposerPaste}
+                onChange={(e) => setFeedDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    void sendChannelFeed()
+                  }
+                }}
+              />
+              <div className="dashboard-messenger__composer-side">
+                <div className="dashboard-messenger__composer-tools" ref={feedComposerEmojiWrapRef}>
+                  {feedComposerEmojiOpen ? (
+                    <div className="dashboard-messenger__composer-emoji-pop">
+                      <ReactionEmojiPopover
+                        title="Эмодзи"
+                        emojis={MESSENGER_COMPOSER_EMOJIS}
+                        onClose={() => setFeedComposerEmojiOpen(false)}
+                        onPick={(em) => insertEmojiInFeedDraft(em)}
+                      />
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="dashboard-messenger__composer-icon-btn"
+                    title="Оформленный пост"
+                    aria-label="Оформленный пост: заголовок, обложка, блоки"
+                    disabled={threadLoading || feedSending}
+                    onClick={() => setPostEditor({ mode: 'create' })}
+                  >
+                    <FiRrIcon name="stars" />
+                  </button>
+                  <button
+                    type="button"
+                    className="dashboard-messenger__composer-icon-btn"
+                    title="Эмодзи"
+                    aria-label="Вставить эмодзи"
+                    disabled={threadLoading}
+                    onClick={() => setFeedComposerEmojiOpen((v) => !v)}
+                  >
+                    😀
+                  </button>
+                  <button
+                    type="button"
+                    className="dashboard-messenger__composer-icon-btn"
+                    title="Фото"
+                    aria-label="Прикрепить фото"
+                    disabled={threadLoading || feedPhotoUploading}
+                    onClick={() => feedPhotoInputRef.current?.click()}
+                  >
+                    <AttachmentIcon />
+                  </button>
+                  <input
+                    ref={feedPhotoInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="dashboard-messenger__photo-input"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files ?? [])
+                      e.target.value = ''
+                      if (files.length === 0) return
+                      addPendingChannelPhotoFiles(files)
+                    }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
+                  disabled={
+                    (!feedDraft.trim() && pendingChannelPhotos.length === 0) ||
+                    feedSending ||
+                    threadLoading ||
+                    feedPhotoUploading
+                  }
+                  onClick={() => void sendChannelFeed()}
+                >
+                  Отправить
+                </button>
+              </div>
+            </div>
+            {feedPhotoUploading ? (
+              <p className="dashboard-messenger__photo-status" role="status">
+                Загрузка фото…
+              </p>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </>
@@ -1487,19 +1843,6 @@ export function ChannelThreadPane({
               )
             })}
         </div>
-        {canCreatePosts ? (
-          <div className="dashboard-messenger__channel-comments-posts-footer">
-            <button
-              type="button"
-              className="dashboard-topbar__action dashboard-topbar__action--primary"
-              onClick={() => setPostEditor({ mode: 'create' })}
-              disabled={threadLoading}
-              style={{ width: '100%' }}
-            >
-              Добавить пост
-            </button>
-          </div>
-        ) : null}
       </div>
     )
 
@@ -1780,6 +2123,13 @@ export function ChannelThreadPane({
             document.body,
           )
         : null}
+
+      <MessengerImageLightbox
+        open={Boolean(channelFeedLightbox && channelFeedLightbox.urls.length > 0)}
+        urls={channelFeedLightbox?.urls ?? []}
+        initialIndex={channelFeedLightbox?.index ?? 0}
+        onClose={() => setChannelFeedLightbox(null)}
+      />
 
       <PostEditorModal
         open={postEditor !== null}

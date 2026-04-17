@@ -89,6 +89,8 @@ export function PublicUserPage() {
     }
   }, [user?.id, profile?.id])
 
+  const isOwnProfile = Boolean(user?.id && profile?.id && user.id === profile.id)
+
   const goChat = useCallback(async () => {
     if (!profile?.id || busy) return
     if (!user?.id) {
@@ -189,26 +191,38 @@ export function PublicUserPage() {
             </div>
 
             <div style={{ display: 'grid', gap: 10 }}>
-              <button type="button" className="join-btn join-btn--block" onClick={() => void goChat()} disabled={busy}>
-                Написать в чат
-              </button>
-              <button
-                type="button"
-                className="join-btn join-btn--secondary join-btn--block"
-                onClick={() => void addToContacts()}
-                disabled={busy}
-              >
-                {inContacts ? 'Убрать из контактов' : 'Добавить в контакты'}
-              </button>
-              {!user?.id ? (
-                <div style={{ color: 'var(--text-dim)', fontSize: 13, textAlign: 'center' }}>
-                  Чтобы написать или добавить в контакты, нужно{' '}
-                  <Link to="/login?mode=register" className="messenger-message-link">
-                    зарегистрироваться
-                  </Link>
-                  .
-                </div>
-              ) : null}
+              {isOwnProfile ? (
+                <button
+                  type="button"
+                  className="join-btn join-btn--block"
+                  onClick={() => navigate('/dashboard', { state: { openProfileEdit: true } })}
+                >
+                  Редактировать профиль
+                </button>
+              ) : (
+                <>
+                  <button type="button" className="join-btn join-btn--block" onClick={() => void goChat()} disabled={busy}>
+                    Написать в чат
+                  </button>
+                  <button
+                    type="button"
+                    className="join-btn join-btn--secondary join-btn--block"
+                    onClick={() => void addToContacts()}
+                    disabled={busy}
+                  >
+                    {inContacts ? 'Убрать из контактов' : 'Добавить в контакты'}
+                  </button>
+                  {!user?.id ? (
+                    <div style={{ color: 'var(--text-dim)', fontSize: 13, textAlign: 'center' }}>
+                      Чтобы написать или добавить в контакты, нужно{' '}
+                      <Link to="/login?mode=register" className="messenger-message-link">
+                        зарегистрироваться
+                      </Link>
+                      .
+                    </div>
+                  ) : null}
+                </>
+              )}
             </div>
           </div>
         ) : null}

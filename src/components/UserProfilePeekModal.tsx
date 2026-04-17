@@ -234,7 +234,19 @@ export function UserProfilePeekModal({
               </button>
             </>
           ) : (
-            <p className="user-peek-modal__hint">Это ваш профиль.</p>
+            <>
+              <p className="user-peek-modal__hint">Это ваш профиль.</p>
+              <button
+                type="button"
+                className="dashboard-topbar__action dashboard-topbar__action--primary"
+                onClick={() => {
+                  onClose()
+                  navigate('/dashboard', { state: { openProfileEdit: true } })
+                }}
+              >
+                Редактировать
+              </button>
+            </>
           )}
           <button type="button" className="dashboard-topbar__action" onClick={onClose}>
             Закрыть

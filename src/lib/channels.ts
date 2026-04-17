@@ -221,6 +221,21 @@ export async function appendChannelPostRich(
   return { data: parseOkMessageResult(data), error: null }
 }
 
+/** Лента канала: как сообщение в группе (текст + meta, фото). */
+export async function appendChannelFeedMessage(
+  conversationId: string,
+  args: { kind?: 'text' | 'image'; body: string; meta?: Record<string, unknown> | null },
+): Promise<{ data: { messageId: string | null; createdAt: string | null } | null; error: string | null }> {
+  const { data, error } = await supabase.rpc('append_channel_feed_message', {
+    p_conversation_id: conversationId.trim(),
+    p_body: args.body,
+    p_kind: args.kind ?? 'text',
+    p_meta: args.meta ?? null,
+  })
+  if (error) return { data: null, error: error.message }
+  return { data: parseOkMessageResult(data), error: null }
+}
+
 export async function appendChannelComment(
   conversationId: string,
   postId: string,

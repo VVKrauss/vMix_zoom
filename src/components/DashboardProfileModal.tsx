@@ -162,7 +162,7 @@ export function DashboardProfileModal({
           <form id="dashboard-profile-form" onSubmit={onSave} className="dashboard-form">
             <div className="dashboard-field">
               <label className="dashboard-field__label" htmlFor="dashboard-profile-name">
-                Отображаемое имя
+                Никнейм
               </label>
               <input
                 id="dashboard-profile-name"

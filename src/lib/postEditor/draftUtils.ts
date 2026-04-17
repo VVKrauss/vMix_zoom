@@ -97,6 +97,21 @@ export function isPostDraftV1(raw: unknown): raw is PostDraftV1 {
   return true
 }
 
+/** Один текстовый абзац, без обложки, SEO и материалов — можно показать «простой» композер как в чате. */
+export function isDraftSimpleCompatible(d: PostDraftV1): boolean {
+  if ((d.title ?? '').trim()) return false
+  if ((d.subtitle ?? '').trim()) return false
+  if (d.coverImage) return false
+  if (d.materials.length > 0) return false
+  if ((d.slug ?? '').trim()) return false
+  if ((d.seoTitle ?? '').trim()) return false
+  if ((d.seoDescription ?? '').trim()) return false
+  if ((d.seoImage ?? '').trim()) return false
+  if (d.blocks.length !== 1) return false
+  const b = d.blocks[0]
+  return b.type === 'paragraph'
+}
+
 export function migrateLegacyBodyToDraft(body: string): PostDraftV1 {
   const d = createEmptyDraft()
   d.blocks = [{ id: newBlockId(), type: 'paragraph', text: body.trim() }]
