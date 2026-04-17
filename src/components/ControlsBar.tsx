@@ -105,8 +105,7 @@ interface Props {
   onVmixProgramVolumeChange: (v: number) => void
   vmixProgramMuted: boolean
   onToggleVmixProgramMuted: () => void
-  /** Полоса громкости захваченного экрана в «Диване» (как SRT), когда в потоке есть звук. */
-  couchCaptureVolumeActive?: boolean
+  /** Громкость демонстрации в «Диване» (0…1), localStorage на клиенте. */
   couchCaptureVolume?: number
   onCouchCaptureVolumeChange?: (v: number) => void
   /** Режим «Диван» открыт другим организатором — нельзя закрыть сессию этой кнопкой. */
@@ -273,7 +272,6 @@ export function ControlsBar({
   onVmixProgramVolumeChange,
   vmixProgramMuted,
   onToggleVmixProgramMuted,
-  couchCaptureVolumeActive = false,
   couchCaptureVolume = 1,
   onCouchCaptureVolumeChange,
   couchToggleDisabled = false,
@@ -737,7 +735,7 @@ export function ControlsBar({
   }
 
   const couchCaptureBlock =
-    couchCaptureVolumeActive && onCouchCaptureVolumeChange ? (
+    couchOpen && onCouchCaptureVolumeChange ? (
       <div className="ctrl-group ctrl-group--solo ctrl-group--couch-capture" aria-label="Демонстрация «Диван»">
         {couchCaptureAudioControls()}
       </div>
@@ -745,14 +743,14 @@ export function ControlsBar({
 
   return (
     <div
-      className={`controls-bar${showButtonLabels ? '' : ' controls-bar--icons-only'}${streamerMode ? ' controls-bar--streamer-mode' : ''}${forceMobileFabMenu ? ' controls-bar--fab-dock' : ''}`}
+      className={`controls-bar${showButtonLabels ? '' : ' controls-bar--icons-only'}${streamerMode ? ' controls-bar--streamer-mode' : ''}${forceMobileFabMenu ? ' controls-bar--fab-dock' : ''}${couchOpen ? ' controls-bar--couch-open' : ''}`}
     >
       {showMainBar ? (
       <div className="controls-bar__main">
       {sourcesStrip(false)}
-      {couchCaptureBlock}
 
       <div className="controls-bar__core">
+      {couchCaptureBlock}
       {/* ── Camera ─────────────────────────────────────────────────────── */}
       <div className="ctrl-group">
         <button

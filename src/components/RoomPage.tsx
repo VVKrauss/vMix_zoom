@@ -1210,8 +1210,6 @@ export function RoomPage({
     return s.getAudioTracks().some((t) => t.readyState === 'live')
   }, [couchStageScreenStream])
 
-  const showCouchCaptureVolume = couchOpen && couchStageHasAudio
-
   const handleCouchBarToggle = useCallback(() => {
     if (couchOpen && !canCloseCouchWorkspace) return
     onSetCouchMode?.(!couchOpen)
@@ -2675,7 +2673,6 @@ export function RoomPage({
         onVmixProgramVolumeChange={setVmixProgramVolume}
         vmixProgramMuted={vmixProgramMuted}
         onToggleVmixProgramMuted={() => setVmixProgramMuted((v) => !v)}
-        couchCaptureVolumeActive={showCouchCaptureVolume}
         couchCaptureVolume={couchCaptureVolume}
         onCouchCaptureVolumeChange={setCouchCaptureVolume}
         forceMobileFabMenu={isViewportMobile}

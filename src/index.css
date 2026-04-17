@@ -15261,6 +15261,25 @@ html[data-theme="light"] .room-chat-panel__input:focus {
   box-sizing: border-box;
 }
 
+/* Оверлей «Диван» z-index 10050 — поднимаем общую панель и мобильный слайдер над ним */
+.controls-bar.controls-bar--couch-open {
+  z-index: 10060;
+}
+
+.controls-bar--fab-dock.controls-bar--couch-open .ctrl-mobile-bottom-bar {
+  z-index: 10061;
+}
+
+.controls-bar--fab-dock.controls-bar--couch-open .ctrl-mobile-couch-capture-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(58px + max(0px, env(safe-area-inset-bottom, 0px)));
+  z-index: 10060;
+  pointer-events: auto;
+  padding-bottom: 6px;
+}
+
 .ctrl-group--couch-capture .ctrl-vmix-audio__slider {
   min-width: 140px;
 }
