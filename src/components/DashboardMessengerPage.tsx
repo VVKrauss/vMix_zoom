@@ -62,7 +62,6 @@ import {
   conversationInitial,
   copyTextToClipboard,
   extractClipboardImageFile,
-  readClipboardImageFileFromClipboardApi,
   formatDateTime,
   formatMessengerListRowTime,
   itemMatchesMessengerListSearch,
@@ -1720,20 +1719,6 @@ export function DashboardMessengerPage() {
     [photoUploading, sendPhotoFile, threadLoading],
   )
 
-  const onMobileClipboardImage = useCallback(async () => {
-    if (threadLoading || photoUploading || editingMessageId) return
-    const file = await readClipboardImageFileFromClipboardApi()
-    if (!file) {
-      toast.push({
-        tone: 'info',
-        message: 'В буфере нет изображения или браузер не дал доступ. Разрешите вставку или выберите файл.',
-        ms: 3800,
-      })
-      return
-    }
-    void sendPhotoFile(file)
-  }, [editingMessageId, photoUploading, sendPhotoFile, threadLoading, toast])
-
   const [conversationKindFilter, setConversationKindFilter] = useState<
     'all' | MessengerConversationKind
   >('all')
@@ -3035,18 +3020,6 @@ export function DashboardMessengerPage() {
             >
               <AttachmentIcon />
             </button>
-            {isMobileMessenger ? (
-              <button
-                type="button"
-                className="dashboard-messenger__composer-icon-btn"
-                title="Вставить фото из буфера"
-                aria-label="Вставить фото из буфера"
-                disabled={threadLoading || photoUploading || Boolean(editingMessageId)}
-                onClick={() => void onMobileClipboardImage()}
-              >
-                <FiRrIcon name="clipboard" />
-              </button>
-            ) : null}
             <input
               ref={photoInputRef}
               type="file"

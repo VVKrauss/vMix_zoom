@@ -22,7 +22,7 @@ import {
 import type { ReactionEmoji } from '../../types/roomComms'
 import { MessengerMessageMenuPopover } from '../MessengerMessageMenuPopover'
 import { AttachmentIcon, FiRrIcon } from '../icons'
-import { extractClipboardImageFile, readClipboardImageFileFromClipboardApi } from '../../lib/messengerDashboardUtils'
+import { extractClipboardImageFile } from '../../lib/messengerDashboardUtils'
 import { ThreadMessageBubble } from './ThreadMessageBubble'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
 
@@ -408,20 +408,6 @@ export function GroupThreadPane({
     [photoUploading, sendPhotoFile, threadLoading],
   )
 
-  const onMobileClipboardImage = useCallback(async () => {
-    if (threadLoading || photoUploading || !isGroupMember) return
-    const file = await readClipboardImageFileFromClipboardApi()
-    if (!file) {
-      toast.push({
-        tone: 'info',
-        message: 'В буфере нет изображения или браузер не дал доступ. Разрешите вставку или выберите файл.',
-        ms: 3800,
-      })
-      return
-    }
-    void sendPhotoFile(file)
-  }, [photoUploading, sendPhotoFile, threadLoading, toast, isGroupMember])
-
   useLayoutEffect(() => {
     const el = messageMenuWrapRef.current
     if (!el || !messageMenu) return
@@ -745,18 +731,6 @@ export function GroupThreadPane({
                 >
                   <AttachmentIcon />
                 </button>
-                {isMobileMessenger ? (
-                  <button
-                    type="button"
-                    className="dashboard-messenger__composer-icon-btn"
-                    title="Вставить фото из буфера"
-                    aria-label="Вставить фото из буфера"
-                    disabled={threadLoading || photoUploading}
-                    onClick={() => void onMobileClipboardImage()}
-                  >
-                    <FiRrIcon name="clipboard" />
-                  </button>
-                ) : null}
                 <input
                   ref={photoInputRef}
                   type="file"
