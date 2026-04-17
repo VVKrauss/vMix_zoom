@@ -43,6 +43,8 @@ export const MESSENGER_LAST_OPEN_KEY = 'vmix.messenger.lastOpenConversation'
 export const DM_PAGE_SIZE = 50
 /** Лимит размера фото в мессенджере (клиент). */
 export const MESSENGER_PHOTO_MAX_BYTES = 2 * 1024 * 1024
+/** Макс. число фото в одном сообщении (галерея). */
+export const MESSENGER_GALLERY_MAX_ATTACH = 10
 /** Ниже этой дистанции от низа считаем, что пользователь «на хвосте» — догоняем при подгрузке картинок и т.п. */
 export const MESSENGER_BOTTOM_PIN_PX = 200
 /** Сжимаем частые mark read при пачке входящих в открытом треде. */
@@ -63,15 +65,25 @@ export function sortConversationsByActivity(list: MessengerConversationSummary[]
   })
 }
 
+/** Ведущий @ убираем: поиск по «@slug» совпадает с «slug». */
+export function stripLeadingAtForSearch(raw: string): string {
+  let t = raw.trim()
+  while (t.startsWith('@')) t = t.slice(1).trim()
+  return t
+}
+
 export function normalizeMessengerListSearch(raw: string): string {
-  return raw.trim().toLowerCase().replace(/\s+/g, ' ')
+  return stripLeadingAtForSearch(raw).toLowerCase().replace(/\s+/g, ' ')
 }
 
 export function itemMatchesMessengerListSearch(item: MessengerConversationSummary, needle: string): boolean {
   if (!needle) return true
   const title = item.title.toLowerCase()
   const preview = (item.lastMessagePreview ?? '').toLowerCase()
-  return title.includes(needle) || preview.includes(needle)
+  const nick = (item.publicNick ?? '').toLowerCase()
+  if (title.includes(needle) || preview.includes(needle)) return true
+  if (nick && (nick.includes(needle) || `@${nick}`.includes(needle))) return true
+  return false
 }
 
 export function memberKickAllowed(
@@ -177,18 +189,27 @@ function coerceClipboardFileToImage(f: File): File | null {
  * Учитывает clipboardData.files (Android/Chrome), items + getAsFile (в т.ч. Safari iOS).
  */
 export function extractClipboardImageFile(dt: DataTransfer | null): File | null {
-  if (!dt) return null
+  const all = extractClipboardImageFiles(dt)
+  return all[0] ?? null
+}
 
-  const fromFileList = (list: FileList | null | undefined): File | null => {
-    if (!list?.length) return null
-    return coerceClipboardFileToImage(list[0]!)
+/** Все картинки из буфера (множественная вставка). */
+export function extractClipboardImageFiles(dt: DataTransfer | null): File[] {
+  if (!dt) return []
+
+  const out: File[] = []
+  const fromFileList = (list: FileList | null | undefined) => {
+    if (!list?.length) return
+    for (let i = 0; i < list.length; i++) {
+      const coerced = coerceClipboardFileToImage(list[i]!)
+      if (coerced) out.push(coerced)
+    }
   }
-
-  const direct = fromFileList(dt.files)
-  if (direct) return direct
+  fromFileList(dt.files)
+  if (out.length > 0) return out
 
   const items = dt.items
-  if (!items?.length) return null
+  if (!items?.length) return []
 
   for (const it of Array.from(items)) {
     const t = (it.type || '').toLowerCase()
@@ -196,10 +217,10 @@ export function extractClipboardImageFile(dt: DataTransfer | null): File | null 
       if (t && !t.startsWith('image/')) continue
       const f = it.getAsFile()
       const coerced = f ? coerceClipboardFileToImage(f) : null
-      if (coerced) return coerced
+      if (coerced) out.push(coerced)
     }
   }
-  return null
+  return out
 }
 
 /**

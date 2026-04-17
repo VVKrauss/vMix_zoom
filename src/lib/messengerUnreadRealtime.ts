@@ -25,6 +25,8 @@ export interface MessengerBgMessageDetail {
   kind: string
   body: string
   createdAt: string
+  /** Для канала: комментарий к посту — превью в списке не меняем на текст комментария. */
+  replyToMessageId?: string | null
 }
 
 function emitBgMessage(row: Record<string, unknown>): void {
@@ -32,6 +34,7 @@ function emitBgMessage(row: Record<string, unknown>): void {
   if (!conversationId) return
   const msg = mapDirectMessageFromRow(row)
   const preview = previewTextForDirectMessageTail(msg)
+  const replyToMessageId = msg.replyToMessageId?.trim() ? msg.replyToMessageId.trim() : null
 
   const detail: MessengerBgMessageDetail = {
     conversationId,
@@ -39,6 +42,7 @@ function emitBgMessage(row: Record<string, unknown>): void {
     kind: msg.kind,
     body: preview,
     createdAt: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
+    replyToMessageId,
   }
   window.dispatchEvent(new CustomEvent(MESSENGER_BG_MESSAGE_EVENT, { detail }))
 }

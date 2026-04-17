@@ -113,7 +113,8 @@ export function DashboardContactsPage() {
   }, [query])
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    let q = query.trim().toLowerCase()
+    while (q.startsWith('@')) q = q.slice(1).trim()
     return items.filter((item) => {
       if (!matchesContactFilter(item, filter)) return false
       if (!q) return true

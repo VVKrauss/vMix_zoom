@@ -1,15 +1,23 @@
 import { createPortal } from 'react-dom'
-import { useEffect, useLayoutEffect, useRef } from 'react'
-import { XCloseIcon } from '../icons'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { ChevronLeftIcon, ChevronRightIcon, XCloseIcon } from '../icons'
 import { LIGHTBOX_SWIPE_CLOSE_PX } from '../../lib/messengerDashboardUtils'
 
 export type MessengerImageLightboxProps = {
   open: boolean
-  imageUrl: string
+  /** Полноразмерные URL (уже с подписью). */
+  urls: string[]
+  initialIndex?: number
   onClose: () => void
 }
 
-export function MessengerImageLightbox({ open, imageUrl, onClose }: MessengerImageLightboxProps) {
+function mod(n: number, m: number): number {
+  return ((n % m) + m) % m
+}
+
+export function MessengerImageLightbox({ open, urls, initialIndex = 0, onClose }: MessengerImageLightboxProps) {
+  const list = urls.filter((u) => u.trim())
+  const [index, setIndex] = useState(0)
   const frameRef = useRef<HTMLDivElement | null>(null)
   const swipeRef = useRef<{
     pointerId: number | null
@@ -20,31 +28,52 @@ export function MessengerImageLightbox({ open, imageUrl, onClose }: MessengerIma
 
   useEffect(() => {
     if (!open) return
+    setIndex(mod(initialIndex, Math.max(1, list.length)))
+  }, [open, initialIndex, list.length])
+
+  useEffect(() => {
+    if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
+      if (list.length <= 1) return
+      if (e.key === 'ArrowLeft') setIndex((i) => mod(i - 1, list.length))
+      if (e.key === 'ArrowRight') setIndex((i) => mod(i + 1, list.length))
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  }, [open, onClose, list.length])
+
+  const handleSwipeEnd = useCallback(
+    (dx: number, dy: number) => {
+      const ax = Math.abs(dx)
+      const ay = Math.abs(dy)
+      const thr = LIGHTBOX_SWIPE_CLOSE_PX
+      if (ax < thr && ay < thr) return
+
+      if (list.length > 1) {
+        if (ax > ay && ax >= thr) {
+          if (dx > 0) setIndex((i) => mod(i - 1, list.length))
+          else setIndex((i) => mod(i + 1, list.length))
+          return
+        }
+        if (ay > ax && ay >= thr) {
+          onClose()
+          return
+        }
+        return
+      }
+
+      // Одно фото: закрытие только вертикальным свайпом
+      if (ay >= ax && ay >= thr) onClose()
+    },
+    [list.length, onClose],
+  )
 
   useLayoutEffect(() => {
     if (!open) return
     const el = frameRef.current
     if (!el) return
     const start = { x: 0, y: 0, tracking: false }
-    const closeIfSwipe = (dx: number, dy: number) => {
-      const ax = Math.abs(dx)
-      const ay = Math.abs(dy)
-      const thr = LIGHTBOX_SWIPE_CLOSE_PX
-      if (ax < thr && ay < thr) return
-      if (ay >= ax && ay >= thr) {
-        onClose()
-        return
-      }
-      if (ax > ay && ax >= thr) {
-        onClose()
-      }
-    }
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length !== 1) return
       start.tracking = true
@@ -55,7 +84,7 @@ export function MessengerImageLightbox({ open, imageUrl, onClose }: MessengerIma
       if (!start.tracking || e.changedTouches.length !== 1) return
       start.tracking = false
       const t = e.changedTouches[0]
-      closeIfSwipe(t.clientX - start.x, t.clientY - start.y)
+      handleSwipeEnd(t.clientX - start.x, t.clientY - start.y)
     }
     const onTouchCancel = () => {
       start.tracking = false
@@ -68,9 +97,11 @@ export function MessengerImageLightbox({ open, imageUrl, onClose }: MessengerIma
       el.removeEventListener('touchend', onTouchEnd)
       el.removeEventListener('touchcancel', onTouchCancel)
     }
-  }, [open, imageUrl, onClose])
+  }, [open, handleSwipeEnd, list])
 
-  if (!open || !imageUrl.trim()) return null
+  if (!open || list.length === 0) return null
+
+  const currentUrl = list[index] ?? list[0]
 
   return createPortal(
     <div
@@ -92,6 +123,34 @@ export function MessengerImageLightbox({ open, imageUrl, onClose }: MessengerIma
       >
         <XCloseIcon />
       </button>
+      {list.length > 1 ? (
+        <button
+          type="button"
+          className="messenger-image-lightbox__nav messenger-image-lightbox__nav--prev"
+          aria-label="Предыдущее фото"
+          title="Предыдущее"
+          onClick={(e) => {
+            e.stopPropagation()
+            setIndex((i) => mod(i - 1, list.length))
+          }}
+        >
+          <ChevronLeftIcon />
+        </button>
+      ) : null}
+      {list.length > 1 ? (
+        <button
+          type="button"
+          className="messenger-image-lightbox__nav messenger-image-lightbox__nav--next"
+          aria-label="Следующее фото"
+          title="Следующее"
+          onClick={(e) => {
+            e.stopPropagation()
+            setIndex((i) => mod(i + 1, list.length))
+          }}
+        >
+          <ChevronRightIcon />
+        </button>
+      ) : null}
       <div
         ref={frameRef}
         className="messenger-image-lightbox__frame"
@@ -109,25 +168,18 @@ export function MessengerImageLightbox({ open, imageUrl, onClose }: MessengerIma
           const s = swipeRef.current
           if (!s.active || e.pointerId !== s.pointerId) return
           s.active = false
-          const dx = e.clientX - s.x0
-          const dy = e.clientY - s.y0
-          const ax = Math.abs(dx)
-          const ay = Math.abs(dy)
-          const thr = LIGHTBOX_SWIPE_CLOSE_PX
-          if (ax < thr && ay < thr) return
-          if (ay >= ax && ay >= thr) {
-            onClose()
-            return
-          }
-          if (ax > ay && ax >= thr) {
-            onClose()
-          }
+          handleSwipeEnd(e.clientX - s.x0, e.clientY - s.y0)
         }}
         onPointerCancel={() => {
           swipeRef.current.active = false
         }}
       >
-        <img src={imageUrl} className="messenger-image-lightbox__img" alt="" draggable={false} />
+        <img key={currentUrl} src={currentUrl} className="messenger-image-lightbox__img" alt="" draggable={false} />
+        {list.length > 1 ? (
+          <div className="messenger-image-lightbox__counter" aria-hidden>
+            {index + 1} / {list.length}
+          </div>
+        ) : null}
       </div>
     </div>,
     document.body,

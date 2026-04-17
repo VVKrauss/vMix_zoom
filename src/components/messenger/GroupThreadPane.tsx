@@ -22,9 +22,16 @@ import {
 import type { ReactionEmoji } from '../../types/roomComms'
 import { MessengerMessageMenuPopover } from '../MessengerMessageMenuPopover'
 import { AttachmentIcon, FiRrIcon } from '../icons'
-import { extractClipboardImageFile } from '../../lib/messengerDashboardUtils'
+import {
+  copyTextToClipboard,
+  extractClipboardImageFiles,
+  MESSENGER_GALLERY_MAX_ATTACH,
+} from '../../lib/messengerDashboardUtils'
 import { ThreadMessageBubble } from './ThreadMessageBubble'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
+import { useMessengerJumpToBottom } from '../../hooks/useMessengerJumpToBottom'
+import { MessengerJumpToBottomFab } from '../MessengerJumpToBottomFab'
+import { MessengerImageLightbox } from './MessengerImageLightbox'
 
 const QUICK_REACTION_EMOJI: ReactionEmoji = '❤️'
 const GROUP_PHOTO_MAX_BYTES = 2 * 1024 * 1024
@@ -62,6 +69,7 @@ export function GroupThreadPane({
   conversationId,
   onTouchTail,
   onForwardMessage,
+  onMentionSlug,
   isMemberHint,
   viewerOnly,
   publicJoinCta,
@@ -72,6 +80,7 @@ export function GroupThreadPane({
   conversationId: string
   onTouchTail?: (patch: { lastMessageAt: string; lastMessagePreview: string }) => void
   onForwardMessage?: (message: DirectMessage) => void
+  onMentionSlug?: (slug: string) => void
   /** Хинт из родителя: если диалог уже есть в списке, считаем что участник (убирает рассинхрон после вступления). */
   isMemberHint?: boolean
   viewerOnly?: boolean
@@ -92,6 +101,8 @@ export function GroupThreadPane({
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [photoUploading, setPhotoUploading] = useState(false)
+  const [pendingGroupPhotos, setPendingGroupPhotos] = useState<{ id: string; file: File; previewUrl: string }[]>([])
+  const [groupImageLightbox, setGroupImageLightbox] = useState<{ urls: string[]; index: number } | null>(null)
   const photoInputRef = useRef<HTMLInputElement | null>(null)
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const messagesScrollRef = useRef<HTMLDivElement | null>(null)
@@ -111,10 +122,23 @@ export function GroupThreadPane({
   cidRef.current = conversationId
   const reactionOpInFlightRef = useRef<Set<string>>(new Set())
 
+  useEffect(() => {
+    setPendingGroupPhotos((prev) => {
+      for (const p of prev) URL.revokeObjectURL(p.previewUrl)
+      return []
+    })
+  }, [conversationId])
+
   const [myGroupMemberRole, setMyGroupMemberRole] = useState<string | null>(null)
 
   const isGroupMember = myGroupMemberRole !== null || isMemberHint === true
   const canView = viewerOnly || isGroupMember
+
+  const groupJumpKey = `${conversationId}:${messages.length}`
+  const { showJump: showGroupJump, jumpToBottom: jumpGroupBottom } = useMessengerJumpToBottom(
+    messagesScrollRef,
+    groupJumpKey,
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -311,13 +335,119 @@ export function GroupThreadPane({
     [toggleReaction],
   )
 
+  const addPendingGroupPhotoFiles = useCallback(
+    (files: File[]) => {
+      const imgs = files.filter((f) => f.type.startsWith('image/') && f.size > 0)
+      const tooBig = imgs.filter((f) => f.size > GROUP_PHOTO_MAX_BYTES)
+      if (tooBig.length > 0) {
+        toast.push({
+          tone: 'warning',
+          title: 'Слишком большой файл',
+          message: 'Каждое фото не больше 2 МБ.',
+          ms: 4200,
+        })
+      }
+      const allowed = imgs.filter((f) => f.size <= GROUP_PHOTO_MAX_BYTES)
+      setPendingGroupPhotos((prev) => {
+        const next = [...prev]
+        let skipped = 0
+        for (const f of allowed) {
+          if (next.length >= MESSENGER_GALLERY_MAX_ATTACH) {
+            skipped += 1
+            continue
+          }
+          next.push({
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+            file: f,
+            previewUrl: URL.createObjectURL(f),
+          })
+        }
+        if (skipped > 0) {
+          toast.push({
+            tone: 'warning',
+            message: `Не более ${MESSENGER_GALLERY_MAX_ATTACH} фото за раз`,
+            ms: 3200,
+          })
+        }
+        return next
+      })
+    },
+    [toast],
+  )
+
+  const removePendingGroupPhoto = useCallback((id: string) => {
+    setPendingGroupPhotos((prev) => {
+      const cur = prev.find((p) => p.id === id)
+      if (cur) URL.revokeObjectURL(cur.previewUrl)
+      return prev.filter((p) => p.id !== id)
+    })
+  }, [])
+
   const sendText = useCallback(async () => {
     const cid = conversationId.trim()
     const body = draft.trim()
-    if (!isGroupMember || !user?.id || !cid || !body || sending || threadLoading) return
+    if (!isGroupMember || !user?.id || !cid || sending || threadLoading) return
+
+    const hasPending = pendingGroupPhotos.length > 0
+    if (!hasPending && !body) return
+
+    const replyId = replyTo?.id ?? null
+
+    if (hasPending) {
+      setSending(true)
+      setPhotoUploading(true)
+      setError(null)
+      const uploaded: Array<{ path: string; thumbPath?: string }> = []
+      for (const p of pendingGroupPhotos) {
+        const up = await uploadMessengerImage(cid, p.file)
+        if (up.error || !up.path) {
+          setError(up.error ?? 'Не удалось загрузить фото')
+          setSending(false)
+          setPhotoUploading(false)
+          return
+        }
+        uploaded.push({ path: up.path, ...(up.thumbPath ? { thumbPath: up.thumbPath } : {}) })
+      }
+      const imageMeta: DirectMessage['meta'] =
+        uploaded.length === 1 ? { image: uploaded[0]! } : { images: uploaded }
+      const res = await appendGroupMessage(cid, {
+        kind: 'image',
+        body,
+        meta: imageMeta as Record<string, unknown>,
+        replyToMessageId: replyId,
+      })
+      if (res.error) {
+        setError(res.error)
+        setSending(false)
+        setPhotoUploading(false)
+        return
+      }
+      const preview = previewTextForDirectMessageTail({ kind: 'image', body, meta: imageMeta })
+      const createdAt = res.data?.createdAt ?? new Date().toISOString()
+      const snap = profile?.display_name?.trim() || 'Вы'
+      const newMsg: DirectMessage = {
+        id: res.data?.messageId ?? `local-${Date.now()}`,
+        senderUserId: user.id,
+        senderNameSnapshot: snap,
+        kind: 'image',
+        body,
+        createdAt,
+        replyToMessageId: replyId,
+        meta: imageMeta,
+      }
+      for (const p of pendingGroupPhotos) URL.revokeObjectURL(p.previewUrl)
+      setPendingGroupPhotos([])
+      setDraft('')
+      setReplyTo(null)
+      setPhotoUploading(false)
+      setSending(false)
+      setMessages((prev) => [...prev, newMsg].sort(sortChrono))
+      onTouchTail?.({ lastMessageAt: createdAt, lastMessagePreview: preview })
+      return
+    }
+
     setSending(true)
     setError(null)
-    const replyId = replyTo?.id ?? null
     const optimistic: DirectMessage = {
       id: `local-${Date.now()}`,
       senderUserId: user.id,
@@ -343,69 +473,28 @@ export function GroupThreadPane({
     setMessages((prev) => prev.map((m) => (m.id === optimistic.id ? { ...optimistic, id: finalId, createdAt: finalAt } : m)))
     onTouchTail?.({ lastMessageAt: finalAt, lastMessagePreview: body })
     setSending(false)
-  }, [conversationId, draft, sending, threadLoading, user?.id, replyTo?.id, profile?.display_name, onTouchTail, isGroupMember])
-
-  const sendPhotoFile = useCallback(
-    async (file: File) => {
-      const cid = conversationId.trim()
-      if (!isGroupMember || !user?.id || !cid || photoUploading || threadLoading) return
-      if (file.size > GROUP_PHOTO_MAX_BYTES) {
-        toast.push({
-          tone: 'warning',
-          title: 'Слишком большой файл',
-          message: 'Файл больше 2 МБ. Выберите изображение меньшего размера.',
-          ms: 4200,
-        })
-        return
-      }
-      setPhotoUploading(true)
-      setError(null)
-      const up = await uploadMessengerImage(cid, file)
-      if (up.error || !up.path) {
-        setError(up.error ?? 'upload_failed')
-        setPhotoUploading(false)
-        return
-      }
-      const caption = draft.trim()
-      const replyId = replyTo?.id ?? null
-      const imageMeta = { image: { path: up.path, ...(up.thumbPath ? { thumbPath: up.thumbPath } : {}) } }
-      const res = await appendGroupMessage(cid, { kind: 'image', body: caption, meta: imageMeta, replyToMessageId: replyId })
-      if (res.error) {
-        setError(res.error)
-        setPhotoUploading(false)
-        return
-      }
-      const preview = previewTextForDirectMessageTail({ kind: 'image', body: caption, meta: imageMeta })
-      const createdAt = res.data?.createdAt ?? new Date().toISOString()
-      const snap = profile?.display_name?.trim() || 'Вы'
-      const newMsg: DirectMessage = {
-        id: res.data?.messageId ?? `local-${Date.now()}`,
-        senderUserId: user.id,
-        senderNameSnapshot: snap,
-        kind: 'image',
-        body: caption,
-        createdAt,
-        replyToMessageId: replyId,
-        meta: imageMeta as any,
-      }
-      setDraft('')
-      setReplyTo(null)
-      setPhotoUploading(false)
-      setMessages((prev) => [...prev, newMsg].sort(sortChrono))
-      onTouchTail?.({ lastMessageAt: createdAt, lastMessagePreview: preview })
-    },
-    [conversationId, user?.id, photoUploading, threadLoading, draft, replyTo?.id, profile?.display_name, onTouchTail, isGroupMember],
-  )
+  }, [
+    conversationId,
+    draft,
+    pendingGroupPhotos,
+    sending,
+    threadLoading,
+    user?.id,
+    replyTo?.id,
+    profile?.display_name,
+    onTouchTail,
+    isGroupMember,
+  ])
 
   const onComposerPaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       if (threadLoading || photoUploading) return
-      const file = extractClipboardImageFile(e.clipboardData)
-      if (!file) return
+      const files = extractClipboardImageFiles(e.clipboardData)
+      if (files.length === 0) return
       e.preventDefault()
-      void sendPhotoFile(file)
+      addPendingGroupPhotoFiles(files)
     },
-    [photoUploading, sendPhotoFile, threadLoading],
+    [photoUploading, threadLoading, addPendingGroupPhotoFiles],
   )
 
   useLayoutEffect(() => {
@@ -539,13 +628,14 @@ export function GroupThreadPane({
     <div className="dashboard-messenger__thread-body">
       {threadLoading ? <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" /> : null}
 
-      <div
-        ref={messagesScrollRef}
-        className="dashboard-messenger__messages-scroll"
-        role="region"
-        aria-label="Сообщения группы"
-        onScroll={updatePinnedToBottom}
-      >
+      <div className="dashboard-messenger__scroll-region-wrap">
+        <div
+          ref={messagesScrollRef}
+          className="dashboard-messenger__messages-scroll"
+          role="region"
+          aria-label="Сообщения группы"
+          onScroll={updatePinnedToBottom}
+        >
         <div
           className={`dashboard-messenger__messages${
             viewerOnly && publicJoinCta ? ' dashboard-messenger__messages--public-join-host' : ''
@@ -641,6 +731,8 @@ export function GroupThreadPane({
                         return { message: m, anchor: { left: e.clientX, top: e.clientY, right: e.clientX, bottom: e.clientY } }
                       })
                     }}
+                    onMentionSlug={onMentionSlug}
+                    onOpenImageLightbox={(ctx) => setGroupImageLightbox({ urls: ctx.urls, index: ctx.initialIndex })}
                   />
                 )
               })}
@@ -659,6 +751,8 @@ export function GroupThreadPane({
             </>
           )}
         </div>
+        </div>
+        <MessengerJumpToBottomFab visible={showGroupJump} onClick={jumpGroupBottom} />
       </div>
 
       {isGroupMember ? (
@@ -680,6 +774,23 @@ export function GroupThreadPane({
               >
                 ✕
               </button>
+            </div>
+          ) : null}
+          {pendingGroupPhotos.length > 0 ? (
+            <div className="dashboard-messenger__pending-photos">
+              {pendingGroupPhotos.map((p) => (
+                <div key={p.id} className="dashboard-messenger__pending-photo">
+                  <img src={p.previewUrl} alt="" />
+                  <button
+                    type="button"
+                    className="dashboard-messenger__pending-photo-remove"
+                    aria-label="Убрать фото"
+                    onClick={() => removePendingGroupPhoto(p.id)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
             </div>
           ) : null}
           <div className="dashboard-messenger__composer-main">
@@ -735,23 +846,25 @@ export function GroupThreadPane({
                   ref={photoInputRef}
                   type="file"
                   accept="image/*"
+                  multiple
                   className="dashboard-messenger__photo-input"
                   onChange={(e) => {
-                    const f = e.target.files?.[0]
+                    const files = Array.from(e.target.files ?? [])
                     e.target.value = ''
-                    if (!f) return
-                    if (f.size > GROUP_PHOTO_MAX_BYTES) {
-                      setError('Файл больше 2 МБ. Выберите изображение меньшего размера.')
-                      return
-                    }
-                    void sendPhotoFile(f)
+                    if (files.length === 0) return
+                    addPendingGroupPhotoFiles(files)
                   }}
                 />
               </div>
               <button
                 type="button"
                 className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
-                disabled={!draft.trim() || sending || threadLoading || photoUploading}
+                disabled={
+                  (!draft.trim() && pendingGroupPhotos.length === 0) ||
+                  sending ||
+                  threadLoading ||
+                  photoUploading
+                }
                 onClick={() => void sendText()}
               >
                 Отправить
@@ -775,6 +888,10 @@ export function GroupThreadPane({
             >
               <MessengerMessageMenuPopover
                 canEdit={false}
+                canCopy={Boolean(
+                  !messageMenu.message.id.startsWith('local-') &&
+                    (messageMenu.message.kind === 'text' || messageMenu.message.kind === 'image'),
+                )}
                 canDelete={Boolean(
                   user?.id &&
                     messageMenu.message.senderUserId === user.id &&
@@ -782,6 +899,15 @@ export function GroupThreadPane({
                     (messageMenu.message.kind === 'text' || messageMenu.message.kind === 'image'),
                 )}
                 onClose={() => setMessageMenu(null)}
+                onCopy={async () => {
+                  const text = previewTextForDirectMessageTail(messageMenu.message)
+                  const ok = await copyTextToClipboard(text)
+                  toast.push({
+                    tone: ok ? 'success' : 'error',
+                    message: ok ? 'Скопировано в буфер обмена' : 'Не удалось скопировать',
+                    ms: 2200,
+                  })
+                }}
                 onEdit={() => setMessageMenu(null)}
                 onDelete={() => {
                   void runDeleteMessage(messageMenu.message)
@@ -811,6 +937,13 @@ export function GroupThreadPane({
             document.body,
           )
         : null}
+
+      <MessengerImageLightbox
+        open={Boolean(groupImageLightbox && groupImageLightbox.urls.length > 0)}
+        urls={groupImageLightbox?.urls ?? []}
+        initialIndex={groupImageLightbox?.index ?? 0}
+        onClose={() => setGroupImageLightbox(null)}
+      />
     </div>
   )
 }

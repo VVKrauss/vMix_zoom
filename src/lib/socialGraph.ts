@@ -166,7 +166,8 @@ export async function searchRegisteredUsers(
   query: string,
   limit = 20,
 ): Promise<{ data: RegisteredUserSearchHit[] | null; error: string | null }> {
-  const q = query.trim()
+  let q = query.trim()
+  while (q.startsWith('@')) q = q.slice(1).trim()
   if (q.length < 2) return { data: [], error: null }
   const { data, error } = await supabase.rpc('search_registered_users', {
     p_query: q,

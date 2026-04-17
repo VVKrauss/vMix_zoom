@@ -4,7 +4,7 @@ import type { DirectMessage, MessengerForwardMeta } from '../../lib/messenger'
 import { isDmSoftDeletedStub } from '../../lib/messenger'
 import { forwardMetaToQuotedStrip } from '../../lib/messengerForward'
 import { DoubleTapHeartSurface } from './DoubleTapHeartSurface'
-import { MessengerBubbleBody } from '../MessengerBubbleBody'
+import { MessengerBubbleBody, type MessengerImageLightboxOpen } from '../MessengerBubbleBody'
 import { MessengerReplyMiniThumb } from '../MessengerReplyMiniThumb'
 
 export type ThreadReplyPreview =
@@ -36,9 +36,10 @@ export type ThreadMessageBubbleProps = {
   menuOpen: boolean
   onMenuButtonClick: (e: React.MouseEvent<HTMLButtonElement>) => void
   onBubbleContextMenu: (e: React.MouseEvent<HTMLElement>) => void
-  onOpenImageLightbox?: (imageUrl: string) => void
+  onOpenImageLightbox?: (ctx: MessengerImageLightboxOpen) => void
   /** Кастомный рендер тела (например, markdown в канале). */
   renderBody?: (message: DirectMessage) => ReactNode
+  onMentionSlug?: (slug: string) => void
   onInlineImageLayout?: () => void
   onReplyThumbLayout?: () => void
   /** Двойной тап по телу сообщения: только добавить лайк (без снятия). */
@@ -67,6 +68,7 @@ export function ThreadMessageBubble({
   onBubbleContextMenu,
   onOpenImageLightbox,
   renderBody,
+  onMentionSlug,
   onInlineImageLayout,
   onReplyThumbLayout,
   quickReactEnabled,
@@ -334,6 +336,7 @@ export function ThreadMessageBubble({
             message={message}
             onOpenImageLightbox={onOpenImageLightbox}
             onInlineImageLayout={onInlineImageLayout}
+            onMentionSlug={onMentionSlug}
           />
         )}
       </DoubleTapHeartSurface>

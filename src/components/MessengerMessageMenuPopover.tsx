@@ -6,9 +6,11 @@ import type { ReactionEmoji } from '../types/roomComms'
 export function MessengerMessageMenuPopover({
   canEdit,
   canDelete,
+  canCopy,
   onClose,
   onEdit,
   onDelete,
+  onCopy,
   onReply,
   onPickReaction,
   onForward,
@@ -20,9 +22,12 @@ export function MessengerMessageMenuPopover({
 }: {
   canEdit: boolean
   canDelete: boolean
+  /** Скопировать текст сообщения в буфер обмена. */
+  canCopy?: boolean
   onClose: () => void
   onEdit: () => void
   onDelete: () => void
+  onCopy?: () => void | Promise<void>
   onReply: () => void
   onPickReaction: (emoji: ReactionEmoji) => void
   /** Переслать в личный чат (канал/группа/ЛС). */
@@ -58,6 +63,18 @@ export function MessengerMessageMenuPopover({
       {canEdit ? (
         <button type="button" className="messenger-msg-menu__item" role="menuitem" onClick={onEdit}>
           Редактировать
+        </button>
+      ) : null}
+      {canCopy && onCopy ? (
+        <button
+          type="button"
+          className="messenger-msg-menu__item"
+          role="menuitem"
+          onClick={() => {
+            void Promise.resolve(onCopy()).finally(() => onClose())
+          }}
+        >
+          Скопировать
         </button>
       ) : null}
       {canDelete ? (

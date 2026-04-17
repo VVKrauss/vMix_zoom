@@ -64,6 +64,8 @@ export type DirectMessage = {
   meta?: {
     react_to?: string
     image?: { path: string; thumbPath?: string }
+    /** Несколько фото в одном сообщении (meta.image при этом не используется). */
+    images?: Array<{ path: string; thumbPath?: string }>
     link?: { url: string; title?: string; description?: string; image?: string; siteName?: string }
     /** Редактор поста канала v1 */
     postDraft?: PostDraftV1
@@ -117,6 +119,25 @@ function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
 
   const deleted = o.deleted === true
 
+  let images: Array<{ path: string; thumbPath?: string }> | undefined
+  const rawImages = o.images
+  if (Array.isArray(rawImages) && rawImages.length > 0) {
+    const parsed: Array<{ path: string; thumbPath?: string }> = []
+    for (const it of rawImages) {
+      if (!it || typeof it !== 'object') continue
+      const io = it as Record<string, unknown>
+      const p = io.path
+      const tp = io.thumbPath ?? io.thumb_path
+      if (typeof p === 'string' && p.trim()) {
+        const path = p.trim()
+        parsed.push(
+          typeof tp === 'string' && tp.trim() ? { path, thumbPath: tp.trim() } : { path },
+        )
+      }
+    }
+    if (parsed.length > 0) images = parsed
+  }
+
   let forward: MessengerForwardMeta | undefined
   const rawFwd = o.forward
   if (rawFwd && typeof rawFwd === 'object') {
@@ -162,12 +183,13 @@ function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
     }
   }
 
-  if (!react && !image && !linkMeta && !postDraft && !deleted && !forward) return null
+  if (!react && !image && !images && !linkMeta && !postDraft && !deleted && !forward) return null
   return {
     ...(deleted ? { deleted: true } : {}),
     ...(forward ? { forward } : {}),
     ...(react ? { react_to: react } : {}),
-    ...(image ? { image } : {}),
+    ...(images ? { images } : {}),
+    ...(image && !images ? { image } : {}),
     ...(linkMeta ? { link: linkMeta } : {}),
     ...(postDraft ? { postDraft } : {}),
   }
@@ -189,11 +211,37 @@ function mapMessageKind(raw: unknown): DirectMessageKind {
 /**
  * Строка превью хвоста диалога в списке для сообщения (в т.ч. фото без подписи — имя файла или метка).
  */
+export function getMessengerImageAttachments(
+  msg: Pick<DirectMessage, 'kind' | 'meta'>,
+): Array<{ path: string; thumbPath?: string }> {
+  if (msg.kind !== 'image') return []
+  const multi = msg.meta?.images
+  if (Array.isArray(multi) && multi.length > 0) {
+    return multi
+      .map((x) => ({
+        path: typeof x.path === 'string' ? x.path.trim() : '',
+        ...(typeof x.thumbPath === 'string' && x.thumbPath.trim() ? { thumbPath: x.thumbPath.trim() } : {}),
+      }))
+      .filter((x) => x.path.length > 0)
+  }
+  const one = msg.meta?.image
+  if (one?.path?.trim()) {
+    const path = one.path.trim()
+    return [{ path, ...(one.thumbPath?.trim() ? { thumbPath: one.thumbPath.trim() } : {}) }]
+  }
+  return []
+}
+
 export function previewTextForDirectMessageTail(msg: Pick<DirectMessage, 'kind' | 'body' | 'meta'>): string {
   const sn = msg.meta?.forward?.snippet?.trim()
   if (sn) return `↪ ${sn}`
   if (msg.kind !== 'image') return msg.body
   const cap = msg.body.replace(/\s+/g, ' ').trim()
+  const imgs = msg.meta?.images
+  if (Array.isArray(imgs) && imgs.length > 1) {
+    if (cap) return `${cap} (${imgs.length} фото)`
+    return `${imgs.length} фото`
+  }
   if (cap) return cap
   const path = msg.meta?.image?.path?.trim()
   if (path) {

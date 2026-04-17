@@ -28,6 +28,7 @@ import { useToast } from '../context/ToastContext'
 import {
   appendDirectMessage,
   editDirectMessage,
+  getMessengerImageAttachments,
   type DirectConversationSummary,
   type DirectMessage,
   ensureDirectConversationWithUser,
@@ -48,8 +49,10 @@ import {
 import {
   buildJoinRequestPendingSidebarStub,
   listMessengerConversations,
+  searchOpenPublicConversations,
   type MessengerConversationKind,
   type MessengerConversationSummary,
+  type OpenPublicConversationSearchHit,
 } from '../lib/messengerConversations'
 import {
   MESSENGER_JOIN_REQUEST_MANAGER_ROLES,
@@ -61,16 +64,23 @@ import {
   DM_PAGE_SIZE,
   conversationInitial,
   copyTextToClipboard,
-  extractClipboardImageFile,
+  extractClipboardImageFiles,
+  MESSENGER_GALLERY_MAX_ATTACH,
   formatDateTime,
   formatMessengerListRowTime,
   itemMatchesMessengerListSearch,
   lastNonReactionBody,
   normalizeMessengerListSearch,
   pickDefaultConversationId,
-  sortConversationsByActivity,
   sortDirectMessagesChrono,
 } from '../lib/messengerDashboardUtils'
+import {
+  MESSENGER_MAX_PINNED_CHATS,
+  readMessengerPinnedChatIds,
+  sortMessengerListWithPins,
+  writeMessengerPinnedChatIds,
+} from '../lib/messengerPins'
+import { markMessengerConversationRead } from '../lib/messengerMarkRead'
 import {
   listConversationStaffMembers,
   setConversationMemberStaffRole,
@@ -113,13 +123,20 @@ import {
 import type { MessengerForwardMeta } from '../lib/messenger'
 import { MESSENGER_COMPOSER_EMOJIS } from '../lib/messengerComposerEmojis'
 import { setPendingHostClaim, stashSpaceRoomCreateOptions } from '../lib/spaceRoom'
-import { getContactStatuses, setContactPin, type ContactStatus } from '../lib/socialGraph'
+import {
+  getContactStatuses,
+  searchRegisteredUsers,
+  setContactPin,
+  type ContactStatus,
+  type RegisteredUserSearchHit,
+} from '../lib/socialGraph'
 import {
   getMyConversationNotificationMutes,
   setConversationNotificationsMuted,
 } from '../lib/conversationNotifications'
 import { supabase } from '../lib/supabase'
 import { newRoomId } from '../utils/roomId'
+import { normalizeProfileSlug } from '../lib/profileSlug'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import {
   AdminPanelIcon,
@@ -139,6 +156,9 @@ import {
   PlusIcon,
   RoomsIcon,
 } from './icons'
+import { useMessengerJumpToBottom } from '../hooks/useMessengerJumpToBottom'
+import { MessengerJumpToBottomFab } from './MessengerJumpToBottomFab'
+import { MessengerChatListMenuPopover } from './MessengerChatListMenuPopover'
 import { DashboardShell } from './DashboardShell'
 import { MessengerForwardToDmModal } from './MessengerForwardToDmModal'
 import { MessengerMessageMenuPopover } from './MessengerMessageMenuPopover'
@@ -179,6 +199,9 @@ export function DashboardMessengerPage() {
   const [messengerSettingsOpen, setMessengerSettingsOpen] = useState(false)
   const [messengerMenuOpen, setMessengerMenuOpen] = useState(false)
   const [chatListSearch, setChatListSearch] = useState('')
+  const [chatListGlobalUsers, setChatListGlobalUsers] = useState<RegisteredUserSearchHit[]>([])
+  const [chatListGlobalOpen, setChatListGlobalOpen] = useState<OpenPublicConversationSearchHit[]>([])
+  const [chatListGlobalLoading, setChatListGlobalLoading] = useState(false)
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [createKind, setCreateKind] = useState<'group' | 'channel'>('group')
   const [createIsOpen, setCreateIsOpen] = useState(true)
@@ -275,6 +298,11 @@ export function DashboardMessengerPage() {
   const [threadLoading, setThreadLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [items, setItems] = useState<MessengerConversationSummary[]>([])
+  const [pinnedChatIds, setPinnedChatIds] = useState<string[]>(() => readMessengerPinnedChatIds())
+  const [chatListRowMenu, setChatListRowMenu] = useState<{
+    item: MessengerConversationSummary
+    anchor: { left: number; top: number; right: number; bottom: number }
+  } | null>(null)
   const [mutedConversationIds, setMutedConversationIds] = useState<Set<string>>(new Set())
   const mutedConversationIdsRef = useRef<Set<string>>(new Set())
   mutedConversationIdsRef.current = mutedConversationIds
@@ -352,6 +380,10 @@ export function DashboardMessengerPage() {
   const [conversationStaffMutating, setConversationStaffMutating] = useState(false)
   const [sending, setSending] = useState(false)
   const [photoUploading, setPhotoUploading] = useState(false)
+  /** Локальные файлы до отправки (подпись — в поле draft). */
+  const [pendingMessengerPhotos, setPendingMessengerPhotos] = useState<
+    { id: string; file: File; previewUrl: string }[]
+  >([])
   /** Ответ на сообщение (цитата над композером). */
   const [replyTo, setReplyTo] = useState<DirectMessage | null>(null)
   /** Редактирование своего сообщения: id сообщения. */
@@ -392,13 +424,17 @@ export function DashboardMessengerPage() {
   const [activeConversationIsPublic, setActiveConversationIsPublic] = useState<boolean | null>(null)
   const [activeConversationIsPublicLoading, setActiveConversationIsPublicLoading] = useState(false)
   const msgMenuWrapRef = useRef<HTMLDivElement | null>(null)
-  const [messengerImageLightboxUrl, setMessengerImageLightboxUrl] = useState<string | null>(null)
+  const [messengerImageLightbox, setMessengerImageLightbox] = useState<{ urls: string[]; index: number } | null>(null)
   const [senderContactByUserId, setSenderContactByUserId] = useState<Record<string, ContactStatus>>({})
   const [pinBusyUserId, setPinBusyUserId] = useState<string | null>(null)
   /** Снятие реакции уже отразили в списке диалогов после RPC — пропускаем дубль из realtime DELETE. */
   const reactionDeleteSidebarSyncedRef = useRef(new Set<string>())
 
   // Convert inline messenger errors to project toasts.
+  useEffect(() => {
+    writeMessengerPinnedChatIds(pinnedChatIds)
+  }, [pinnedChatIds])
+
   useEffect(() => {
     if (!error) return
     toast.push({ tone: 'error', message: error, ms: 3800 })
@@ -544,6 +580,8 @@ export function DashboardMessengerPage() {
     }
   }, [items, conversationAvatarUrlById])
   const messagesScrollRef = useRef<HTMLDivElement | null>(null)
+  const dmJumpKey = `${conversationId}:${messages.length}`
+  const { showJump: showDmJump, jumpToBottom: jumpDmBottom } = useMessengerJumpToBottom(messagesScrollRef, dmJumpKey)
   /** Контейнер с сообщениями — ResizeObserver ловит рост высоты после decode изображений. */
   const messagesContentRef = useRef<HTMLDivElement | null>(null)
   const messageAnchorRef = useRef<Map<string, HTMLElement>>(new Map())
@@ -1063,6 +1101,13 @@ export function DashboardMessengerPage() {
   }, [activeConversationId, user?.id])
 
   useEffect(() => {
+    setPendingMessengerPhotos((prev) => {
+      for (const p of prev) URL.revokeObjectURL(p.previewUrl)
+      return []
+    })
+  }, [activeConversationId])
+
+  useEffect(() => {
     if (
       !user?.id ||
       !activeConversationId.trim() ||
@@ -1349,7 +1394,7 @@ export function DashboardMessengerPage() {
 
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<MessengerBgMessageDetail>).detail
-      const { conversationId: cid, senderUserId, kind, body, createdAt } = detail
+      const { conversationId: cid, senderUserId, kind, body, createdAt, replyToMessageId } = detail
 
       // Если тред открыт — per-thread subscription уже обработал это сообщение
       if (cid === activeConversationId && !listOnlyMobile) return
@@ -1371,7 +1416,8 @@ export function DashboardMessengerPage() {
             ? {
                 ...item,
                 lastMessageAt: createdAt,
-                lastMessagePreview: body,
+                lastMessagePreview:
+                  item.kind === 'channel' && replyToMessageId ? item.lastMessagePreview : body,
                 unreadCount: senderUserId !== uid ? item.unreadCount + 1 : item.unreadCount,
                 messageCount: item.messageCount + 1,
               }
@@ -1388,6 +1434,47 @@ export function DashboardMessengerPage() {
     window.addEventListener(MESSENGER_BG_MESSAGE_EVENT, handler)
     return () => window.removeEventListener(MESSENGER_BG_MESSAGE_EVENT, handler)
   }, [activeConversationId, listOnlyMobile, user?.id])
+
+  /** Ушли из чата (в т.ч. взаимное скрытие контакта → удаление ЛС): убрать из дерева без перезагрузки. */
+  useEffect(() => {
+    const uid = user?.id?.trim() ?? ''
+    if (!uid) return
+    const channel = supabase
+      .channel(`messenger-member-self-delete:${uid}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'chat_conversation_members',
+          filter: `user_id=eq.${uid}`,
+        },
+        (payload) => {
+          const oldRow = payload.old as Record<string, unknown>
+          const raw = oldRow?.conversation_id
+          const convId = typeof raw === 'string' ? raw.trim() : raw != null ? String(raw).trim() : ''
+          if (!convId) return
+          setItems((prev) => prev.filter((i) => i.id !== convId))
+          setPendingJoinSidebarById((prev) => {
+            if (!prev[convId]) return prev
+            const next = { ...prev }
+            delete next[convId]
+            return next
+          })
+          requestMessengerUnreadRefresh()
+          if (conversationIdRef.current.trim() === convId) {
+            setMessages([])
+            setActiveConversation(null)
+            navigate('/dashboard/messenger?view=list', { replace: true })
+          }
+        },
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [navigate, user?.id])
 
   const prevThreadLoadingRef = useRef(false)
   useLayoutEffect(() => {
@@ -1506,6 +1593,54 @@ export function DashboardMessengerPage() {
     [draft],
   )
 
+  const addPendingMessengerPhotoFiles = useCallback(
+    (files: File[]) => {
+      const imgs = files.filter((f) => f.type.startsWith('image/') && f.size > 0)
+      const tooBig = imgs.filter((f) => f.size > MESSENGER_PHOTO_MAX_BYTES)
+      if (tooBig.length > 0) {
+        toast.push({
+          tone: 'warning',
+          title: 'Слишком большой файл',
+          message: 'Каждое фото не больше 2 МБ.',
+          ms: 4200,
+        })
+      }
+      const allowed = imgs.filter((f) => f.size <= MESSENGER_PHOTO_MAX_BYTES)
+      setPendingMessengerPhotos((prev) => {
+        const next = [...prev]
+        let skipped = 0
+        for (const f of allowed) {
+          if (next.length >= MESSENGER_GALLERY_MAX_ATTACH) {
+            skipped += 1
+            continue
+          }
+          next.push({
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+            file: f,
+            previewUrl: URL.createObjectURL(f),
+          })
+        }
+        if (skipped > 0) {
+          toast.push({
+            tone: 'warning',
+            message: `Не более ${MESSENGER_GALLERY_MAX_ATTACH} фото за раз`,
+            ms: 3200,
+          })
+        }
+        return next
+      })
+    },
+    [toast],
+  )
+
+  const removePendingMessengerPhoto = useCallback((id: string) => {
+    setPendingMessengerPhotos((prev) => {
+      const cur = prev.find((p) => p.id === id)
+      if (cur) URL.revokeObjectURL(cur.previewUrl)
+      return prev.filter((p) => p.id !== id)
+    })
+  }, [])
+
   const sendMessage = async () => {
     const trimmed = draft.trim()
     const convId = activeConversationId.trim()
@@ -1531,11 +1666,107 @@ export function DashboardMessengerPage() {
       return
     }
 
-    if (!trimmed) return
+    const hasPendingPhotos = pendingMessengerPhotos.length > 0
+    if (!hasPendingPhotos && !trimmed) return
 
-    setSending(true)
     const replyTarget = replyTo
     const replyId = replyTarget?.id ?? null
+
+    if (hasPendingPhotos) {
+      setSending(true)
+      setPhotoUploading(true)
+      setError(null)
+      const uploaded: Array<{ path: string; thumbPath?: string }> = []
+      for (const p of pendingMessengerPhotos) {
+        const up = await uploadMessengerImage(convId, p.file)
+        if (up.error || !up.path) {
+          setError(up.error ?? 'Не удалось загрузить фото')
+          setSending(false)
+          setPhotoUploading(false)
+          return
+        }
+        uploaded.push({ path: up.path, ...(up.thumbPath ? { thumbPath: up.thumbPath } : {}) })
+      }
+      const imageMeta: DirectMessage['meta'] =
+        uploaded.length === 1 ? { image: uploaded[0]! } : { images: uploaded }
+
+      const res = await appendDirectMessage(convId, trimmed, {
+        kind: 'image',
+        meta: imageMeta as Record<string, unknown>,
+        replyToMessageId: replyId,
+      })
+      if (res.error) {
+        setError(res.error)
+        setSending(false)
+        setPhotoUploading(false)
+        return
+      }
+      const preview = previewTextForDirectMessageTail({
+        kind: 'image',
+        body: trimmed,
+        meta: imageMeta,
+      })
+      for (const p of pendingMessengerPhotos) {
+        URL.revokeObjectURL(p.previewUrl)
+      }
+      setPendingMessengerPhotos([])
+      setDraft('')
+      setReplyTo(null)
+      setPhotoUploading(false)
+      setSending(false)
+      const createdAt = res.data?.createdAt ?? new Date().toISOString()
+      const snap = profile?.display_name?.trim() || 'Вы'
+      const newMsg: DirectMessage = {
+        id: res.data?.messageId ?? `local-${Date.now()}`,
+        senderUserId: user.id,
+        senderNameSnapshot: snap,
+        kind: 'image',
+        body: trimmed,
+        createdAt,
+        replyToMessageId: replyId,
+        meta: imageMeta,
+      }
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === newMsg.id)) return prev
+        return [...prev, newMsg].sort(sortDirectMessagesChrono)
+      })
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === convId
+            ? {
+                ...item,
+                lastMessageAt: createdAt,
+                lastMessagePreview: preview,
+                messageCount: item.messageCount + 1,
+                unreadCount: 0,
+              }
+            : item,
+        ),
+      )
+      setActiveConversation((prev) =>
+        prev && prev.id === convId
+          ? {
+              ...prev,
+              lastMessageAt: createdAt,
+              lastMessagePreview: preview,
+              messageCount: prev.messageCount + 1,
+              unreadCount: 0,
+            }
+          : prev,
+      )
+      requestMessengerUnreadRefresh()
+      requestAnimationFrame(() => {
+        const el = messagesScrollRef.current
+        if (el) {
+          el.scrollTop = el.scrollHeight
+          messengerPinnedToBottomRef.current = true
+        }
+        refocusMessengerComposer()
+      })
+      return
+    }
+
+    setSending(true)
     const optimistic: DirectMessage = {
       id: `local-${Date.now()}`,
       senderUserId: user.id,
@@ -1612,118 +1843,25 @@ export function DashboardMessengerPage() {
     })
   }
 
-  const sendPhotoFile = async (file: File) => {
-    const convId = activeConversationId.trim()
-    if (!user?.id || !convId || photoUploading || threadLoading) return
-    if (file.size > MESSENGER_PHOTO_MAX_BYTES) {
-      toast.push({
-        tone: 'warning',
-        title: 'Слишком большой файл',
-        message: 'Файл больше 2 МБ. Выберите изображение меньшего размера.',
-        ms: 4200,
-      })
-      return
-    }
-    setPhotoUploading(true)
-    setError(null)
-    const up = await uploadMessengerImage(convId, file)
-    if (up.error) {
-      setError(up.error)
-      setPhotoUploading(false)
-      return
-    }
-    const caption = draft.trim()
-    const replyId = replyTo?.id ?? null
-    const imageMeta = {
-      image: {
-        path: up.path!,
-        ...(up.thumbPath ? { thumbPath: up.thumbPath } : {}),
-      },
-    }
-    const res = await appendDirectMessage(convId, caption, {
-      kind: 'image',
-      meta: imageMeta,
-      replyToMessageId: replyId,
-    })
-    if (res.error) {
-      setError(res.error)
-      setPhotoUploading(false)
-      return
-    }
-    const preview = previewTextForDirectMessageTail({
-      kind: 'image',
-      body: caption,
-      meta: imageMeta,
-    })
-    setDraft('')
-    setReplyTo(null)
-    setPhotoUploading(false)
-    const createdAt = res.data?.createdAt ?? new Date().toISOString()
-    const snap = profile?.display_name?.trim() || 'Вы'
-    const newMsg: DirectMessage = {
-      id: res.data?.messageId ?? `local-${Date.now()}`,
-      senderUserId: user.id,
-      senderNameSnapshot: snap,
-      kind: 'image',
-      body: caption,
-      createdAt,
-      replyToMessageId: replyId,
-      meta: { image: { path: up.path! } },
-    }
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === newMsg.id)) return prev
-      return [...prev, newMsg].sort(sortDirectMessagesChrono)
-    })
-    setItems((prev) =>
-      prev.map((item) =>
-        item.id === convId
-          ? {
-              ...item,
-              lastMessageAt: createdAt,
-              lastMessagePreview: preview,
-              messageCount: item.messageCount + 1,
-              unreadCount: 0,
-            }
-          : item,
-      ),
-    )
-    setActiveConversation((prev) =>
-      prev && prev.id === convId
-        ? {
-            ...prev,
-            lastMessageAt: createdAt,
-            lastMessagePreview: preview,
-            messageCount: prev.messageCount + 1,
-            unreadCount: 0,
-          }
-        : prev,
-    )
-    requestAnimationFrame(() => {
-      const el = messagesScrollRef.current
-      if (el) {
-        el.scrollTop = el.scrollHeight
-        messengerPinnedToBottomRef.current = true
-      }
-      refocusMessengerComposer()
-    })
-  }
-
   const onComposerPaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      if (threadLoading || photoUploading) return
-      const file = extractClipboardImageFile(e.clipboardData)
-      if (!file) return
+      if (threadLoading || photoUploading || Boolean(editingMessageId)) return
+      const files = extractClipboardImageFiles(e.clipboardData)
+      if (files.length === 0) return
       e.preventDefault()
-      void sendPhotoFile(file)
+      addPendingMessengerPhotoFiles(files)
     },
-    [photoUploading, sendPhotoFile, threadLoading],
+    [photoUploading, threadLoading, editingMessageId, addPendingMessengerPhotoFiles],
   )
 
   const [conversationKindFilter, setConversationKindFilter] = useState<
     'all' | MessengerConversationKind
   >('all')
 
-  const sortedItems = useMemo(() => sortConversationsByActivity(mergedItems), [mergedItems])
+  const sortedItems = useMemo(
+    () => sortMessengerListWithPins(mergedItems, pinnedChatIds),
+    [mergedItems, pinnedChatIds],
+  )
 
   /** Шапка треда: сразу из списка по URL, пока грузится полная карточка с сервера */
   const threadHeadConversation =
@@ -1998,6 +2136,37 @@ export function DashboardMessengerPage() {
     [activeConversationId, kickMemberBusyId, toast],
   )
 
+  const togglePinChatListItem = useCallback(
+    (id: string) => {
+      const t = id.trim()
+      if (!t) return
+      setPinnedChatIds((prev) => {
+        if (prev.includes(t)) return prev.filter((x) => x !== t)
+        if (prev.length >= MESSENGER_MAX_PINNED_CHATS) {
+          toast.push({ tone: 'error', message: 'Не больше трёх закреплённых чатов', ms: 2600 })
+          return prev
+        }
+        return [...prev, t]
+      })
+    },
+    [toast],
+  )
+
+  const markChatReadFromListMenu = useCallback(
+    async (item: MessengerConversationSummary) => {
+      const res = await markMessengerConversationRead(item)
+      if (res.error) {
+        toast.push({ tone: 'error', message: res.error, ms: 2800 })
+        return
+      }
+      setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, unreadCount: 0 } : i)))
+      setActiveConversation((prev) => (prev && prev.id === item.id ? { ...prev, unreadCount: 0 } : prev))
+      requestMessengerUnreadRefresh()
+      toast.push({ tone: 'success', message: 'Отмечено прочитанным', ms: 2000 })
+    },
+    [toast],
+  )
+
   const forwardDmPickItems = useMemo(
     () =>
       sortedItems
@@ -2016,6 +2185,98 @@ export function DashboardMessengerPage() {
     if (!chatListSearchNorm) return filteredByKind
     return filteredByKind.filter((item) => itemMatchesMessengerListSearch(item, chatListSearchNorm))
   }, [sortedItems, chatListSearchNorm, conversationKindFilter])
+
+  useEffect(() => {
+    if (chatListSearchNorm.length < 2) {
+      setChatListGlobalUsers([])
+      setChatListGlobalOpen([])
+      setChatListGlobalLoading(false)
+      return
+    }
+    let alive = true
+    setChatListGlobalLoading(true)
+    const t = window.setTimeout(() => {
+      void Promise.all([searchRegisteredUsers(chatListSearch, 25), searchOpenPublicConversations(chatListSearch, 25)])
+        .then(([u, o]) => {
+          if (!alive) return
+          if (u.error || o.error) {
+            setChatListGlobalUsers([])
+            setChatListGlobalOpen([])
+          } else {
+            setChatListGlobalUsers(u.data ?? [])
+            setChatListGlobalOpen(o.data ?? [])
+          }
+          setChatListGlobalLoading(false)
+        })
+        .catch(() => {
+          if (!alive) return
+          setChatListGlobalLoading(false)
+        })
+    }, 320)
+    return () => {
+      alive = false
+      window.clearTimeout(t)
+    }
+  }, [chatListSearch, chatListSearchNorm])
+
+  const { extraGlobalUsers, extraGlobalOpen } = useMemo(() => {
+    const visibleDm = new Set(
+      filteredSortedItems.filter((i) => i.kind === 'direct' && i.otherUserId).map((i) => i.otherUserId!),
+    )
+    const visibleIds = new Set(filteredSortedItems.map((i) => i.id))
+
+    let users = chatListGlobalUsers.filter((h) => {
+      const inList = sortedItems.some((i) => i.kind === 'direct' && i.otherUserId === h.id)
+      if (!inList) return true
+      return !visibleDm.has(h.id)
+    })
+
+    let open = chatListGlobalOpen.filter((h) => {
+      const inList = sortedItems.some((i) => i.id === h.id)
+      if (!inList) return true
+      return !visibleIds.has(h.id)
+    })
+
+    if (conversationKindFilter === 'direct') {
+      open = []
+    } else if (conversationKindFilter === 'group') {
+      users = []
+      open = open.filter((o) => o.kind === 'group')
+    } else if (conversationKindFilter === 'channel') {
+      users = []
+      open = open.filter((o) => o.kind === 'channel')
+    }
+
+    return { extraGlobalUsers: users, extraGlobalOpen: open }
+  }, [
+    chatListGlobalUsers,
+    chatListGlobalOpen,
+    filteredSortedItems,
+    sortedItems,
+    conversationKindFilter,
+  ])
+
+  const messengerListHasRows =
+    filteredSortedItems.length > 0 || extraGlobalUsers.length > 0 || extraGlobalOpen.length > 0
+
+  const onMentionSlugOpenProfile = useCallback(
+    async (rawSlug: string) => {
+      const slug = normalizeProfileSlug(rawSlug)
+      if (!slug) return
+      const res = await searchRegisteredUsers(slug, 20)
+      if (res.error || !res.data?.length) {
+        toast.push({ tone: 'error', message: 'Пользователь не найден', ms: 2600 })
+        return
+      }
+      const hit = res.data.find((h) => (h.profileSlug ?? '').toLowerCase() === slug) ?? res.data[0]
+      openUserPeek({
+        userId: hit.id,
+        displayName: hit.displayName,
+        avatarUrl: hit.avatarUrl ?? null,
+      })
+    },
+    [openUserPeek, toast],
+  )
 
   /** Сумма непрочитанных во всех диалогах, кроме активного — для бейджа «Назад к чатам». */
   const totalOtherUnread = useMemo(
@@ -2325,7 +2586,7 @@ export function DashboardMessengerPage() {
   }, [isMobileMessenger])
 
   const closeMessengerImageLightbox = useCallback(() => {
-    setMessengerImageLightboxUrl(null)
+    setMessengerImageLightbox(null)
     refocusMessengerComposer()
   }, [refocusMessengerComposer])
 
@@ -2925,16 +3186,13 @@ export function DashboardMessengerPage() {
             <span className="dashboard-messenger__composer-reply-snippet">
               {replyTo.kind === 'image' ? (
                 <>
-                  {replyTo.meta?.image?.thumbPath?.trim() || replyTo.meta?.image?.path?.trim() ? (
-                    <MessengerReplyMiniThumb
-                      thumbPath={(
-                        replyTo.meta?.image?.thumbPath?.trim() ||
-                        replyTo.meta?.image?.path?.trim() ||
-                        ''
-                      ).trim()}
-                      onThumbLayout={bumpScrollIfPinned}
-                    />
-                  ) : null}
+                  {(() => {
+                    const att = getMessengerImageAttachments(replyTo)[0]
+                    const tp = att?.thumbPath?.trim() || att?.path?.trim()
+                    return tp ? (
+                      <MessengerReplyMiniThumb thumbPath={tp} onThumbLayout={bumpScrollIfPinned} />
+                    ) : null
+                  })()}
                   <span>{truncateMessengerReplySnippet(replyTo.body)}</span>
                 </>
               ) : (
@@ -2965,6 +3223,23 @@ export function DashboardMessengerPage() {
           >
             Отмена
           </button>
+        </div>
+      ) : null}
+      {pendingMessengerPhotos.length > 0 && !editingMessageId ? (
+        <div className="dashboard-messenger__pending-photos">
+          {pendingMessengerPhotos.map((p) => (
+            <div key={p.id} className="dashboard-messenger__pending-photo">
+              <img src={p.previewUrl} alt="" />
+              <button
+                type="button"
+                className="dashboard-messenger__pending-photo-remove"
+                aria-label="Убрать фото"
+                onClick={() => removePendingMessengerPhoto(p.id)}
+              >
+                ×
+              </button>
+            </div>
+          ))}
         </div>
       ) : null}
       <div className="dashboard-messenger__composer-main">
@@ -3024,23 +3299,25 @@ export function DashboardMessengerPage() {
               ref={photoInputRef}
               type="file"
               accept="image/*"
+              multiple
               className="dashboard-messenger__photo-input"
               onChange={(e) => {
-                const f = e.target.files?.[0]
+                const files = Array.from(e.target.files ?? [])
                 e.target.value = ''
-                if (!f) return
-                if (f.size > MESSENGER_PHOTO_MAX_BYTES) {
-                  setError('Файл больше 2 МБ. Выберите изображение меньшего размера.')
-                  return
-                }
-                void sendPhotoFile(f)
+                if (files.length === 0) return
+                addPendingMessengerPhotoFiles(files)
               }}
             />
           </div>
           <button
             type="button"
             className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
-            disabled={!draft.trim() || sending || threadLoading || photoUploading}
+            disabled={
+              (!draft.trim() && pendingMessengerPhotos.length === 0) ||
+              sending ||
+              threadLoading ||
+              photoUploading
+            }
             onClick={() => void sendMessage()}
           >
             {editingMessageId ? 'Сохранить' : 'Отправить'}
@@ -3116,7 +3393,7 @@ export function DashboardMessengerPage() {
                       className="dashboard-messenger__list-head-search"
                       value={chatListSearch}
                       onChange={(e) => setChatListSearch(e.target.value)}
-                      placeholder="Поиск по имени или сообщению…"
+                      placeholder="Имя, @ник, чат или сообщение…"
                       autoComplete="off"
                       aria-label="Поиск по чатам"
                     />
@@ -3164,7 +3441,7 @@ export function DashboardMessengerPage() {
                       className="dashboard-messenger__list-search-input"
                       value={chatListSearch}
                       onChange={(e) => setChatListSearch(e.target.value)}
-                      placeholder="Имя или последнее сообщение…"
+                      placeholder="Имя, @ник, чат или последнее сообщение…"
                       autoComplete="off"
                       aria-label="Поиск по чатам"
                     />
@@ -3213,10 +3490,13 @@ export function DashboardMessengerPage() {
                     </div>
                   ) : sortedItems.length === 0 ? (
                     <div className="dashboard-chats-empty">Диалогов пока нет.</div>
-                  ) : filteredSortedItems.length === 0 ? (
+                  ) : !messengerListHasRows && chatListGlobalLoading ? (
+                    <div className="dashboard-chats-empty">Поиск в каталоге…</div>
+                  ) : !messengerListHasRows ? (
                     <div className="dashboard-chats-empty">Ничего не найдено.</div>
                   ) : (
-                    filteredSortedItems.map((item) => {
+                    <>
+                    {filteredSortedItems.map((item) => {
                       const avatarUrl =
                         item.kind === 'direct'
                           ? item.avatarUrl ?? (!item.otherUserId ? profile?.avatar_url ?? null : null)
@@ -3226,8 +3506,8 @@ export function DashboardMessengerPage() {
                           ? item.otherUserId?.trim() || (!item.otherUserId && user?.id ? user.id : '')
                           : ''
                       return (
+                        <div className="dashboard-messenger__row-shell" key={item.id}>
                         <Link
-                          key={item.id}
                           to={buildMessengerUrl(item.id)}
                           title={`${item.messageCount} сообщ.`}
                           onClick={(e) => {
@@ -3289,8 +3569,133 @@ export function DashboardMessengerPage() {
                             </div>
                           </div>
                         </Link>
+                        <button
+                          type="button"
+                          className="dashboard-messenger__row-kebab"
+                          aria-label="Действия с чатом"
+                          title="Ещё"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            const r = e.currentTarget.getBoundingClientRect()
+                            setChatListRowMenu((cur) =>
+                              cur?.item.id === item.id
+                                ? null
+                                : {
+                                    item,
+                                    anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+                                  },
+                            )
+                          }}
+                        >
+                          ⋮
+                        </button>
+                        </div>
                       )
-                    })
+                    })}
+                    {extraGlobalUsers.map((hit) => {
+                      const subtitle = hit.profileSlug ? `@${hit.profileSlug}` : 'Профиль'
+                      return (
+                        <div className="dashboard-messenger__row-shell" key={`glob-user-${hit.id}`}>
+                          <Link
+                            to={buildMessengerUrl(undefined, hit.id, hit.displayName)}
+                            title="Открыть диалог"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              navigate(buildMessengerUrl(undefined, hit.id, hit.displayName))
+                            }}
+                            className="dashboard-messenger__row"
+                          >
+                            <div className="dashboard-messenger__row-main">
+                              <button
+                                type="button"
+                                className="dashboard-messenger__row-avatar"
+                                aria-hidden
+                                tabIndex={-1}
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  openUserPeek({
+                                    userId: hit.id,
+                                    displayName: hit.displayName,
+                                    avatarUrl: hit.avatarUrl ?? null,
+                                  })
+                                }}
+                              >
+                                {hit.avatarUrl ? (
+                                  <img src={hit.avatarUrl} alt="" />
+                                ) : (
+                                  <span>{conversationInitial(hit.displayName)}</span>
+                                )}
+                              </button>
+                              <div className="dashboard-messenger__row-content">
+                                <div className="dashboard-messenger__row-titleline">
+                                  <div className="dashboard-messenger__row-title">{hit.displayName}</div>
+                                  <div className="dashboard-messenger__row-aside">
+                                    <span className="dashboard-messenger__row-time">В каталоге</span>
+                                  </div>
+                                </div>
+                                <div className="dashboard-messenger__row-preview">{subtitle}</div>
+                              </div>
+                            </div>
+                          </Link>
+                        </div>
+                      )
+                    })}
+                    {extraGlobalOpen.map((hit) => {
+                      const avatarUrl = conversationAvatarUrlById[hit.id] ?? null
+                      const kindLabel = hit.kind === 'channel' ? 'Канал' : 'Группа'
+                      const nickBit = hit.publicNick ? ` · @${hit.publicNick}` : ''
+                      return (
+                        <div className="dashboard-messenger__row-shell" key={`glob-open-${hit.id}`}>
+                          <Link
+                            to={buildMessengerUrl(hit.id)}
+                            title={`${kindLabel}${nickBit}`}
+                            onClick={(e) => {
+                              e.preventDefault()
+                              selectConversation(hit.id)
+                            }}
+                            className={`dashboard-messenger__row${
+                              hit.id === activeConversationId ? ' dashboard-messenger__row--active' : ''
+                            }`}
+                          >
+                            <div className="dashboard-messenger__row-main">
+                              <button
+                                type="button"
+                                className="dashboard-messenger__row-avatar"
+                                aria-hidden
+                                tabIndex={-1}
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  selectConversation(hit.id)
+                                }}
+                              >
+                                {avatarUrl ? (
+                                  <img src={avatarUrl} alt="" />
+                                ) : (
+                                  <span>{conversationInitial(hit.title)}</span>
+                                )}
+                              </button>
+                              <div className="dashboard-messenger__row-content">
+                                <div className="dashboard-messenger__row-titleline">
+                                  <div className="dashboard-messenger__row-title">{hit.title}</div>
+                                  <div className="dashboard-messenger__row-aside">
+                                    <span className="dashboard-messenger__row-time">Открытый</span>
+                                  </div>
+                                </div>
+                                <div className="dashboard-messenger__row-preview">
+                                  {kindLabel}
+                                  {nickBit}
+                                  {hit.memberCount ? ` · ${hit.memberCount} участн.` : ''}
+                                </div>
+                              </div>
+                            </div>
+                          </Link>
+                        </div>
+                      )
+                    })}
+                    </>
                   )}
                 </div>
               </aside>
@@ -3548,6 +3953,7 @@ export function DashboardMessengerPage() {
                               )
                             }}
                             onForwardMessage={handleForwardFromGroupMessage}
+                            onMentionSlug={onMentionSlugOpenProfile}
                           />
                         ) : (
                           <ChannelThreadPane
@@ -3735,11 +4141,12 @@ export function DashboardMessengerPage() {
                     </div>
 
                     <div className="dashboard-messenger__thread-main">
-                      <div
-                        ref={messagesScrollRef}
-                        className="dashboard-messenger__messages-scroll"
-                        onScroll={onMessagesScroll}
-                      >
+                      <div className="dashboard-messenger__scroll-region-wrap">
+                        <div
+                          ref={messagesScrollRef}
+                          className="dashboard-messenger__messages-scroll"
+                          onScroll={onMessagesScroll}
+                        >
                         {loadingOlder ? (
                           <div className="dashboard-messenger__load-older" role="status" aria-live="polite">
                             Загрузка истории…
@@ -3789,12 +4196,13 @@ export function DashboardMessengerPage() {
                                   onForwardQuoteNavigate={navigateToForwardSource}
                                   bindMessageAnchor={bindMessageAnchor}
                                   menuOpen={messageMenu?.message.id === message.id}
-                                  onOpenImageLightbox={(url) => {
+                                  onOpenImageLightbox={(ctx) => {
                                     closeMessageActionMenu()
-                                    setMessengerImageLightboxUrl(url)
+                                    setMessengerImageLightbox({ urls: ctx.urls, index: ctx.initialIndex })
                                   }}
                                   onInlineImageLayout={bumpScrollIfPinned}
                                   onReplyThumbLayout={bumpScrollIfPinned}
+                                  onMentionSlug={onMentionSlugOpenProfile}
                                   onMenuButtonClick={(e) => {
                                     e.stopPropagation()
                                     const r = e.currentTarget.getBoundingClientRect()
@@ -3833,6 +4241,8 @@ export function DashboardMessengerPage() {
                             })
                           )}
                         </div>
+                        </div>
+                        <MessengerJumpToBottomFab visible={showDmJump} onClick={jumpDmBottom} />
                       </div>
 
                       {renderThreadComposer()}
@@ -3859,6 +4269,12 @@ export function DashboardMessengerPage() {
                                   (messageMenu.message.kind === 'text' ||
                                     messageMenu.message.kind === 'image'),
                               )}
+                              canCopy={Boolean(
+                                !messageMenu.message.id.startsWith('local-') &&
+                                  (messageMenu.message.kind === 'text' ||
+                                    messageMenu.message.kind === 'image') &&
+                                  !isDmSoftDeletedStub(messageMenu.message),
+                              )}
                               canDelete={Boolean(
                                 user?.id &&
                                   messageMenu.message.senderUserId === user.id &&
@@ -3867,6 +4283,15 @@ export function DashboardMessengerPage() {
                                     messageMenu.message.kind === 'image'),
                               )}
                               onClose={closeMessageActionMenu}
+                              onCopy={async () => {
+                                const text = previewTextForDirectMessageTail(messageMenu.message)
+                                const ok = await copyTextToClipboard(text)
+                                toast.push({
+                                  tone: ok ? 'success' : 'error',
+                                  message: ok ? 'Скопировано в буфер обмена' : 'Не удалось скопировать',
+                                  ms: 2200,
+                                })
+                              }}
                               onEdit={() => {
                                 const m = messageMenu.message
                                 setEditingMessageId(m.id)
@@ -4047,9 +4472,40 @@ export function DashboardMessengerPage() {
         onKickMember={(id) => void kickConversationMember(id)}
       />
 
+      {chatListRowMenu
+        ? createPortal(
+            <div
+              className="messenger-chatlist-menu-anchor"
+              style={{
+                position: 'fixed',
+                zIndex: 26600,
+                left: Math.min(
+                  chatListRowMenu.anchor.right,
+                  typeof window !== 'undefined' ? window.innerWidth - 8 : chatListRowMenu.anchor.right,
+                ),
+                top: chatListRowMenu.anchor.bottom + 4,
+                transform: 'translateX(-100%)',
+              }}
+            >
+              <MessengerChatListMenuPopover
+                onClose={() => setChatListRowMenu(null)}
+                pinned={pinnedChatIds.includes(chatListRowMenu.item.id)}
+                pinDisabled={
+                  !pinnedChatIds.includes(chatListRowMenu.item.id) &&
+                  pinnedChatIds.length >= MESSENGER_MAX_PINNED_CHATS
+                }
+                onTogglePin={() => togglePinChatListItem(chatListRowMenu.item.id)}
+                onMarkRead={() => void markChatReadFromListMenu(chatListRowMenu.item)}
+              />
+            </div>,
+            document.body,
+          )
+        : null}
+
       <MessengerImageLightbox
-        open={Boolean(messengerImageLightboxUrl?.trim())}
-        imageUrl={messengerImageLightboxUrl?.trim() ?? ''}
+        open={Boolean(messengerImageLightbox && messengerImageLightbox.urls.length > 0)}
+        urls={messengerImageLightbox?.urls ?? []}
+        initialIndex={messengerImageLightbox?.index ?? 0}
         onClose={closeMessengerImageLightbox}
       />
 

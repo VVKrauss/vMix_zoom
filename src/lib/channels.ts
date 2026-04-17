@@ -158,6 +158,22 @@ export async function listChannelCommentsPage(
   return { data: chronological, error: null, hasMoreOlder: newestFirst.length === limit }
 }
 
+/** Реакции (kind=reaction) на посты и комментарии — отдельная выборка по meta.react_to. */
+export async function listChannelReactionsForTargets(
+  conversationId: string,
+  targetIds: string[],
+): Promise<{ data: DirectMessage[] | null; error: string | null }> {
+  const cid = conversationId.trim()
+  const ids = [...new Set(targetIds.map((x) => x.trim()).filter(Boolean))]
+  if (!cid || ids.length === 0) return { data: [], error: null }
+  const { data, error } = await supabase.rpc('list_channel_reactions_for_targets', {
+    p_conversation_id: cid,
+    p_target_ids: ids,
+  })
+  if (error) return { data: null, error: error.message }
+  return { data: mapMessagesFromRows(data), error: null }
+}
+
 export async function listChannelCommentCounts(
   conversationId: string,
   postIds: string[],

@@ -1,5 +1,6 @@
 import { useMemo, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { normalizeProfileSlug, validateProfileSlugInput } from '../lib/profileSlug'
 import { MessengerInlineInviteCard } from './messenger/MessengerInlineInviteCard'
 
 const INVITE_AT_START = /^Приглашаю в комнату:\s*\[([^\]]+)\]/
@@ -45,7 +46,7 @@ function parseMessengerInviteFromRawUrl(rawFull: string): { token: string } | nu
   }
 }
 
-function buildChildren(text: string): ReactNode[] {
+function buildChildren(text: string, onMentionSlug?: (slug: string) => void): ReactNode[] {
   const nodes: ReactNode[] = []
   let i = 0
   let k = 0
@@ -53,6 +54,33 @@ function buildChildren(text: string): ReactNode[] {
 
   while (i < n) {
     const sub = text.slice(i)
+    if (onMentionSlug && sub[0] === '@') {
+      const boundaryOk = i === 0 || /\s/.test(text[i - 1]!)
+      if (boundaryOk) {
+        const atM = /^@([a-zA-Z0-9](?:[a-zA-Z0-9_-]*[a-zA-Z0-9])?)/.exec(sub)
+        if (atM && atM[1] && atM[1].length >= 3 && validateProfileSlugInput(atM[1]) === null) {
+          const raw = atM[1]
+          const slug = normalizeProfileSlug(raw)
+          const display = `@${raw}`
+          nodes.push(
+            <button
+              key={k}
+              type="button"
+              className="messenger-message-link messenger-message-mention"
+              onClick={(e) => {
+                e.preventDefault()
+                onMentionSlug(slug)
+              }}
+            >
+              {display}
+            </button>,
+          )
+          k += 1
+          i += display.length
+          continue
+        }
+      }
+    }
     const inv = INVITE_AT_START.exec(sub)
     if (inv && inv.index === 0) {
       const full = inv[0]
@@ -183,7 +211,14 @@ function buildChildren(text: string): ReactNode[] {
 }
 
 /** Текст сообщения: ссылки, приглашение в комнату, ссылка-приглашение в мессенджер. */
-export function MessengerMessageBody({ text }: { text: string }) {
-  const children = useMemo(() => buildChildren(text), [text])
+export function MessengerMessageBody({
+  text,
+  onMentionSlug,
+}: {
+  text: string
+  /** Клик по @nickname — открыть профиль (slug уже нормализован). */
+  onMentionSlug?: (slug: string) => void
+}) {
+  const children = useMemo(() => buildChildren(text, onMentionSlug), [text, onMentionSlug])
   return <>{children}</>
 }

@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { supabase } from '../../lib/supabase'
-import { mapDirectMessageFromRow, type DirectMessage } from '../../lib/messenger'
+import { mapDirectMessageFromRow, previewTextForDirectMessageTail, type DirectMessage } from '../../lib/messenger'
 import { getMessengerImageSignedUrl } from '../../lib/messenger'
 import { buildQuotePreview } from '../../lib/messengerQuotePreview'
 import {
@@ -17,9 +17,11 @@ import {
   listChannelCommentsPage,
   listChannelCommentCounts,
   listChannelPostsPage,
+  listChannelReactionsForTargets,
   markChannelRead,
   toggleChannelMessageReaction,
 } from '../../lib/channels'
+import { copyTextToClipboard } from '../../lib/messengerDashboardUtils'
 import { collectStoragePathsFromDraft } from '../../lib/postEditor/draftUtils'
 import type { ReactionEmoji } from '../../types/roomComms'
 import { REACTION_EMOJI_WHITELIST } from '../../types/roomComms'
@@ -33,6 +35,8 @@ import { ThreadMessageBubble } from './ThreadMessageBubble'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Link } from 'react-router-dom'
+import { useMessengerJumpToBottom } from '../../hooks/useMessengerJumpToBottom'
+import { MessengerJumpToBottomFab } from '../MessengerJumpToBottomFab'
 
 function extractStoragePathsFromMarkdown(md: string): string[] {
   const out: string[] = []
@@ -151,7 +155,21 @@ export function ChannelThreadPane({
   const postAnchorRef = useRef<Map<string, HTMLElement>>(new Map())
   const commentAnchorRef = useRef<Map<string, HTMLElement>>(new Map())
   const commentsScrollRef = useRef<HTMLDivElement | null>(null)
+  const postsFeedScrollRef = useRef<HTMLDivElement | null>(null)
   const commentsPinnedToBottomRef = useRef(true)
+
+  const postsJumpKey = `${conversationId}:${posts.length}:${commentsModalPostId ?? ''}`
+  const { showJump: showPostsJump, jumpToBottom: jumpPostsBottom } = useMessengerJumpToBottom(
+    postsFeedScrollRef,
+    postsJumpKey,
+  )
+  const commentsJumpKey = `${conversationId}:cmod:${commentsModalPostId ?? ''}:${
+    commentsModalPostId ? (commentsByPostId[commentsModalPostId] ?? []).length : 0
+  }`
+  const { showJump: showCommentsJump, jumpToBottom: jumpCommentsBottom } = useMessengerJumpToBottom(
+    commentsScrollRef,
+    commentsJumpKey,
+  )
 
   const cidRef = useRef(conversationId)
   cidRef.current = conversationId
@@ -301,12 +319,12 @@ export function ChannelThreadPane({
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter }, (payload) => {
         const msg = mapDirectMessageFromRow(payload.new as Record<string, unknown>)
         if (!msg.id) return
-        if (msg.senderUserId === user.id && msg.kind !== 'reaction') return
         if (cidRef.current.trim() !== cid) return
         if (msg.kind === 'reaction') {
           setReactions((prev) => (prev.some((r) => r.id === msg.id) ? prev : [...prev, msg].sort(sortChrono)))
           return
         }
+        if (msg.senderUserId === user.id) return
         if (!msg.replyToMessageId) {
           setPosts((prev) => (prev.some((p) => p.id === msg.id) ? prev : [...prev, msg].sort(sortChrono)))
           onTouchTail?.({ lastMessageAt: msg.createdAt, lastMessagePreview: msg.body })
@@ -383,6 +401,41 @@ export function ChannelThreadPane({
       supabase.removeChannel(channel)
     }
   }, [conversationId, user?.id, onTouchTail, removeReactionMessageEverywhere])
+
+  useEffect(() => {
+    const cid = conversationId.trim()
+    if (!cid || !canView) return
+    const postIds = posts.filter((p) => p.kind !== 'reaction').map((p) => p.id)
+    const commentIds: string[] = []
+    for (const arr of Object.values(commentsByPostId)) {
+      for (const c of arr) {
+        if (c.kind !== 'reaction') commentIds.push(c.id)
+      }
+    }
+    const targets = [...new Set([...postIds, ...commentIds])]
+    if (targets.length === 0) return
+    let cancelled = false
+    void listChannelReactionsForTargets(cid, targets).then((res) => {
+      if (cancelled || res.error) return
+      const fetched = res.data ?? []
+      const tset = new Set(targets)
+      setReactions((prev) => {
+        const kept = prev.filter((r) => {
+          if (r.kind !== 'reaction') return false
+          const t = r.meta?.react_to?.trim() ?? ''
+          return !t || !tset.has(t)
+        })
+        const byId = new Map(kept.map((r) => [r.id, r]))
+        for (const r of fetched) {
+          if (r.kind === 'reaction' && r.id) byId.set(r.id, r)
+        }
+        return [...byId.values()].sort(sortChrono)
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [conversationId, canView, posts, commentsByPostId])
 
   useEffect(() => {
     let active = true
@@ -1314,7 +1367,8 @@ export function ChannelThreadPane({
 
   const renderChannelPostsView = () => (
     <>
-      <div className="dashboard-messenger__messages-scroll" role="region" aria-label="Посты канала">
+      <div className="dashboard-messenger__scroll-region-wrap">
+        <div ref={postsFeedScrollRef} className="dashboard-messenger__messages-scroll" role="region" aria-label="Посты канала">
         {hasMoreOlder ? (
           <div style={{ padding: 10, textAlign: 'center' }}>
             <button type="button" className="dashboard-topbar__action" disabled={loadingOlder} onClick={() => void loadOlder()}>
@@ -1379,6 +1433,8 @@ export function ChannelThreadPane({
             ) : null}
           </>
         )}
+        </div>
+        <MessengerJumpToBottomFab visible={showPostsJump} onClick={jumpPostsBottom} />
       </div>
 
       <div className="dashboard-messenger__thread-footer">
@@ -1497,16 +1553,19 @@ export function ChannelThreadPane({
           </div>
         )}
 
-        <div
-          ref={commentsScrollRef}
-          className="dashboard-messenger__messages-scroll"
-          style={{ flex: '1 1 auto' }}
-          onScroll={updateCommentsPinned}
-        >
-          <div className="dashboard-messenger__messages dashboard-messenger__messages--channel-comments-modal">
-            {list.map((c) => renderChannelComment(c))}
-            {list.length === 0 ? <div className="dashboard-chats-empty" style={{ padding: 8 }}>Пока нет комментариев.</div> : null}
+        <div className="dashboard-messenger__scroll-region-wrap dashboard-messenger__scroll-region-wrap--channel-comments">
+          <div
+            ref={commentsScrollRef}
+            className="dashboard-messenger__messages-scroll"
+            style={{ flex: '1 1 auto' }}
+            onScroll={updateCommentsPinned}
+          >
+            <div className="dashboard-messenger__messages dashboard-messenger__messages--channel-comments-modal">
+              {list.map((c) => renderChannelComment(c))}
+              {list.length === 0 ? <div className="dashboard-chats-empty" style={{ padding: 8 }}>Пока нет комментариев.</div> : null}
+            </div>
           </div>
+          <MessengerJumpToBottomFab visible={showCommentsJump} onClick={jumpCommentsBottom} />
         </div>
 
         {isChannelMember ? (
@@ -1588,6 +1647,12 @@ export function ChannelThreadPane({
                     !postMenu.post.id.startsWith('local-') &&
                     (postMenu.post.kind === 'text' || postMenu.post.kind === 'image' || postMenu.post.kind === 'system'),
                 )}
+                canCopy={Boolean(
+                  !postMenu.post.id.startsWith('local-') &&
+                    (postMenu.post.kind === 'text' ||
+                      postMenu.post.kind === 'image' ||
+                      postMenu.post.kind === 'system'),
+                )}
                 canDelete={Boolean(
                   user?.id &&
                     postMenu.post.senderUserId === user.id &&
@@ -1595,6 +1660,15 @@ export function ChannelThreadPane({
                     (postMenu.post.kind === 'text' || postMenu.post.kind === 'image' || postMenu.post.kind === 'system'),
                 )}
                 onClose={() => setPostMenu(null)}
+                onCopy={async () => {
+                  const text = previewTextForDirectMessageTail(postMenu.post)
+                  const ok = await copyTextToClipboard(text)
+                  toast.push({
+                    tone: ok ? 'success' : 'error',
+                    message: ok ? 'Скопировано в буфер обмена' : 'Не удалось скопировать',
+                    ms: 2200,
+                  })
+                }}
                 onEdit={() => {
                   setPostEditor({ mode: 'edit', message: postMenu.post })
                   setPostMenu(null)
@@ -1637,8 +1711,21 @@ export function ChannelThreadPane({
             >
               <MessengerMessageMenuPopover
                 canEdit={canEditOrDeleteComment(commentMenu.message)}
+                canCopy={Boolean(
+                  !commentMenu.message.id.startsWith('local-') &&
+                    (commentMenu.message.kind === 'text' || commentMenu.message.kind === 'image'),
+                )}
                 canDelete={canEditOrDeleteComment(commentMenu.message)}
                 onClose={() => setCommentMenu(null)}
+                onCopy={async () => {
+                  const text = previewTextForDirectMessageTail(commentMenu.message)
+                  const ok = await copyTextToClipboard(text)
+                  toast.push({
+                    tone: ok ? 'success' : 'error',
+                    message: ok ? 'Скопировано в буфер обмена' : 'Не удалось скопировать',
+                    ms: 2200,
+                  })
+                }}
                 onEdit={() => {
                   setEditingCommentId(commentMenu.message.id)
                   setDraftEditComment(commentMenu.message.body ?? '')
