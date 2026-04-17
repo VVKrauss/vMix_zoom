@@ -159,15 +159,15 @@ export function messengerStaffRoleShortLabel(role: string): string {
   }
 }
 
-const MESSENGER_PASTE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
-
 function coerceClipboardFileToImage(f: File): File | null {
   if (!f?.size) return null
   const t = (f.type || '').toLowerCase()
-  if (MESSENGER_PASTE_IMAGE_TYPES.has(t)) return f
+  // На iOS в буфере часто приходит HEIC/HEIF или другие image/* типы.
+  // Мы в любом случае пережимаем в JPEG при загрузке, поэтому принимаем любой image/*.
+  if (t.startsWith('image/')) return f
   if (!t) {
     const next = new File([f], 'clipboard.png', { type: 'image/png' })
-    return MESSENGER_PASTE_IMAGE_TYPES.has(next.type) ? next : null
+    return next.type.toLowerCase().startsWith('image/') ? next : null
   }
   return null
 }

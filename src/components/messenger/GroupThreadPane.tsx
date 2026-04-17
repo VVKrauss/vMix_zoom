@@ -760,7 +760,7 @@ export function GroupThreadPane({
                 <input
                   ref={photoInputRef}
                   type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  accept="image/*"
                   className="dashboard-messenger__photo-input"
                   onChange={(e) => {
                     const f = e.target.files?.[0]

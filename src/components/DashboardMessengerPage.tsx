@@ -2812,9 +2812,26 @@ export function DashboardMessengerPage() {
       return
     }
     const url = `${window.location.origin}/dashboard/messenger?invite=${encodeURIComponent(res.data.token)}`
+    // iOS Safari часто блокирует clipboard после async-await (теряется "user gesture").
+    // Поэтому сначала пытаемся открыть нативное меню «Поделиться», а уже потом — копирование.
+    try {
+      if (typeof navigator !== 'undefined' && typeof (navigator as any).share === 'function') {
+        await (navigator as any).share({ url })
+        return
+      }
+    } catch {
+      // ignore (например, user cancelled)
+    }
     const ok = await copyTextToClipboard(url)
     if (ok) toast.push({ tone: 'success', message: 'Ссылка скопирована.', ms: 2200 })
-    else toast.push({ tone: 'info', message: url, ms: 4200 })
+    else {
+      try {
+        window.prompt('Скопируйте ссылку:', url)
+      } catch {
+        // ignore
+      }
+      toast.push({ tone: 'info', message: url, ms: 4200 })
+    }
   }, [conversationInfoId, toast])
 
   const saveConversationInfo = useCallback(async () => {
@@ -3033,7 +3050,7 @@ export function DashboardMessengerPage() {
             <input
               ref={photoInputRef}
               type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
+              accept="image/*"
               className="dashboard-messenger__photo-input"
               onChange={(e) => {
                 const f = e.target.files?.[0]
