@@ -1,9 +1,10 @@
-import { FormEvent, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import { APP_VERSION } from '../config/version'
+import { fetchAppVersion } from '../lib/appVersion'
 import { setPendingHostClaim } from '../lib/spaceRoom'
 import { newRoomId } from '../utils/roomId'
 import { ChatBubbleIcon, DashboardIcon } from './icons'
@@ -17,6 +18,18 @@ export function HomePage() {
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const messengerUnreadCount = useMessengerUnreadCount()
   const [joinId, setJoinId] = useState('')
+  const [dbVersion, setDbVersion] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchAppVersion().then((v) => {
+      if (cancelled) return
+      setDbVersion(v)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
   const handleCreateClick = () => {
     if (!user) return
     const id = newRoomId()
@@ -162,8 +175,8 @@ export function HomePage() {
 
         </div>
 
-        <p className="home-version" aria-label={`Версия приложения: ${APP_VERSION}`}>
-          {APP_VERSION}
+        <p className="home-version" aria-label={`Версия приложения: ${dbVersion ?? APP_VERSION}`}>
+          {dbVersion ?? APP_VERSION}
         </p>
       </div>
     </div>
