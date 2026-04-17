@@ -8,6 +8,23 @@ function pad(n: number, len: number) {
   return String(Math.max(0, Math.trunc(n))).padStart(len, '0')
 }
 
+function pickCommitSha() {
+  const envSha =
+    process.env.VERCEL_GIT_COMMIT_SHA ||
+    process.env.CF_PAGES_COMMIT_SHA ||
+    process.env.NETLIFY_COMMIT_SHA ||
+    process.env.GITHUB_SHA ||
+    process.env.COMMIT_REF ||
+    ''
+  const sha = String(envSha).trim()
+  if (sha) return sha
+  try {
+    return execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+  } catch {
+    return ''
+  }
+}
+
 function computeAppVersion() {
   try {
     const raw = fs.readFileSync('version.json', 'utf8')
@@ -23,18 +40,31 @@ function computeAppVersion() {
     const basePatch = Math.max(0, Number(meta.basePatch) || 0)
     const baseRef = typeof meta.baseRef === 'string' ? meta.baseRef.trim() : ''
 
+    const sha = pickCommitSha()
+    const shaShort = sha ? sha.slice(0, 7) : ''
+
     let commitsSinceBase = 0
+    let hasReliablePatch = false
     if (baseRef) {
-      commitsSinceBase = Number(
-        execSync(`git rev-list --count ${baseRef}..HEAD`, { stdio: ['ignore', 'pipe', 'ignore'] })
-          .toString()
-          .trim(),
-      )
-      if (!Number.isFinite(commitsSinceBase)) commitsSinceBase = 0
+      try {
+        commitsSinceBase = Number(
+          execSync(`git rev-list --count ${baseRef}..HEAD`, { stdio: ['ignore', 'pipe', 'ignore'] })
+            .toString()
+            .trim(),
+        )
+        if (Number.isFinite(commitsSinceBase)) hasReliablePatch = true
+      } catch {
+        commitsSinceBase = 0
+        hasReliablePatch = false
+      }
     }
 
     const patch = basePatch + commitsSinceBase
-    return `v ${major}.${pad(minor, 2)}.${pad(patch, 3)}`
+    const base = `v ${major}.${pad(minor, 2)}.${pad(patch, 3)}`
+
+    // Если CI делает shallow checkout и baseRef недоступен, patch не растёт.
+    // Тогда добавляем SHA, чтобы версия на деплое точно менялась на каждый коммит.
+    return !hasReliablePatch && shaShort ? `${base}-${shaShort}` : base
   } catch {
     return 'v 0.00.000'
   }
