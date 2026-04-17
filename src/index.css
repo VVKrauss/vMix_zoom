@@ -227,13 +227,41 @@ html[data-theme="light"] .controls-bar .ctrl-btn:hover:not(:disabled):not(.ctrl-
   background: color-mix(in srgb, var(--surface2) 55%, var(--border));
 }
 
+/* Комната (светлая тема): текст/иконки в нижней панели должны быть контрастными. */
+html[data-theme="light"] .controls-bar {
+  color: #000;
+}
+
+html[data-theme="light"] .controls-bar .ctrl-btn:not(.ctrl-btn--leave):not(.ctrl-btn--screen):not(.ctrl-btn--off) {
+  color: #000 !important;
+}
+
+html[data-theme="light"] .controls-bar .ctrl-btn svg,
+html[data-theme="light"] .controls-bar .ctrl-btn .fi,
+html[data-theme="light"] .controls-bar .ctrl-btn__fi {
+  color: inherit;
+}
+
+html[data-theme="light"] .controls-bar .ctrl-chevron:not(.ctrl-btn--screen) {
+  color: #000 !important;
+}
+
+html[data-theme="light"] .controls-bar .ctrl-btn:not(.ctrl-btn--leave):not(.ctrl-btn--screen):not(.ctrl-btn--off) svg,
+html[data-theme="light"] .controls-bar .ctrl-btn:not(.ctrl-btn--leave):not(.ctrl-btn--screen):not(.ctrl-btn--off) svg *,
+html[data-theme="light"] .controls-bar .ctrl-btn:not(.ctrl-btn--leave):not(.ctrl-btn--screen):not(.ctrl-btn--off) .fi,
+html[data-theme="light"] .controls-bar .ctrl-btn:not(.ctrl-btn--leave):not(.ctrl-btn--screen):not(.ctrl-btn--off) .ctrl-btn__fi {
+  color: #000 !important;
+  fill: currentColor !important;
+  stroke: currentColor !important;
+}
+
 html[data-theme="light"] .ctrl-btn--active {
   background: color-mix(in srgb, var(--text) 7%, var(--surface2));
   border-color: var(--border);
 }
 
 html[data-theme="light"] .ctrl-btn.ctrl-btn--source-ingest {
-  color: var(--text-dim);
+  color: #000;
   border-color: var(--border);
 }
 
@@ -244,41 +272,80 @@ html[data-theme="light"] .ctrl-btn.ctrl-btn--source-ingest:hover:not(:disabled) 
 }
 
 html[data-theme="light"] .ctrl-btn.ctrl-btn--studio {
-  color: color-mix(in srgb, #2f4a8c 55%, var(--text));
-  border-color: color-mix(in srgb, #6b8cce 40%, var(--border));
-  background: rgba(70, 110, 220, 0.1);
+  color: #000;
+  border-color: var(--border);
+  background: var(--surface2);
 }
 
 html[data-theme="light"] .ctrl-btn.ctrl-btn--studio:hover:not(:disabled) {
-  color: #1e3a7a;
-  border-color: color-mix(in srgb, #5a7fd4 50%, var(--border));
-  background: rgba(70, 110, 220, 0.16);
+  color: #000;
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--surface2) 55%, var(--border));
 }
 
 html[data-theme="light"] .ctrl-btn.ctrl-btn--studio.ctrl-btn--studio--open {
-  color: #142d66;
-  border-color: color-mix(in srgb, #4a6fc4 55%, var(--border));
-  background: rgba(70, 110, 220, 0.22);
-  box-shadow: 0 0 0 1px color-mix(in srgb, #6b8cce 35%, transparent);
+  color: #000;
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--text) 7%, var(--surface2));
+  box-shadow: none;
 }
 
 html[data-theme="light"] .ctrl-btn.ctrl-btn--couch {
-  color: color-mix(in srgb, #8a4a1a 50%, var(--text));
-  border-color: color-mix(in srgb, #c98a4a 38%, var(--border));
-  background: rgba(200, 120, 40, 0.1);
+  color: #000;
+  border-color: var(--border);
+  background: var(--surface2);
 }
 
 html[data-theme="light"] .ctrl-btn.ctrl-btn--couch:hover:not(:disabled) {
-  color: #5c3010;
-  border-color: color-mix(in srgb, #b87a38 48%, var(--border));
-  background: rgba(200, 120, 40, 0.16);
+  color: #000;
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--surface2) 55%, var(--border));
 }
 
 html[data-theme="light"] .ctrl-btn.ctrl-btn--couch.ctrl-btn--couch--open {
-  color: #4a2808;
-  border-color: color-mix(in srgb, #a86a28 52%, var(--border));
-  background: rgba(200, 120, 40, 0.22);
-  box-shadow: 0 0 0 1px color-mix(in srgb, #c98a4a 32%, transparent);
+  color: #000;
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--text) 7%, var(--surface2));
+  box-shadow: none;
+}
+
+/* Светлая тема: SRT (логотип + громкость программы) — делаем контрастным. */
+html[data-theme="light"] .ctrl-btn--source-ingest--vmix .ctrl-btn__source-logo-img {
+  filter: brightness(0);
+  opacity: 0.9;
+}
+
+html[data-theme="light"] .controls-bar__sources .ctrl-vmix-audio--waiting,
+html[data-theme="light"] .controls-bar__sources .ctrl-vmix-audio--live {
+  color: #000;
+  background: var(--surface2);
+  border-top-color: var(--border);
+  border-bottom-color: var(--border);
+  border-left-color: var(--border);
+}
+
+html[data-theme="light"] .controls-bar__sources .ctrl-vmix-audio__mute {
+  color: #000;
+}
+
+html[data-theme="light"] .controls-bar__sources .ctrl-vmix-audio__mute:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--surface2) 55%, var(--border));
+}
+
+html[data-theme="light"] .controls-bar__sources .ctrl-vmix-audio__mute--off {
+  background: color-mix(in srgb, var(--text) 7%, var(--surface2));
+}
+
+html[data-theme="light"] .controls-bar__sources .ctrl-group--vmix-source .ctrl-chevron.ctrl-chevron--vmix-waiting,
+html[data-theme="light"] .controls-bar__sources .ctrl-group--vmix-source .ctrl-chevron.ctrl-chevron--vmix-live {
+  color: #000;
+  background: var(--surface2);
+  border-color: var(--border);
+}
+
+html[data-theme="light"] .controls-bar__sources .ctrl-group--vmix-source .ctrl-chevron.ctrl-chevron--vmix-waiting:hover:not(:disabled),
+html[data-theme="light"] .controls-bar__sources .ctrl-group--vmix-source .ctrl-chevron.ctrl-chevron--vmix-live:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--surface2) 55%, var(--border));
 }
 
 html[data-theme="light"] .reaction-emoji-btn:hover {
