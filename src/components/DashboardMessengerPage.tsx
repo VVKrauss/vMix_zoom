@@ -79,6 +79,7 @@ import { buildLinkMetaForMessageBody, ensureLinkPreviewForBody } from '../lib/li
 import {
   MESSENGER_MAX_PINNED_CHATS,
   readMessengerPinnedChatIds,
+  resolveMessengerPinnedChatsForHydration,
   sortMessengerListWithPins,
   writeMessengerPinnedChatIds,
 } from '../lib/messengerPins'
@@ -316,6 +317,8 @@ export function DashboardMessengerPage() {
   const [error, setError] = useState<string | null>(null)
   const [items, setItems] = useState<MessengerConversationSummary[]>([])
   const [pinnedChatIds, setPinnedChatIds] = useState<string[]>(() => readMessengerPinnedChatIds())
+  /** Не писать закрепы в БД до применения данных профиля — иначе затрём сервер старым localStorage. */
+  const messengerPinsRemoteSyncReadyRef = useRef(false)
   const [chatListRowMenu, setChatListRowMenu] = useState<{
     item: MessengerConversationSummary
     anchor: { left: number; top: number; right: number; bottom: number }
@@ -454,10 +457,49 @@ export function DashboardMessengerPage() {
   /** Снятие реакции уже отразили в списке диалогов после RPC — пропускаем дубль из realtime DELETE. */
   const reactionDeleteSidebarSyncedRef = useRef(new Set<string>())
 
-  // Convert inline messenger errors to project toasts.
+  const messengerPinsServerSig = useMemo(() => {
+    if (!profile || !user?.id || profile.id !== user.id) return ''
+    if (!('messenger_pinned_conversation_ids' in profile)) return 'missing'
+    return JSON.stringify(profile.messenger_pinned_conversation_ids)
+  }, [profile, user?.id])
+
+  useEffect(() => {
+    if (!user?.id || !profile || profile.id !== user.id) {
+      if (!user?.id) messengerPinsRemoteSyncReadyRef.current = false
+      return
+    }
+    const resolved =
+      'messenger_pinned_conversation_ids' in profile
+        ? resolveMessengerPinnedChatsForHydration(profile.messenger_pinned_conversation_ids)
+        : resolveMessengerPinnedChatsForHydration(undefined)
+    setPinnedChatIds(resolved)
+    writeMessengerPinnedChatIds(resolved)
+    messengerPinsRemoteSyncReadyRef.current = true
+  }, [user?.id, profile, messengerPinsServerSig])
+
   useEffect(() => {
     writeMessengerPinnedChatIds(pinnedChatIds)
-  }, [pinnedChatIds])
+    if (!user?.id || !messengerPinsRemoteSyncReadyRef.current) return
+    const t = window.setTimeout(() => {
+      void (async () => {
+        const { error } = await supabase
+          .from('users')
+          .update({
+            messenger_pinned_conversation_ids: pinnedChatIds,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', user.id)
+        if (error) {
+          toast.push({
+            tone: 'error',
+            message: `Не удалось сохранить закрепы: ${error.message}`,
+            ms: 4200,
+          })
+        }
+      })()
+    }, 450)
+    return () => window.clearTimeout(t)
+  }, [pinnedChatIds, user?.id, toast])
 
   useEffect(() => {
     if (!error) return

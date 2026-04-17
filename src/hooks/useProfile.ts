@@ -34,6 +34,8 @@ export interface UserProfile {
   profile_show_avatar: boolean
   profile_show_slug: boolean
   profile_show_last_active: boolean
+  /** Закреплённые в дереве мессенджера (порядок важен), max 3; если ключа нет — только localStorage (до колонки в API). */
+  messenger_pinned_conversation_ids?: unknown | null
 }
 
 export interface PlanInfo {
@@ -101,7 +103,7 @@ export function useProfile(): UseProfileReturn {
         supabase
           .from('users')
           .select(
-            'id, display_name, profile_slug, email, avatar_url, status, room_ui_preferences, profile_search_closed, profile_search_allow_by_name, profile_search_allow_by_email, profile_search_allow_by_slug, dm_allow_from, profile_view_allow_from, profile_show_avatar, profile_show_slug, profile_show_last_active',
+            'id, display_name, profile_slug, email, avatar_url, status, room_ui_preferences, messenger_pinned_conversation_ids, profile_search_closed, profile_search_allow_by_name, profile_search_allow_by_email, profile_search_allow_by_slug, dm_allow_from, profile_view_allow_from, profile_show_avatar, profile_show_slug, profile_show_last_active',
           )
           .eq('id', uid)
           .single(),
@@ -168,6 +170,9 @@ export function useProfile(): UseProfileReturn {
         profile_show_avatar: userData.profile_show_avatar !== false,
         profile_show_slug: userData.profile_show_slug !== false,
         profile_show_last_active: userData.profile_show_last_active !== false,
+        ...('messenger_pinned_conversation_ids' in userData
+          ? { messenger_pinned_conversation_ids: userData.messenger_pinned_conversation_ids ?? null }
+          : {}),
       })
 
       // Подписка: берём через аккаунт владельца

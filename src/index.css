@@ -6239,7 +6239,7 @@ span.dashboard-messenger__thread-avatar {
   position: relative;
   box-sizing: border-box;
   min-width: 0;
-  max-width: min(76%, calc(100% - 16px), 640px);
+  max-width: min(85%, calc(100% - 16px), 640px);
   width: fit-content;
   justify-self: start;
   border: 1px solid rgba(255,255,255,.08);
@@ -6249,7 +6249,9 @@ span.dashboard-messenger__thread-avatar {
   -webkit-touch-callout: none;
   overflow-wrap: anywhere;
   word-break: break-word;
-  overflow-x: clip;
+  /* Жёсткая коробка: вложения не раздувают ленту по горизонтали */
+  overflow: hidden;
+  contain: layout;
 }
 
 .dashboard-messenger__message--highlight {
@@ -6327,6 +6329,30 @@ span.dashboard-messenger__thread-avatar {
   line-height: 1.28;
   min-width: 0;
   max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Стеки текста / превью / markdown — не шире бабла */
+.dashboard-messenger__message-body .messenger-bubble-stack,
+.dashboard-messenger__message-body .messenger-md-link-stack,
+.dashboard-messenger__message-body .messenger-message-md {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.dashboard-messenger__message-body .messenger-link-preview-card {
+  width: 100%;
+  max-width: 100%;
+}
+
+.dashboard-messenger__message-body .messenger-link-preview-card__embed {
+  max-width: 100%;
+}
+
+.dashboard-messenger__message-body .messenger-link-preview-card__embed iframe {
+  width: 100%;
+  max-width: 100%;
 }
 
 .dashboard-messenger__message-body img,
@@ -6334,6 +6360,15 @@ span.dashboard-messenger__thread-avatar {
   max-width: 100%;
   height: auto;
   vertical-align: middle;
+  object-fit: contain;
+  object-position: left top;
+}
+
+.dashboard-messenger__message-body video,
+.dashboard-messenger__message-body iframe,
+.dashboard-messenger__message-body embed {
+  max-width: 100%;
+  height: auto;
 }
 
 .messenger-message-md pre {

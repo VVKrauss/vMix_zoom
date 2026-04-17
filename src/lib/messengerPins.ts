@@ -4,37 +4,50 @@ import { sortConversationsByActivity } from './messengerDashboardUtils'
 const STORAGE_KEY = 'vmix.messenger.pinnedChatIds'
 export const MESSENGER_MAX_PINNED_CHATS = 3
 
-function parseIds(raw: string | null): string[] {
-  if (!raw) return []
+/** Нормализация массива id из БД / localStorage. */
+export function normalizeMessengerPinnedIds(raw: unknown): string[] {
+  if (raw == null) return []
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  for (const x of raw) {
+    if (typeof x !== 'string') continue
+    const t = x.trim()
+    if (t && !out.includes(t)) out.push(t)
+    if (out.length >= MESSENGER_MAX_PINNED_CHATS) break
+  }
+  return out
+}
+
+export function readMessengerPinnedChatIds(): string[] {
+  if (typeof window === 'undefined') return []
   try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return []
     const v = JSON.parse(raw) as unknown
-    if (!Array.isArray(v)) return []
-    const out: string[] = []
-    for (const x of v) {
-      if (typeof x !== 'string') continue
-      const t = x.trim()
-      if (t && !out.includes(t)) out.push(t)
-      if (out.length >= MESSENGER_MAX_PINNED_CHATS) break
-    }
-    return out
+    return normalizeMessengerPinnedIds(v)
   } catch {
     return []
   }
 }
 
-export function readMessengerPinnedChatIds(): string[] {
-  if (typeof window === 'undefined') return []
-  return parseIds(window.localStorage.getItem(STORAGE_KEY))
-}
-
 export function writeMessengerPinnedChatIds(ids: string[]): void {
   if (typeof window === 'undefined') return
-  const next = ids
-    .map((x) => x.trim())
-    .filter(Boolean)
-    .filter((x, i, a) => a.indexOf(x) === i)
-    .slice(0, MESSENGER_MAX_PINNED_CHATS)
+  const next = normalizeMessengerPinnedIds(ids)
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+}
+
+/**
+ * - Поле отсутствует в ответе (`undefined`) — только legacy localStorage.
+ * - Сервер отдал непустой список — он главный (другие устройства).
+ * - Сервер пустой (`[]` / null), а в localStorage ещё есть закрепы — не затираем:
+ *   иначе после F5 теряются закрепы, пока debounced save не успел в БД или update молча упал.
+ */
+export function resolveMessengerPinnedChatsForHydration(serverRaw: unknown | undefined): string[] {
+  if (serverRaw === undefined) return readMessengerPinnedChatIds()
+  const fromServer = normalizeMessengerPinnedIds(serverRaw)
+  if (fromServer.length > 0) return fromServer
+  const local = readMessengerPinnedChatIds()
+  return local.length > 0 ? local : fromServer
 }
 
 /** Сначала закреплённые (в порядке pin), затем остальные по активности. */
