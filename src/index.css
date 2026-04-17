@@ -1647,6 +1647,14 @@ html.app-root--room #root {
   text-align: center;
 }
 
+.home-version {
+  font-size: 8px;
+  color: var(--text-dim);
+  text-align: center;
+  opacity: 0.5;
+  user-select: none;
+}
+
 /* ─── News page (/news) — колонка по центру экрана, без карточки-модалки ───── */
 .news-page.join-screen {
   padding: 28px 20px 48px;

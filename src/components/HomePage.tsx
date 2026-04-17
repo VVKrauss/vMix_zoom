@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
+import { APP_VERSION } from '../config/version'
 import { setPendingHostClaim } from '../lib/spaceRoom'
 import { newRoomId } from '../utils/roomId'
 import { ChatBubbleIcon, DashboardIcon } from './icons'
@@ -41,7 +42,7 @@ export function HomePage() {
     <div className="join-screen join-screen--themed">
       <div className="join-home-stack">
         <div className="join-card join-card--home">
-        <div className="home-alpha-corner-wrap">
+          <div className="home-alpha-corner-wrap">
           <Link
             to="/news"
             className="theme-toggle home-alpha-corner-btn"
@@ -54,11 +55,11 @@ export function HomePage() {
           <div className="home-alpha-corner-tooltip" role="tooltip">
             {ALPHA_TOOLTIP}
           </div>
-        </div>
+          </div>
 
-        <div className="join-logo-static" aria-hidden>
-          <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
-        </div>
+          <div className="join-logo-static" aria-hidden>
+            <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
+          </div>
 
         {!loading ? (
           <div className="home-auth-block">
@@ -158,7 +159,12 @@ export function HomePage() {
             Перейти в комнату
           </button>
         </form>
-      </div>
+
+        </div>
+
+        <p className="home-version" aria-label={`Версия приложения: ${APP_VERSION}`}>
+          {APP_VERSION}
+        </p>
       </div>
     </div>
   )
