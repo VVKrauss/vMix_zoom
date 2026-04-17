@@ -128,6 +128,10 @@ import {
   JoinRequestsIcon,
   LogOutIcon,
   MenuBurgerIcon,
+  MessengerFilterAllIcon,
+  MessengerFilterChannelIcon,
+  MessengerFilterDirectIcon,
+  MessengerFilterGroupIcon,
   ParticipantsBadgeIcon,
   PlusIcon,
   RoomsIcon,
@@ -3106,23 +3110,29 @@ export function DashboardMessengerPage() {
                   <div className="dashboard-messenger__kind-tabs" role="tablist" aria-label="Фильтр бесед">
                     {(
                       [
-                        { id: 'all' as const, label: 'Все' },
-                        { id: 'direct' as const, label: 'Лички' },
-                        { id: 'group' as const, label: 'Группы' },
-                        { id: 'channel' as const, label: 'Каналы' },
+                        { id: 'all' as const, label: 'Все', Icon: MessengerFilterAllIcon },
+                        { id: 'direct' as const, label: 'Личные сообщения', Icon: MessengerFilterDirectIcon },
+                        { id: 'group' as const, label: 'Группы', Icon: MessengerFilterGroupIcon },
+                        { id: 'channel' as const, label: 'Каналы', Icon: MessengerFilterChannelIcon },
                       ] as const
-                    ).map(({ id, label }) => (
+                    ).map(({ id, label, Icon }) => (
                       <button
                         key={id}
                         type="button"
                         role="tab"
+                        title={label}
                         className={`dashboard-messenger__kind-tab${
                           conversationKindFilter === id ? ' dashboard-messenger__kind-tab--active' : ''
                         }`}
                         aria-selected={conversationKindFilter === id}
                         onClick={() => setConversationKindFilter(id)}
                       >
-                        {label}
+                        <span className="dashboard-messenger__kind-tab-inner">
+                          <span className="dashboard-messenger__kind-tab-icon" aria-hidden>
+                            <Icon />
+                          </span>
+                          <span className="dashboard-messenger__kind-tab-label">{label}</span>
+                        </span>
                       </button>
                     ))}
                   </div>

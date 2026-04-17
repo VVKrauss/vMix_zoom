@@ -2,18 +2,21 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
+import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import { AdminDashboardPanel } from './AdminDashboardPanel'
 import { AdminRegisteredUsersTable } from './AdminRegisteredUsersTable'
 import { ServerSettingsModal } from './ServerSettingsModal'
 import { TelegramNotificationsPanel } from './TelegramNotificationsPanel'
 import { AdminRoomChatsCleanupPanel } from './AdminRoomChatsCleanupPanel'
 import { AdminSiteNewsPanel } from './AdminSiteNewsPanel'
+import { ChatBubbleIcon } from './icons'
 
 type AdminTab = 'dashboard' | 'users' | 'server' | 'notifications' | 'roomChats' | 'news'
 
 export function AdminPage() {
   const { signOut } = useAuth()
   const { isSuperadmin } = useCanAccessAdminPanel()
+  const messengerUnread = useMessengerUnreadCount()
   const [tab, setTab] = useState<AdminTab>('dashboard')
 
   return (
@@ -28,6 +31,19 @@ export function AdminPage() {
           </Link>
           <Link to="/dashboard" className="dashboard-topbar__nav-link">
             Личный кабинет
+          </Link>
+          <Link
+            to="/dashboard/messenger"
+            className="dashboard-topbar__nav-link dashboard-topbar__nav-link--inline-icon"
+            title="Мессенджер"
+          >
+            <ChatBubbleIcon />
+            <span>Мессенджер</span>
+            {messengerUnread > 0 ? (
+              <span className="dashboard-topbar__nav-ms-badge">
+                {messengerUnread > 99 ? '99+' : messengerUnread}
+              </span>
+            ) : null}
           </Link>
           <button
             type="button"

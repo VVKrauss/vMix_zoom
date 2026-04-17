@@ -98,9 +98,9 @@ export function RoomChatPanel({
               Boolean(onToggleContactPin) &&
               (!localUserId || message.senderUserId !== localUserId)
             const statusLabel = status?.isMutualContact
-              ? 'контакт'
+              ? 'взаимные'
               : status?.pinnedByMe
-                ? 'закреплён'
+                ? 'в контактах'
                 : null
             const authorAvatarUrl =
               avatarByPeerId[message.peerId] ??
@@ -156,8 +156,8 @@ export function RoomChatPanel({
                           type="button"
                           className={`room-chat-msg__favorite-btn${status?.pinnedByMe ? ' room-chat-msg__favorite-btn--active' : ''}`}
                           onClick={() => onToggleContactPin?.(message.senderUserId!, !status?.pinnedByMe)}
-                          title={status?.pinnedByMe ? 'Снять закреп' : 'Закрепить'}
-                          aria-label={status?.pinnedByMe ? 'Снять закреп' : 'Закрепить'}
+                          title={status?.pinnedByMe ? 'Убрать из контактов' : 'Добавить в контакты'}
+                          aria-label={status?.pinnedByMe ? 'Убрать из контактов' : 'Добавить в контакты'}
                         >
                           <StarIcon filled={status?.pinnedByMe === true} />
                         </button>

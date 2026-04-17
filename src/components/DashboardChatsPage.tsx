@@ -15,10 +15,12 @@ import {
   type PersistentSpaceRoomRow,
 } from '../lib/spaceRoom'
 import { newRoomId } from '../utils/roomId'
+import type { DashboardRoomModalSubject } from '../lib/dashboardRoomStats'
 import { ConfirmDialog } from './ConfirmDialog'
 import { DashboardShell } from './DashboardShell'
-import { CamIcon, ChatBubbleIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, TrashIcon } from './icons'
-import { DashboardRoomInfoModal } from './DashboardRoomInfoModal'
+import { DashboardRoomRow } from './DashboardRoomRow'
+import { DashboardRoomStatsModal } from './DashboardRoomStatsModal'
+import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from './icons'
 import { RoomChatArchiveModal } from './RoomChatArchiveModal'
 
 function formatRoomListDate(value: string | null): string {
@@ -51,8 +53,7 @@ export function DashboardChatsPage() {
   const [myRooms, setMyRooms] = useState<PersistentSpaceRoomRow[]>([])
   const [myRoomsLoading, setMyRoomsLoading] = useState(false)
   const [myRoomsError, setMyRoomsError] = useState<string | null>(null)
-  const [roomInfoOpen, setRoomInfoOpen] = useState(false)
-  const [roomInfoSummary, setRoomInfoSummary] = useState<RoomChatConversationSummary | null>(null)
+  const [roomStatsSubject, setRoomStatsSubject] = useState<DashboardRoomModalSubject | null>(null)
 
   const loadPage = useCallback(
     async (offset: number) => {
@@ -134,23 +135,6 @@ export function DashboardChatsPage() {
   const goOlder = () => {
     if (!hasMore) return
     void loadPage(pageOffset + ROOM_CHAT_PAGE_SIZE)
-  }
-
-  const openChatModal = (item: RoomChatConversationSummary) => {
-    if (item.messageCount <= 0) return
-    setModalSummary(item)
-    setModalConversationId(item.id)
-    setModalOpen(true)
-  }
-
-  const openRoomInfo = (item: RoomChatConversationSummary) => {
-    setRoomInfoSummary(item)
-    setRoomInfoOpen(true)
-  }
-
-  const closeRoomInfo = () => {
-    setRoomInfoOpen(false)
-    setRoomInfoSummary(null)
   }
 
   const closeChatModal = () => {
@@ -237,42 +221,21 @@ export function DashboardChatsPage() {
                 const label = r.displayName?.trim() || r.slug
                 const showTitle = Boolean(r.displayName?.trim())
                 return (
-                <li key={r.slug} className="dashboard-my-rooms__row">
-                  {r.status === 'open' ? (
-                    <span className="dashboard-rooms-live-dot" title="Открыта" aria-label="Открыта" />
-                  ) : (
-                    <span className="dashboard-rooms-live-slot" aria-hidden />
-                  )}
-                  {r.avatarUrl ? (
-                    <img
-                      src={r.avatarUrl}
-                      alt=""
-                      className="dashboard-my-rooms__avatar"
-                      width={24}
-                      height={24}
-                      loading="lazy"
-                      decoding="async"
+                  <li key={r.slug}>
+                    <DashboardRoomRow
+                      dateLabel={formatRoomListDate(r.createdAt)}
+                      title={label}
+                      titleHint={showTitle ? r.slug : undefined}
+                      avatarUrl={r.avatarUrl}
+                      meta={`${r.accessMode} · ${r.chatVisibility}`}
+                      isOpen={r.status === 'open'}
+                      showCamLink={r.status === 'open'}
+                      camHref={`/r/${encodeURIComponent(r.slug)}`}
+                      onOpenStats={() =>
+                        setRoomStatsSubject({ kind: 'persistent', slug: r.slug, preview: r })
+                      }
                     />
-                  ) : null}
-                  <Link
-                    to={`/r/${encodeURIComponent(r.slug)}`}
-                    className={`dashboard-my-rooms__slug${showTitle ? ' dashboard-my-rooms__slug--title' : ''}`}
-                    title={showTitle ? r.slug : undefined}
-                  >
-                    {label}
-                  </Link>
-                  <span className="dashboard-my-rooms__meta" title={`Доступ: ${r.accessMode}, чат: ${r.chatVisibility}`}>
-                    {r.accessMode} · {r.chatVisibility}
-                  </span>
-                  <Link
-                    to={`/r/${encodeURIComponent(r.slug)}`}
-                    className="dashboard-rooms-icon-btn dashboard-my-rooms__open"
-                    title="Открыть комнату"
-                    aria-label="Открыть комнату"
-                  >
-                    <CamIcon />
-                  </Link>
-                </li>
+                  </li>
                 )
               })}
             </ul>
@@ -317,80 +280,21 @@ export function DashboardChatsPage() {
         {!loading && !error && items.length > 0 ? (
           <ul className="dashboard-rooms-compact-list">
             {items.map((item) => {
-              const chatEnabled = item.messageCount > 0
               const isOpen = !item.closedAt
               const slug = item.roomSlug?.trim() ?? ''
               const canJoinRoom = Boolean(slug && joinableSlugs.has(slug))
               return (
                 <li key={item.id}>
-                  <div className="dashboard-rooms-compact-row dashboard-rooms-compact-row--clickable">
-                    <button
-                      type="button"
-                      className="dashboard-rooms-compact-row__main-hit"
-                      onClick={() => openRoomInfo(item)}
-                      title="Подробнее о комнате"
-                    >
-                      <span className="dashboard-rooms-compact-row__hit-inner">
-                        {isOpen ? (
-                          <span className="dashboard-rooms-live-dot" title="Комната ещё открыта" aria-label="Открыта" />
-                        ) : (
-                          <span className="dashboard-rooms-live-slot" aria-hidden />
-                        )}
-                        <span className="dashboard-rooms-compact-row__title" title={item.title}>
-                          {item.title}
-                        </span>
-                        <span className="dashboard-rooms-compact-row__date">
-                          {formatRoomListDate(item.lastMessageAt ?? item.createdAt)}
-                        </span>
-                      </span>
-                    </button>
-                    <div className="dashboard-rooms-compact-row__actions">
-                      <button
-                        type="button"
-                        className="dashboard-rooms-icon-btn"
-                        disabled={!chatEnabled}
-                        title={chatEnabled ? 'Чат комнаты' : 'Нет сообщений'}
-                        aria-label="Чат комнаты"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          openChatModal(item)
-                        }}
-                      >
-                        <ChatBubbleIcon />
-                      </button>
-                      {canJoinRoom ? (
-                        <Link
-                          to={`/r/${encodeURIComponent(slug)}`}
-                          className="dashboard-rooms-icon-btn"
-                          title="Зайти в комнату"
-                          aria-label="Зайти в комнату"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <CamIcon />
-                        </Link>
-                      ) : (
-                        <span
-                          className="dashboard-rooms-icon-btn dashboard-rooms-icon-btn--disabled"
-                          aria-hidden
-                          title={slug ? 'Комната недоступна (закрыта или удалена)' : 'Нет ссылки на комнату'}
-                        >
-                          <CamIcon />
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        className="dashboard-rooms-icon-btn dashboard-rooms-icon-btn--danger"
-                        title="Убрать из списка"
-                        aria-label="Убрать из списка"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setDeleteTarget(item)
-                        }}
-                      >
-                        <TrashIcon />
-                      </button>
-                    </div>
-                  </div>
+                  <DashboardRoomRow
+                    dateLabel={formatRoomListDate(item.lastMessageAt ?? item.createdAt)}
+                    title={item.title}
+                    titleHint={item.title}
+                    meta={`${item.messageCount} сообщ.`}
+                    isOpen={isOpen}
+                    showCamLink={canJoinRoom}
+                    camHref={canJoinRoom ? `/r/${encodeURIComponent(slug)}` : undefined}
+                    onOpenStats={() => setRoomStatsSubject({ kind: 'archive', summary: item })}
+                  />
                 </li>
               )
             })}
@@ -409,19 +313,28 @@ export function DashboardChatsPage() {
       ) : null}
 
       {user?.id ? (
-        <DashboardRoomInfoModal
-          open={roomInfoOpen}
-          conversationId={roomInfoSummary?.id ?? null}
-          summary={roomInfoSummary}
-          userId={user.id}
-          onClose={closeRoomInfo}
-          onOpenChat={() => {
-            if (!roomInfoSummary || roomInfoSummary.messageCount <= 0) return
-            setModalSummary(roomInfoSummary)
-            setModalConversationId(roomInfoSummary.id)
+        <DashboardRoomStatsModal
+          open={roomStatsSubject !== null}
+          subject={roomStatsSubject}
+          joinableSlugs={joinableSlugs}
+          currentUserId={user.id}
+          onClose={() => setRoomStatsSubject(null)}
+          onOpenChat={(p) => {
+            if (p.summary.messageCount <= 0) return
+            setModalSummary(p.summary)
+            setModalConversationId(p.conversationId)
             setModalOpen(true)
-            closeRoomInfo()
+            setRoomStatsSubject(null)
           }}
+          onRemoveFromList={
+            roomStatsSubject?.kind === 'archive'
+              ? () => {
+                  setDeleteTarget(roomStatsSubject.summary)
+                  setRoomStatsSubject(null)
+                }
+              : undefined
+          }
+          removeFromListBusy={deleteBusy}
         />
       ) : null}
 

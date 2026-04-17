@@ -83,12 +83,12 @@ export function DashboardContactsIncomingModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 id="dashboard-contacts-incoming-title" className="confirm-dialog__title">
-          Входящие закрепы
+          Входящие от других
         </h2>
         <div className="dashboard-profile-modal__scroll">
           <p className="dashboard-field__hint" style={{ marginTop: 0 }}>
-            Кто-то закрепил вас у себя. Закрепите в ответ — станете взаимными контактами. «Скрыть» убирает строку из
-            списка (считается просмотренным).
+            Кто-то добавил вас в контакты. Добавьте этого человека к себе — вы станете взаимными контактами. «Скрыть»
+            убирает строку из списка (считается просмотренным).
           </p>
           <div className="dashboard-field__inline dashboard-field__inline--toggle" style={{ marginBottom: '12px' }}>
             <span className="dashboard-field__label">Показать скрытые</span>
@@ -130,7 +130,7 @@ export function DashboardContactsIncomingModal({
                         >
                           <span className="dashboard-incoming-fav-modal__btn-inner">
                             <StarIcon filled={false} />
-                            <span>Закрепить</span>
+                            <span>Добавить в контакты</span>
                           </span>
                         </button>
                       ) : null}

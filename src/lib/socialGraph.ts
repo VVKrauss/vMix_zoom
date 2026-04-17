@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 
-/** Связь «закреп» (бывш. избранное): я закрепил / меня закрепили / взаимно. */
+/** Контакты (user_favorites): я добавил / меня добавили / взаимно. */
 export type ContactStatus = {
   targetUserId: string
   pinnedByMe: boolean
@@ -107,7 +107,7 @@ export async function getContactStatuses(
   return { data: mapped, error: null }
 }
 
-/** Закрепить / снять закреп (таблица user_favorites, RPC set_user_favorite). */
+/** Добавить или убрать из контактов (user_favorites, RPC set_user_favorite). */
 export async function setContactPin(
   targetUserId: string,
   pinned: boolean,

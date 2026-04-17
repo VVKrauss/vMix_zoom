@@ -60,7 +60,7 @@ export type StudioSourceOption = {
   label: string
   kind: 'camera' | 'screen'
   peerId: string
-  /** Зарегистрированный пользователь-владелец источника; для закрепа в контактах и т.п. */
+  /** Зарегистрированный пользователь-владелец источника; для контактов и т.п. */
   authUserId?: string | null
   displayName: string
   avatarUrl?: string | null

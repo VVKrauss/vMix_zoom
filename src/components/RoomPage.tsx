@@ -1007,7 +1007,7 @@ export function RoomPage({
         },
         {
           key: 'fav',
-          label: c?.pinnedByMe ? 'Снять закреп' : 'Закрепить',
+          label: c?.pinnedByMe ? 'Убрать из контактов' : 'Добавить в контакты',
           onSelect: () => {
             void toggleFavoriteFromChat(uid, !(c?.pinnedByMe ?? false))
           },

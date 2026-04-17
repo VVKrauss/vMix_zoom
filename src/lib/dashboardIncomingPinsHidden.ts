@@ -1,4 +1,4 @@
-/** Локально скрытые входящие закрепы в тайле кабинета (модалка «добавили вас»). */
+/** Локально скрытые входящие контакты в тайле кабинета (модалка «добавили вас»). */
 const PREFIX = 'vmix.dashboard.hiddenIncomingFavIds:'
 
 function storageKey(userId: string): string {

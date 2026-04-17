@@ -8,8 +8,10 @@ import { deleteMyAccount } from '../lib/accountLifecycle'
 import {
   type RoomChatConversationSummary,
   ROOM_CHAT_PAGE_SIZE,
+  leaveRoomChatArchiveEntry,
   listRoomChatConversationsForUser,
 } from '../lib/chatArchive'
+import type { DashboardRoomModalSubject } from '../lib/dashboardRoomStats'
 import { readHiddenIncomingPinIds } from '../lib/dashboardIncomingPinsHidden'
 import { listMessengerPeersByMessageCount } from '../lib/messenger'
 import { normalizeProfileSlug, validateProfileSlugInput } from '../lib/profileSlug'
@@ -26,6 +28,9 @@ import { DashboardProfileModal } from './DashboardProfileModal'
 import { PillToggle } from './PillToggle'
 import { DashboardShell } from './DashboardShell'
 import { ConfirmDialog } from './ConfirmDialog'
+import { DashboardRoomRow } from './DashboardRoomRow'
+import { DashboardRoomStatsModal } from './DashboardRoomStatsModal'
+import { RoomChatArchiveModal } from './RoomChatArchiveModal'
 import { ChatBubbleIcon, SettingsGearIcon } from './icons'
 
 const STATUS_LABEL: Record<string, string> = {
@@ -156,6 +161,14 @@ export function DashboardPage() {
   const [incomingModalOpen, setIncomingModalOpen] = useState(false)
   const [hiddenIncomingIds, setHiddenIncomingIds] = useState<string[]>([])
   const [showHiddenIncoming, setShowHiddenIncoming] = useState(false)
+  const [roomStatsSubject, setRoomStatsSubject] = useState<DashboardRoomModalSubject | null>(null)
+  const [roomChatModalOpen, setRoomChatModalOpen] = useState(false)
+  const [roomChatModalId, setRoomChatModalId] = useState<string | null>(null)
+  const [roomChatModalSummary, setRoomChatModalSummary] = useState<RoomChatConversationSummary | null>(null)
+  const [roomArchiveRefreshKey, setRoomArchiveRefreshKey] = useState(0)
+  const [deleteRoomFromListTarget, setDeleteRoomFromListTarget] = useState<RoomChatConversationSummary | null>(null)
+  const [deleteRoomFromListBusy, setDeleteRoomFromListBusy] = useState(false)
+  const [roomArchiveActionErr, setRoomArchiveActionErr] = useState<string | null>(null)
 
   const refreshHiddenIncoming = useCallback(() => {
     if (!user?.id) {
@@ -241,7 +254,7 @@ export function DashboardPage() {
     return () => {
       alive = false
     }
-  }, [user?.id])
+  }, [user?.id, roomArchiveRefreshKey])
 
   useEffect(() => {
     void listMessengerPeersByMessageCount(6).then((r) => {
@@ -401,6 +414,14 @@ export function DashboardPage() {
       .slice(0, 6)
   }, [roomArchiveItems, persistentSlugs])
 
+  const joinableSlugs = useMemo(() => {
+    const s = new Set<string>()
+    for (const r of myRooms) {
+      if (r.status === 'open' && r.slug?.trim()) s.add(r.slug.trim())
+    }
+    return s
+  }, [myRooms])
+
   const hiddenIncomingSet = useMemo(() => new Set(hiddenIncomingIds), [hiddenIncomingIds])
   const incomingRequests = useMemo(
     () => contacts.filter((c) => c.pinnedMe && !c.pinnedByMe),
@@ -543,6 +564,93 @@ export function DashboardPage() {
           })()
         }}
       />
+
+      {user?.id ? (
+        <>
+          <DashboardRoomStatsModal
+            open={roomStatsSubject !== null}
+            subject={roomStatsSubject}
+            joinableSlugs={joinableSlugs}
+            currentUserId={user.id}
+            onClose={() => setRoomStatsSubject(null)}
+            onOpenChat={(p) => {
+              if (p.summary.messageCount <= 0) return
+              setRoomChatModalSummary(p.summary)
+              setRoomChatModalId(p.conversationId)
+              setRoomChatModalOpen(true)
+              setRoomStatsSubject(null)
+            }}
+            onRemoveFromList={
+              roomStatsSubject?.kind === 'archive'
+                ? () => {
+                    setDeleteRoomFromListTarget(roomStatsSubject.summary)
+                    setRoomStatsSubject(null)
+                  }
+                : undefined
+            }
+            removeFromListBusy={deleteRoomFromListBusy}
+          />
+          <RoomChatArchiveModal
+            open={roomChatModalOpen}
+            conversationId={roomChatModalId}
+            summary={roomChatModalSummary}
+            userId={user.id}
+            onClose={() => {
+              setRoomChatModalOpen(false)
+              setRoomChatModalId(null)
+              setRoomChatModalSummary(null)
+            }}
+          />
+          <ConfirmDialog
+            open={Boolean(deleteRoomFromListTarget)}
+            title="Убрать комнату из списка?"
+            message={
+              <div className="dashboard-rooms-delete-confirm">
+                <p>
+                  Запись о комнате «{deleteRoomFromListTarget?.title ?? '—'}» исчезнет только у вас. У других участников
+                  эфира доступ к чату сохранится.
+                </p>
+                <p>
+                  <strong>Важно:</strong> если в этом чате не было сообщений, диалог будет удалён из базы целиком — у
+                  всех пропадёт пустая запись. Если сообщения были, история останется у тех, кто не удалял запись.
+                </p>
+                <p className="dashboard-rooms-delete-confirm--warn">
+                  У вас локально переписка из этого списка больше не отобразится; восстановить только вашу «закладку»
+                  без повторного входа в эфир нельзя.
+                </p>
+              </div>
+            }
+            confirmLabel="Удалить из списка"
+            cancelLabel="Отмена"
+            confirmLoading={deleteRoomFromListBusy}
+            onCancel={() => {
+              if (!deleteRoomFromListBusy) setDeleteRoomFromListTarget(null)
+            }}
+            onConfirm={() => {
+              void (async () => {
+                if (!deleteRoomFromListTarget) return
+                setRoomArchiveActionErr(null)
+                setDeleteRoomFromListBusy(true)
+                const res = await leaveRoomChatArchiveEntry(deleteRoomFromListTarget.id)
+                setDeleteRoomFromListBusy(false)
+                if (!res.ok) {
+                  setRoomArchiveActionErr(res.error ?? 'Не удалось убрать из списка.')
+                  setDeleteRoomFromListTarget(null)
+                  return
+                }
+                const removedId = deleteRoomFromListTarget.id
+                setDeleteRoomFromListTarget(null)
+                if (roomChatModalId === removedId) {
+                  setRoomChatModalOpen(false)
+                  setRoomChatModalId(null)
+                  setRoomChatModalSummary(null)
+                }
+                setRoomArchiveRefreshKey((k) => k + 1)
+              })()
+            }}
+          />
+        </>
+      ) : null}
 
       <div className="dashboard-tiles-wrap">
         <div className="dashboard-tiles">
@@ -699,6 +807,7 @@ export function DashboardPage() {
 
         <section className="dashboard-tile dashboard-tile--rooms">
           <h2 className="dashboard-tile__title">Комнаты</h2>
+          {roomArchiveActionErr ? <p className="join-error dashboard-tile__hint">{roomArchiveActionErr}</p> : null}
           <div className="dashboard-tile__grow">
           {myRoomsLoading || roomArchiveLoading ? (
             <p className="dashboard-tile__hint">Загрузка…</p>
@@ -708,34 +817,53 @@ export function DashboardPage() {
               {persistentPreview.length === 0 ? (
                 <p className="dashboard-tile__hint">Пока нет постоянных комнат.</p>
               ) : (
-                <ul className="dashboard-tile-rooms__list">
-                  {persistentPreview.map((r) => (
-                    <li key={r.slug} className="dashboard-tile-rooms__row">
-                      <span className="dashboard-tile-rooms__dt">{formatRoomTileDate(r.createdAt)}</span>
-                      <Link to={`/r/${encodeURIComponent(r.slug)}`} className="dashboard-tile-rooms__name">
-                        {r.displayName?.trim() || r.slug}
-                      </Link>
-                      <span className="dashboard-tile-rooms__meta">—</span>
-                    </li>
-                  ))}
+                <ul className="dashboard-my-rooms__list">
+                  {persistentPreview.map((r) => {
+                    const label = r.displayName?.trim() || r.slug
+                    const showTitle = Boolean(r.displayName?.trim())
+                    return (
+                      <li key={r.slug}>
+                        <DashboardRoomRow
+                          dateLabel={formatRoomTileDate(r.createdAt)}
+                          title={label}
+                          titleHint={showTitle ? r.slug : undefined}
+                          avatarUrl={r.avatarUrl}
+                          meta={`${r.accessMode} · ${r.chatVisibility}`}
+                          isOpen={r.status === 'open'}
+                          showCamLink={r.status === 'open'}
+                          camHref={`/r/${encodeURIComponent(r.slug)}`}
+                          onOpenStats={() =>
+                            setRoomStatsSubject({ kind: 'persistent', slug: r.slug, preview: r })
+                          }
+                        />
+                      </li>
+                    )
+                  })}
                 </ul>
               )}
               <h3 className="dashboard-tile__subtitle">Недавние</h3>
               {temporaryPreview.length === 0 ? (
                 <p className="dashboard-tile__hint">Временных комнат в списке пока нет.</p>
               ) : (
-                <ul className="dashboard-tile-rooms__list">
-                  {temporaryPreview.map((it) => (
-                    <li key={it.id} className="dashboard-tile-rooms__row">
-                      <span className="dashboard-tile-rooms__dt">
-                        {formatRoomTileDate(it.lastMessageAt ?? it.createdAt)}
-                      </span>
-                      <span className="dashboard-tile-rooms__name" title={it.title}>
-                        {it.title}
-                      </span>
-                      <span className="dashboard-tile-rooms__meta">{it.messageCount} сообщ.</span>
-                    </li>
-                  ))}
+                <ul className="dashboard-my-rooms__list">
+                  {temporaryPreview.map((it) => {
+                    const slug = it.roomSlug?.trim() ?? ''
+                    const canJoin = Boolean(slug && joinableSlugs.has(slug))
+                    return (
+                      <li key={it.id}>
+                        <DashboardRoomRow
+                          dateLabel={formatRoomTileDate(it.lastMessageAt ?? it.createdAt)}
+                          title={it.title}
+                          titleHint={it.title}
+                          meta={`${it.messageCount} сообщ.`}
+                          isOpen={!it.closedAt}
+                          showCamLink={canJoin}
+                          camHref={canJoin ? `/r/${encodeURIComponent(slug)}` : undefined}
+                          onOpenStats={() => setRoomStatsSubject({ kind: 'archive', summary: it })}
+                        />
+                      </li>
+                    )
+                  })}
                 </ul>
               )}
             </>
@@ -749,7 +877,7 @@ export function DashboardPage() {
         <section className="dashboard-tile dashboard-tile--friends">
           <h2 className="dashboard-tile__title">Контакты</h2>
           <div className="dashboard-tile-friends__head">
-            <span className="dashboard-tile-friends__label">Входящие закрепы</span>
+            <span className="dashboard-tile-friends__label">Входящие от других</span>
             {visibleIncomingCount > 0 ? (
               <span className="dashboard-tile-friends__count">{visibleIncomingCount}</span>
             ) : (

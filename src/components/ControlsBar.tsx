@@ -1135,12 +1135,12 @@ function ChatOptionsPopover({
     <div className="settings-popover" ref={ref}>
       <div className="settings-popover__title">Чат</div>
       <div className="settings-row settings-row--pill">
-        <span className="settings-label">Закрепить чат</span>
+        <span className="settings-label">Фиксировать панель чата</span>
         <PillToggle
           compact
           checked={chatEmbed}
           onCheckedChange={() => onToggleChatEmbed()}
-          ariaLabel="Закрепить чат в интерфейсе комнаты"
+          ariaLabel="Зафиксировать панель чата в интерфейсе комнаты"
         />
       </div>
       <div className="settings-row settings-row--pill">

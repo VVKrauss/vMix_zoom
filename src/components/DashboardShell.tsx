@@ -32,8 +32,6 @@ type DashboardShellProps = {
   suppressBurger?: boolean
   /** Доп. элементы в правой части шапки (например, переключатель звука на странице мессенджера). */
   headerExtra?: ReactNode
-  /** Показывать плитку «Мессенджер» в быстром меню (по умолчанию скрыта вне «Комнаты» и самого мессенджера). */
-  showMessengerTileInQuickMenu?: boolean
 }
 
 const INCOMING_PINS_BANNER_DISMISS_PREFIX = 'vmix.dashboard.incomingPin.dismissSig:'
@@ -54,7 +52,6 @@ export function DashboardShell({
   chromeless,
   suppressBurger = false,
   headerExtra,
-  showMessengerTileInQuickMenu = active === 'chats' || active === 'messenger',
 }: DashboardShellProps) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -178,6 +175,21 @@ export function DashboardShell({
 
         <div className="dashboard-topbar__actions">
           {!unifiedCabinetNav ? headerExtra : null}
+          {unifiedCabinetNav && active !== 'messenger' && !chromeless ? (
+            <Link
+              to="/dashboard/messenger"
+              className="dashboard-topbar__messenger"
+              title="Мессенджер"
+              aria-label="Мессенджер"
+            >
+              <ChatBubbleIcon />
+              {unreadCount > 0 ? (
+                <span className="dashboard-topbar__messenger-badge">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              ) : null}
+            </Link>
+          ) : null}
           {unifiedCabinetNav ? (
             <button
               type="button"
@@ -244,7 +256,7 @@ export function DashboardShell({
         {showIncomingPinsBanner ? (
           <div className="dashboard-incoming-fav-banner" role="status" aria-live="polite">
             <p className="dashboard-incoming-fav-banner__text">
-              Вас закрепили у себя. Закрепите этого человека у себя — вы станете взаимными контактами.
+              Вас добавили в контакты. Добавьте этого человека к себе — вы станете взаимными контактами.
             </p>
             <div className="dashboard-incoming-fav-banner__actions">
               <Link to="/dashboard/contacts" className="dashboard-incoming-fav-banner__link">
@@ -313,7 +325,7 @@ export function DashboardShell({
                   <span className="dashboard-messenger-quick-menu__lbl">Комнаты</span>
                 </Link>
               ) : null}
-              {showMessengerTileInQuickMenu && active !== 'messenger' ? (
+              {active !== 'messenger' && !chromeless ? (
                 <Link
                   to="/dashboard/messenger"
                   className="dashboard-messenger-quick-menu__btn"

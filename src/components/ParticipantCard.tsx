@@ -34,9 +34,9 @@ interface Props {
   guestKick?: { show: boolean; onKick: () => void; onBan?: () => void }
   onOpenDirectChat?: (participant: RemoteParticipant) => void
   currentUserId?: string | null
-  /** Статус закрепа/контактов для участника с authUserId */
+  /** Статус контактов для участника с authUserId */
   contactStatus?: ContactStatus | null
-  /** Переключить закреп (только для чужого залогиненного участника) */
+  /** Добавить / убрать из контактов (чужой залогиненный участник) */
   onToggleFavorite?: () => void
 }
 
@@ -91,7 +91,7 @@ export function ParticipantCard({
     if (uid && me && uid !== me && onToggleFavorite) {
       out.push({
         key: 'fav',
-        label: contactStatus?.pinnedByMe ? 'Снять закреп' : 'Закрепить',
+        label: contactStatus?.pinnedByMe ? 'Убрать из контактов' : 'Добавить в контакты',
         onSelect: onToggleFavorite,
       })
     }
@@ -178,8 +178,8 @@ export function ParticipantCard({
               type="button"
               className={`card-bar-fav${contactStatus?.pinnedByMe ? ' card-bar-fav--on' : ''}`}
               onClick={onToggleFavorite}
-              title={contactStatus?.pinnedByMe ? 'Снять закреп' : 'Закрепить'}
-              aria-label={contactStatus?.pinnedByMe ? 'Снять закреп' : 'Закрепить'}
+              title={contactStatus?.pinnedByMe ? 'Убрать из контактов' : 'Добавить в контакты'}
+              aria-label={contactStatus?.pinnedByMe ? 'Убрать из контактов' : 'Добавить в контакты'}
             >
               <StarIcon filled={contactStatus?.pinnedByMe ?? false} />
             </button>

@@ -116,8 +116,8 @@ const StudioSourceStripItem = memo(function StudioSourceStripItem({
               type="button"
               className={`studio-source-strip__fav-ico${pinActive ? ' studio-source-strip__fav-ico--on' : ''}`}
               onClick={onTogglePin}
-              title={pinActive ? 'Снять закреп' : 'Закрепить'}
-              aria-label={pinActive ? 'Снять закреп' : 'Закрепить'}
+              title={pinActive ? 'Снять с эфирной сцены' : 'Закрепить на эфирной сцене'}
+              aria-label={pinActive ? 'Снять с эфирной сцены' : 'Закрепить на эфирной сцене'}
             >
               <StarIcon filled={pinActive} />
             </button>

@@ -100,6 +100,41 @@ export function RoomsIcon() {
   return <FiRrIcon name="grid" />
 }
 
+/** Фильтр дерева чатов мессенджера: все типы бесед (сетка — как «все разделы»). */
+export function MessengerFilterAllIcon({ className }: { className?: string } = {}) {
+  return <FiRrIcon name="grid" className={className} />
+}
+
+/** Фильтр: только личные диалоги. */
+export function MessengerFilterDirectIcon({ className }: { className?: string } = {}) {
+  return <FiRrIcon name="comment" className={className} />
+}
+
+/** Фильтр: групповые чаты. */
+export function MessengerFilterGroupIcon({ className }: { className?: string } = {}) {
+  return <FiRrIcon name="users" className={className} />
+}
+
+/** Фильтр: каналы (лента / трансляция). */
+export function MessengerFilterChannelIcon({ className }: { className?: string } = {}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <path d="M4 11v4a1 1 0 0 0 1 1h2l4 4V6L7 10H5a1 1 0 0 0-1 1z" />
+      <path d="M16 9a5 5 0 0 1 0 6" />
+      <path d="M19 6a9 9 0 0 1 0 12" />
+    </svg>
+  )
+}
+
 export function StarIcon({ filled = false }: { filled?: boolean }) {
   if (filled) {
     return (

@@ -205,7 +205,12 @@ export function DashboardChatViewPage() {
                               }`}
                               disabled={pendingFavoriteUserId === senderUserId}
                               onClick={() => void toggleFavorite(senderUserId, contact?.pinnedByMe ?? false)}
-                              title={contact?.pinnedByMe ? 'Снять закреп' : 'Закрепить'}
+                              title={
+                                contact?.pinnedByMe ? 'Убрать из контактов' : 'Добавить в контакты'
+                              }
+                              aria-label={
+                                contact?.pinnedByMe ? 'Убрать из контактов' : 'Добавить в контакты'
+                              }
                             >
                               <StarIcon filled={contact?.pinnedByMe === true} />
                             </button>

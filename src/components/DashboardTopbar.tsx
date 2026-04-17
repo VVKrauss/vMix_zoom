@@ -1,6 +1,8 @@
 import { Link, useNavigate } from 'react-router-dom'
+import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import { newRoomId } from '../utils/roomId'
 import { setPendingHostClaim } from '../lib/spaceRoom'
+import { ChatBubbleIcon } from './icons'
 
 type DashboardTopbarProps = {
   canAccessAdmin: boolean
@@ -10,6 +12,7 @@ type DashboardTopbarProps = {
 
 export function DashboardTopbar({ canAccessAdmin, onSignOut, active = 'cabinet' }: DashboardTopbarProps) {
   const navigate = useNavigate()
+  const messengerUnread = useMessengerUnreadCount()
 
   const goCreateRoom = () => {
     const id = newRoomId()
@@ -45,6 +48,19 @@ export function DashboardTopbar({ canAccessAdmin, onSignOut, active = 'cabinet' 
           className={`dashboard-topbar__nav-link${active === 'chats' ? ' dashboard-topbar__nav-link--active' : ''}`}
         >
           Комнаты
+        </Link>
+        <Link
+          to="/dashboard/messenger"
+          className="dashboard-topbar__nav-link dashboard-topbar__nav-link--inline-icon"
+          title="Мессенджер"
+        >
+          <ChatBubbleIcon />
+          <span>Мессенджер</span>
+          {messengerUnread > 0 ? (
+            <span className="dashboard-topbar__nav-ms-badge">
+              {messengerUnread > 99 ? '99+' : messengerUnread}
+            </span>
+          ) : null}
         </Link>
         {canAccessAdmin ? (
           <Link to="/admin" className="dashboard-topbar__nav-link">

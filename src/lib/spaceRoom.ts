@@ -300,6 +300,26 @@ export type PersistentSpaceRoomRow = {
   avatarUrl: string | null
   guestPolicy: Record<string, unknown>
   requireCreatorHostForJoin: boolean
+  /** Суммарное время в статусе open (сек), без текущей сессии. */
+  cumulativeOpenSeconds: number
+  /** Начало текущей открытой сессии (если status=open). */
+  openSessionStartedAt: string | null
+}
+
+/** Эффективная длительность «эфира»: накоплено + текущая открытая сессия. */
+export function spaceRoomEffectiveOpenSeconds(r: {
+  cumulativeOpenSeconds: number
+  openSessionStartedAt: string | null
+  status: string
+}): number {
+  let t = Math.max(0, r.cumulativeOpenSeconds)
+  if (r.status === 'open' && r.openSessionStartedAt) {
+    const start = new Date(r.openSessionStartedAt).getTime()
+    if (!Number.isNaN(start)) {
+      t += Math.max(0, Math.floor((Date.now() - start) / 1000))
+    }
+  }
+  return t
 }
 
 export async function fetchPersistentSpaceRoomsForUser(
@@ -311,7 +331,7 @@ export async function fetchPersistentSpaceRoomsForUser(
   const { data, error } = await supabase
     .from('space_rooms')
     .select(
-      'slug, status, access_mode, chat_visibility, created_at, display_name, avatar_url, guest_policy, require_creator_host_for_join',
+      'slug, status, access_mode, chat_visibility, created_at, display_name, avatar_url, guest_policy, require_creator_host_for_join, cumulative_open_seconds, open_session_started_at',
     )
     .eq('host_user_id', uid)
     .eq('retain_instance', true)
@@ -341,6 +361,12 @@ export async function fetchPersistentSpaceRoomsForUser(
           : null,
       guestPolicy,
       requireCreatorHostForJoin: r.require_creator_host_for_join === true,
+      cumulativeOpenSeconds:
+        typeof r.cumulative_open_seconds === 'number'
+          ? r.cumulative_open_seconds
+          : Number(r.cumulative_open_seconds ?? 0) || 0,
+      openSessionStartedAt:
+        typeof r.open_session_started_at === 'string' ? r.open_session_started_at : null,
     }
   })
 
