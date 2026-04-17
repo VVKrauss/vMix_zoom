@@ -379,6 +379,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const [participants, setParticipants] = useState<Map<string, RemoteParticipant>>(new Map())
   const [isMuted, setIsMuted] = useState(false)
   const [isCamOff, setIsCamOff] = useState(false)
+  const [couchModeOpen, setCouchModeOpen] = useState(false)
 
   const socketRef = useRef<Socket | null>(null)
   const deviceRef = useRef<Device | null>(null)
@@ -391,6 +392,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const screenShareAudioActiveRef = useRef(false)
   const screenShareOriginalAudioTrackRef = useRef<MediaStreamTrack | null>(null)
   const screenShareDisplayStreamRef = useRef<MediaStream | null>(null)
+  const screenShareMixCtxRef = useRef<AudioContext | null>(null)
+  const screenShareMixTrackRef = useRef<MediaStreamTrack | null>(null)
   const [screenShareAudioActive, setScreenShareAudioActive] = useState(false)
   const studioPreviewVideoProducerRef = useRef<Producer | null>(null)
   const studioProgramAudioProducerRef = useRef<Producer | null>(null)
@@ -1371,6 +1374,14 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         setChatMessages((prev) => [...prev, reactionLine].slice(-CHAT_MESSAGES_CAP))
       })
 
+      socket.on('couchMode', (raw: unknown) => {
+        if (!raw || typeof raw !== 'object') return
+        const o = raw as Record<string, unknown>
+        const openRaw = o.open ?? o.isOpen ?? o.value
+        const open = openRaw === true || openRaw === 1 || openRaw === 'true'
+        setCouchModeOpen(open)
+      })
+
       /**
        * Uplink видео участника → SFU (broadcast с signaling после `reportVideoUplink`).
        * Свой же пакет не применяем — локальная метрика считается через getStats.
@@ -1809,6 +1820,14 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       setScreenShareAudioActive(false)
       screenShareDisplayStreamRef.current?.getTracks().forEach((t) => t.stop())
       screenShareDisplayStreamRef.current = null
+      screenShareMixTrackRef.current?.stop()
+      screenShareMixTrackRef.current = null
+      try {
+        screenShareMixCtxRef.current?.close()
+      } catch {
+        /* noop */
+      }
+      screenShareMixCtxRef.current = null
       if (audioProducer && orig && orig.readyState === 'live') {
         void Promise.resolve(audioProducer.replaceTrack({ track: orig })).catch(() => {})
       }
@@ -1819,7 +1838,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const startScreenShare = useCallback(
     async (
       surface?: 'monitor' | 'window' | 'browser',
-      options?: { withAudio?: boolean },
+      options?: { withAudio?: boolean; maxBitrateBps?: number },
     ) => {
       if (import.meta.env.DEV) console.log('[startScreenShare] request', { surface, withAudio: options?.withAudio === true })
       if (screenProducerRef.current) {
@@ -1867,13 +1886,17 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           stopScreenShare()
         })
         const ownerPeerId = socketRef.current?.id
+        const maxBitrateBps =
+          typeof options?.maxBitrateBps === 'number' && options.maxBitrateBps > 50_000
+            ? Math.min(Math.max(options.maxBitrateBps, 100_000), 12_000_000)
+            : 4_000_000
         const producer = await sendTransport.produce({
           track: videoTrack,
           appData: {
             source: 'screen',
             ...(ownerPeerId ? { ownerPeerId } : {}),
           },
-          encodings: [{ maxBitrate: 4_000_000, maxFramerate: 30 }],
+          encodings: [{ maxBitrate: maxBitrateBps, maxFramerate: 30 }],
         })
         screenProducerRef.current = producer
         setIsScreenSharing(true)
@@ -1888,7 +1911,30 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
             screenShareAudioActiveRef.current = true
             setScreenShareAudioActive(true)
             try {
-              await audioProducer.replaceTrack({ track: displayAudio })
+              // Микрофон должен продолжать работать даже при включённом audio шаринга:
+              // собираем микс (mic + displayAudio) в один трек и подменяем producer на него.
+              const prevCtx = screenShareMixCtxRef.current
+              if (prevCtx) {
+                try { prevCtx.close() } catch { /* noop */ }
+                screenShareMixCtxRef.current = null
+              }
+              screenShareMixTrackRef.current?.stop()
+              screenShareMixTrackRef.current = null
+
+              const ctx = new AudioContext()
+              const dest = ctx.createMediaStreamDestination()
+              const micTrack = screenShareOriginalAudioTrackRef.current
+              if (micTrack) {
+                const micSrc = ctx.createMediaStreamSource(new MediaStream([micTrack]))
+                micSrc.connect(dest)
+              }
+              const displaySrc = ctx.createMediaStreamSource(new MediaStream([displayAudio]))
+              displaySrc.connect(dest)
+              const mixedTrack = dest.stream.getAudioTracks()[0] ?? null
+              if (!mixedTrack) throw new Error('no_mixed_track')
+              screenShareMixCtxRef.current = ctx
+              screenShareMixTrackRef.current = mixedTrack
+              await audioProducer.replaceTrack({ track: mixedTrack })
             } catch {
               screenShareAudioActiveRef.current = false
               screenShareOriginalAudioTrackRef.current = null
@@ -1953,6 +1999,14 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       emoji,
       ttlMs: REACTION_TTL_DEFAULT_MS,
     })
+  }, [])
+
+  const setCouchMode = useCallback((open: boolean) => {
+    const socket = socketRef.current
+    const rid = roomIdRef.current?.trim()
+    setCouchModeOpen(open)
+    if (!socket?.connected || !rid) return
+    socket.emit('couchMode', { roomId: rid, open })
   }, [])
 
   const [vmixIngressLoading, setVmixIngressLoading] = useState(false)
@@ -2636,5 +2690,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     studioBroadcastHealth,
     studioBroadcastHealthDetail,
     studioServerLogLines,
+    couchModeOpen,
+    setCouchMode,
   }
 }

@@ -183,6 +183,8 @@ export function RoomSession({ roomId }: Props) {
     studioBroadcastHealthDetail,
     studioServerLogLines,
     roomClosedReason,
+    couchModeOpen,
+    setCouchMode,
   } = useRoom(roomActivityNotifyRef)
 
   useEffect(() => {
@@ -463,6 +465,8 @@ export function RoomSession({ roomId }: Props) {
         studioServerLogLines={studioServerLogLines}
         connectionState={connectionState}
         reconnectAttempt={reconnectAttempt}
+        couchModeOpen={couchModeOpen}
+        onSetCouchMode={setCouchMode}
         leaveEndsRoomForAll={isSessionHostFor((connectedRoomId ?? roomId).trim()) || canAccessAdminPanel}
       />
     )

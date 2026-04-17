@@ -71,7 +71,7 @@ interface Props {
   isScreenSharing: boolean
   canStartScreenShare: boolean
   onToggleScreenShare: () => void
-  onStartScreenShare: (surface?: 'monitor' | 'window' | 'browser') => void
+  onStartScreenShare: (surface?: 'monitor' | 'window' | 'browser', opts?: { maxBitrateBps?: number }) => void
   playoutVolume: number
   onPlayoutVolumeChange: (v: number) => void
   audioOutputs: MediaDeviceInfo[]
@@ -935,9 +935,9 @@ export function ControlsBar({
       {screenPickerOpen && (
         <ScreenSharePickerModal
           onClose={() => setScreenPickerOpen(false)}
-          onPickSurface={(surface) => {
+          onPickSurface={(surface, opts) => {
             setScreenPickerOpen(false)
-            void onStartScreenShare(surface)
+            void onStartScreenShare(surface, opts)
           }}
         />
       )}

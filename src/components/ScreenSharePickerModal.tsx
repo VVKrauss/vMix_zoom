@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ScreenShareGlyphMonitor, ScreenShareGlyphTab, ScreenShareGlyphWindow } from './ScreenShareSurfaceGlyphs'
 
@@ -6,11 +6,39 @@ type Surface = 'monitor' | 'window' | 'browser'
 
 interface Props {
   onClose: () => void
-  onPickSurface: (surface: Surface) => void
+  onPickSurface: (surface: Surface, opts?: { maxBitrateBps?: number }) => void
 }
 
 export function ScreenSharePickerModal({ onClose, onPickSurface }: Props) {
   const panelRef = useRef<HTMLDivElement>(null)
+  const [quality, setQuality] = useState<'low' | 'med' | 'high'>(() => {
+    try {
+      const raw = window.localStorage.getItem('vmix_screen_share_quality')
+      if (raw === 'low' || raw === 'med' || raw === 'high') return raw
+    } catch {
+      /* noop */
+    }
+    return 'med'
+  })
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('vmix_screen_share_quality', quality)
+    } catch {
+      /* noop */
+    }
+  }, [quality])
+
+  const maxBitrateBps = useMemo(() => {
+    switch (quality) {
+      case 'low':
+        return 900_000
+      case 'high':
+        return 4_000_000
+      default:
+        return 2_000_000
+    }
+  }, [quality])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -25,7 +53,7 @@ export function ScreenSharePickerModal({ onClose, onPickSurface }: Props) {
   }, [])
 
   const pick = (surface: Surface) => {
-    onPickSurface(surface)
+    onPickSurface(surface, { maxBitrateBps })
   }
 
   const node = (
@@ -83,6 +111,30 @@ export function ScreenSharePickerModal({ onClose, onPickSurface }: Props) {
             </span>
             <span className="screen-share-modal__card-title">Вкладка</span>
             <span className="screen-share-modal__card-desc">Содержимое вкладки Chrome</span>
+          </button>
+        </div>
+
+        <div className="screen-share-modal__quality" role="group" aria-label="Качество демонстрации (трафик)">
+          <button
+            type="button"
+            className={`screen-share-modal__quality-btn${quality === 'low' ? ' screen-share-modal__quality-btn--active' : ''}`}
+            onClick={() => setQuality('low')}
+          >
+            Низкое
+          </button>
+          <button
+            type="button"
+            className={`screen-share-modal__quality-btn${quality === 'med' ? ' screen-share-modal__quality-btn--active' : ''}`}
+            onClick={() => setQuality('med')}
+          >
+            Среднее
+          </button>
+          <button
+            type="button"
+            className={`screen-share-modal__quality-btn${quality === 'high' ? ' screen-share-modal__quality-btn--active' : ''}`}
+            onClick={() => setQuality('high')}
+          >
+            Высокое
           </button>
         </div>
 

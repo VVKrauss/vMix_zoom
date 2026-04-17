@@ -302,7 +302,10 @@ interface Props {
   localScreenPeerId: string | null
   isScreenSharing: boolean
   onToggleScreenShare: () => void
-  onStartScreenShare: (surface?: 'monitor' | 'window' | 'browser', opts?: { withAudio?: boolean }) => void
+  onStartScreenShare: (
+    surface?: 'monitor' | 'window' | 'browser',
+    opts?: { withAudio?: boolean; maxBitrateBps?: number },
+  ) => void
   screenShareAudioActive?: boolean
   chatMessages: RoomChatMessage[]
   onSendChatMessage: (text: string) => void
@@ -348,6 +351,8 @@ interface Props {
   studioServerLogLines?: readonly string[]
   connectionState?: 'connected' | 'reconnecting'
   reconnectAttempt?: number | null
+  couchModeOpen?: boolean
+  onSetCouchMode?: (open: boolean) => void
 }
 
 export function RoomPage({
@@ -384,7 +389,20 @@ export function RoomPage({
   studioServerLogLines = [],
   connectionState = 'connected',
   reconnectAttempt = null,
+  couchModeOpen = false,
+  onSetCouchMode,
 }: Props) {
+  const readScreenShareMaxBitrateBps = () => {
+    try {
+      const raw = window.localStorage.getItem('vmix_screen_share_quality')
+      if (raw === 'low') return 900_000
+      if (raw === 'high') return 4_000_000
+      return 2_000_000
+    } catch {
+      return 2_000_000
+    }
+  }
+
   const isViewportMobile = useMediaQuery(mediaQueryMaxWidthMobile)
   const [immersiveAutoHide, setImmersiveAutoHide] = useLocalStorageBool(
     'vmix_immersive_auto_hide',
@@ -847,7 +865,7 @@ export function RoomPage({
 
   const [streamerMode, setStreamerMode] = useLocalStorageBool('vmix_streamer_mode', false)
   const [studioOpen, setStudioOpen] = useState(false)
-  const [couchOpen, setCouchOpen] = useState(false)
+  const couchOpen = couchModeOpen
   /** Только локальное превью; отправляемый поток без отражения. */
   const [mirrorLocalCamera, setMirrorLocalCamera] = useLocalStorageBool('vmix_local_camera_mirror', true)
 
@@ -856,8 +874,12 @@ export function RoomPage({
   }, [streamerMode])
 
   useEffect(() => {
-    if (streamerMode) setCouchOpen(false)
+    if (streamerMode && couchOpen) onSetCouchMode?.(false)
   }, [streamerMode])
+
+  useEffect(() => {
+    if (couchOpen) setStudioOpen(false)
+  }, [couchOpen])
 
   const blockImmersiveChromeHide = useMemo(
     () =>
@@ -2631,7 +2653,7 @@ export function RoomPage({
         onStudioToggle={() => setStudioOpen((v) => !v)}
         showCouchEntry={!streamerMode && isPlatformAdminish}
         couchOpen={couchOpen}
-        onCouchToggle={() => setCouchOpen((v) => !v)}
+        onCouchToggle={() => onSetCouchMode?.(!couchOpen)}
       />
       </div>
 
@@ -2687,7 +2709,7 @@ export function RoomPage({
           <CouchModeWorkspace
             open={couchOpen}
             onClose={() => {
-              setCouchOpen(false)
+              onSetCouchMode?.(false)
               requestStopScreenSharing()
             }}
             isScreenSharing={isScreenSharing}
@@ -2701,7 +2723,9 @@ export function RoomPage({
                 .filter((p) => p.videoStream && p.peerId && p.peerId !== localPeerId)
                 .map((p) => ({ id: p.peerId, stream: p.videoStream!, isLocal: false })),
             ]}
-            onPickSource={(surface) => void onStartScreenShare(surface, { withAudio: true })}
+            onPickSource={(surface) =>
+              void onStartScreenShare(surface, { withAudio: true, maxBitrateBps: readScreenShareMaxBitrateBps() })
+            }
             onStopShare={requestStopScreenSharing}
             audioActive={screenShareAudioActive}
             isMuted={isMuted}

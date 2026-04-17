@@ -13264,6 +13264,38 @@ html[data-theme="light"] .card-bar-fav--on {
   gap: 12px;
 }
 
+.screen-share-modal__quality {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.screen-share-modal__quality-btn {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text-dim);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+
+.screen-share-modal__quality-btn:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, .2);
+  background: #2a2a2a;
+}
+
+.screen-share-modal__quality-btn--active {
+  color: var(--text);
+  border-color: rgba(207, 44, 44, 0.35);
+  background: linear-gradient(180deg, rgba(207, 44, 44, .16), rgba(207, 44, 44, .08));
+}
+
 @media (max-width: 640px) {
   .screen-share-modal__grid {
     grid-template-columns: 1fr;
