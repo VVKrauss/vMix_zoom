@@ -32,6 +32,7 @@ import { DoubleTapHeartSurface } from './DoubleTapHeartSurface'
 import { ThreadMessageBubble } from './ThreadMessageBubble'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { Link } from 'react-router-dom'
 
 function extractStoragePathsFromMarkdown(md: string): string[] {
   const out: string[] = []
@@ -910,11 +911,37 @@ export function ChannelThreadPane({
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
-              a: ({ href, children, ...props }) => (
-                <a {...props} href={href} className="messenger-message-link" target="_blank" rel="noopener noreferrer">
-                  {children}
-                </a>
-              ),
+              a: ({ href, children, ...props }) => {
+                const raw = (href ?? '').trim()
+                const to = (() => {
+                  if (!raw) return null
+                  try {
+                    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+                    const base = origin || 'http://localhost'
+                    const abs = /^https?:\/\//i.test(raw) ? new URL(raw) : raw.startsWith('/') ? new URL(raw, base) : null
+                    if (!abs) return null
+                    if (origin && abs.origin !== origin) return null
+                    const path = abs.pathname || '/'
+                    if (!path.startsWith('/dashboard/') && !path.startsWith('/r/')) return null
+                    return `${path}${abs.search || ''}${abs.hash || ''}`
+                  } catch {
+                    return null
+                  }
+                })()
+                if (to) {
+                  // @ts-expect-error react-markdown passes anchor props, but Link doesn't accept all of them
+                  return (
+                    <Link to={to} className="messenger-message-link">
+                      {children}
+                    </Link>
+                  )
+                }
+                return (
+                  <a {...props} href={href} className="messenger-message-link" target="_blank" rel="noopener noreferrer">
+                    {children}
+                  </a>
+                )
+              },
               img: ({ src, alt, ...props }) => {
                 const raw = (src ?? '').trim()
                 const storagePath = raw.startsWith('ms://') ? raw.slice('ms://'.length) : null

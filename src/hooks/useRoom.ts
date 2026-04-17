@@ -387,6 +387,11 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const audioProducerRef = useRef<Producer | null>(null)
   const videoProducerRef = useRef<Producer | null>(null)
   const screenProducerRef = useRef<Producer | null>(null)
+  /** Демонстрация экрана: был включён захват audio, и мы подменили outgoing audio track. */
+  const screenShareAudioActiveRef = useRef(false)
+  const screenShareOriginalAudioTrackRef = useRef<MediaStreamTrack | null>(null)
+  const screenShareDisplayStreamRef = useRef<MediaStream | null>(null)
+  const [screenShareAudioActive, setScreenShareAudioActive] = useState(false)
   const studioPreviewVideoProducerRef = useRef<Producer | null>(null)
   const studioProgramAudioProducerRef = useRef<Producer | null>(null)
   const studioStopInFlightRef = useRef<Promise<void> | null>(null)
@@ -1794,42 +1799,76 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     setLocalScreenPeerId(null)
     setIsScreenSharing(false)
     if (sid) stripScreenChatForPeer(sid)
+
+    // Если шаринг запускался с audio=true — восстанавливаем исходный аудиотрек.
+    if (screenShareAudioActiveRef.current) {
+      const audioProducer = audioProducerRef.current
+      const orig = screenShareOriginalAudioTrackRef.current
+      screenShareAudioActiveRef.current = false
+      screenShareOriginalAudioTrackRef.current = null
+      setScreenShareAudioActive(false)
+      screenShareDisplayStreamRef.current?.getTracks().forEach((t) => t.stop())
+      screenShareDisplayStreamRef.current = null
+      if (audioProducer && orig && orig.readyState === 'live') {
+        void Promise.resolve(audioProducer.replaceTrack({ track: orig })).catch(() => {})
+      }
+    }
   }, [stripScreenChatForPeer])
 
   /** Подсказка диалогу getDisplayMedia: весь экран / окно / вкладка (где поддерживается). */
   const startScreenShare = useCallback(
-    async (surface?: 'monitor' | 'window' | 'browser') => {
-      if (screenProducerRef.current) return
+    async (
+      surface?: 'monitor' | 'window' | 'browser',
+      options?: { withAudio?: boolean },
+    ) => {
+      if (import.meta.env.DEV) console.log('[startScreenShare] request', { surface, withAudio: options?.withAudio === true })
+      if (screenProducerRef.current) {
+        if (import.meta.env.DEV) console.log('[startScreenShare] skip: already sharing')
+        return
+      }
       const sendTransport = sendTransportRef.current
-      if (!sendTransport) return
-      if (remoteScreenConsumePendingRef.current) return
+      if (!sendTransport) {
+        if (import.meta.env.DEV) console.warn('[startScreenShare] skip: no sendTransport')
+        return
+      }
+      if (remoteScreenConsumePendingRef.current) {
+        if (import.meta.env.DEV) console.warn('[startScreenShare] skip: remoteScreenConsumePending')
+        return
+      }
       for (const p of participantsRef.current.values()) {
-        if (p.screenStream) return
+        if (p.screenStream) {
+          if (import.meta.env.DEV) console.warn('[startScreenShare] skip: screen already active in participants', p.peerId)
+          return
+        }
       }
       try {
+        const withAudio = options?.withAudio === true
         const video: Record<string, unknown> = {
           frameRate: { max: 30 },
         }
         if (surface) video.displaySurface = surface
-        const opts: Record<string, unknown> = {
-          video,
-          audio: false,
-          preferCurrentTab: false,
+        // ВАЖНО: обычная демонстрация должна формировать те же опции, что и раньше.
+        // Доп. поля (preferCurrentTab и audio=true) добавляем только для «дивана».
+        const displayMediaOpts: DisplayMediaStreamOptions = {
+          video: video as unknown as MediaTrackConstraints,
+          audio: withAudio ? true : false,
         }
-        const stream = await navigator.mediaDevices.getDisplayMedia(opts as DisplayMediaStreamOptions)
-        const track = stream.getVideoTracks()[0]
-        if (!track) {
+        // Важно: `preferCurrentTab` в Chrome/Edge может ограничить выбор одной текущей вкладкой.
+        // Для «Дивана» нам нужен полный список вкладок, поэтому этот флаг не используем.
+        const stream = await navigator.mediaDevices.getDisplayMedia(displayMediaOpts)
+        const videoTrack = stream.getVideoTracks()[0]
+        if (!videoTrack) {
           stream.getTracks().forEach((t) => t.stop())
           return
         }
         localScreenStreamRef.current = stream
         setLocalScreenStream(stream)
-        track.addEventListener('ended', () => {
+        videoTrack.addEventListener('ended', () => {
           stopScreenShare()
         })
         const ownerPeerId = socketRef.current?.id
         const producer = await sendTransport.produce({
-          track,
+          track: videoTrack,
           appData: {
             source: 'screen',
             ...(ownerPeerId ? { ownerPeerId } : {}),
@@ -1838,7 +1877,35 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         })
         screenProducerRef.current = producer
         setIsScreenSharing(true)
-      } catch {
+
+        // Если попросили audio — подменяем outgoing audio треком источника (если он реально доступен).
+        if (withAudio) {
+          const displayAudio = stream.getAudioTracks()[0] ?? null
+          const audioProducer = audioProducerRef.current
+          if (displayAudio && audioProducer) {
+            screenShareDisplayStreamRef.current = stream
+            screenShareOriginalAudioTrackRef.current = audioProducer.track ?? null
+            screenShareAudioActiveRef.current = true
+            setScreenShareAudioActive(true)
+            try {
+              await audioProducer.replaceTrack({ track: displayAudio })
+            } catch {
+              screenShareAudioActiveRef.current = false
+              screenShareOriginalAudioTrackRef.current = null
+              setScreenShareAudioActive(false)
+            }
+          } else {
+            screenShareAudioActiveRef.current = false
+            screenShareOriginalAudioTrackRef.current = null
+            setScreenShareAudioActive(false)
+          }
+        } else {
+          screenShareAudioActiveRef.current = false
+          screenShareOriginalAudioTrackRef.current = null
+          setScreenShareAudioActive(false)
+        }
+      } catch (e) {
+        if (import.meta.env.DEV) console.error('[startScreenShare] getDisplayMedia failed', e)
         localScreenStreamRef.current?.getTracks().forEach((t) => t.stop())
         localScreenStreamRef.current = null
         setLocalScreenStream(null)
@@ -2542,6 +2609,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     isScreenSharing,
     toggleScreenShare,
     startScreenShare,
+    screenShareAudioActive,
     participants,
     isMuted,
     isCamOff,

@@ -46,9 +46,11 @@ export function JoinPage({ roomId, hostCreateFlow = false, onJoin, onBackToHome,
     ?? ''
 
   const [guestName, setGuestName] = useState('')
-  const [micOn, setMicOn] = useState(true)
-  const [camOn, setCamOn] = useState(true)
-  const [videoPresetIndex, setVideoPresetIndex] = useState(presetIndexFromStored)
+  // По умолчанию при входе/создании комнаты: микрофон и камера выключены.
+  const [micOn, setMicOn] = useState(false)
+  const [camOn, setCamOn] = useState(false)
+  // По умолчанию выбираем лучшее качество; пользователь может снизить вручную.
+  const [videoPresetIndex, setVideoPresetIndex] = useState(() => VIDEO_PRESETS.length - 1)
   const [chatVisibility, setChatVisibility] = useState<SpaceRoomChatVisibility>('everyone')
 
   const isAuthed = !!user

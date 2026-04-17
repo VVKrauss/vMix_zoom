@@ -19,7 +19,8 @@ export function AdminProtectedRoute({ children }: Props) {
   }
 
   if (!user) {
-    return <Navigate to="/login" state={{ from: location.pathname }} replace />
+    const from = `${location.pathname}${location.search || ''}${location.hash || ''}`
+    return <Navigate to="/login" state={{ from }} replace />
   }
 
   if (!allowed) {

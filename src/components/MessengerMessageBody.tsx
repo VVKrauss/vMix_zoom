@@ -5,9 +5,27 @@ import { MessengerInlineInviteCard } from './messenger/MessengerInlineInviteCard
 const INVITE_AT_START = /^Приглашаю в комнату:\s*\[([^\]]+)\]/
 const URL_AT_START = /^(https?:\/\/[^\s<>\]]+|www\.[^\s<>\]]+)/i
 const PATH_MESSENGER_INVITE = /^\/dashboard\/messenger(?:\?[^\s#]*)?(?:[#][^\s]*)?/i
+const PATH_INTERNAL_AT_START = /^\/(?:dashboard|r)\/[^\s#]+(?:\?[^\s#]*)?(?:[#][^\s]*)?/i
 
 function trimTrailingUrlPunct(s: string): string {
   return s.replace(/[.,;:!?)]+$/, '')
+}
+
+function internalToFromHref(rawHref: string): string | null {
+  const href = trimTrailingUrlPunct(rawHref || '')
+  if (!href) return null
+  try {
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    const base = origin || 'http://localhost'
+    const abs = /^https?:\/\//i.test(href) ? new URL(href) : href.startsWith('/') ? new URL(href, base) : null
+    if (!abs) return null
+    if (origin && abs.origin !== origin) return null
+    const path = abs.pathname || '/'
+    if (!path.startsWith('/dashboard/') && !path.startsWith('/r/')) return null
+    return `${path}${abs.search || ''}${abs.hash || ''}`
+  } catch {
+    return null
+  }
 }
 
 function parseMessengerInviteFromRawUrl(rawFull: string): { token: string } | null {
@@ -67,10 +85,39 @@ function buildChildren(text: string): ReactNode[] {
         nodes.push(<MessengerInlineInviteCard key={k} inviteToken={parsed.token} />)
         k += 1
       } else {
-        nodes.push(<span key={k}>{chunk}</span>)
+        const to = internalToFromHref(chunk)
+        nodes.push(
+          to ? (
+            <Link key={k} to={to} className="messenger-message-link">
+              {chunk}
+            </Link>
+          ) : (
+            <span key={k}>{chunk}</span>
+          ),
+        )
         k += 1
       }
       i += chunk.length
+      continue
+    }
+
+    const internalM = PATH_INTERNAL_AT_START.exec(sub)
+    if (internalM && internalM.index === 0) {
+      const rawFull = internalM[0]
+      const adv = rawFull.length
+      const chunk = trimTrailingUrlPunct(rawFull)
+      const to = internalToFromHref(chunk)
+      if (to) {
+        nodes.push(
+          <Link key={k} to={to} className="messenger-message-link">
+            {chunk}
+          </Link>,
+        )
+      } else {
+        nodes.push(<span key={k}>{chunk}</span>)
+      }
+      k += 1
+      i += adv
       continue
     }
 
@@ -87,17 +134,24 @@ function buildChildren(text: string): ReactNode[] {
         continue
       }
       const href = /^www\./i.test(raw) ? `https://${raw}` : raw
+      const to = internalToFromHref(href)
       nodes.push(
-        <a key={k} href={href} className="messenger-message-link" target="_blank" rel="noopener noreferrer">
-          {raw}
-        </a>,
+        to ? (
+          <Link key={k} to={to} className="messenger-message-link">
+            {raw}
+          </Link>
+        ) : (
+          <a key={k} href={href} className="messenger-message-link" target="_blank" rel="noopener noreferrer">
+            {raw}
+          </a>
+        ),
       )
       k += 1
       i += adv
       continue
     }
 
-    const rel = sub.search(/https?:\/\/|www\.|\/dashboard\/messenger\?|Приглашаю в комнату:/)
+    const rel = sub.search(/https?:\/\/|www\.|\/dashboard\/|\/r\/|Приглашаю в комнату:/)
     if (rel === -1) {
       nodes.push(<span key={k}>{text.slice(i)}</span>)
       break

@@ -19,7 +19,9 @@ export function ProtectedRoute({ children }: Props) {
   }
 
   if (!user) {
-    return <Navigate to="/login" state={{ from: location.pathname }} replace />
+    // Preserve full URL so user returns after auth (important for invite links and deep-links).
+    const from = `${location.pathname}${location.search || ''}${location.hash || ''}`
+    return <Navigate to="/login" state={{ from }} replace />
   }
 
   return <>{children}</>

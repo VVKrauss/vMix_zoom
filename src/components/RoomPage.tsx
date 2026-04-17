@@ -302,7 +302,8 @@ interface Props {
   localScreenPeerId: string | null
   isScreenSharing: boolean
   onToggleScreenShare: () => void
-  onStartScreenShare: (surface?: 'monitor' | 'window' | 'browser') => void
+  onStartScreenShare: (surface?: 'monitor' | 'window' | 'browser', opts?: { withAudio?: boolean }) => void
+  screenShareAudioActive?: boolean
   chatMessages: RoomChatMessage[]
   onSendChatMessage: (text: string) => void
   onSendReaction: (emoji: string) => void
@@ -358,6 +359,7 @@ export function RoomPage({
   onSwitchCamera, onSwitchMic,
   activePreset, onChangePreset,
   localScreenStream, localScreenPeerId, isScreenSharing, onToggleScreenShare, onStartScreenShare,
+  screenShareAudioActive = false,
   chatMessages, onSendChatMessage, onSendReaction, reactionBursts,
   chatOpen, setChatOpen, chatUnreadCount, chatIncomingPreview,
   onDismissChatIncomingPreview,
@@ -991,7 +993,8 @@ export function RoomPage({
     const sp = new URLSearchParams()
     sp.set('with', targetUserId)
     if (targetName?.trim()) sp.set('title', targetName.trim())
-    window.open(`/dashboard/messenger?${sp.toString()}`, '_blank', 'noopener')
+    // Открываем внутри текущего контекста (важно для iOS/PWA, чтобы не улетать в новый таб с другой сессией).
+    window.location.assign(`/dashboard/messenger?${sp.toString()}`)
   }, [])
 
   const buildTileExtras = useCallback(
@@ -2571,7 +2574,7 @@ export function RoomPage({
         isScreenSharing={isScreenSharing}
         canStartScreenShare={canStartScreenShare}
         onToggleScreenShare={requestStopScreenSharing}
-        onStartScreenShare={onStartScreenShare}
+        onStartScreenShare={(surface) => onStartScreenShare(surface)}
         playoutVolume={playoutVolume}
         onPlayoutVolumeChange={setPlayoutVolume}
         audioOutputs={audioOutputs}
@@ -2681,7 +2684,45 @@ export function RoomPage({
 
       {couchOpen ? (
         <Suspense fallback={<div className="join-screen"><div className="auth-loading" aria-label="Загрузка…" /></div>}>
-          <CouchModeWorkspace open={couchOpen} onClose={() => setCouchOpen(false)} />
+          <CouchModeWorkspace
+            open={couchOpen}
+            onClose={() => {
+              setCouchOpen(false)
+              requestStopScreenSharing()
+            }}
+            isScreenSharing={isScreenSharing}
+            localStream={localStream}
+            localScreenStream={localScreenStream}
+            pipPeers={[
+              ...(localStream && !isCamOff && localStream.getVideoTracks().length
+                ? [{ id: localPeerId || 'local', stream: new MediaStream([localStream.getVideoTracks()[0]!]), isLocal: true }]
+                : []),
+              ...remoteList
+                .filter((p) => p.videoStream && p.peerId && p.peerId !== localPeerId)
+                .map((p) => ({ id: p.peerId, stream: p.videoStream!, isLocal: false })),
+            ]}
+            onPickSource={(surface) => void onStartScreenShare(surface, { withAudio: true })}
+            onStopShare={requestStopScreenSharing}
+            audioActive={screenShareAudioActive}
+            isMuted={isMuted}
+            isCamOff={isCamOff}
+            onToggleMute={onToggleMute}
+            onToggleCam={onToggleCam}
+            chat={{
+              messages: chatMessages,
+              localPeerId,
+              localUserId: user?.id ?? null,
+              avatarByPeerId: chatAvatarByPeerId,
+              avatarByUserId: chatAvatarByUserId,
+              contactStatuses: chatContactStatuses,
+              onToggleContactPin: (targetUserId, nextFavorite) => {
+                void toggleFavoriteFromChat(targetUserId, nextFavorite)
+              },
+              onSend: sendChatGuarded,
+              composerLocked: chatComposerLocked,
+              composerLockedHint: chatComposerHint,
+            }}
+          />
         </Suspense>
       ) : null}
 

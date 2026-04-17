@@ -164,6 +164,7 @@ export function RoomSession({ roomId }: Props) {
     isMuted, isCamOff,
     roomId: connectedRoomId, localPeerId, srtByPeer,
     localScreenStream, localScreenPeerId, isScreenSharing, toggleScreenShare, startScreenShare,
+    screenShareAudioActive,
     chatMessages, sendChatMessage, sendReaction, reactionBursts,
     remoteScreenConsumePending,
     remoteStudioProgramConsumePending,
@@ -362,7 +363,8 @@ export function RoomSession({ roomId }: Props) {
     const stored = readRoomAutoResume(roomId)
     if (!stored) return
     autoResumeTriedRef.current = true
-    void handleJoin(stored.name, stored.roomId, stored.preset, stored.media)
+    // При авто-восстановлении тоже стартуем с выключенными микрофоном/камерой.
+    void handleJoin(stored.name, stored.roomId, stored.preset, { ...stored.media, enableMic: false, enableCam: false })
   }, [error, handleJoin, roomClosedReason, roomId, status])
 
   useEffect(() => {
@@ -429,6 +431,7 @@ export function RoomSession({ roomId }: Props) {
         isScreenSharing={isScreenSharing}
         onToggleScreenShare={toggleScreenShare}
         onStartScreenShare={startScreenShare}
+        screenShareAudioActive={screenShareAudioActive}
         chatMessages={chatMessages}
         onSendChatMessage={sendChatMessage}
         onSendReaction={sendReaction}

@@ -9,6 +9,10 @@ interface Props {
   variant: 'overlay' | 'embed'
   open: boolean
   onClose: () => void
+  /** Доп. кнопки/контент справа в шапке (например pin/unpin). */
+  headerRight?: React.ReactNode
+  /** Скрыть крестик закрытия (если закрытие управляется снаружи). */
+  hideClose?: boolean
   messages: RoomChatMessage[]
   localPeerId: string
   localUserId?: string | null
@@ -30,6 +34,8 @@ export function RoomChatPanel({
   variant,
   open,
   onClose,
+  headerRight = null,
+  hideClose = false,
   messages,
   localPeerId,
   localUserId = null,
@@ -67,9 +73,14 @@ export function RoomChatPanel({
     <>
       <div className="room-chat-panel__head">
         <span className="room-chat-panel__title">Чат</span>
-        <button type="button" className="room-chat-panel__close" onClick={onClose} aria-label="Закрыть">
-          ×
-        </button>
+        <span className="room-chat-panel__head-actions">
+          {headerRight}
+          {!hideClose ? (
+            <button type="button" className="room-chat-panel__close" onClick={onClose} aria-label="Закрыть">
+              ×
+            </button>
+          ) : null}
+        </span>
       </div>
       <div ref={listRef} className="room-chat-panel__messages">
         {messages.length === 0 ? (

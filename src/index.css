@@ -14147,6 +14147,12 @@ html[data-theme="light"] .room-chat-panel {
   flex-shrink: 0;
 }
 
+.room-chat-panel__head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .room-chat-panel__title {
   font-size: 15px;
   font-weight: 600;
@@ -15015,6 +15021,14 @@ html[data-theme="light"] .room-chat-panel__input:focus {
   display: flex;
   flex-direction: column;
   background: #0c0b0a;
+  /* Важно: “диван” всегда тёмный, даже при светлой теме.
+     Иначе компоненты, использующие var(--text/--surface/--border), становятся нечитаемыми. */
+  --bg: #0c0b0a;
+  --surface: #141210;
+  --surface2: #24201d;
+  --border: rgba(255, 255, 255, 0.12);
+  --text: rgba(255, 255, 255, 0.92);
+  --text-dim: rgba(255, 255, 255, 0.6);
   color: var(--text);
 }
 
@@ -15047,7 +15061,7 @@ html[data-theme="light"] .room-chat-panel__input:focus {
   padding: 8px 14px;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: var(--surface2);
+  background: rgba(30, 24, 22, 0.65);
   color: var(--text);
   font-size: 0.88rem;
   cursor: pointer;
@@ -15070,6 +15084,483 @@ html[data-theme="light"] .room-chat-panel__input:focus {
   line-height: 1.5;
   color: var(--text-dim);
   font-size: 0.95rem;
+}
+
+.couch-mode-workspace__body.couch-mode-workspace__body--split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 14px;
+  padding: 14px;
+  overflow: hidden;
+}
+
+/* Если чат не закреплён — сцена занимает всю ширину (чат может быть оверлеем справа). */
+.couch-mode-workspace--chat-hidden .couch-mode-workspace__body.couch-mode-workspace__body--split {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.couch-mode-workspace__stage {
+  min-width: 0;
+  min-height: 0;
+}
+
+.couch-mode-workspace__stage-inner {
+  height: 100%;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #100e0c;
+  overflow: hidden;
+  position: relative;
+}
+
+.couch-mode-workspace__capture {
+  position: absolute;
+  inset: 0;
+  background: #070605;
+}
+
+.couch-mode-workspace__capture-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.couch-mode-workspace__capture-empty {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+/* controls are in a dock now (not centered) */
+
+.couch-mode-workspace__pick-source {
+  padding: 12px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(200, 140, 80, 0.55);
+  background: rgba(190, 110, 40, 0.16);
+  color: #fff4e8;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+}
+
+.couch-mode-workspace__pick-source:hover {
+  border-color: rgba(230, 170, 100, 0.65);
+  background: rgba(200, 120, 50, 0.22);
+}
+
+.couch-mode-workspace__danger {
+  padding: 12px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(210, 0, 0, 0.16);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+}
+
+.couch-mode-workspace__danger:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(210, 0, 0, 0.22);
+}
+
+.couch-mode-workspace__status {
+  margin: 0;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.92rem;
+  max-width: 42rem;
+}
+
+.couch-mode-workspace__controls {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(10, 8, 7, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 18px 56px rgba(0, 0, 0, 0.5);
+  z-index: 3;
+  transition:
+    transform 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.couch-mode-workspace--fullscreen .couch-mode-workspace__controls {
+  padding: 8px 10px;
+  border-radius: 999px;
+  justify-content: center;
+  gap: 10px;
+}
+
+.couch-mode-workspace--fullscreen .couch-mode-workspace__pick-source,
+.couch-mode-workspace--fullscreen .couch-mode-workspace__danger {
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.couch-mode-workspace--fullscreen .couch-mode-workspace__status {
+  display: none;
+}
+
+.couch-mode-workspace--fullscreen.couch-mode-workspace--chat-hidden .couch-mode-workspace__controls {
+  will-change: transform, opacity;
+}
+
+.couch-mode-workspace--fullscreen.couch-mode-workspace--chat-hidden .couch-mode-workspace__controls[aria-label] {
+  /* keep selector stable; aria-label always present */
+}
+
+.couch-mode-workspace--fullscreen.couch-mode-workspace--chat-hidden .couch-mode-workspace__controls {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* hidden state toggled by inline conditional render; keep animation by not display:none */
+.couch-mode-workspace__controls.couch-mode-workspace__controls--hidden {
+  opacity: 0;
+  transform: translateY(14px);
+  pointer-events: none;
+}
+
+.couch-mode-workspace__controls .device-popover--share-source {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+}
+
+.couch-mode-workspace__controls-spacer {
+  flex: 1;
+}
+
+.couch-mode-workspace__ctrl-mini {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(30, 24, 22, 0.65);
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.couch-mode-workspace__ctrl-mini:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(44, 34, 30, 0.72);
+}
+
+.couch-mode-workspace__ctrl-mini--off {
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(20, 16, 15, 0.6);
+}
+
+.couch-mode-workspace__ctrl-mini--danger {
+  border-color: rgba(210, 0, 0, 0.35);
+  background: rgba(210, 0, 0, 0.14);
+}
+
+.couch-mode-workspace__ctrl-mini--danger:hover {
+  border-color: rgba(210, 0, 0, 0.5);
+  background: rgba(210, 0, 0, 0.2);
+}
+
+.couch-mode-workspace__compact-composer {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 8, 7, 0.65);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 18px 56px rgba(0, 0, 0, 0.5);
+  z-index: 4;
+  width: min(560px, calc(100% - 24px));
+}
+
+.couch-mode-workspace__compact-input {
+  flex: 1;
+  resize: none;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(26, 20, 18, 0.72);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.3;
+  min-height: 40px;
+  max-height: 90px;
+}
+
+.couch-mode-workspace__compact-input:focus {
+  outline: 2px solid rgba(200, 140, 80, 0.35);
+  outline-offset: 2px;
+}
+
+.couch-mode-workspace__compact-send {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(200, 140, 80, 0.55);
+  background: rgba(190, 110, 40, 0.16);
+  color: #fff4e8;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.couch-mode-workspace__compact-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.couch-mode-workspace__toast-stack {
+  position: absolute;
+  right: 12px;
+  bottom: 84px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+.couch-mode-workspace__toast-stack--above-composer {
+  bottom: 124px;
+}
+
+.couch-mode-workspace__toast {
+  max-width: min(520px, calc(100% - 32px));
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 8, 7, 0.65);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 18px 56px rgba(0, 0, 0, 0.5);
+  color: var(--text);
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.couch-mode-workspace__toast-author {
+  margin-right: 6px;
+}
+
+.couch-mode-workspace__toast-text {
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.couch-mode-workspace__header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.couch-mode-workspace__header-status {
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(30, 24, 22, 0.55);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.couch-mode-workspace__header-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.couch-mode-workspace__header-btn:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: #2a2622;
+}
+
+.couch-mode-workspace__header-btn--off {
+  /* Выключено: одинаковый “опасный” стиль для mic/cam (как у микрофона). */
+  border-color: rgba(210, 0, 0, 0.35);
+  background: rgba(210, 0, 0, 0.12);
+  color: rgba(255, 210, 210, 0.92);
+}
+
+.couch-mode-workspace__header-btn:focus-visible {
+  outline: 2px solid rgba(240, 180, 110, 0.55);
+  outline-offset: 2px;
+}
+
+.couch-mode-workspace__header-btn--danger {
+  border-color: rgba(210, 0, 0, 0.35);
+  background: rgba(210, 0, 0, 0.14);
+}
+
+.couch-mode-workspace__header-btn--danger:hover {
+  border-color: rgba(210, 0, 0, 0.5);
+  background: rgba(210, 0, 0, 0.2);
+}
+
+/* audio meter removed */
+
+/* В “Диване” используем тот же popover, что и в демо-экрана (ControlsBar). */
+
+.couch-mode-workspace__chat {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #141210;
+  overflow: hidden;
+  display: flex;
+}
+
+/* Pin button inside RoomChatPanel header */
+.couch-mode-workspace__chat-pin-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(30, 24, 22, 0.55);
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.couch-mode-workspace__chat-pin-btn:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(44, 34, 30, 0.62);
+}
+
+.couch-mode-workspace__chat-overlay {
+  position: absolute;
+  top: 60px;
+  right: 0;
+  bottom: 0;
+  width: min(380px, calc(100vw - 24px));
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(20, 16, 15, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  /* Полностью прячем; показ по наведению на хотспот справа. */
+  transform: translateX(100%);
+  transition: transform 0.18s ease;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+}
+
+.couch-mode-workspace__chat-overlay--open {
+  transform: translateX(0);
+}
+
+.couch-mode-workspace__chat-hotspot {
+  position: absolute;
+  top: 60px;
+  right: 0;
+  bottom: 0;
+  width: 22px;
+  z-index: 4;
+}
+
+.couch-mode-workspace__cam-pip {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  box-shadow: 0 18px 56px rgba(0, 0, 0, 0.5);
+}
+
+.couch-mode-workspace__cam-pips {
+  position: absolute;
+  right: 14px;
+  top: 64px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+/* pip debug badge removed */
+
+.couch-mode-workspace__cam-pips--row {
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+.couch-mode-workspace__cam-pip--small {
+  width: 70px;
+  height: 70px;
+}
+
+.couch-mode-workspace__cam-pip-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.couch-mode-workspace__cam-pip--local .couch-mode-workspace__cam-pip-video {
+  transform: scaleX(-1);
+}
+
+.couch-mode-workspace__chat-overlay .room-chat-panel {
+  position: static;
+  inset: auto;
+  width: 100%;
+  max-width: none;
+  border-left: none;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Keep RoomChatPanel header visible inside couch chats */
+
+.couch-mode-workspace__chat .room-chat-panel {
+  position: static;
+  inset: auto;
+  width: 100%;
+  max-width: none;
+  border-left: none;
+}
+
+@media (max-width: 980px) {
+  .couch-mode-workspace__body.couch-mode-workspace__body--split {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) 340px;
+  }
 }
 
 /* ── Режим «Студия» (полноэкранная раскладка) ──────────────────── */

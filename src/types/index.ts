@@ -16,7 +16,7 @@ export const VIDEO_PRESETS: VideoPreset[] = [
 ]
 
 /** Умеренный дефолт для SRT/vMix; максимальные пресеты — в настройках комнаты. */
-export const DEFAULT_VIDEO_PRESET = VIDEO_PRESETS[1]
+export const DEFAULT_VIDEO_PRESET = VIDEO_PRESETS[VIDEO_PRESETS.length - 1]
 
 export type ProducerDescriptor = {
   producerId: string
