@@ -352,6 +352,8 @@ interface Props {
   connectionState?: 'connected' | 'reconnecting'
   reconnectAttempt?: number | null
   couchModeOpen?: boolean
+  /** Socket id того, кто включил «Диван» (с сервера / сигналинга). */
+  couchModeHostPeerId?: string | null
   onSetCouchMode?: (open: boolean) => void
 }
 
@@ -390,6 +392,7 @@ export function RoomPage({
   connectionState = 'connected',
   reconnectAttempt = null,
   couchModeOpen = false,
+  couchModeHostPeerId = null,
   onSetCouchMode,
 }: Props) {
   const readScreenShareMaxBitrateBps = () => {
@@ -554,6 +557,7 @@ export function RoomPage({
   const [playoutVolume, setPlayoutVolume] = useLocalStorageNumber('vmix_playout_volume', 1, 0, 1)
   /** Громкость только потока программы vMix (у каждого гостя своя, localStorage). */
   const [vmixProgramVolume, setVmixProgramVolume] = useLocalStorageNumber('vmix_program_volume', 1, 0, 1)
+  const [couchCaptureVolume, setCouchCaptureVolume] = useLocalStorageNumber('vmix_couch_capture_volume', 1, 0, 1)
   const [vmixProgramMuted, setVmixProgramMuted] = useLocalStorageBool('vmix_program_muted', false)
   const [playoutSinkId, setPlayoutSinkId] = useLocalStorageString('vmix_playout_sink', '')
   const [showControlButtonLabels, setShowControlButtonLabels] = useLocalStorageBool('vmix_control_button_labels', false)
@@ -1166,6 +1170,52 @@ export function RoomPage({
     [remoteList],
   )
   const canStartScreenShare = !remoteScreenActive && !remoteScreenSharePending
+
+  const couchStageScreenStream = useMemo(() => {
+    if (!couchOpen) return null
+    const hid = couchModeHostPeerId ?? null
+    if (!hid) {
+      if (isScreenSharing) return localScreenStream
+      return remoteList.find((p) => p.screenStream)?.screenStream ?? null
+    }
+    if (hid === localPeerId) return localScreenStream ?? null
+    return participants.get(hid)?.screenStream ?? null
+  }, [
+    couchOpen,
+    couchModeHostPeerId,
+    localPeerId,
+    localScreenStream,
+    participants,
+    remoteList,
+    isScreenSharing,
+  ])
+
+  const canStartCouchShare = useMemo(() => {
+    if (!couchOpen) return canStartScreenShare
+    const hid = couchModeHostPeerId ?? null
+    if (hid && localPeerId && hid !== localPeerId) return false
+    return canStartScreenShare
+  }, [couchOpen, couchModeHostPeerId, localPeerId, canStartScreenShare])
+
+  const canCloseCouchWorkspace = useMemo(() => {
+    if (!couchOpen) return false
+    const hid = couchModeHostPeerId ?? null
+    if (!hid) return isPlatformAdminish
+    return localPeerId === hid
+  }, [couchOpen, couchModeHostPeerId, localPeerId, isPlatformAdminish])
+
+  const couchStageHasAudio = useMemo(() => {
+    const s = couchStageScreenStream
+    if (!s) return false
+    return s.getAudioTracks().some((t) => t.readyState === 'live')
+  }, [couchStageScreenStream])
+
+  const showCouchCaptureVolume = couchOpen && couchStageHasAudio
+
+  const handleCouchBarToggle = useCallback(() => {
+    if (couchOpen && !canCloseCouchWorkspace) return
+    onSetCouchMode?.(!couchOpen)
+  }, [couchOpen, canCloseCouchWorkspace, onSetCouchMode])
 
   const hasAnyScreenShare =
     isScreenSharing ||
@@ -2594,7 +2644,7 @@ export function RoomPage({
         onToggleInfo={() => setShowInfo(v => !v)}
         onResetView={resetView}
         isScreenSharing={isScreenSharing}
-        canStartScreenShare={canStartScreenShare}
+        canStartScreenShare={canStartCouchShare}
         onToggleScreenShare={requestStopScreenSharing}
         onStartScreenShare={(surface) => onStartScreenShare(surface)}
         playoutVolume={playoutVolume}
@@ -2625,6 +2675,9 @@ export function RoomPage({
         onVmixProgramVolumeChange={setVmixProgramVolume}
         vmixProgramMuted={vmixProgramMuted}
         onToggleVmixProgramMuted={() => setVmixProgramMuted((v) => !v)}
+        couchCaptureVolumeActive={showCouchCaptureVolume}
+        couchCaptureVolume={couchCaptureVolume}
+        onCouchCaptureVolumeChange={setCouchCaptureVolume}
         forceMobileFabMenu={isViewportMobile}
         viewportMobile={isViewportMobile}
         immersiveAutoHide={immersiveAutoHide}
@@ -2653,7 +2706,8 @@ export function RoomPage({
         onStudioToggle={() => setStudioOpen((v) => !v)}
         showCouchEntry={!streamerMode && isPlatformAdminish}
         couchOpen={couchOpen}
-        onCouchToggle={() => onSetCouchMode?.(!couchOpen)}
+        couchToggleDisabled={couchOpen && !canCloseCouchWorkspace}
+        onCouchToggle={handleCouchBarToggle}
       />
       </div>
 
@@ -2709,12 +2763,27 @@ export function RoomPage({
           <CouchModeWorkspace
             open={couchOpen}
             onClose={() => {
+              if (!canCloseCouchWorkspace) return
               onSetCouchMode?.(false)
               requestStopScreenSharing()
             }}
-            isScreenSharing={isScreenSharing}
+            couchDemoLive={Boolean(couchStageScreenStream)}
+            stageScreenStream={couchStageScreenStream}
+            stagePlayoutVolume={couchCaptureVolume}
+            stageVideoMuted={
+              !!(
+                couchStageScreenStream &&
+                localScreenStream &&
+                couchStageScreenStream === localScreenStream
+              )
+            }
+            canPickCouchSource={canStartCouchShare}
+            canStopCouchShare={
+              isScreenSharing &&
+              (couchModeHostPeerId == null || couchModeHostPeerId === localPeerId)
+            }
+            hideCouchClose={!canCloseCouchWorkspace}
             localStream={localStream}
-            localScreenStream={localScreenStream}
             pipPeers={[
               ...(localStream && !isCamOff && localStream.getVideoTracks().length
                 ? [{ id: localPeerId || 'local', stream: new MediaStream([localStream.getVideoTracks()[0]!]), isLocal: true }]
@@ -2727,7 +2796,7 @@ export function RoomPage({
               void onStartScreenShare(surface, { withAudio: true, maxBitrateBps: readScreenShareMaxBitrateBps() })
             }
             onStopShare={requestStopScreenSharing}
-            audioActive={screenShareAudioActive}
+            couchDemoAudioActive={couchStageHasAudio}
             isMuted={isMuted}
             isCamOff={isCamOff}
             onToggleMute={onToggleMute}

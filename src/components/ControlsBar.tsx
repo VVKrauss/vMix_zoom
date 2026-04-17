@@ -105,6 +105,12 @@ interface Props {
   onVmixProgramVolumeChange: (v: number) => void
   vmixProgramMuted: boolean
   onToggleVmixProgramMuted: () => void
+  /** Полоса громкости захваченного экрана в «Диване» (как SRT), когда в потоке есть звук. */
+  couchCaptureVolumeActive?: boolean
+  couchCaptureVolume?: number
+  onCouchCaptureVolumeChange?: (v: number) => void
+  /** Режим «Диван» открыт другим организатором — нельзя закрыть сессию этой кнопкой. */
+  couchToggleDisabled?: boolean
   /** Мобильный viewport: панель скрыта, меню только из FAB справа снизу. */
   forceMobileFabMenu: boolean
   viewportMobile: boolean
@@ -267,6 +273,10 @@ export function ControlsBar({
   onVmixProgramVolumeChange,
   vmixProgramMuted,
   onToggleVmixProgramMuted,
+  couchCaptureVolumeActive = false,
+  couchCaptureVolume = 1,
+  onCouchCaptureVolumeChange,
+  couchToggleDisabled = false,
   forceMobileFabMenu,
   viewportMobile,
   immersiveAutoHide,
@@ -523,6 +533,25 @@ export function ControlsBar({
   )
 
   /** Только мьют + слайдер громкости программы (для всех гостей при активном приёме SRT). */
+  const couchCaptureAudioControls = () => (
+    <div
+      className="ctrl-vmix-audio ctrl-vmix-audio--live"
+      role="group"
+      aria-label="Громкость демонстрации «Диван»"
+    >
+      <input
+        type="range"
+        className="ctrl-vmix-audio__slider"
+        min={0}
+        max={100}
+        value={Math.round(couchCaptureVolume * 100)}
+        onChange={(e) => onCouchCaptureVolumeChange?.(Number(e.target.value) / 100)}
+        title="Громкость демонстрации"
+        aria-label="Громкость демонстрации в режиме «Диван»"
+      />
+    </div>
+  )
+
   const vmixProgramAudioControls = () => (
     <div
       className={`ctrl-vmix-audio ctrl-vmix-audio--${vmixPhase === 'live' ? 'live' : 'waiting'}`}
@@ -684,7 +713,14 @@ export function ControlsBar({
           type="button"
           className={`ctrl-btn ctrl-btn--source-ingest ctrl-btn--couch${couchOpen ? ' ctrl-btn--couch--open' : ''}`}
           onClick={onCouchToggle}
-          title={couchOpen ? 'Закрыть режим «Диван»' : 'Режим «Диван»'}
+          disabled={couchToggleDisabled}
+          title={
+            couchToggleDisabled
+              ? 'Режим «Диван» активен у другого организатора'
+              : couchOpen
+                ? 'Закрыть режим «Диван»'
+                : 'Режим «Диван»'
+          }
         >
           <FiRrIcon name="sofa" className="ctrl-btn__couch-fi" aria-hidden />
         </button>
@@ -700,6 +736,13 @@ export function ControlsBar({
     )
   }
 
+  const couchCaptureBlock =
+    couchCaptureVolumeActive && onCouchCaptureVolumeChange ? (
+      <div className="ctrl-group ctrl-group--solo ctrl-group--couch-capture" aria-label="Демонстрация «Диван»">
+        {couchCaptureAudioControls()}
+      </div>
+    ) : null
+
   return (
     <div
       className={`controls-bar${showButtonLabels ? '' : ' controls-bar--icons-only'}${streamerMode ? ' controls-bar--streamer-mode' : ''}${forceMobileFabMenu ? ' controls-bar--fab-dock' : ''}`}
@@ -707,6 +750,7 @@ export function ControlsBar({
       {showMainBar ? (
       <div className="controls-bar__main">
       {sourcesStrip(false)}
+      {couchCaptureBlock}
 
       <div className="controls-bar__core">
       {/* ── Camera ─────────────────────────────────────────────────────── */}
@@ -788,6 +832,9 @@ export function ControlsBar({
 
       {forceMobileFabMenu ? (
         <>
+          {couchCaptureBlock ? (
+            <div className="ctrl-mobile-couch-capture-bar">{couchCaptureBlock}</div>
+          ) : null}
           <div className="ctrl-mobile-bottom-bar" role="toolbar" aria-label="Управление комнатой">
             <div className="ctrl-mobile-bottom-bar__edge ctrl-mobile-bottom-bar__edge--left">
               <button
@@ -876,7 +923,14 @@ export function ControlsBar({
                   type="button"
                   className={`ctrl-mobile-bottom-bar__btn ctrl-mobile-bottom-bar__btn--compact${couchOpen ? ' ctrl-mobile-bottom-bar__btn--couch-on' : ''}`}
                   onClick={onCouchToggle}
-                  title={couchOpen ? 'Закрыть режим «Диван»' : 'Режим «Диван»'}
+                  disabled={couchToggleDisabled}
+                  title={
+                    couchToggleDisabled
+                      ? 'Режим «Диван» активен у другого организатора'
+                      : couchOpen
+                        ? 'Закрыть режим «Диван»'
+                        : 'Режим «Диван»'
+                  }
                   aria-label={couchOpen ? 'Закрыть режим «Диван»' : 'Открыть режим «Диван»'}
                 >
                   <FiRrIcon name="sofa" className="ctrl-mobile-couch-fi" />

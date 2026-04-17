@@ -380,6 +380,10 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const [isMuted, setIsMuted] = useState(false)
   const [isCamOff, setIsCamOff] = useState(false)
   const [couchModeOpen, setCouchModeOpen] = useState(false)
+  /** Socket id участника, включившего «Диван» (только он может стартовать демонстрацию). */
+  const [couchModeHostPeerId, setCouchModeHostPeerId] = useState<string | null>(null)
+  const couchModeOpenRef = useRef(false)
+  const couchModeHostPeerIdRef = useRef<string | null>(null)
 
   const socketRef = useRef<Socket | null>(null)
   const deviceRef = useRef<Device | null>(null)
@@ -1380,6 +1384,10 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         const openRaw = o.open ?? o.isOpen ?? o.value
         const open = openRaw === true || openRaw === 1 || openRaw === 'true'
         setCouchModeOpen(open)
+        const hostRaw = o.hostPeerId ?? o.host_peer_id
+        const host =
+          typeof hostRaw === 'string' && hostRaw.trim() ? hostRaw.trim() : null
+        setCouchModeHostPeerId(open ? host : null)
       })
 
       /**
@@ -1854,6 +1862,14 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         if (import.meta.env.DEV) console.warn('[startScreenShare] skip: remoteScreenConsumePending')
         return
       }
+      if (couchModeOpenRef.current) {
+        const host = couchModeHostPeerIdRef.current
+        const sid = socketRef.current?.id
+        if (host && sid && host !== sid) {
+          if (import.meta.env.DEV) console.warn('[startScreenShare] skip: couch host is another peer')
+          return
+        }
+      }
       for (const p of participantsRef.current.values()) {
         if (p.screenStream) {
           if (import.meta.env.DEV) console.warn('[startScreenShare] skip: screen already active in participants', p.peerId)
@@ -2005,9 +2021,23 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     const socket = socketRef.current
     const rid = roomIdRef.current?.trim()
     setCouchModeOpen(open)
+    const sid = socket?.id?.trim() || null
+    if (open && sid) {
+      setCouchModeHostPeerId(sid)
+    } else {
+      setCouchModeHostPeerId(null)
+    }
     if (!socket?.connected || !rid) return
-    socket.emit('couchMode', { roomId: rid, open })
+    socket.emit('couchMode', { roomId: rid, open, hostPeerId: open ? sid : null })
   }, [])
+
+  useEffect(() => {
+    couchModeOpenRef.current = couchModeOpen
+  }, [couchModeOpen])
+
+  useEffect(() => {
+    couchModeHostPeerIdRef.current = couchModeHostPeerId
+  }, [couchModeHostPeerId])
 
   const [vmixIngressLoading, setVmixIngressLoading] = useState(false)
 
@@ -2691,6 +2721,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     studioBroadcastHealthDetail,
     studioServerLogLines,
     couchModeOpen,
+    couchModeHostPeerId,
     setCouchMode,
   }
 }

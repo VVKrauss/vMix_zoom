@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FiRrIcon } from './icons'
+import { BrandLogoLoader } from './BrandLogoLoader'
 import { RoomChatPanel } from './RoomChatPanel'
 import type { ContactStatus } from '../lib/socialGraph'
 import type { RoomChatMessage } from '../types/roomComms'
@@ -8,14 +9,26 @@ import { ShareSourcePopover } from './ShareSourcePopover'
 type Props = {
   open: boolean
   onClose: () => void
-  isScreenSharing: boolean
+  /** Есть ли картинка демонстрации (локально или с хоста «дивана»). */
+  couchDemoLive: boolean
+  /** Поток для большого превью: свой screen share или удалённый с хоста. */
+  stageScreenStream: MediaStream | null
+  /** Громкость воспроизведения демонстрации (0…1), не влияет на исходящий микс хоста. */
+  stagePlayoutVolume: number
+  /** Локальный превью без звука (без эха). */
+  stageVideoMuted: boolean
+  /** Можно открыть диалог выбора источника (только организатор «дивана»). */
+  canPickCouchSource: boolean
+  /** Показать «Остановить показ» (только если это наш исходящий шаринг). */
+  canStopCouchShare: boolean
+  /** Скрыть «Закрыть» (гость без прав завершить сессию для всех). */
+  hideCouchClose?: boolean
   localStream: MediaStream | null
-  localScreenStream: MediaStream | null
   pipPeers?: Array<{ id: string; stream: MediaStream; isLocal?: boolean }>
   onPickSource: (surface: 'monitor' | 'window' | 'browser') => void
   onStopShare: () => void
-  /** true если удалось подключить звук вкладки (подмена outgoing audio). */
-  audioActive: boolean
+  /** На демонстрации есть живая аудиодорожка (в т.ч. удалённая). */
+  couchDemoAudioActive: boolean
   isMuted: boolean
   isCamOff: boolean
   onToggleMute: () => void
@@ -40,13 +53,18 @@ type Props = {
 export function CouchModeWorkspace({
   open,
   onClose,
-  isScreenSharing,
+  couchDemoLive,
+  stageScreenStream,
+  stagePlayoutVolume,
+  stageVideoMuted,
+  canPickCouchSource,
+  canStopCouchShare,
+  hideCouchClose = false,
   localStream,
-  localScreenStream,
   pipPeers = [],
   onPickSource,
   onStopShare,
-  audioActive,
+  couchDemoAudioActive,
   isMuted,
   isCamOff,
   onToggleMute,
@@ -154,11 +172,13 @@ export function CouchModeWorkspace({
     const el = videoRef.current
     if (!el) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(el as any).srcObject = localScreenStream
-    if (localScreenStream) {
+    ;(el as any).srcObject = stageScreenStream ?? null
+    el.muted = stageVideoMuted || !stageScreenStream
+    el.volume = stageVideoMuted ? 0 : Math.max(0, Math.min(1, stagePlayoutVolume))
+    if (stageScreenStream) {
       void el.play().catch(() => {})
     }
-  }, [localScreenStream])
+  }, [stageScreenStream, stagePlayoutVolume, stageVideoMuted])
 
   const pipRow = pipPeers.length > 1
 
@@ -331,12 +351,12 @@ export function CouchModeWorkspace({
           Диван
         </h1>
         <div className="couch-mode-workspace__header-actions" role="group" aria-label="Панель">
-          {!isFullscreen && isScreenSharing ? (
+          {!isFullscreen && couchDemoLive ? (
             <span className="couch-mode-workspace__header-status" role="status">
-              {audioActive ? 'Идёт показ · звук включён' : 'Идёт показ · звук может быть недоступен'}
+              {couchDemoAudioActive ? 'Идёт показ · звук включён' : 'Идёт показ · звук может быть недоступен'}
             </span>
           ) : null}
-          {!isFullscreen && isScreenSharing ? (
+          {!isFullscreen && canStopCouchShare ? (
             <button
               type="button"
               className="couch-mode-workspace__header-btn couch-mode-workspace__header-btn--danger"
@@ -378,13 +398,11 @@ export function CouchModeWorkspace({
             <FiRrIcon name={isFullscreen ? 'compress' : 'expand'} aria-hidden />
           </button>
         </div>
-        <button
-          type="button"
-          className="couch-mode-workspace__close"
-          onClick={onClose}
-        >
-          Закрыть
-        </button>
+        {!hideCouchClose ? (
+          <button type="button" className="couch-mode-workspace__close" onClick={onClose}>
+            Закрыть
+          </button>
+        ) : null}
       </header>
       <div className="couch-mode-workspace__body couch-mode-workspace__body--split">
         <section className="couch-mode-workspace__stage" aria-label="Совместный просмотр">
@@ -404,21 +422,24 @@ export function CouchModeWorkspace({
             }}
           >
             <div className="couch-mode-workspace__capture">
-              {localScreenStream ? (
-                <>
-                  <video
-                    ref={videoRef}
-                    className="couch-mode-workspace__capture-video"
-                    muted
-                    playsInline
-                    autoPlay
-                  />
-                </>
-              ) : (
+              {stageScreenStream ? (
+                <video
+                  ref={videoRef}
+                  className="couch-mode-workspace__capture-video"
+                  muted={stageVideoMuted}
+                  playsInline
+                  autoPlay
+                />
+              ) : canPickCouchSource ? (
                 <div className="couch-mode-workspace__capture-empty" role="status">
                   <p className="couch-mode-workspace__hint">
                     Выберите источник (вкладка / окно / экран) — начнётся демонстрация со звуком, если поддерживается.
                   </p>
+                </div>
+              ) : (
+                <div className="couch-mode-workspace__capture-waiting" role="status">
+                  <BrandLogoLoader size={72} />
+                  <p className="couch-mode-workspace__capture-waiting-text">Ожидаем запуска</p>
                 </div>
               )}
             </div>
@@ -444,7 +465,7 @@ export function CouchModeWorkspace({
             ) : null}
 
             {/* В fullscreen док управления не показываем вообще. В non-fullscreen док нужен только до старта показа. */}
-            {!isFullscreen && !isScreenSharing ? (
+            {!isFullscreen && !couchDemoLive && canPickCouchSource ? (
               <div
                 className={`couch-mode-workspace__controls${showDock ? '' : ' couch-mode-workspace__controls--hidden'}`}
                 role="group"
@@ -494,7 +515,7 @@ export function CouchModeWorkspace({
                   }
                 }}
               >
-                {isScreenSharing ? (
+                {canStopCouchShare ? (
                   <button
                     type="button"
                     className="couch-mode-workspace__ctrl-mini couch-mode-workspace__ctrl-mini--danger"

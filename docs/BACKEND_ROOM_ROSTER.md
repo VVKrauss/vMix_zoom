@@ -151,3 +151,24 @@ type ProducerDescriptor = {
 | C → S       | `closeProducer`        | Явное закрытие (камера выкл по смыслу Meet) |
 
 После внедрения бэка фронт уже ожидает `peers`, `peerJoined`, расширенный `joinRoom` и `avatarUrl` в дескрипторах там, где это возможно.
+
+---
+
+## 10. `couchMode` (режим «Диван»)
+
+Клиент → сервер (`socket.emit`):
+
+```ts
+{ roomId: string; open: boolean; hostPeerId?: string | null }
+```
+
+- При **`open: true`** поле **`hostPeerId`** — это `socket.id` отправителя (организатор «дивана»). Только он может запускать демонстрацию экрана на фронте.
+- При **`open: false`** — `hostPeerId: null`.
+
+Сервер рассылает **всем в комнате** (включая отправителя, если нужно единообразие), например:
+
+```ts
+io.to(roomId).emit('couchMode', { roomId, open, hostPeerId: open ? socket.id : null })
+```
+
+Старые клиенты без `hostPeerId` в payload по-прежнему получают только `open` — фронт допускает обратную совместимость.
