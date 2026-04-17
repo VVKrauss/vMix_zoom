@@ -128,9 +128,11 @@ export function MessengerFilterChannelIcon({ className }: { className?: string }
       className={className}
       aria-hidden
     >
-      <path d="M4 11v4a1 1 0 0 0 1 1h2l4 4V6L7 10H5a1 1 0 0 0-1 1z" />
-      <path d="M16 9a5 5 0 0 1 0 6" />
-      <path d="M19 6a9 9 0 0 1 0 12" />
+      <circle cx="6" cy="18" r="1.5" />
+      <path d="M10 18a4 4 0 0 0-4-4" />
+      <path d="M14 18a8 8 0 0 0-8-8" />
+      <path d="M19 5v14" />
+      <path d="M17 7h4" />
     </svg>
   )
 }

@@ -115,6 +115,10 @@ import type { MessengerForwardMeta } from '../lib/messenger'
 import { MESSENGER_COMPOSER_EMOJIS } from '../lib/messengerComposerEmojis'
 import { setPendingHostClaim, stashSpaceRoomCreateOptions } from '../lib/spaceRoom'
 import { getContactStatuses, setContactPin, type ContactStatus } from '../lib/socialGraph'
+import {
+  getMyConversationNotificationMutes,
+  setConversationNotificationsMuted,
+} from '../lib/conversationNotifications'
 import { supabase } from '../lib/supabase'
 import { newRoomId } from '../utils/roomId'
 import { BrandLogoLoader } from './BrandLogoLoader'
@@ -272,6 +276,9 @@ export function DashboardMessengerPage() {
   const [threadLoading, setThreadLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [items, setItems] = useState<MessengerConversationSummary[]>([])
+  const [mutedConversationIds, setMutedConversationIds] = useState<Set<string>>(new Set())
+  const mutedConversationIdsRef = useRef<Set<string>>(new Set())
+  mutedConversationIdsRef.current = mutedConversationIds
   /** Чаты с отправленной заявкой: держим строку в дереве до появления в ответе сервера. */
   const [pendingJoinSidebarById, setPendingJoinSidebarById] = useState<
     Record<string, MessengerConversationSummary>
@@ -334,6 +341,8 @@ export function DashboardMessengerPage() {
   const [conversationInfoIsOpen, setConversationInfoIsOpen] = useState(true)
   const [conversationInfoChannelComments, setConversationInfoChannelComments] = useState<'comments' | 'reactions_only'>('comments')
   const [conversationInfoLogoFile, setConversationInfoLogoFile] = useState<File | null>(null)
+  const [conversationInfoNotificationsMuted, setConversationInfoNotificationsMuted] = useState(false)
+  const [conversationInfoNotificationsBusy, setConversationInfoNotificationsBusy] = useState(false)
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
   const [leaveBusy, setLeaveBusy] = useState(false)
   const [leaveError, setLeaveError] = useState<string | null>(null)
@@ -754,6 +763,32 @@ export function DashboardMessengerPage() {
     targetUserId,
     user?.id,
   ])
+
+  useEffect(() => {
+    const uid = user?.id?.trim() ?? ''
+    if (!uid) {
+      setMutedConversationIds(new Set())
+      return
+    }
+    const ids = items.map((i) => i.id).filter(Boolean)
+    if (ids.length === 0) {
+      setMutedConversationIds(new Set())
+      return
+    }
+    let cancelled = false
+    void getMyConversationNotificationMutes(ids).then((res) => {
+      if (cancelled) return
+      if (res.error || !res.data) return
+      const next = new Set<string>()
+      for (const [cid, muted] of Object.entries(res.data)) {
+        if (muted) next.add(cid)
+      }
+      setMutedConversationIds(next)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id, items])
 
   useEffect(() => {
     const run = async () => {
@@ -1227,7 +1262,7 @@ export function DashboardMessengerPage() {
               void markDirectConversationRead(convId)
             }, MARK_DIRECT_READ_DEBOUNCE_MS)
             /* Звук — только если вкладка не активна (пользователь видит переписку — достаточно). */
-            if (document.hidden) playMessageSound()
+            if (document.hidden && !mutedConversationIdsRef.current.has(convId)) playMessageSound()
           }
         },
       )
@@ -1345,7 +1380,10 @@ export function DashboardMessengerPage() {
         )
       })
 
-      if (senderUserId !== uid) playMessageSound()
+      if (senderUserId !== uid) {
+        if (mutedConversationIdsRef.current.has(cid)) return
+        playMessageSound()
+      }
     }
 
     window.addEventListener(MESSENGER_BG_MESSAGE_EVENT, handler)
@@ -2562,6 +2600,8 @@ export function DashboardMessengerPage() {
       setConversationInfoEdit(false)
       setConversationInfoError(null)
       setConversationInfoLogoFile(null)
+      setConversationInfoNotificationsBusy(false)
+      setConversationInfoNotificationsMuted(mutedConversationIdsRef.current.has(id))
       setConversationInfoTitle(conv.title)
       setConversationInfoNick((conv.publicNick ?? '').trim())
       setConversationInfoIsOpen(conv.isPublic !== false)
@@ -2588,6 +2628,18 @@ export function DashboardMessengerPage() {
       } finally {
         setConversationInfoLoading(false)
       }
+
+      const muteRes = await getMyConversationNotificationMutes([id])
+      if (!muteRes.error && muteRes.data) {
+        const nextMuted = muteRes.data[id] === true
+        setConversationInfoNotificationsMuted(nextMuted)
+        setMutedConversationIds((prev) => {
+          const next = new Set(prev)
+          if (nextMuted) next.add(id)
+          else next.delete(id)
+          return next
+        })
+      }
     },
     [activeConversation, user?.id],
   )
@@ -2598,6 +2650,7 @@ export function DashboardMessengerPage() {
     setConversationInfoEdit(false)
     setConversationInfoError(null)
     setConversationInfoLogoFile(null)
+    setConversationInfoNotificationsBusy(false)
     setLeaveConfirmOpen(false)
     setLeaveBusy(false)
     setLeaveError(null)
@@ -2631,6 +2684,31 @@ export function DashboardMessengerPage() {
       setLeaveBusy(false)
     }
   }, [closeConversationInfo, conversationInfoConv, conversationInfoRole, leaveBusy, navigate, setItems])
+
+  const toggleConversationNotificationsMuted = useCallback(
+    async (nextMuted: boolean) => {
+      const cid = conversationInfoId?.trim() ?? ''
+      if (!cid || !user?.id || conversationInfoNotificationsBusy) return
+      setConversationInfoNotificationsBusy(true)
+      try {
+        const res = await setConversationNotificationsMuted(cid, nextMuted)
+        if (!res.ok) {
+          setConversationInfoError(res.error ?? 'Не удалось изменить уведомления.')
+          return
+        }
+        setConversationInfoNotificationsMuted(nextMuted)
+        setMutedConversationIds((prev) => {
+          const next = new Set(prev)
+          if (nextMuted) next.add(cid)
+          else next.delete(cid)
+          return next
+        })
+      } finally {
+        setConversationInfoNotificationsBusy(false)
+      }
+    },
+    [conversationInfoId, user?.id, conversationInfoNotificationsBusy],
+  )
 
   const cancelConversationInfoEdit = useCallback(() => {
     const id = conversationInfoId?.trim()
@@ -3110,12 +3188,12 @@ export function DashboardMessengerPage() {
                   <div className="dashboard-messenger__kind-tabs" role="tablist" aria-label="Фильтр бесед">
                     {(
                       [
-                        { id: 'all' as const, label: 'Все', Icon: MessengerFilterAllIcon },
-                        { id: 'direct' as const, label: 'Личные сообщения', Icon: MessengerFilterDirectIcon },
-                        { id: 'group' as const, label: 'Группы', Icon: MessengerFilterGroupIcon },
-                        { id: 'channel' as const, label: 'Каналы', Icon: MessengerFilterChannelIcon },
+                        { id: 'all' as const, label: 'Все', shortLabel: 'Все', Icon: MessengerFilterAllIcon },
+                        { id: 'direct' as const, label: 'ЛС', shortLabel: 'ЛС', Icon: MessengerFilterDirectIcon },
+                        { id: 'group' as const, label: 'Группы', shortLabel: 'Гр', Icon: MessengerFilterGroupIcon },
+                        { id: 'channel' as const, label: 'Каналы', shortLabel: 'Кан', Icon: MessengerFilterChannelIcon },
                       ] as const
-                    ).map(({ id, label, Icon }) => (
+                    ).map(({ id, label, shortLabel, Icon }) => (
                       <button
                         key={id}
                         type="button"
@@ -3132,6 +3210,7 @@ export function DashboardMessengerPage() {
                             <Icon />
                           </span>
                           <span className="dashboard-messenger__kind-tab-label">{label}</span>
+                          <span className="dashboard-messenger__kind-tab-label-short">{shortLabel}</span>
                         </span>
                       </button>
                     ))}
@@ -3990,6 +4069,9 @@ export function DashboardMessengerPage() {
         avatarUrl={
           conversationInfoConv ? conversationAvatarUrlById[conversationInfoConv.id] ?? null : null
         }
+        notificationsMuted={conversationInfoNotificationsMuted}
+        notificationsMuteBusy={conversationInfoNotificationsBusy}
+        onToggleNotificationsMuted={(next) => void toggleConversationNotificationsMuted(next)}
         conversationInfoError={conversationInfoError}
         conversationInfoLoading={conversationInfoLoading}
         conversationInfoEdit={conversationInfoEdit}

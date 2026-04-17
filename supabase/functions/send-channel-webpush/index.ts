@@ -150,15 +150,31 @@ Deno.serve(async (req) => {
     .filter(Boolean)
   if (recipientIds.length === 0) return json({ ok: true, skipped: 'empty_recipients' })
 
+  const { data: mutedRows } = await admin
+    .from('chat_conversation_notification_mutes')
+    .select('user_id')
+    .eq('conversation_id', conversationId)
+    .eq('muted', true)
+    .in('user_id', recipientIds)
+
+  const mutedSet = new Set(
+    (Array.isArray(mutedRows) ? mutedRows : [])
+      .map((r: { user_id?: string }) => (typeof r.user_id === 'string' ? r.user_id : ''))
+      .filter(Boolean),
+  )
+
+  const finalRecipientIds = mutedSet.size > 0 ? recipientIds.filter((id) => !mutedSet.has(id)) : recipientIds
+  if (finalRecipientIds.length === 0) return json({ ok: true, skipped: 'all_muted' })
+
   const { data: subs, error: subErr } = await admin
     .from('push_subscriptions')
     .select('id, user_id, subscription')
-    .in('user_id', recipientIds)
+    .in('user_id', finalRecipientIds)
   if (subErr) return json({ error: 'subs_query', detail: subErr.message }, 500)
   if (!subs?.length) return json({ ok: true, sent: 0, note: 'no_subscriptions' })
 
   const appBase = (Deno.env.get('PUBLIC_APP_URL') ?? 'https://redflow.online').replace(/\/$/, '')
-  const openPath = `/dashboard/channels?channel=${encodeURIComponent(conversationId)}`
+  const openPath = `/dashboard/messenger?chat=${encodeURIComponent(conversationId)}`
   const defaultIcon = `${appBase}/logo.png`
   const payload = JSON.stringify({
     title: truncate(channelTitle, 60),

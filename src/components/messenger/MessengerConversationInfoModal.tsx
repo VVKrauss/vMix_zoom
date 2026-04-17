@@ -9,6 +9,9 @@ export type MessengerConversationInfoModalProps = {
   open: boolean
   conversation: MessengerConversationSummary | null
   avatarUrl: string | null
+  notificationsMuted: boolean
+  notificationsMuteBusy: boolean
+  onToggleNotificationsMuted: (next: boolean) => void
   conversationInfoError: string | null
   conversationInfoLoading: boolean
   conversationInfoEdit: boolean
@@ -47,6 +50,9 @@ export function MessengerConversationInfoModal({
   open,
   conversation,
   avatarUrl,
+  notificationsMuted,
+  notificationsMuteBusy,
+  onToggleNotificationsMuted,
   conversationInfoError,
   conversationInfoLoading,
   conversationInfoEdit,
@@ -130,6 +136,24 @@ export function MessengerConversationInfoModal({
             </span>
             Поделиться ссылкой
           </button>
+        </div>
+
+        <div className="messenger-settings-modal__section">
+          <div className="messenger-settings-modal__push-row">
+            <span className="messenger-settings-modal__label">Уведомления</span>
+            <PillToggle
+              compact
+              checked={!notificationsMuted}
+              onCheckedChange={(next) => onToggleNotificationsMuted(!next)}
+              offLabel="Выкл."
+              onLabel="Вкл."
+              ariaLabel="Уведомления для этого чата"
+              disabled={notificationsMuteBusy}
+            />
+          </div>
+          <p className="messenger-settings-modal__hint" style={{ marginTop: 6 }}>
+            Отключает push и звук уведомлений для этого чата.
+          </p>
         </div>
 
         {conversationInfoRole &&

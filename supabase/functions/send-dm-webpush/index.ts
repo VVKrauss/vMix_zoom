@@ -1,5 +1,5 @@
 /**
- * Web Push для личных сообщений (chat_messages, direct).
+ * Web Push для сообщений мессенджера: direct + group.
  *
  * Вызов: Database Webhook (INSERT на public.chat_messages) → POST на этот endpoint.
  * Секреты (Supabase Dashboard → Edge Functions → Secrets):
@@ -157,9 +157,20 @@ Deno.serve(async (req) => {
     .eq('id', conversationId)
     .maybeSingle()
 
-  if (convErr || !conv || (conv as { kind?: string }).kind !== 'direct') {
-    return json({ ok: true, skipped: 'not_direct' })
+  const convKind = conv && typeof (conv as { kind?: unknown }).kind === 'string' ? String((conv as { kind?: string }).kind).trim() : ''
+  if (convErr || !conv || (convKind !== 'direct' && convKind !== 'group')) {
+    return json({ ok: true, skipped: 'not_direct_or_group' })
   }
+
+  const { data: convTitleRow } = await admin
+    .from('chat_conversations')
+    .select('title')
+    .eq('id', conversationId)
+    .maybeSingle()
+  const convTitle =
+    convTitleRow && typeof (convTitleRow as { title?: unknown }).title === 'string'
+      ? String((convTitleRow as { title?: string }).title).trim()
+      : ''
 
   let bodyText = typeof record.body === 'string' ? record.body : ''
   if (kind === 'image' && !bodyText.trim()) bodyText = `${'\u{1F4F7}'} Фото`
@@ -195,10 +206,26 @@ Deno.serve(async (req) => {
 
   if (recipientIds.length === 0) return json({ ok: true, skipped: 'empty_recipients' })
 
+  const { data: mutedRows } = await admin
+    .from('chat_conversation_notification_mutes')
+    .select('user_id')
+    .eq('conversation_id', conversationId)
+    .eq('muted', true)
+    .in('user_id', recipientIds)
+
+  const mutedSet = new Set(
+    (Array.isArray(mutedRows) ? mutedRows : [])
+      .map((r: { user_id?: string }) => (typeof r.user_id === 'string' ? r.user_id : ''))
+      .filter(Boolean),
+  )
+
+  const finalRecipientIds = mutedSet.size > 0 ? recipientIds.filter((id) => !mutedSet.has(id)) : recipientIds
+  if (finalRecipientIds.length === 0) return json({ ok: true, skipped: 'all_muted' })
+
   const { data: subs, error: subErr } = await admin
     .from('push_subscriptions')
     .select('id, user_id, subscription')
-    .in('user_id', recipientIds)
+    .in('user_id', finalRecipientIds)
 
   if (subErr) return json({ error: 'subs_query', detail: subErr.message }, 500)
   if (!subs?.length) return json({ ok: true, sent: 0, note: 'no_subscriptions' })
@@ -207,8 +234,8 @@ Deno.serve(async (req) => {
   const openPath = `/dashboard/messenger?chat=${encodeURIComponent(conversationId)}`
   const defaultIcon = `${appBase}/logo.png`
   const payload = JSON.stringify({
-    title: truncate(senderName, 60),
-    body: truncate(bodyText, 140),
+    title: truncate(convKind === 'group' ? (convTitle || 'Группа') : senderName, 60),
+    body: truncate(convKind === 'group' ? `${senderName}: ${bodyText}` : bodyText, 140),
     url: `${appBase}${openPath}`,
     tag: `dm-${conversationId}`,
     conversationId,

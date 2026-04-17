@@ -200,15 +200,19 @@ export function ThreadMessageBubble({
   const showAuthorInMeta = !dmMutePeerLabels
 
   if (isDmSoftDeletedStub(message)) {
+    const who =
+      typeof message.senderNameSnapshot === 'string' && message.senderNameSnapshot.trim()
+        ? message.senderNameSnapshot.trim()
+        : 'Кто-то'
     return (
       <div
         ref={(el) => {
           bindMessageAnchor(message.id, el)
         }}
         className="dashboard-messenger__dm-deleted-plain"
-        aria-label="Сообщение удалено"
+        aria-label={`${who} удалил(а) сообщение`}
       >
-        сообщение удалено
+        {who} удалил(а) сообщение
       </div>
     )
   }
