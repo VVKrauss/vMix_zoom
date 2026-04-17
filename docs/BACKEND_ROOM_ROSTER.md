@@ -172,3 +172,71 @@ io.to(roomId).emit('couchMode', { roomId, open, hostPeerId: open ? socket.id : n
 ```
 
 Старые клиенты без `hostPeerId` в payload по-прежнему получают только `open` — фронт допускает обратную совместимость.
+
+### 10.1. Куда вставить код (Socket.IO)
+
+Обычно у вас уже есть `io.on('connection', (socket) => { ... })` и обработчики вроде `chat:message`, `reaction`, `joinRoom`. Добавьте рядом **`socket.on('couchMode', ...)`**.
+
+**Важно:** имя комнаты в Socket.IO должно совпадать с тем, куда вы делаете `socket.join(roomId)` при успешном `joinRoom` (тот же `roomId`, что в payload клиента).
+
+### 10.2. Пример хендлера (минимум)
+
+Не доверяйте `hostPeerId` с клиента при `open: true` — подставляйте **`socket.id`**, иначе любой сможет выдать себя организатором.
+
+```ts
+import type { Socket } from 'socket.io'
+
+function parseCouchModePayload(raw: unknown): { roomId: string; open: boolean } | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  const roomId = typeof o.roomId === 'string' ? o.roomId.trim() : ''
+  if (!roomId) return null
+  const openRaw = o.open ?? o.isOpen ?? o.value
+  const open = openRaw === true || openRaw === 1 || openRaw === 'true'
+  return { roomId, open }
+}
+
+/** Вызвать внутри io.on('connection', (socket) => { ... }) */
+function registerCouchModeHandler(
+  socket: Socket,
+  opts?: {
+    /** Если задано — отклонять couchMode, если сокет не в этой комнате (защита от чужого roomId). */
+    isSocketInRoom?: (socket: Socket, roomId: string) => boolean
+  },
+) {
+  socket.on('couchMode', (raw: unknown) => {
+    const p = parseCouchModePayload(raw)
+    if (!p) return
+    if (opts?.isSocketInRoom && !opts.isSocketInRoom(socket, p.roomId)) return
+
+    const hostPeerId = p.open ? socket.id : null
+    socket.to(p.roomId).emit('couchMode', {
+      roomId: p.roomId,
+      open: p.open,
+      hostPeerId,
+    })
+    // Отправителю событие не шлём: у него уже локальный state после emit на клиенте.
+    // Если после reconnect нужен строгий sync — можно заменить на io.to(p.roomId).emit(...)
+  })
+}
+```
+
+Если у вас **один** `Server` в переменной `io`:
+
+```ts
+socket.on('couchMode', (raw: unknown) => {
+  const p = parseCouchModePayload(raw)
+  if (!p) return
+  const hostPeerId = p.open ? socket.id : null
+  io.to(p.roomId).emit('couchMode', { roomId: p.roomId, open: p.open, hostPeerId })
+})
+```
+
+`io.to` доставит и отправителю — дубликат состояния на фронте безвреден (`setCouchModeOpen` с тем же значением).
+
+### 10.3. Поздний вход в комнату (опционально)
+
+Если участник подключается **после** того, как диван уже открыт, текущий фронт **не** запрашивает снимок `couchMode` в ack `joinRoom`. Тогда до следующего переключения он не узнает состояние. Расширения на выбор:
+
+- добавить в ack `joinRoom` поля `couchMode?: { open: boolean; hostPeerId: string | null }`, выставляя их из серверного состояния комнаты; или
+- хранить на сервере `Map<roomId, { open, hostPeerId }>` и при `joinRoom` слать этому сокету один раз `socket.emit('couchMode', ...)`.
