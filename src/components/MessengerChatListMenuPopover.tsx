@@ -38,7 +38,7 @@ export function MessengerChatListMenuPopover({
   }, [onClose])
 
   return (
-    <div className="messenger-chatlist-menu device-popover" ref={ref} role="menu">
+    <div className="messenger-chatlist-menu" ref={ref} role="menu">
       <button
         type="button"
         className="messenger-chatlist-menu__item"

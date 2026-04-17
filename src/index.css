@@ -5988,7 +5988,17 @@ button.dashboard-messenger__row-avatar {
   background: rgba(255, 255, 255, 0.04);
 }
 
+/* Портал: не смешивать с .device-popover (absolute/bottom/z-index:100 — ломает слой и позицию). */
+.messenger-chatlist-menu-anchor {
+  position: fixed;
+  z-index: 26950;
+  max-width: min(280px, calc(100vw - 16px));
+  box-sizing: border-box;
+  pointer-events: auto;
+}
+
 .messenger-chatlist-menu {
+  position: relative;
   min-width: 200px;
   padding: 6px 0;
   border-radius: 12px;
@@ -6239,6 +6249,7 @@ span.dashboard-messenger__thread-avatar {
   -webkit-touch-callout: none;
   overflow-wrap: anywhere;
   word-break: break-word;
+  overflow-x: clip;
 }
 
 .dashboard-messenger__message--highlight {
@@ -6316,6 +6327,18 @@ span.dashboard-messenger__thread-avatar {
   line-height: 1.28;
   min-width: 0;
   max-width: 100%;
+}
+
+.dashboard-messenger__message-body img,
+.messenger-message-md img {
+  max-width: 100%;
+  height: auto;
+  vertical-align: middle;
+}
+
+.messenger-message-md pre {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .dashboard-messenger__message-body .messenger-message-link {
@@ -6981,6 +7004,7 @@ button.dashboard-messenger__reply-quote--action:focus-visible {
   text-decoration: none;
   color: inherit;
   max-width: 100%;
+  min-width: 0;
   box-sizing: border-box;
 }
 
@@ -8448,6 +8472,8 @@ html[data-theme='light'] .messenger-inline-invite-card:hover {
 .dashboard-messenger--mobile-chromeless .dashboard-messenger__messages {
   box-sizing: border-box;
   padding: 6px max(6px, env(safe-area-inset-left, 0px)) 6px max(6px, env(safe-area-inset-right, 0px));
+  overflow-x: clip;
+  max-width: 100%;
 }
 
 /* Шапка треда на мобилке: единая панель как у списка (без отступа под FAB). */

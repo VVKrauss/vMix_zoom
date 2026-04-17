@@ -4790,8 +4790,6 @@ export function DashboardMessengerPage() {
             <div
               className="messenger-chatlist-menu-anchor"
               style={{
-                position: 'fixed',
-                zIndex: 26600,
                 left: Math.min(
                   chatListRowMenu.anchor.right,
                   typeof window !== 'undefined' ? window.innerWidth - 8 : chatListRowMenu.anchor.right,
