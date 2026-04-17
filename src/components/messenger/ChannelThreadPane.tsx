@@ -929,7 +929,6 @@ export function ChannelThreadPane({
                   }
                 })()
                 if (to) {
-                  // @ts-expect-error react-markdown passes anchor props, but Link doesn't accept all of them
                   return (
                     <Link to={to} className="messenger-message-link">
                       {children}
