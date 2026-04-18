@@ -58,7 +58,9 @@ function parseChatMessageInsert(
   root: Record<string, unknown>,
 ): { record: Record<string, unknown> } | null {
   const tableRaw = typeof root.table === 'string' ? root.table.trim() : ''
-  const typeRaw = typeof root.type === 'string' ? root.type.trim() : ''
+  const typeRaw =
+    (typeof root.type === 'string' ? root.type.trim() : '') ||
+    (typeof root.eventType === 'string' ? root.eventType.trim() : '')
   const table = tableRaw.replace(/^public\./, '')
   if (table !== 'chat_messages') return null
   if (typeRaw.toUpperCase() !== 'INSERT') return null
@@ -173,7 +175,12 @@ Deno.serve(async (req) => {
       ? String((convMeta as { kind?: string }).kind).trim()
       : ''
   if (convErr || !convMeta || (convKind !== 'direct' && convKind !== 'group')) {
-    return json({ ok: true, skipped: 'not_direct_or_group' })
+    return json({
+      ok: true,
+      skipped: 'not_direct_or_group',
+      conv_kind: convKind || null,
+      hint: 'Каналы обрабатывает send-channel-webpush; ЛС/группа — только kind direct|group',
+    })
   }
 
   const convTitle =
@@ -219,7 +226,16 @@ Deno.serve(async (req) => {
     .neq('user_id', senderId)
 
   if (memErr || !members?.length) {
-    return json({ ok: true, skipped: 'no_recipients', detail: memErr?.message })
+    return json({
+      ok: true,
+      skipped: 'no_recipients',
+      detail: memErr?.message,
+      conv_kind: convKind,
+      hint:
+        convKind === 'group'
+          ? 'В группе нет других участников (кроме отправителя) — добавьте людей или это чат с одним членом'
+          : 'Нет получателей в members',
+    })
   }
 
   const recipientIds = members
@@ -242,7 +258,14 @@ Deno.serve(async (req) => {
   )
 
   const finalRecipientIds = mutedSet.size > 0 ? recipientIds.filter((id) => !mutedSet.has(id)) : recipientIds
-  if (finalRecipientIds.length === 0) return json({ ok: true, skipped: 'all_muted' })
+  if (finalRecipientIds.length === 0) {
+    return json({
+      ok: true,
+      skipped: 'all_muted',
+      conv_kind: convKind,
+      recipient_count: recipientIds.length,
+    })
+  }
 
   const { data: subs, error: subErr } = await admin
     .from('push_subscriptions')
@@ -250,7 +273,15 @@ Deno.serve(async (req) => {
     .in('user_id', finalRecipientIds)
 
   if (subErr) return json({ error: 'subs_query', detail: subErr.message }, 500)
-  if (!subs?.length) return json({ ok: true, sent: 0, note: 'no_subscriptions' })
+  if (!subs?.length) {
+    return json({
+      ok: true,
+      sent: 0,
+      note: 'no_subscriptions',
+      conv_kind: convKind,
+      would_recipients: finalRecipientIds.length,
+    })
+  }
 
   const appBase = (Deno.env.get('PUBLIC_APP_URL') ?? 'https://redflow.online').replace(/\/$/, '')
   const openPath = `/dashboard/messenger?chat=${encodeURIComponent(conversationId)}`
