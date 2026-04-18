@@ -5689,6 +5689,20 @@ button.dashboard-messenger__row-avatar {
   white-space: nowrap;
 }
 
+.dashboard-messenger__row-kind-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  vertical-align: middle;
+  opacity: 0.85;
+}
+
+.dashboard-messenger__row-kind-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
 .dashboard-messenger__row-aside {
   display: flex;
   flex-direction: column;
@@ -7866,17 +7880,22 @@ html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
   gap: 5px;
 }
 
-/* Push в фоне: подсказка на вкладке фильтра (ЛС / группы / каналы) */
-.dashboard-messenger__kind-tab--push-hint .dashboard-messenger__kind-tab-inner::after {
-  content: '';
+.dashboard-messenger__kind-tab__badge {
   position: absolute;
-  top: -3px;
-  right: -5px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #ff5a5a;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
+  top: -5px;
+  right: -8px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  box-sizing: border-box;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
   pointer-events: none;
 }
 

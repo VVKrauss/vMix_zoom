@@ -35,10 +35,9 @@ export function MessengerChatListAside(props: {
   messengerMenuOpen: boolean
   setMessengerMenuOpen: (v: boolean | ((p: boolean) => boolean)) => void
   conversationKindFilter: KindFilter
-  /** Смена фильтра + сброс бейджа push по вкладке */
-  onKindFilterChange: (id: KindFilter) => void
-  /** Есть ли фоновый push по типу беседы (точка на вкладке) */
-  pushFilterHint?: { direct: boolean; group: boolean; channel: boolean }
+  onConversationKindFilterChange: (id: KindFilter) => void
+  /** Сумма непрочитанных по типу (как в строках списка), для бейджей на вкладках */
+  filterUnreadByKind: { all: number; direct: number; group: number; channel: number }
   loading: boolean
   sortedItems: MessengerConversationSummary[]
   messengerListHasRows: boolean
@@ -71,8 +70,8 @@ export function MessengerChatListAside(props: {
     messengerMenuOpen,
     setMessengerMenuOpen,
     conversationKindFilter,
-    onKindFilterChange,
-    pushFilterHint,
+    onConversationKindFilterChange,
+    filterUnreadByKind,
     loading,
     sortedItems,
     messengerListHasRows,
@@ -188,10 +187,13 @@ export function MessengerChatListAside(props: {
               { id: 'channel' as const, label: 'Каналы', shortLabel: 'Кан', Icon: MessengerFilterChannelIcon },
             ] as const
           ).map(({ id, label, shortLabel, Icon }) => {
-            const hint =
-              id !== 'all' && pushFilterHint && (id === 'direct' || id === 'group' || id === 'channel')
-                ? pushFilterHint[id]
-                : false
+            const unread =
+              id === 'all'
+                ? filterUnreadByKind.all
+                : id === 'direct' || id === 'group' || id === 'channel'
+                  ? filterUnreadByKind[id]
+                  : 0
+            const badgeText = unread > 99 ? '99+' : unread > 0 ? String(unread) : ''
             return (
             <button
               key={id}
@@ -200,9 +202,10 @@ export function MessengerChatListAside(props: {
               title={label}
               className={`dashboard-messenger__kind-tab${
                 conversationKindFilter === id ? ' dashboard-messenger__kind-tab--active' : ''
-              }${hint ? ' dashboard-messenger__kind-tab--push-hint' : ''}`}
+              }`}
               aria-selected={conversationKindFilter === id}
-              onClick={() => onKindFilterChange(id)}
+              aria-label={badgeText ? `${label}, непрочитано: ${unread}` : label}
+              onClick={() => onConversationKindFilterChange(id)}
             >
               <span className="dashboard-messenger__kind-tab-inner">
                 <span className="dashboard-messenger__kind-tab-icon" aria-hidden>
@@ -210,6 +213,11 @@ export function MessengerChatListAside(props: {
                 </span>
                 <span className="dashboard-messenger__kind-tab-label">{label}</span>
                 <span className="dashboard-messenger__kind-tab-label-short">{shortLabel}</span>
+                {badgeText ? (
+                  <span className="dashboard-messenger__kind-tab__badge" aria-hidden>
+                    {badgeText}
+                  </span>
+                ) : null}
               </span>
             </button>
             )
@@ -281,7 +289,18 @@ export function MessengerChatListAside(props: {
                       </button>
                       <div className="dashboard-messenger__row-content">
                         <div className="dashboard-messenger__row-titleline">
-                          <div className="dashboard-messenger__row-title">{item.title}</div>
+                          <div className="dashboard-messenger__row-title">
+                            {item.title}
+                            {item.kind === 'group' ? (
+                              <span className="dashboard-messenger__row-kind-icon" aria-label="Группа" title="Группа">
+                                <MessengerFilterGroupIcon />
+                              </span>
+                            ) : item.kind === 'channel' ? (
+                              <span className="dashboard-messenger__row-kind-icon" aria-label="Канал" title="Канал">
+                                <MessengerFilterChannelIcon />
+                              </span>
+                            ) : null}
+                          </div>
                           <div className="dashboard-messenger__row-aside">
                             <time className="dashboard-messenger__row-time" dateTime={item.lastMessageAt ?? item.createdAt}>
                               {formatMessengerListRowTime(item.lastMessageAt ?? item.createdAt)}

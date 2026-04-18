@@ -75,20 +75,6 @@ self.addEventListener('push', (event) => {
         }
       }
 
-      const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-      if (conversationKind === 'direct' || conversationKind === 'group' || conversationKind === 'channel') {
-        for (const c of clientList) {
-          try {
-            c.postMessage({
-              type: 'messenger-push-filter-badge',
-              conversationKind,
-            })
-          } catch (_) {
-            /* ignore */
-          }
-        }
-      }
-
       const iconResolved = await tryBlobUrlForCrossOriginIcon(icon)
       const imageForNotify =
         image && image.trim()

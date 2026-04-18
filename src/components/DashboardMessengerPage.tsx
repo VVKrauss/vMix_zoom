@@ -1112,37 +1112,24 @@ export function DashboardMessengerPage() {
     'all' | MessengerConversationKind
   >('all')
 
-  /** Фоновый web push: точка на вкладке ЛС / группы / каналы (не глобальный бейдж приложения). */
-  const [pushFilterHint, setPushFilterHint] = useState({ direct: false, group: false, channel: false })
-
-  useEffect(() => {
-    const onSwMessage = (e: MessageEvent) => {
-      const d = e.data as { type?: string; conversationKind?: string } | null
-      if (!d || d.type !== 'messenger-push-filter-badge') return
-      const k = d.conversationKind
-      if (k === 'direct' || k === 'group' || k === 'channel') {
-        setPushFilterHint((p) => ({ ...p, [k]: true }))
-      }
-    }
-    const sw = navigator.serviceWorker
-    if (!sw?.addEventListener) return
-    sw.addEventListener('message', onSwMessage)
-    return () => sw.removeEventListener('message', onSwMessage)
-  }, [])
-
-  const onKindFilterChange = useCallback((id: 'all' | MessengerConversationKind) => {
-    setConversationKindFilter(id)
-    if (id === 'all') {
-      setPushFilterHint({ direct: false, group: false, channel: false })
-    } else if (id === 'direct' || id === 'group' || id === 'channel') {
-      setPushFilterHint((p) => ({ ...p, [id]: false }))
-    }
-  }, [])
-
   const sortedItems = useMemo(
     () => sortMessengerListWithPins(mergedItems, pinnedChatIds),
     [mergedItems, pinnedChatIds],
   )
+
+  /** Сумма непрочитанного по типу беседы — для бейджей на вкладках «Все / ЛС / …». */
+  const filterUnreadByKind = useMemo(() => {
+    let direct = 0
+    let group = 0
+    let channel = 0
+    for (const it of sortedItems) {
+      const u = Math.max(0, Number(it.unreadCount) || 0)
+      if (it.kind === 'direct') direct += u
+      else if (it.kind === 'group') group += u
+      else if (it.kind === 'channel') channel += u
+    }
+    return { direct, group, channel, all: direct + group + channel }
+  }, [sortedItems])
 
   /** Шапка треда: сразу из списка по URL, пока грузится полная карточка с сервера */
   const threadHeadConversation =
@@ -2468,8 +2455,8 @@ export function DashboardMessengerPage() {
                 messengerMenuOpen={messengerMenuOpen}
                 setMessengerMenuOpen={setMessengerMenuOpen}
                 conversationKindFilter={conversationKindFilter}
-                onKindFilterChange={onKindFilterChange}
-                pushFilterHint={pushFilterHint}
+                onConversationKindFilterChange={setConversationKindFilter}
+                filterUnreadByKind={filterUnreadByKind}
                 loading={loading}
                 sortedItems={sortedItems}
                 messengerListHasRows={messengerListHasRows}
