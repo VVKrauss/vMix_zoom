@@ -3,6 +3,7 @@ import { BrandLogoLoader } from '../BrandLogoLoader'
 import { ChevronLeftIcon, FiRrIcon } from '../icons'
 import { MessengerJumpToBottomFab } from '../MessengerJumpToBottomFab'
 import {
+  directOutgoingReceiptStatus,
   isDirectReactionEmoji,
   type DirectConversationSummary,
   type DirectMessage,
@@ -26,6 +27,10 @@ export function MessengerDirectThreadBody(props: {
   isMobileMessenger: boolean
   navigate: (to: string, opts?: { replace?: boolean }) => void
   totalOtherUnread: number
+  /** Курсор прочтения собеседника (ЛС) — индикаторы на исходящих. */
+  directPeerLastReadAt: string | null
+  viewerDmReceiptsPrivate: boolean
+  peerDmReceiptsPrivate: boolean
   threadHeadConversation: MessengerDirectThreadHeadConversation
   openUserPeek: (p: { userId: string; displayName: string; avatarUrl: string | null }) => void
   user: { id: string } | null | undefined
@@ -70,6 +75,9 @@ export function MessengerDirectThreadBody(props: {
     isMobileMessenger,
     navigate,
     totalOtherUnread,
+    directPeerLastReadAt,
+    viewerDmReceiptsPrivate,
+    peerDmReceiptsPrivate,
     threadHeadConversation,
     openUserPeek,
     user,
@@ -273,11 +281,19 @@ export function MessengerDirectThreadBody(props: {
                           : null,
                       ),
                   })
+                  const dmOutgoingReceipt = directOutgoingReceiptStatus(message, {
+                    isOwn,
+                    isDirectThread: threadHeadConversation.kind === 'direct',
+                    peerLastReadAt: directPeerLastReadAt,
+                    viewerReceiptsPrivate: viewerDmReceiptsPrivate,
+                    peerReceiptsPrivate: peerDmReceiptsPrivate,
+                  })
                   return (
                     <ThreadMessageBubble
                       key={message.id}
                       message={message}
                       isOwn={isOwn}
+                      dmOutgoingReceipt={dmOutgoingReceipt}
                       dmMutePeerLabels={threadHeadConversation?.kind === 'direct'}
                       reactions={reactions}
                       formatDt={formatDateTime}

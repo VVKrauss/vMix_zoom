@@ -1,10 +1,10 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import type { FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useUserPeek } from '../context/UserPeekContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useProfile } from '../hooks/useProfile'
-import { deleteMyAccount } from '../lib/accountLifecycle'
 import {
   type RoomChatConversationSummary,
   ROOM_CHAT_PAGE_SIZE,
@@ -14,7 +14,6 @@ import {
 import type { DashboardRoomModalSubject } from '../lib/dashboardRoomStats'
 import { readHiddenIncomingPinIds } from '../lib/dashboardIncomingPinsHidden'
 import { listMessengerPeersByMessageCount } from '../lib/messenger'
-import { normalizeProfileSlug, validateProfileSlugInput } from '../lib/profileSlug'
 import type { ContactCard } from '../lib/socialGraph'
 import { listMyContacts } from '../lib/socialGraph'
 import { fetchPersistentSpaceRoomsForUser, type PersistentSpaceRoomRow } from '../lib/spaceRoom'
@@ -23,8 +22,6 @@ import type { StoredLayoutMode } from '../config/roomUiStorage'
 import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
 import { DashboardContactsIncomingModal } from './DashboardContactsIncomingModal'
 import { DashboardLayoutPicker } from './DashboardLayoutPicker'
-import type { ProfileSlugAvailability } from './DashboardProfileModal'
-import { DashboardProfileModal } from './DashboardProfileModal'
 import { PillToggle } from './PillToggle'
 import { DashboardShell } from './DashboardShell'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -100,57 +97,40 @@ function formatPeerGuestTime(iso: string | null): string {
 
 export function DashboardPage() {
   const { signOut, user } = useAuth()
-  const location = useLocation()
-  const navigate = useNavigate()
   const { openUserPeek } = useUserPeek()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const {
     profile,
     plan,
     loading,
-    saving,
     searchPrivacySaving,
     contactPrivacySaving,
-    uploadingAvatar,
     error,
-    saveProfile,
     saveSearchPrivacy,
     saveContactPrivacy,
-    uploadAvatar,
-    removeAvatar,
-    checkProfileSlugAvailable,
+    openProfileEdit,
   } = useProfile()
 
-  const [displayName, setDisplayName] = useState('')
-  const [profileSlug, setProfileSlug] = useState('')
-  const [slugEdited, setSlugEdited] = useState(false)
-  const [nameEdited, setNameEdited] = useState(false)
-  const [saveMsg, setSaveMsg] = useState<string | null>(null)
-  const [saveErr, setSaveErr] = useState<string | null>(null)
+  const privacyAutosaveSkipRef = useRef(true)
   const [roomLayout, setRoomLayout] = useState<StoredLayoutMode>('pip')
   const [roomShowLayoutToggle, setRoomShowLayoutToggle] = useState(true)
   const [roomHideVideoLetterboxing, setRoomHideVideoLetterboxing] = useState(true)
   const [roomSaveMsg, setRoomSaveMsg] = useState<string | null>(null)
   const [roomSaveErr, setRoomSaveErr] = useState<string | null>(null)
   const [roomSaving, setRoomSaving] = useState(false)
-  const [profileEditOpen, setProfileEditOpen] = useState(false)
   const [searchClosed, setSearchClosed] = useState(true)
   const [allowSearchName, setAllowSearchName] = useState(true)
   const [allowSearchEmail, setAllowSearchEmail] = useState(false)
   const [allowSearchSlug, setAllowSearchSlug] = useState(true)
-  const [searchPrivacyMsg, setSearchPrivacyMsg] = useState<string | null>(null)
   const [searchPrivacyErr, setSearchPrivacyErr] = useState<string | null>(null)
   const [dmAllowFrom, setDmAllowFrom] = useState<'everyone' | 'contacts_only'>('everyone')
   const [profileViewAllowFrom, setProfileViewAllowFrom] = useState<'everyone' | 'contacts_only'>('everyone')
   const [profileShowAvatar, setProfileShowAvatar] = useState(true)
   const [profileShowSlug, setProfileShowSlug] = useState(true)
-  const [profileShowLastActive, setProfileShowLastActive] = useState(true)
-  const [contactPrivacyMsg, setContactPrivacyMsg] = useState<string | null>(null)
+  /** true — не показывать последнюю активность другим (инверсия profile_show_last_active). */
+  const [hideActivity, setHideActivity] = useState(false)
+  const [profileDmReceiptsPrivate, setProfileDmReceiptsPrivate] = useState(false)
   const [contactPrivacyErr, setContactPrivacyErr] = useState<string | null>(null)
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
-  const [deleteBusy, setDeleteBusy] = useState(false)
-  const [deleteErr, setDeleteErr] = useState<string | null>(null)
-  const [slugAvailability, setSlugAvailability] = useState<ProfileSlugAvailability>('idle')
   const [myRooms, setMyRooms] = useState<PersistentSpaceRoomRow[]>([])
   const [myRoomsLoading, setMyRoomsLoading] = useState(false)
   const [roomArchiveItems, setRoomArchiveItems] = useState<RoomChatConversationSummary[]>([])
@@ -198,33 +178,19 @@ export function DashboardPage() {
     setAllowSearchName(profile.profile_search_allow_by_name)
     setAllowSearchEmail(profile.profile_search_allow_by_email)
     setAllowSearchSlug(profile.profile_search_allow_by_slug)
-    setSearchPrivacyMsg(null)
     setSearchPrivacyErr(null)
     setDmAllowFrom(profile.dm_allow_from)
     setProfileViewAllowFrom(profile.profile_view_allow_from)
     setProfileShowAvatar(profile.profile_show_avatar)
     setProfileShowSlug(profile.profile_show_slug)
-    setProfileShowLastActive(profile.profile_show_last_active)
-    setContactPrivacyMsg(null)
+    setHideActivity(!profile.profile_show_last_active)
+    setProfileDmReceiptsPrivate(profile.profile_dm_receipts_private)
     setContactPrivacyErr(null)
+    privacyAutosaveSkipRef.current = true
+    queueMicrotask(() => {
+      privacyAutosaveSkipRef.current = false
+    })
   }, [profile])
-
-  useEffect(() => {
-    if (!profileEditOpen || !profile) return
-    setDisplayName(profile.display_name)
-    setProfileSlug(profile.profile_slug ?? '')
-    setSlugEdited(false)
-    setNameEdited(false)
-    setSaveMsg(null)
-    setSaveErr(null)
-  }, [profileEditOpen, profile])
-
-  useEffect(() => {
-    const st = location.state as { openProfileEdit?: boolean } | null | undefined
-    if (!st?.openProfileEdit) return
-    setProfileEditOpen(true)
-    navigate(`${location.pathname}${location.search}`, { replace: true, state: {} })
-  }, [location.state, location.pathname, location.search, navigate])
 
   useEffect(() => {
     let alive = true
@@ -272,111 +238,50 @@ export function DashboardPage() {
     })
   }, [user?.id, contactsTick])
 
-  const currentName = nameEdited ? displayName : (profile?.display_name ?? '')
-  const currentSlug = slugEdited ? profileSlug : (profile?.profile_slug ?? '')
+  useEffect(() => {
+    if (!profile || privacyAutosaveSkipRef.current) return
+    const t = window.setTimeout(() => {
+      void (async () => {
+        setSearchPrivacyErr(null)
+        const { error: err } = await saveSearchPrivacy({
+          profile_search_closed: searchClosed,
+          profile_search_allow_by_name: allowSearchName,
+          profile_search_allow_by_email: allowSearchEmail,
+          profile_search_allow_by_slug: allowSearchSlug,
+        })
+        if (err) setSearchPrivacyErr(err)
+      })()
+    }, 450)
+    return () => window.clearTimeout(t)
+  }, [profile, searchClosed, allowSearchName, allowSearchEmail, allowSearchSlug, saveSearchPrivacy])
 
   useEffect(() => {
-    if (!profileEditOpen || !profile) {
-      setSlugAvailability('idle')
-      return
-    }
-    const raw = currentSlug.trim()
-    if (!raw) {
-      setSlugAvailability('free')
-      return
-    }
-    const vErr = validateProfileSlugInput(raw)
-    if (vErr) {
-      setSlugAvailability('invalid')
-      return
-    }
-    const normalized = normalizeProfileSlug(raw)
-    if (normalized === (profile.profile_slug ?? '')) {
-      setSlugAvailability('free')
-      return
-    }
-    setSlugAvailability('checking')
+    if (!profile || privacyAutosaveSkipRef.current) return
     const t = window.setTimeout(() => {
-      void checkProfileSlugAvailable(raw).then((ok) => {
-        setSlugAvailability(ok ? 'free' : 'taken')
-      })
-    }, 380)
+      void (async () => {
+        setContactPrivacyErr(null)
+        const { error: err } = await saveContactPrivacy({
+          dm_allow_from: dmAllowFrom,
+          profile_view_allow_from: profileViewAllowFrom,
+          profile_show_avatar: profileShowAvatar,
+          profile_show_slug: profileShowSlug,
+          profile_show_last_active: !hideActivity,
+          profile_dm_receipts_private: profileDmReceiptsPrivate,
+        })
+        if (err) setContactPrivacyErr(err)
+      })()
+    }, 450)
     return () => window.clearTimeout(t)
-  }, [profileEditOpen, profile, currentSlug, checkProfileSlugAvailable])
-
-  const handleNameChange = (value: string) => {
-    setDisplayName(value)
-    setNameEdited(true)
-    setSaveMsg(null)
-    setSaveErr(null)
-  }
-
-  const handleSlugChange = (value: string) => {
-    setProfileSlug(value)
-    setSlugEdited(true)
-    setSaveMsg(null)
-    setSaveErr(null)
-  }
-
-  const handleSave = async (event: FormEvent) => {
-    event.preventDefault()
-    setSaveMsg(null)
-    setSaveErr(null)
-    const { error: err } = await saveProfile(currentName, currentSlug)
-    if (err) setSaveErr(err)
-    else {
-      setSaveMsg('Сохранено')
-      setSlugEdited(false)
-      setNameEdited(false)
-    }
-  }
-
-  const handleModalAvatarUpload = async (file: File) => {
-    setSaveErr(null)
-    const { error: err } = await uploadAvatar(file)
-    if (err) setSaveErr(err)
-  }
-
-  const handleRemoveAvatar = async () => {
-    setSaveErr(null)
-    const { error: err } = await removeAvatar()
-    if (err) setSaveErr(err)
-  }
-
-  const closeProfileModal = () => {
-    setProfileEditOpen(false)
-    setSaveMsg(null)
-    setSaveErr(null)
-  }
-
-  const handleSaveSearchPrivacy = async (event: FormEvent) => {
-    event.preventDefault()
-    setSearchPrivacyErr(null)
-    setSearchPrivacyMsg(null)
-    const { error: err } = await saveSearchPrivacy({
-      profile_search_closed: searchClosed,
-      profile_search_allow_by_name: allowSearchName,
-      profile_search_allow_by_email: allowSearchEmail,
-      profile_search_allow_by_slug: allowSearchSlug,
-    })
-    if (err) setSearchPrivacyErr(err)
-    else setSearchPrivacyMsg('Сохранено')
-  }
-
-  const handleSaveContactPrivacyForm = async (event: FormEvent) => {
-    event.preventDefault()
-    setContactPrivacyErr(null)
-    setContactPrivacyMsg(null)
-    const { error: err } = await saveContactPrivacy({
-      dm_allow_from: dmAllowFrom,
-      profile_view_allow_from: profileViewAllowFrom,
-      profile_show_avatar: profileShowAvatar,
-      profile_show_slug: profileShowSlug,
-      profile_show_last_active: profileShowLastActive,
-    })
-    if (err) setContactPrivacyErr(err)
-    else setContactPrivacyMsg('Сохранено')
-  }
+  }, [
+    profile,
+    dmAllowFrom,
+    profileViewAllowFrom,
+    profileShowAvatar,
+    profileShowSlug,
+    hideActivity,
+    profileDmReceiptsPrivate,
+    saveContactPrivacy,
+  ])
 
   const handleSaveRoomPrefs = async (event: FormEvent) => {
     event.preventDefault()
@@ -477,100 +382,6 @@ export function DashboardPage() {
         }}
         onContactsUpdated={() => {
           setContactsTick((n) => n + 1)
-        }}
-      />
-
-      <DashboardProfileModal
-        open={profileEditOpen}
-        onClose={closeProfileModal}
-        displayName={currentName}
-        onDisplayNameChange={handleNameChange}
-        profileSlug={currentSlug}
-        onProfileSlugChange={handleSlugChange}
-        currentName={currentName}
-        email={profile.email ?? ''}
-        avatarUrl={profile.avatar_url}
-        avatarAlt={profile.display_name}
-        initials={initials}
-        saving={saving}
-        uploadingAvatar={uploadingAvatar}
-        saveErr={saveErr}
-        saveMsg={saveMsg}
-        onSave={handleSave}
-        onRemoveAvatar={() => {
-          void handleRemoveAvatar()
-        }}
-        onUploadAvatar={(file) => {
-          void handleModalAvatarUpload(file)
-        }}
-        searchOpen={searchOpen}
-        onSearchOpenChange={(next) => {
-          setSearchClosed(!next)
-          setSearchPrivacyMsg(null)
-          setSearchPrivacyErr(null)
-        }}
-        allowSearchName={allowSearchName}
-        onAllowSearchNameChange={(v) => {
-          setAllowSearchName(v)
-          setSearchPrivacyMsg(null)
-          setSearchPrivacyErr(null)
-        }}
-        allowSearchEmail={allowSearchEmail}
-        onAllowSearchEmailChange={(v) => {
-          setAllowSearchEmail(v)
-          setSearchPrivacyMsg(null)
-          setSearchPrivacyErr(null)
-        }}
-        allowSearchSlug={allowSearchSlug}
-        onAllowSearchSlugChange={(v) => {
-          setAllowSearchSlug(v)
-          setSearchPrivacyMsg(null)
-          setSearchPrivacyErr(null)
-        }}
-        searchPrivacySaving={searchPrivacySaving}
-        searchPrivacyMsg={searchPrivacyMsg}
-        searchPrivacyErr={searchPrivacyErr}
-        onSaveSearchPrivacy={handleSaveSearchPrivacy}
-        noSearchAxes={noSearchAxes}
-        slugAvailability={slugAvailability}
-        onDeleteAccountClick={() => {
-          setDeleteErr(null)
-          setDeleteConfirmOpen(true)
-        }}
-      />
-
-      <ConfirmDialog
-        open={deleteConfirmOpen}
-        title="Удалить аккаунт?"
-        message={
-          <>
-            <p>
-              Аккаунт и связанные данные будут удалены без возможности восстановления: комнаты, материалы, переписки и
-              подписки в рамках этого профиля.
-            </p>
-            <p style={{ marginTop: '0.75rem' }}>Продолжить?</p>
-          </>
-        }
-        confirmLabel="Удалить навсегда"
-        cancelLabel="Отмена"
-        confirmLoading={deleteBusy}
-        onCancel={() => {
-          if (!deleteBusy) setDeleteConfirmOpen(false)
-        }}
-        onConfirm={() => {
-          void (async () => {
-            setDeleteErr(null)
-            setDeleteBusy(true)
-            const res = await deleteMyAccount()
-            setDeleteBusy(false)
-            if (!res.ok) {
-              setDeleteErr(res.error ?? 'Не удалось удалить аккаунт')
-              return
-            }
-            setDeleteConfirmOpen(false)
-            closeProfileModal()
-            await signOut()
-          })()
         }}
       />
 
@@ -694,7 +505,7 @@ export function DashboardPage() {
                   className="dashboard-tile-profile__settings"
                   title="Настройки профиля"
                   aria-label="Настройки профиля"
-                  onClick={() => setProfileEditOpen(true)}
+                  onClick={() => openProfileEdit()}
                 >
                   <SettingsGearIcon />
                 </button>
@@ -732,17 +543,81 @@ export function DashboardPage() {
             </div>
           </div>
           <div className="dashboard-tile__flex-fill" aria-hidden />
-          {deleteErr ? <p className="join-error dashboard-tile__foot-err">{deleteErr}</p> : null}
         </section>
 
         <section className="dashboard-tile dashboard-tile--contact-privacy">
-          <h2 className="dashboard-tile__title">Приватность контактов</h2>
-          <form onSubmit={handleSaveContactPrivacyForm} className="dashboard-form dashboard-form--compact">
+          <h2 className="dashboard-tile__title">Приватность</h2>
+          <div className="dashboard-form dashboard-form--compact">
             <p className="dashboard-field__hint" style={{ marginTop: 0 }}>
-              Кто может написать вам первым и кто видит карточку профиля (имя, аватар, ник, активность) при просмотре из
-              мессенджера и комнат.
+              Глобальный поиск в «Контактах», кто может написать первым, что видно в карточке профиля и индикаторы
+              доставки в личных сообщениях. Изменения сохраняются автоматически.
             </p>
+            {searchPrivacySaving || contactPrivacySaving ? (
+              <p className="dashboard-field__hint" role="status">
+                Сохранение…
+              </p>
+            ) : null}
+
             <div className="dashboard-field">
+              <div className="dashboard-field__inline dashboard-field__inline--toggle">
+                <span className="dashboard-field__label">Профиль в глобальном поиске</span>
+                <PillToggle
+                  checked={searchOpen}
+                  onCheckedChange={(next) => {
+                    setSearchClosed(!next)
+                    setSearchPrivacyErr(null)
+                  }}
+                  ariaLabel="Профиль в глобальном поиске"
+                />
+              </div>
+            </div>
+            <div className="dashboard-field">
+              <span className="dashboard-field__label">Разрешить находить по</span>
+              <div className="dashboard-field__stack">
+                <div className="dashboard-field__inline dashboard-field__inline--toggle">
+                  <span className="dashboard-field__sublabel">Имени</span>
+                  <PillToggle
+                    compact
+                    checked={allowSearchName}
+                    onCheckedChange={setAllowSearchName}
+                    ariaLabel="Поиск по имени"
+                    disabled={!searchOpen}
+                  />
+                </div>
+                <div className="dashboard-field__inline dashboard-field__inline--toggle">
+                  <span className="dashboard-field__sublabel">Электронной почте</span>
+                  <PillToggle
+                    compact
+                    checked={allowSearchEmail}
+                    onCheckedChange={setAllowSearchEmail}
+                    ariaLabel="Поиск по email"
+                    disabled={!searchOpen}
+                  />
+                </div>
+                <div className="dashboard-field__inline dashboard-field__inline--toggle">
+                  <span className="dashboard-field__sublabel">Имени пользователя (@ник)</span>
+                  <PillToggle
+                    compact
+                    checked={allowSearchSlug}
+                    onCheckedChange={setAllowSearchSlug}
+                    ariaLabel="Поиск по имени пользователя"
+                    disabled={!searchOpen}
+                  />
+                </div>
+              </div>
+              {!searchOpen ? (
+                <p className="dashboard-field__note">Пока профиль закрыт, вы не отображаетесь в поиске.</p>
+              ) : null}
+              {noSearchAxes ? (
+                <p className="join-error">
+                  Включён открытый режим, но не выбран ни один способ поиска — вас никто не найдёт, пока не включите
+                  хотя бы один пункт.
+                </p>
+              ) : null}
+            </div>
+            {searchPrivacyErr ? <p className="join-error">{searchPrivacyErr}</p> : null}
+
+            <div className="dashboard-field" style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
               <label className="dashboard-field__label">Личные сообщения</label>
               <select
                 className="dashboard-chat-filters__input"
@@ -774,8 +649,6 @@ export function DashboardPage() {
                 <PillToggle
                   checked={profileShowAvatar}
                   onCheckedChange={setProfileShowAvatar}
-                  offLabel="Скрыть"
-                  onLabel="Показать"
                   ariaLabel="Показывать аватар в карточке"
                 />
               </div>
@@ -786,32 +659,32 @@ export function DashboardPage() {
                 <PillToggle
                   checked={profileShowSlug}
                   onCheckedChange={setProfileShowSlug}
-                  offLabel="Скрыть"
-                  onLabel="Показать"
                   ariaLabel="Показывать ник в карточке"
                 />
               </div>
             </div>
             <div className="dashboard-field">
               <div className="dashboard-field__inline dashboard-field__inline--toggle">
-                <span className="dashboard-field__label">Показывать последнюю активность</span>
+                <span className="dashboard-field__label">Скрывать активность</span>
                 <PillToggle
-                  checked={profileShowLastActive}
-                  onCheckedChange={setProfileShowLastActive}
-                  offLabel="Скрыть"
-                  onLabel="Показать"
-                  ariaLabel="Показывать последнюю активность"
+                  checked={hideActivity}
+                  onCheckedChange={setHideActivity}
+                  ariaLabel="Скрывать последнюю активность от других"
+                />
+              </div>
+            </div>
+            <div className="dashboard-field">
+              <div className="dashboard-field__inline dashboard-field__inline--toggle">
+                <span className="dashboard-field__label">Скрывать статусы доставки и прочтения в ЛС</span>
+                <PillToggle
+                  checked={profileDmReceiptsPrivate}
+                  onCheckedChange={setProfileDmReceiptsPrivate}
+                  ariaLabel="Не показывать собеседникам доставку и прочтение исходящих сообщений"
                 />
               </div>
             </div>
             {contactPrivacyErr ? <p className="join-error">{contactPrivacyErr}</p> : null}
-            {contactPrivacyMsg ? <p className="dashboard-form__ok">{contactPrivacyMsg}</p> : null}
-            <div className="dashboard-form__save">
-              <button type="submit" className="join-btn" disabled={contactPrivacySaving}>
-                {contactPrivacySaving ? 'Сохранение…' : 'Сохранить'}
-              </button>
-            </div>
-          </form>
+          </div>
         </section>
 
         <section className="dashboard-tile dashboard-tile--rooms">

@@ -52,6 +52,7 @@ import {
   listDirectMessagesPage,
   mapDirectMessageFromRow,
   deleteDirectMessage,
+  fetchDirectPeerDmReceiptContext,
   markDirectConversationRead,
   previewTextForDirectMessageTail,
   requestMessengerUnreadRefresh,
@@ -233,6 +234,7 @@ export function DashboardMessengerPage() {
 
   const [loading, setLoading] = useState(true)
   const [threadLoading, setThreadLoading] = useState(false)
+  const [chatListRefreshing, setChatListRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { pushUi, pushBusy, refreshPushUi, toggleMessengerPush } = useMessengerWebPushState(user?.id, setError)
   const [items, setItems] = useState<MessengerConversationSummary[]>([])
@@ -261,6 +263,9 @@ export function DashboardMessengerPage() {
   const conversationAvatarUrlById = useMessengerConversationAvatarUrls(items)
   const [activeConversation, setActiveConversation] = useState<MessengerConversationSummary | null>(null)
   const [messages, setMessages] = useState<DirectMessage[]>([])
+  /** Курсор прочтения собеседника в открытом ЛС + приватность квитанций (индикаторы исходящих). */
+  const [directPeerLastReadAt, setDirectPeerLastReadAt] = useState<string | null>(null)
+  const [directPeerReceiptsPrivate, setDirectPeerReceiptsPrivate] = useState(true)
   const { senderContactByUserId, setSenderContactByUserId } = useMessengerSenderContacts(user?.id, messages)
   const [draft, setDraft] = useState('')
 
@@ -416,6 +421,25 @@ export function DashboardMessengerPage() {
   /** Уже загруженные сообщения для этого id — не дергать API при повторном срабатывании эффекта (напр. loading). */
   const lastFetchedThreadIdRef = useRef<string | null>(null)
   const markReadDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const chatListRefreshInFlightRef = useRef(false)
+
+  const refreshChatList = useCallback(async () => {
+    if (!user?.id || chatListRefreshInFlightRef.current) return
+    chatListRefreshInFlightRef.current = true
+    setChatListRefreshing(true)
+    setError(null)
+    try {
+      const listRes = await listMessengerConversations()
+      if (listRes.error) {
+        setError(listRes.error)
+        return
+      }
+      if (listRes.data) setItems(listRes.data)
+    } finally {
+      chatListRefreshInFlightRef.current = false
+      setChatListRefreshing(false)
+    }
+  }, [user?.id])
 
   const updateMessengerScrollPinned = useCallback(() => {
     const el = messagesScrollRef.current
@@ -543,6 +567,48 @@ export function DashboardMessengerPage() {
     return null
   }, [activeConversationId, mergedItems, activeConversation])
 
+  useEffect(() => {
+    setDirectPeerLastReadAt(null)
+    setDirectPeerReceiptsPrivate(true)
+    const cid = activeConversationId.trim()
+    if (!cid || !user?.id || activeOpenThreadKind !== 'direct') return
+    let cancelled = false
+    void fetchDirectPeerDmReceiptContext(cid).then(({ data }) => {
+      if (cancelled || !data) return
+      setDirectPeerLastReadAt(data.lastReadAt)
+      setDirectPeerReceiptsPrivate(data.peerReceiptsPrivate)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [activeConversationId, activeOpenThreadKind, user?.id])
+
+  useEffect(() => {
+    const cid = activeConversationId.trim()
+    if (!cid || !user?.id || activeOpenThreadKind !== 'direct') return
+    const channel = supabase
+      .channel(`dm-peer-read:${cid}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chat_conversation_members',
+          filter: `conversation_id=eq.${cid}`,
+        },
+        (payload) => {
+          const row = payload.new as { user_id?: string; last_read_at?: string | null }
+          if (row.user_id && row.user_id !== user.id && typeof row.last_read_at === 'string') {
+            setDirectPeerLastReadAt(row.last_read_at)
+          }
+        },
+      )
+      .subscribe()
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [activeConversationId, activeOpenThreadKind, user?.id])
+
   useMessengerActiveThreadMembership({
     activeConversationId,
     userId: user?.id,
@@ -632,6 +698,9 @@ export function DashboardMessengerPage() {
     listOnlyMobile,
     messagesLength: messages.length,
     messagesScrollRef,
+    messagesContentRef,
+    conversationIdRef,
+    activeConversationId,
     messengerPinnedToBottomRef,
   })
   useMessengerScrollOnMessageGrowth({
@@ -2457,6 +2526,8 @@ export function DashboardMessengerPage() {
                 conversationKindFilter={conversationKindFilter}
                 onConversationKindFilterChange={setConversationKindFilter}
                 filterUnreadByKind={filterUnreadByKind}
+                onRefreshChatList={isMobileMessenger ? refreshChatList : undefined}
+                chatListRefreshing={chatListRefreshing}
                 loading={loading}
                 sortedItems={sortedItems}
                 messengerListHasRows={messengerListHasRows}
@@ -2771,6 +2842,9 @@ export function DashboardMessengerPage() {
                       isMobileMessenger={isMobileMessenger}
                       navigate={navigate}
                       totalOtherUnread={totalOtherUnread}
+                      directPeerLastReadAt={directPeerLastReadAt}
+                      viewerDmReceiptsPrivate={profile?.profile_dm_receipts_private === true}
+                      peerDmReceiptsPrivate={directPeerReceiptsPrivate}
                       threadHeadConversation={threadHeadConversation as MessengerDirectThreadHeadConversation}
                       openUserPeek={openUserPeek}
                       user={user}

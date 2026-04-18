@@ -1,10 +1,9 @@
-import type { FormEvent } from 'react'
 import { useEffect, useRef } from 'react'
-import { PillToggle } from './PillToggle'
 import { ThemeToggle } from './ThemeToggle'
 
 export type ProfileSlugAvailability = 'idle' | 'checking' | 'free' | 'taken' | 'invalid'
 
+/** Модалка редактирования профиля (имя, ник, аватар, тема, удаление аккаунта). Настройки приватности — в кабинете. */
 export interface DashboardProfileModalProps {
   open: boolean
   onClose: () => void
@@ -20,24 +19,8 @@ export interface DashboardProfileModalProps {
   saving: boolean
   uploadingAvatar: boolean
   saveErr: string | null
-  saveMsg: string | null
-  onSave: (e: FormEvent) => void
   onRemoveAvatar: () => void
   onUploadAvatar: (file: File) => void
-  /** Поиск профиля */
-  searchOpen: boolean
-  onSearchOpenChange: (open: boolean) => void
-  allowSearchName: boolean
-  onAllowSearchNameChange: (v: boolean) => void
-  allowSearchEmail: boolean
-  onAllowSearchEmailChange: (v: boolean) => void
-  allowSearchSlug: boolean
-  onAllowSearchSlugChange: (v: boolean) => void
-  searchPrivacySaving: boolean
-  searchPrivacyMsg: string | null
-  searchPrivacyErr: string | null
-  onSaveSearchPrivacy: (e: FormEvent) => void
-  noSearchAxes: boolean
   slugAvailability: ProfileSlugAvailability
   onDeleteAccountClick: () => void
 }
@@ -57,23 +40,8 @@ export function DashboardProfileModal({
   saving,
   uploadingAvatar,
   saveErr,
-  saveMsg,
-  onSave,
   onRemoveAvatar,
   onUploadAvatar,
-  searchOpen,
-  onSearchOpenChange,
-  allowSearchName,
-  onAllowSearchNameChange,
-  allowSearchEmail,
-  onAllowSearchEmailChange,
-  allowSearchSlug,
-  onAllowSearchSlugChange,
-  searchPrivacySaving,
-  searchPrivacyMsg,
-  searchPrivacyErr,
-  onSaveSearchPrivacy,
-  noSearchAxes,
   slugAvailability,
   onDeleteAccountClick,
 }: DashboardProfileModalProps) {
@@ -159,7 +127,10 @@ export function DashboardProfileModal({
             </div>
           </div>
 
-          <form id="dashboard-profile-form" onSubmit={onSave} className="dashboard-form">
+          <div className="dashboard-form">
+            <p className="dashboard-field__hint" style={{ marginTop: 0 }}>
+              Изменения имени и ника сохраняются автоматически.
+            </p>
             <div className="dashboard-field">
               <label className="dashboard-field__label" htmlFor="dashboard-profile-name">
                 Никнейм
@@ -212,8 +183,8 @@ export function DashboardProfileModal({
               />
             </div>
             {saveErr ? <p className="join-error">{saveErr}</p> : null}
-            {saveMsg ? <p className="dashboard-save-ok">{saveMsg}</p> : null}
-          </form>
+            {saving ? <p className="dashboard-field__hint">Сохранение…</p> : null}
+          </div>
 
           <div className="dashboard-field dashboard-field--modal-divider">
             <div className="dashboard-field__inline dashboard-field__inline--toggle">
@@ -221,78 +192,6 @@ export function DashboardProfileModal({
               <ThemeToggle variant="inline" className="theme-toggle--dashboard" />
             </div>
           </div>
-
-          <form onSubmit={onSaveSearchPrivacy} className="dashboard-form">
-            <h3 className="dashboard-profile-modal__subtitle">Поиск профиля на платформе</h3>
-            <p className="dashboard-field__hint">
-              Другие пользователи могут находить вас в разделе «Контакты» только если вы разрешите это явно.
-            </p>
-            <div className="dashboard-field">
-              <div className="dashboard-field__inline dashboard-field__inline--toggle">
-                <span className="dashboard-field__label">Открытый профиль</span>
-                <PillToggle
-                  checked={searchOpen}
-                  onCheckedChange={onSearchOpenChange}
-                  ariaLabel="Открытый профиль: участие в глобальном поиске"
-                />
-              </div>
-            </div>
-            <div className="dashboard-field">
-              <span className="dashboard-field__label">Разрешить находить по</span>
-              <div className="dashboard-field__stack">
-                <div className="dashboard-field__inline dashboard-field__inline--toggle">
-                  <span className="dashboard-field__sublabel">Имени</span>
-                  <PillToggle
-                    compact
-                    checked={allowSearchName}
-                    onCheckedChange={onAllowSearchNameChange}
-                    offLabel="Нет"
-                    onLabel="Да"
-                    ariaLabel="Поиск по имени"
-                    disabled={!searchOpen}
-                  />
-                </div>
-                <div className="dashboard-field__inline dashboard-field__inline--toggle">
-                  <span className="dashboard-field__sublabel">Электронной почте</span>
-                  <PillToggle
-                    compact
-                    checked={allowSearchEmail}
-                    onCheckedChange={onAllowSearchEmailChange}
-                    offLabel="Нет"
-                    onLabel="Да"
-                    ariaLabel="Поиск по email"
-                    disabled={!searchOpen}
-                  />
-                </div>
-                <div className="dashboard-field__inline dashboard-field__inline--toggle">
-                  <span className="dashboard-field__sublabel">Имени пользователя (@ник)</span>
-                  <PillToggle
-                    compact
-                    checked={allowSearchSlug}
-                    onCheckedChange={onAllowSearchSlugChange}
-                    offLabel="Нет"
-                    onLabel="Да"
-                    ariaLabel="Поиск по имени пользователя"
-                    disabled={!searchOpen}
-                  />
-                </div>
-              </div>
-              {!searchOpen ? (
-                <p className="dashboard-field__note">Пока профиль закрыт, вы не отображаетесь в поиске.</p>
-              ) : null}
-              {noSearchAxes ? (
-                <p className="join-error">
-                  Включён открытый режим, но не выбран ни один способ поиска — вас никто не найдёт, пока не включите
-                  хотя бы один пункт.
-                </p>
-              ) : null}
-            </div>
-            {searchPrivacyErr ? <p className="join-error">{searchPrivacyErr}</p> : null}
-            {searchPrivacyMsg ? <p className="dashboard-save-ok">{searchPrivacyMsg}</p> : null}
-            <button type="submit" className="join-btn dashboard-form__save" disabled={searchPrivacySaving}>
-              {searchPrivacySaving ? 'Сохранение…' : 'Сохранить настройки поиска'}
-            </button>
-          </form>
 
           <div className="dashboard-field dashboard-field--danger-zone">
             <span className="dashboard-field__label">Опасная зона</span>
@@ -308,20 +207,6 @@ export function DashboardProfileModal({
         <div className="dashboard-profile-modal__foot">
           <button type="button" className="confirm-dialog__btn confirm-dialog__btn--secondary" onClick={onClose}>
             Закрыть
-          </button>
-          <button
-            type="submit"
-            form="dashboard-profile-form"
-            className="confirm-dialog__btn confirm-dialog__btn--primary"
-            disabled={
-              saving ||
-              !currentName.trim() ||
-              slugAvailability === 'checking' ||
-              slugAvailability === 'taken' ||
-              slugAvailability === 'invalid'
-            }
-          >
-            {saving ? 'Сохранение…' : 'Сохранить профиль'}
           </button>
         </div>
       </div>

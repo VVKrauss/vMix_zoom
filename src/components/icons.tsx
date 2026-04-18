@@ -26,6 +26,47 @@ export function MicIcon() {
   return <FiRrIcon name="microphone" />
 }
 
+/** Две катушки + перемычка — превью голосового в дереве чатов. */
+export function VoiceChatListIcon({ className }: { className?: string } = {}) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <circle cx="7.5" cy="10" r="4" />
+      <circle cx="16.5" cy="10" r="4" />
+      <line x1="7.5" y1="14" x2="16.5" y2="14" />
+    </svg>
+  )
+}
+
+/** Студийный микрофон — кнопка записи голоса в композере (фиксированный слот по ширине иконки). */
+export function VoiceRecordComposerIcon({ className }: { className?: string } = {}) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z" />
+      <path d="M8 11v1a4 4 0 0 0 8 0v-1" />
+      <line x1="12" y1="18" x2="12" y2="15" />
+      <line x1="9" y1="21" x2="15" y2="21" />
+    </svg>
+  )
+}
+
 export function MicOffIcon({ className }: { className?: string }) {
   return <FiRrIcon name="microphone-slash" className={className} />
 }

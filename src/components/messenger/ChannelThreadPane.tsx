@@ -147,6 +147,8 @@ export function ChannelThreadPane({
   const [feedSending, setFeedSending] = useState(false)
   const [feedPhotoUploading, setFeedPhotoUploading] = useState(false)
   const [feedVoiceUploading, setFeedVoiceUploading] = useState(false)
+  const [feedVoiceRecording, setFeedVoiceRecording] = useState(false)
+  const [feedVoiceMetaEl, setFeedVoiceMetaEl] = useState<HTMLDivElement | null>(null)
   const [pendingChannelPhotos, setPendingChannelPhotos] = useState<{ id: string; file: File; previewUrl: string }[]>([])
   const {
     preview: feedLinkPreview,
@@ -621,6 +623,10 @@ export function ChannelThreadPane({
       document.removeEventListener('touchstart', onDown, touchOpts)
     }
   }, [feedComposerEmojiOpen])
+
+  useEffect(() => {
+    if (feedVoiceRecording) setFeedComposerEmojiOpen(false)
+  }, [feedVoiceRecording])
 
   useEffect(() => {
     let active = true
@@ -1854,8 +1860,13 @@ export function ChannelThreadPane({
                   }
                 }}
               />
-              <div className="dashboard-messenger__composer-side">
-                <div className="dashboard-messenger__composer-tools" ref={feedComposerEmojiWrapRef}>
+              <div
+                className={`dashboard-messenger__composer-side${isMobileMessenger ? ' dashboard-messenger__composer-side--voice-stack' : ''}`}
+              >
+                <div
+                  className={`dashboard-messenger__composer-tools${feedVoiceRecording ? ' dashboard-messenger__composer-tools--voice-rec' : ''}`}
+                  ref={feedComposerEmojiWrapRef}
+                >
                   {feedComposerEmojiOpen ? (
                     <div className="dashboard-messenger__composer-emoji-pop">
                       <ReactionEmojiPopover
@@ -1896,11 +1907,13 @@ export function ChannelThreadPane({
                   >
                     <AttachmentIcon />
                   </button>
-                  <MessengerVoiceRecordBtn
-                    disabled={threadLoading}
-                    busy={feedPhotoUploading || feedVoiceUploading || feedSending}
-                    onRecorded={onFeedVoiceRecorded}
-                  />
+                  {!isMobileMessenger ? (
+                    <MessengerVoiceRecordBtn
+                      disabled={threadLoading}
+                      busy={feedPhotoUploading || feedVoiceUploading || feedSending}
+                      onRecorded={onFeedVoiceRecorded}
+                    />
+                  ) : null}
                   <input
                     ref={feedPhotoInputRef}
                     type="file"
@@ -1915,20 +1928,52 @@ export function ChannelThreadPane({
                     }}
                   />
                 </div>
-                <button
-                  type="button"
-                  className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
-                  disabled={
-                    (!feedDraft.trim() && pendingChannelPhotos.length === 0) ||
-                    feedSending ||
-                    threadLoading ||
-                    feedPhotoUploading ||
-                    feedVoiceUploading
-                  }
-                  onClick={() => void sendChannelFeed()}
-                >
-                  Отправить
-                </button>
+                {isMobileMessenger ? (
+                  <div className="dashboard-messenger__composer-mobile-actions">
+                    <div
+                      ref={setFeedVoiceMetaEl}
+                      className="dashboard-messenger__composer-voice-meta"
+                      aria-live="polite"
+                    />
+                    <button
+                      type="button"
+                      className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
+                      disabled={
+                        (!feedDraft.trim() && pendingChannelPhotos.length === 0) ||
+                        feedSending ||
+                        threadLoading ||
+                        feedPhotoUploading ||
+                        feedVoiceUploading
+                      }
+                      onClick={() => void sendChannelFeed()}
+                    >
+                      Отправить
+                    </button>
+                    <MessengerVoiceRecordBtn
+                      variant="mobileEnd"
+                      metaPortalEl={feedVoiceMetaEl}
+                      onRecordingChange={setFeedVoiceRecording}
+                      disabled={threadLoading}
+                      busy={feedPhotoUploading || feedVoiceUploading || feedSending}
+                      onRecorded={onFeedVoiceRecorded}
+                    />
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
+                    disabled={
+                      (!feedDraft.trim() && pendingChannelPhotos.length === 0) ||
+                      feedSending ||
+                      threadLoading ||
+                      feedPhotoUploading ||
+                      feedVoiceUploading
+                    }
+                    onClick={() => void sendChannelFeed()}
+                  >
+                    Отправить
+                  </button>
+                )}
               </div>
             </div>
             {feedPhotoUploading || feedVoiceUploading ? (

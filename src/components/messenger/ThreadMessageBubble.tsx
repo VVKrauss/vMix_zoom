@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useCallback, useRef, useState } from 'react'
-import type { DirectMessage, MessengerForwardMeta } from '../../lib/messenger'
+import type { DirectMessage, DmOutgoingReceiptLevel, MessengerForwardMeta } from '../../lib/messenger'
 import { isDmSoftDeletedStub } from '../../lib/messenger'
 import { forwardMetaToQuotedStrip } from '../../lib/messengerForward'
 import { DoubleTapHeartSurface } from './DoubleTapHeartSurface'
@@ -20,6 +20,8 @@ export type ThreadMessageBubbleProps = {
   isOwn: boolean
   /** Личный диалог: не показывать имена/аватары в шапке бабла и в цитате (ни у собеседника, ни у себя). */
   dmMutePeerLabels?: boolean
+  /** ЛС: статус исходящего (контур / половина / полный круг). */
+  dmOutgoingReceipt?: DmOutgoingReceiptLevel | null
   reactions: DirectMessage[]
   formatDt: (iso: string) => string
   replyPreview: ThreadReplyPreview | null
@@ -52,6 +54,7 @@ export function ThreadMessageBubble({
   message,
   isOwn,
   dmMutePeerLabels,
+  dmOutgoingReceipt = null,
   reactions,
   formatDt,
   replyPreview,
@@ -283,6 +286,22 @@ export function ThreadMessageBubble({
           ) : null}
           <time dateTime={message.createdAt}>{formatDt(message.createdAt)}</time>
           {message.editedAt ? <span className="dashboard-messenger__edited">изм.</span> : null}
+          {dmOutgoingReceipt ? (
+            <span
+              className={`dashboard-messenger__dm-receipt dashboard-messenger__dm-receipt--${dmOutgoingReceipt}`}
+              aria-label={
+                dmOutgoingReceipt === 'pending'
+                  ? 'Отправка'
+                  : dmOutgoingReceipt === 'read'
+                    ? 'Прочитано'
+                    : dmOutgoingReceipt === 'delivered'
+                      ? 'Доставлено'
+                      : 'Отправлено'
+              }
+            >
+              <DmOutgoingReceiptGlyph level={dmOutgoingReceipt} messageId={message.id} />
+            </span>
+          ) : null}
         </div>
         <button
           type="button"
@@ -390,3 +409,72 @@ export function ThreadMessageBubble({
   )
 }
 
+function DmOutgoingReceiptGlyph({
+  level,
+  messageId,
+}: {
+  level: DmOutgoingReceiptLevel
+  messageId: string
+}) {
+  const clipId = `dmrch-${messageId.replace(/[^a-zA-Z0-9_-]/g, '_') || 'm'}`
+  const vb = 12
+  const c = 6
+  const r = 4.5
+  const sw = 1.2
+  if (level === 'pending') {
+    return (
+      <svg
+        className="dashboard-messenger__dm-receipt-svg"
+        width={12}
+        height={12}
+        viewBox={`0 0 ${vb} ${vb}`}
+        aria-hidden
+      >
+        <circle cx={c} cy={c} r={r} fill="none" stroke="currentColor" strokeWidth={sw} strokeDasharray="2 2" />
+      </svg>
+    )
+  }
+  if (level === 'sent') {
+    return (
+      <svg
+        className="dashboard-messenger__dm-receipt-svg"
+        width={12}
+        height={12}
+        viewBox={`0 0 ${vb} ${vb}`}
+        aria-hidden
+      >
+        <circle cx={c} cy={c} r={r} fill="none" stroke="currentColor" strokeWidth={sw} />
+      </svg>
+    )
+  }
+  if (level === 'delivered') {
+    return (
+      <svg
+        className="dashboard-messenger__dm-receipt-svg"
+        width={12}
+        height={12}
+        viewBox={`0 0 ${vb} ${vb}`}
+        aria-hidden
+      >
+        <defs>
+          <clipPath id={clipId}>
+            <rect x={c} y={0} width={c} height={vb} />
+          </clipPath>
+        </defs>
+        <circle cx={c} cy={c} r={r} fill="none" stroke="currentColor" strokeWidth={sw} />
+        <circle cx={c} cy={c} r={r} fill="currentColor" fillOpacity={0.45} clipPath={`url(#${clipId})`} />
+      </svg>
+    )
+  }
+  return (
+    <svg
+      className="dashboard-messenger__dm-receipt-svg"
+      width={12}
+      height={12}
+      viewBox={`0 0 ${vb} ${vb}`}
+      aria-hidden
+    >
+      <circle cx={c} cy={c} r={r} fill="currentColor" />
+    </svg>
+  )
+}

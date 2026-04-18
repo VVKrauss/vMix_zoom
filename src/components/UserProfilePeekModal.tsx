@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useProfile } from '../hooks/useProfile'
 import { useToast } from '../context/ToastContext'
 import { ensureDirectConversationWithUser } from '../lib/messenger'
 import { getMyConversationNotificationMutes, setConversationNotificationsMuted } from '../lib/conversationNotifications'
@@ -25,6 +26,7 @@ export function UserProfilePeekModal({
   target: UserPeekTarget | null
 }) {
   const { user } = useAuth()
+  const { openProfileEdit } = useProfile()
   const navigate = useNavigate()
   const toast = useToast()
   const [profile, setProfile] = useState<PublicUserProfileRow | null>(null)
@@ -241,7 +243,7 @@ export function UserProfilePeekModal({
                 className="dashboard-topbar__action dashboard-topbar__action--primary"
                 onClick={() => {
                   onClose()
-                  navigate('/dashboard', { state: { openProfileEdit: true } })
+                  openProfileEdit()
                 }}
               >
                 Редактировать

@@ -275,6 +275,98 @@ export function previewTextForDirectMessageTail(msg: Pick<DirectMessage, 'kind' 
   return 'Изображение'
 }
 
+/** Превью в списке чатов для голосовых (сервер: «🎤 Голосовое» или подпись из body). */
+export function shouldShowVoiceMessageListIcon(preview: string | null | undefined): boolean {
+  const t = preview?.trim() ?? ''
+  if (!t) return false
+  if (/^\s*🎤/u.test(t)) return true
+  return t === 'Голосовое' || t === '🎤 Голосовое' || t === 'Голосовое сообщение'
+}
+
+export function voiceMessageListPreviewLabel(preview: string): string {
+  const s = preview.replace(/^\s*🎤\s*/u, '').trim()
+  return s || 'Голосовое'
+}
+
+/** Контекст ЛС для индикаторов исходящих: курсор прочтения собеседника и его флаг приватности квитанций. */
+export type DirectPeerDmReceiptContext = {
+  lastReadAt: string | null
+  /** Если не удалось прочитать строку users — считаем «приватно», чтобы не раскрывать лишнее. */
+  peerReceiptsPrivate: boolean
+}
+
+/** Загрузка `last_read_at` и `profile_dm_receipts_private` собеседника в личном чате. */
+export async function fetchDirectPeerDmReceiptContext(
+  conversationId: string,
+): Promise<{ data: DirectPeerDmReceiptContext | null; error: string | null }> {
+  const { data: auth } = await supabase.auth.getUser()
+  const uid = auth.user?.id
+  if (!uid) return { data: null, error: 'auth' }
+  const cid = conversationId.trim()
+  if (!cid) return { data: null, error: 'conversation_required' }
+  const { data, error } = await supabase
+    .from('chat_conversation_members')
+    .select('user_id, last_read_at')
+    .eq('conversation_id', cid)
+  if (error) return { data: null, error: error.message }
+  const peer = (data ?? []).find((r: { user_id?: string }) => r.user_id && r.user_id !== uid)
+  const peerId = typeof peer?.user_id === 'string' ? peer.user_id : null
+  const lr = peer?.last_read_at
+  const lastReadAt = typeof lr === 'string' ? lr : null
+
+  let peerReceiptsPrivate = true
+  if (peerId) {
+    const { data: urow, error: uerr } = await supabase
+      .from('users')
+      .select('profile_dm_receipts_private')
+      .eq('id', peerId)
+      .maybeSingle()
+    if (!uerr && urow && typeof urow === 'object') {
+      peerReceiptsPrivate = (urow as { profile_dm_receipts_private?: boolean }).profile_dm_receipts_private === true
+    }
+  }
+
+  return {
+    data: { lastReadAt, peerReceiptsPrivate },
+    error: null,
+  }
+}
+
+/** Статусы исходящего в ЛС: контур / половина / полный круг (без галочек). */
+export type DmOutgoingReceiptLevel = 'pending' | 'sent' | 'delivered' | 'read'
+
+/**
+ * Статус исходящего в ЛС для своих сообщений.
+ * - `sent` — на сервере; собеседник ещё не открывал тред (нет last_read_at).
+ * - `delivered` — у собеседника есть курсор прочтения, но это сообщение новее курсора.
+ * - `read` — last_read_at собеседника покрывает сообщение.
+ * Если у вас или у собеседника включена приватность квитанций — только нейтральный `sent` (контур).
+ */
+export function directOutgoingReceiptStatus(
+  message: DirectMessage,
+  opts: {
+    isOwn: boolean
+    isDirectThread: boolean
+    peerLastReadAt: string | null
+    viewerReceiptsPrivate: boolean
+    peerReceiptsPrivate: boolean
+  },
+): DmOutgoingReceiptLevel | null {
+  if (!opts.isDirectThread || !opts.isOwn) return null
+  if (message.kind === 'reaction' || message.kind === 'system') return null
+  if (message.id.startsWith('local-')) return 'pending'
+
+  const hideDetail = opts.viewerReceiptsPrivate || opts.peerReceiptsPrivate
+  if (hideDetail) return 'sent'
+
+  if (!opts.peerLastReadAt) return 'sent'
+  const readT = new Date(opts.peerLastReadAt).getTime()
+  const msgT = new Date(message.createdAt).getTime()
+  if (!Number.isFinite(readT) || !Number.isFinite(msgT)) return 'sent'
+  if (readT >= msgT) return 'read'
+  return 'delivered'
+}
+
 export function mapDirectMessageFromRow(row: Record<string, unknown>): DirectMessage {
   return {
     id: String(row.id),

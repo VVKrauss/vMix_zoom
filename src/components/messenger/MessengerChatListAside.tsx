@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from 'react'
+import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react'
 import { Link } from 'react-router-dom'
 import type { NavigateFunction } from 'react-router-dom'
 import { BrandLogoLoader } from '../BrandLogoLoader'
@@ -11,12 +11,14 @@ import {
   MessengerFilterDirectIcon,
   MessengerFilterGroupIcon,
   PlusIcon,
+  VoiceChatListIcon,
 } from '../icons'
 import {
   buildMessengerUrl,
   conversationInitial,
   formatMessengerListRowTime,
 } from '../../lib/messengerDashboardUtils'
+import { shouldShowVoiceMessageListIcon, voiceMessageListPreviewLabel } from '../../lib/messenger'
 import type {
   MessengerConversationKind,
   MessengerConversationSummary,
@@ -60,6 +62,9 @@ export function MessengerChatListAside(props: {
       anchor: { left: number; top: number; right: number; bottom: number }
     } | null>
   >
+  /** Мобильный список: потянуть вниз от верха — обновить дерево чатов */
+  onRefreshChatList?: () => void | Promise<void>
+  chatListRefreshing?: boolean
 }) {
   const {
     isMobileMessenger,
@@ -89,7 +94,60 @@ export function MessengerChatListAside(props: {
     openConversationInfo,
     pinnedChatIds,
     setChatListRowMenu,
+    onRefreshChatList,
+    chatListRefreshing = false,
   } = props
+
+  const listScrollRef = useRef<HTMLDivElement | null>(null)
+  const ptrInnerRef = useRef<HTMLDivElement | null>(null)
+  const ptrStartY = useRef(0)
+  const ptrPullPx = useRef(0)
+
+  useEffect(() => {
+    const scrollEl = listScrollRef.current
+    const inner = ptrInnerRef.current
+    const onRefresh = onRefreshChatList
+    if (!isMobileMessenger || !onRefresh || !scrollEl || !inner) return
+
+    const THRESHOLD = 52
+
+    const onStart = (e: TouchEvent) => {
+      ptrStartY.current = e.touches[0].clientY
+      ptrPullPx.current = 0
+    }
+    const onMove = (e: TouchEvent) => {
+      if (chatListRefreshing) return
+      if (scrollEl.scrollTop > 0) {
+        inner.style.transform = ''
+        ptrPullPx.current = 0
+        return
+      }
+      const dy = e.touches[0].clientY - ptrStartY.current
+      if (dy > 0) {
+        const p = Math.min(dy * 0.45, 72)
+        ptrPullPx.current = p
+        inner.style.transform = `translateY(${p}px)`
+        if (dy > 8) e.preventDefault()
+      }
+    }
+    const onEnd = () => {
+      inner.style.transform = ''
+      const pulled = ptrPullPx.current
+      ptrPullPx.current = 0
+      if (pulled >= THRESHOLD && !chatListRefreshing) void Promise.resolve(onRefresh())
+    }
+
+    scrollEl.addEventListener('touchstart', onStart, { passive: true })
+    scrollEl.addEventListener('touchmove', onMove, { passive: false })
+    scrollEl.addEventListener('touchend', onEnd, { passive: true })
+    scrollEl.addEventListener('touchcancel', onEnd, { passive: true })
+    return () => {
+      scrollEl.removeEventListener('touchstart', onStart)
+      scrollEl.removeEventListener('touchmove', onMove)
+      scrollEl.removeEventListener('touchend', onEnd)
+      scrollEl.removeEventListener('touchcancel', onEnd)
+    }
+  }, [isMobileMessenger, onRefreshChatList, chatListRefreshing])
 
   return (
     <aside className="dashboard-messenger__list" aria-label="Список диалогов">
@@ -224,8 +282,15 @@ export function MessengerChatListAside(props: {
           })}
         </div>
       </div>
-      <div className="dashboard-messenger__list-scroll">
-        {loading && sortedItems.length === 0 ? (
+      <div ref={listScrollRef} className="dashboard-messenger__list-scroll">
+        <div ref={ptrInnerRef} className="dashboard-messenger__list-scroll-inner">
+          {isMobileMessenger && onRefreshChatList && chatListRefreshing ? (
+            <div className="dashboard-messenger__list-ptr-banner" role="status" aria-live="polite">
+              <BrandLogoLoader size={32} />
+              <span>Обновление…</span>
+            </div>
+          ) : null}
+          {loading && sortedItems.length === 0 ? (
           <div className="dashboard-messenger__pane-loader" aria-label="Загрузка списка…">
             <BrandLogoLoader size={56} />
           </div>
@@ -313,7 +378,21 @@ export function MessengerChatListAside(props: {
                           </div>
                         </div>
                         <div className="dashboard-messenger__row-preview">
-                          {item.lastMessagePreview?.trim() || 'Пока без сообщений'}
+                          {(() => {
+                            const raw = item.lastMessagePreview?.trim() ?? ''
+                            if (!raw) return 'Пока без сообщений'
+                            if (shouldShowVoiceMessageListIcon(raw)) {
+                              return (
+                                <span className="dashboard-messenger__row-preview--voice">
+                                  <span className="dashboard-messenger__row-preview-voice-ic" aria-hidden>
+                                    <VoiceChatListIcon />
+                                  </span>
+                                  {voiceMessageListPreviewLabel(raw)}
+                                </span>
+                              )
+                            }
+                            return raw
+                          })()}
                         </div>
                       </div>
                       <div className="dashboard-messenger__row-trailing">
@@ -453,6 +532,7 @@ export function MessengerChatListAside(props: {
             })}
           </>
         )}
+        </div>
       </div>
     </aside>
   )

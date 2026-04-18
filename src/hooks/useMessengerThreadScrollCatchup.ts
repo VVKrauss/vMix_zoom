@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, type MutableRefObject, type RefObject } from 'react'
 import { MESSENGER_BOTTOM_PIN_PX } from '../lib/messengerDashboardUtils'
+import { attachMessengerTailCatchupAfterContentPaint } from './messengerTailCatchup'
 
 /** После окончания `threadLoading` — прокрутка вниз, если есть сообщения. */
 export function useMessengerScrollAfterThreadLoad(opts: {
@@ -7,6 +8,9 @@ export function useMessengerScrollAfterThreadLoad(opts: {
   listOnlyMobile: boolean
   messagesLength: number
   messagesScrollRef: RefObject<HTMLDivElement | null>
+  messagesContentRef: RefObject<HTMLDivElement | null>
+  conversationIdRef: RefObject<string>
+  activeConversationId: string
   messengerPinnedToBottomRef: MutableRefObject<boolean>
 }): void {
   const {
@@ -14,21 +18,51 @@ export function useMessengerScrollAfterThreadLoad(opts: {
     listOnlyMobile,
     messagesLength,
     messagesScrollRef,
+    messagesContentRef,
+    conversationIdRef,
+    activeConversationId,
     messengerPinnedToBottomRef,
   } = opts
   const prevThreadLoadingRef = useRef(false)
+  const cancelTailCatchupRef = useRef<(() => void) | null>(null)
 
   useLayoutEffect(() => {
+    cancelTailCatchupRef.current?.()
+    cancelTailCatchupRef.current = null
+
     const wasLoading = prevThreadLoadingRef.current
     prevThreadLoadingRef.current = threadLoading
     if (wasLoading && !threadLoading && !listOnlyMobile && messagesLength > 0) {
-      const el = messagesScrollRef.current
-      if (el) {
-        el.scrollTop = el.scrollHeight
+      const scrollEl = messagesScrollRef.current
+      const contentEl = messagesContentRef.current
+      if (scrollEl) {
+        scrollEl.scrollTop = scrollEl.scrollHeight
         messengerPinnedToBottomRef.current = true
       }
+      if (scrollEl && contentEl) {
+        const openedId = activeConversationId.trim()
+        cancelTailCatchupRef.current = attachMessengerTailCatchupAfterContentPaint({
+          scrollEl,
+          contentEl,
+          pinRef: messengerPinnedToBottomRef,
+          isActive: () => (conversationIdRef.current ?? '').trim() === openedId,
+        })
+      }
     }
-  }, [threadLoading, listOnlyMobile, messagesLength])
+    return () => {
+      cancelTailCatchupRef.current?.()
+      cancelTailCatchupRef.current = null
+    }
+  }, [
+    threadLoading,
+    listOnlyMobile,
+    messagesLength,
+    messagesScrollRef,
+    messagesContentRef,
+    conversationIdRef,
+    activeConversationId,
+    messengerPinnedToBottomRef,
+  ])
 }
 
 /** Рост числа сообщений без загрузки страницы — догон низа, если пользователь был у хвоста. */
@@ -53,7 +87,8 @@ export function useMessengerScrollOnMessageGrowth(opts: {
     prevMessagesLenForScrollRef.current = messagesLength
     if (!el || !grew) return
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < MESSENGER_BOTTOM_PIN_PX
-    if (nearBottom) {
+    const stickToTail = messengerPinnedToBottomRef.current || nearBottom
+    if (stickToTail) {
       el.scrollTop = el.scrollHeight
       messengerPinnedToBottomRef.current = true
     }

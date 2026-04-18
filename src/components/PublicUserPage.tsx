@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useProfile } from '../hooks/useProfile'
 import { useToast } from '../context/ToastContext'
 import { ensureDirectConversationWithUser } from '../lib/messenger'
 import { getContactStatuses, setContactPin } from '../lib/socialGraph'
@@ -32,6 +33,7 @@ export function PublicUserPage() {
   const { slug: rawSlug = '' } = useParams<{ slug: string }>()
   const slug = useMemo(() => rawSlug.trim(), [rawSlug])
   const { user } = useAuth()
+  const { openProfileEdit } = useProfile()
   const toast = useToast()
   const navigate = useNavigate()
 
@@ -195,7 +197,7 @@ export function PublicUserPage() {
                 <button
                   type="button"
                   className="join-btn join-btn--block"
-                  onClick={() => navigate('/dashboard', { state: { openProfileEdit: true } })}
+                  onClick={() => openProfileEdit()}
                 >
                   Редактировать профиль
                 </button>

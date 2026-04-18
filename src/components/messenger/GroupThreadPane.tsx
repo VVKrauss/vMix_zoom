@@ -32,6 +32,7 @@ import { ThreadMessageBubble } from './ThreadMessageBubble'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
 import { useLinkPreviewFromText } from '../../hooks/useLinkPreviewFromText'
 import { buildLinkMetaForMessageBody, ensureLinkPreviewForBody } from '../../lib/linkPreview'
+import { attachMessengerTailCatchupAfterContentPaint } from '../../hooks/messengerTailCatchup'
 import { useMessengerJumpToBottom } from '../../hooks/useMessengerJumpToBottom'
 import { MessengerJumpToBottomFab } from '../MessengerJumpToBottomFab'
 import { DraftLinkPreviewBar } from './DraftLinkPreviewBar'
@@ -116,9 +117,13 @@ export function GroupThreadPane({
   const photoInputRef = useRef<HTMLInputElement | null>(null)
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const messagesScrollRef = useRef<HTMLDivElement | null>(null)
+  const groupMessagesContentRef = useRef<HTMLDivElement | null>(null)
+  const cancelGroupTailCatchupRef = useRef<(() => void) | null>(null)
   const pinnedToBottomRef = useRef(true)
   const composerEmojiWrapRef = useRef<HTMLDivElement | null>(null)
   const [composerEmojiOpen, setComposerEmojiOpen] = useState(false)
+  const [voiceRecording, setVoiceRecording] = useState(false)
+  const [voiceMetaEl, setVoiceMetaEl] = useState<HTMLDivElement | null>(null)
   const [replyTo, setReplyTo] = useState<DirectMessage | null>(null)
   const [messageMenu, setMessageMenu] = useState<{
     message: DirectMessage
@@ -213,15 +218,30 @@ export function GroupThreadPane({
       }
       setMessages(res.data ?? [])
       if (!viewerOnly) void markGroupRead(cid)
+      cancelGroupTailCatchupRef.current?.()
+      cancelGroupTailCatchupRef.current = null
       pinnedToBottomRef.current = true
+      const scrollEl = messagesScrollRef.current
+      const contentEl = groupMessagesContentRef.current
+      if (scrollEl) {
+        scrollEl.scrollTop = scrollEl.scrollHeight
+      }
+      if (scrollEl && contentEl) {
+        cancelGroupTailCatchupRef.current = attachMessengerTailCatchupAfterContentPaint({
+          scrollEl,
+          contentEl,
+          pinRef: pinnedToBottomRef,
+          isActive: () => cidRef.current.trim() === cid,
+        })
+      }
       requestAnimationFrame(() => {
-        const el = messagesScrollRef.current
-        if (el) el.scrollTop = el.scrollHeight
         if (isGroupMember) composerTextareaRef.current?.focus()
       })
     })
     return () => {
       active = false
+      cancelGroupTailCatchupRef.current?.()
+      cancelGroupTailCatchupRef.current = null
     }
   }, [conversationId, user?.id, canView, viewerOnly, isGroupMember])
 
@@ -666,6 +686,10 @@ export function GroupThreadPane({
     }
   }, [composerEmojiOpen])
 
+  useEffect(() => {
+    if (voiceRecording) setComposerEmojiOpen(false)
+  }, [voiceRecording])
+
   const insertEmojiInDraft = useCallback(
     (emoji: string) => {
       const ta = composerTextareaRef.current
@@ -726,6 +750,7 @@ export function GroupThreadPane({
           onScroll={updatePinnedToBottom}
         >
         <div
+          ref={groupMessagesContentRef}
           className={`dashboard-messenger__messages${
             viewerOnly && publicJoinCta ? ' dashboard-messenger__messages--public-join-host' : ''
           }`}
@@ -924,8 +949,13 @@ export function GroupThreadPane({
                 }
               }}
             />
-            <div className="dashboard-messenger__composer-side">
-              <div className="dashboard-messenger__composer-tools" ref={composerEmojiWrapRef}>
+            <div
+              className={`dashboard-messenger__composer-side${isMobileMessenger ? ' dashboard-messenger__composer-side--voice-stack' : ''}`}
+            >
+              <div
+                className={`dashboard-messenger__composer-tools${voiceRecording ? ' dashboard-messenger__composer-tools--voice-rec' : ''}`}
+                ref={composerEmojiWrapRef}
+              >
                 {composerEmojiOpen ? (
                   <div className="dashboard-messenger__composer-emoji-pop">
                     <ReactionEmojiPopover
@@ -956,11 +986,13 @@ export function GroupThreadPane({
                 >
                   <AttachmentIcon />
                 </button>
-                <MessengerVoiceRecordBtn
-                  disabled={threadLoading}
-                  busy={photoUploading || voiceUploading || sending}
-                  onRecorded={onVoiceRecorded}
-                />
+                {!isMobileMessenger ? (
+                  <MessengerVoiceRecordBtn
+                    disabled={threadLoading}
+                    busy={photoUploading || voiceUploading || sending}
+                    onRecorded={onVoiceRecorded}
+                  />
+                ) : null}
                 <input
                   ref={photoInputRef}
                   type="file"
@@ -975,20 +1007,52 @@ export function GroupThreadPane({
                   }}
                 />
               </div>
-              <button
-                type="button"
-                className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
-                disabled={
-                  (!draft.trim() && pendingGroupPhotos.length === 0) ||
-                  sending ||
-                  threadLoading ||
-                  photoUploading ||
-                  voiceUploading
-                }
-                onClick={() => void sendText()}
-              >
-                Отправить
-              </button>
+              {isMobileMessenger ? (
+                <div className="dashboard-messenger__composer-mobile-actions">
+                  <div
+                    ref={setVoiceMetaEl}
+                    className="dashboard-messenger__composer-voice-meta"
+                    aria-live="polite"
+                  />
+                  <button
+                    type="button"
+                    className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
+                    disabled={
+                      (!draft.trim() && pendingGroupPhotos.length === 0) ||
+                      sending ||
+                      threadLoading ||
+                      photoUploading ||
+                      voiceUploading
+                    }
+                    onClick={() => void sendText()}
+                  >
+                    Отправить
+                  </button>
+                  <MessengerVoiceRecordBtn
+                    variant="mobileEnd"
+                    metaPortalEl={voiceMetaEl}
+                    onRecordingChange={setVoiceRecording}
+                    disabled={threadLoading}
+                    busy={photoUploading || voiceUploading || sending}
+                    onRecorded={onVoiceRecorded}
+                  />
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
+                  disabled={
+                    (!draft.trim() && pendingGroupPhotos.length === 0) ||
+                    sending ||
+                    threadLoading ||
+                    photoUploading ||
+                    voiceUploading
+                  }
+                  onClick={() => void sendText()}
+                >
+                  Отправить
+                </button>
+              )}
             </div>
           </div>
           {photoUploading || voiceUploading ? (
