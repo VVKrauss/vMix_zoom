@@ -1838,7 +1838,9 @@ export function RoomPage({
         immersiveAutoHide && chromeHidden ? ' room-page--chrome-hidden' : ''
       }${isViewportMobile ? ' room-page--viewport-mobile' : ''}${
         chatOpen && canSeeRoomChat ? ' room-page--chat-open' : ''
-      }${leaveDialog !== null ? ' room-page--leave-dialog' : ''}`}
+      }${leaveDialog !== null ? ' room-page--leave-dialog' : ''}${
+        couchOpen ? ' room-page--couch-mode' : ''
+      }`}
     >
       <ConfirmDialog
         open={leaveDialog !== null}
@@ -2620,7 +2622,8 @@ export function RoomPage({
         />
       ) : null}
 
-      <ControlsBar
+      {!couchOpen ? (
+        <ControlsBar
         isMuted={isMuted}
         isCamOff={isCamOff}
         cameras={cameras}
@@ -2673,8 +2676,6 @@ export function RoomPage({
         onVmixProgramVolumeChange={setVmixProgramVolume}
         vmixProgramMuted={vmixProgramMuted}
         onToggleVmixProgramMuted={() => setVmixProgramMuted((v) => !v)}
-        couchCaptureVolume={couchCaptureVolume}
-        onCouchCaptureVolumeChange={setCouchCaptureVolume}
         forceMobileFabMenu={isViewportMobile}
         viewportMobile={isViewportMobile}
         immersiveAutoHide={immersiveAutoHide}
@@ -2702,10 +2703,11 @@ export function RoomPage({
         studioOpen={studioOpen}
         onStudioToggle={() => setStudioOpen((v) => !v)}
         showCouchEntry={!streamerMode && isPlatformAdminish}
-        couchOpen={couchOpen}
-        couchToggleDisabled={couchOpen && !canCloseCouchWorkspace}
+        couchOpen={false}
+        couchToggleDisabled={false}
         onCouchToggle={handleCouchBarToggle}
       />
+      ) : null}
       </div>
 
       {chatOpen && !chatEmbed && (
@@ -2767,6 +2769,7 @@ export function RoomPage({
             couchDemoLive={Boolean(couchStageScreenStream)}
             stageScreenStream={couchStageScreenStream}
             stagePlayoutVolume={couchCaptureVolume}
+            onStagePlayoutVolumeChange={setCouchCaptureVolume}
             stageVideoMuted={
               !!(
                 couchStageScreenStream &&

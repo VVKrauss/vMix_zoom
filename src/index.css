@@ -6415,7 +6415,7 @@ span.dashboard-messenger__thread-avatar {
 }
 
 .dashboard-messenger__dm-receipt--read .dashboard-messenger__dm-receipt-svg {
-  color: #6ec0ff;
+  color: var(--text-dim);
 }
 
 .dashboard-messenger__dm-receipt--pending .dashboard-messenger__dm-receipt-svg {
@@ -16218,37 +16218,6 @@ html[data-theme="light"] .room-chat-panel__input:focus {
   color: rgba(255, 244, 232, 0.88);
 }
 
-.controls-bar--fab-dock .ctrl-mobile-couch-capture-bar {
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  padding: 4px 10px 0;
-  box-sizing: border-box;
-}
-
-/* Оверлей «Диван» z-index 10050 — поднимаем общую панель и мобильный слайдер над ним */
-.controls-bar.controls-bar--couch-open {
-  z-index: 10060;
-}
-
-.controls-bar--fab-dock.controls-bar--couch-open .ctrl-mobile-bottom-bar {
-  z-index: 10061;
-}
-
-.controls-bar--fab-dock.controls-bar--couch-open .ctrl-mobile-couch-capture-bar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: calc(58px + max(0px, env(safe-area-inset-bottom, 0px)));
-  z-index: 10060;
-  pointer-events: auto;
-  padding-bottom: 6px;
-}
-
-.ctrl-group--couch-capture .ctrl-vmix-audio__slider {
-  min-width: 140px;
-}
-
 /* controls are in a dock now (not centered) */
 
 .couch-mode-workspace__pick-source {
@@ -16490,6 +16459,40 @@ html[data-theme="light"] .room-chat-panel__input:focus {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.couch-mode-workspace__header-volume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: min(200px, 42vw);
+}
+
+.couch-mode-workspace__header-volume-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.couch-mode-workspace__header-volume-slider {
+  flex: 1 1 auto;
+  min-width: 56px;
+  width: 100%;
+  height: 6px;
+  cursor: pointer;
+  accent-color: rgba(220, 170, 110, 0.95);
+}
+
+.couch-mode-workspace--fullscreen .couch-mode-workspace__header-volume {
+  max-width: min(220px, 48vw);
 }
 
 .couch-mode-workspace__header-status {

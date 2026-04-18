@@ -105,9 +105,6 @@ interface Props {
   onVmixProgramVolumeChange: (v: number) => void
   vmixProgramMuted: boolean
   onToggleVmixProgramMuted: () => void
-  /** Громкость демонстрации в «Диване» (0…1), localStorage на клиенте. */
-  couchCaptureVolume?: number
-  onCouchCaptureVolumeChange?: (v: number) => void
   /** Режим «Диван» открыт другим организатором — нельзя закрыть сессию этой кнопкой. */
   couchToggleDisabled?: boolean
   /** Мобильный viewport: панель скрыта, меню только из FAB справа снизу. */
@@ -272,8 +269,6 @@ export function ControlsBar({
   onVmixProgramVolumeChange,
   vmixProgramMuted,
   onToggleVmixProgramMuted,
-  couchCaptureVolume = 1,
-  onCouchCaptureVolumeChange,
   couchToggleDisabled = false,
   forceMobileFabMenu,
   viewportMobile,
@@ -530,26 +525,6 @@ export function ControlsBar({
     </div>
   )
 
-  /** Только мьют + слайдер громкости программы (для всех гостей при активном приёме SRT). */
-  const couchCaptureAudioControls = () => (
-    <div
-      className="ctrl-vmix-audio ctrl-vmix-audio--live"
-      role="group"
-      aria-label="Громкость демонстрации «Диван»"
-    >
-      <input
-        type="range"
-        className="ctrl-vmix-audio__slider"
-        min={0}
-        max={100}
-        value={Math.round(couchCaptureVolume * 100)}
-        onChange={(e) => onCouchCaptureVolumeChange?.(Number(e.target.value) / 100)}
-        title="Громкость демонстрации"
-        aria-label="Громкость демонстрации в режиме «Диван»"
-      />
-    </div>
-  )
-
   const vmixProgramAudioControls = () => (
     <div
       className={`ctrl-vmix-audio ctrl-vmix-audio--${vmixPhase === 'live' ? 'live' : 'waiting'}`}
@@ -734,13 +709,6 @@ export function ControlsBar({
     )
   }
 
-  const couchCaptureBlock =
-    couchOpen && onCouchCaptureVolumeChange ? (
-      <div className="ctrl-group ctrl-group--solo ctrl-group--couch-capture" aria-label="Демонстрация «Диван»">
-        {couchCaptureAudioControls()}
-      </div>
-    ) : null
-
   return (
     <div
       className={`controls-bar${showButtonLabels ? '' : ' controls-bar--icons-only'}${streamerMode ? ' controls-bar--streamer-mode' : ''}${forceMobileFabMenu ? ' controls-bar--fab-dock' : ''}${couchOpen ? ' controls-bar--couch-open' : ''}`}
@@ -750,7 +718,6 @@ export function ControlsBar({
       {sourcesStrip(false)}
 
       <div className="controls-bar__core">
-      {couchCaptureBlock}
       {/* ── Camera ─────────────────────────────────────────────────────── */}
       <div className="ctrl-group">
         <button
@@ -830,9 +797,6 @@ export function ControlsBar({
 
       {forceMobileFabMenu ? (
         <>
-          {couchCaptureBlock ? (
-            <div className="ctrl-mobile-couch-capture-bar">{couchCaptureBlock}</div>
-          ) : null}
           <div className="ctrl-mobile-bottom-bar" role="toolbar" aria-label="Управление комнатой">
             <div className="ctrl-mobile-bottom-bar__edge ctrl-mobile-bottom-bar__edge--left">
               <button

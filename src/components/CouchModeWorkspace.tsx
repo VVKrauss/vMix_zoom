@@ -15,6 +15,7 @@ type Props = {
   stageScreenStream: MediaStream | null
   /** Громкость воспроизведения демонстрации (0…1), не влияет на исходящий микс хоста. */
   stagePlayoutVolume: number
+  onStagePlayoutVolumeChange: (v: number) => void
   /** Локальный превью без звука (без эха). */
   stageVideoMuted: boolean
   /** Можно открыть диалог выбора источника (только организатор «дивана»). */
@@ -56,6 +57,7 @@ export function CouchModeWorkspace({
   couchDemoLive,
   stageScreenStream,
   stagePlayoutVolume,
+  onStagePlayoutVolumeChange,
   stageVideoMuted,
   canPickCouchSource,
   canStopCouchShare,
@@ -388,6 +390,29 @@ export function CouchModeWorkspace({
                 <FiRrIcon name={isMuted ? 'microphone-slash' : 'microphone'} aria-hidden />
               </button>
             </>
+          ) : null}
+          {couchDemoLive ? (
+            <div
+              className="couch-mode-workspace__header-volume"
+              role="group"
+              aria-label="Громкость звука входящей демонстрации (расшаренное окно или вкладка)"
+            >
+              <span className="couch-mode-workspace__header-volume-label" title="Входящий звук расшаренного источника">
+                Звук экрана
+              </span>
+              <input
+                type="range"
+                className="couch-mode-workspace__header-volume-slider"
+                min={0}
+                max={100}
+                value={Math.round(stagePlayoutVolume * 100)}
+                onChange={(e) =>
+                  onStagePlayoutVolumeChange(Math.max(0, Math.min(1, Number(e.target.value) / 100)))
+                }
+                title="Громкость воспроизведения расшаренного окна, вкладки или экрана"
+                aria-label="Громкость звука расшаренного экрана"
+              />
+            </div>
           ) : null}
           <button
             type="button"
