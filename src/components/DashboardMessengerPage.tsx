@@ -69,7 +69,7 @@ import {
 import {
   MESSENGER_JOIN_REQUEST_MANAGER_ROLES,
   MESSENGER_BOTTOM_PIN_PX,
-  MESSENGER_PHOTO_MAX_BYTES,
+  MESSENGER_PHOTO_INPUT_MAX_BYTES,
   QUICK_REACTION_EMOJI,
   DM_PAGE_SIZE,
   MESSENGER_GALLERY_MAX_ATTACH,
@@ -730,16 +730,16 @@ export function DashboardMessengerPage() {
   const addPendingMessengerPhotoFiles = useCallback(
     (files: File[]) => {
       const imgs = files.filter((f) => f.type.startsWith('image/') && f.size > 0)
-      const tooBig = imgs.filter((f) => f.size > MESSENGER_PHOTO_MAX_BYTES)
+      const tooBig = imgs.filter((f) => f.size > MESSENGER_PHOTO_INPUT_MAX_BYTES)
       if (tooBig.length > 0) {
         toast.push({
           tone: 'warning',
           title: 'Слишком большой файл',
-          message: 'Каждое фото не больше 2 МБ.',
+          message: 'Каждое фото не больше 20 МБ.',
           ms: 4200,
         })
       }
-      const allowed = imgs.filter((f) => f.size <= MESSENGER_PHOTO_MAX_BYTES)
+      const allowed = imgs.filter((f) => f.size <= MESSENGER_PHOTO_INPUT_MAX_BYTES)
       setPendingMessengerPhotos((prev) => {
         const next = [...prev]
         let skipped = 0

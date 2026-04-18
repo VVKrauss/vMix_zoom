@@ -594,6 +594,9 @@ export async function deleteDirectMessage(
   return { error: error?.message ?? null }
 }
 
+/** Макс. размер исходного файла до пережатия в uploadMessengerImage. */
+export const MESSENGER_PHOTO_INPUT_MAX_BYTES = 20 * 1024 * 1024
+
 const MESSENGER_IMAGE_MAX_EDGE = 1680
 const MESSENGER_IMAGE_JPEG_QUALITY = 0.86
 /** Превью в ленте: меньший файл, отдельный объект в storage. */
@@ -636,7 +639,7 @@ export async function uploadMessengerImage(
   const cid = conversationId.trim()
   if (!cid) return { path: null, thumbPath: null, error: 'Нет чата' }
   if (!file.type.startsWith('image/')) return { path: null, thumbPath: null, error: 'Нужен файл изображения' }
-  if (file.size > 20 * 1024 * 1024)
+  if (file.size > MESSENGER_PHOTO_INPUT_MAX_BYTES)
     return { path: null, thumbPath: null, error: 'Файл слишком большой (макс. 20 МБ)' }
 
   try {

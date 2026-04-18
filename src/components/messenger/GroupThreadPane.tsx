@@ -26,6 +26,7 @@ import {
   copyTextToClipboard,
   extractClipboardImageFiles,
   MESSENGER_GALLERY_MAX_ATTACH,
+  MESSENGER_PHOTO_INPUT_MAX_BYTES,
 } from '../../lib/messengerDashboardUtils'
 import { ThreadMessageBubble } from './ThreadMessageBubble'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
@@ -37,7 +38,6 @@ import { DraftLinkPreviewBar } from './DraftLinkPreviewBar'
 import { MessengerImageLightbox } from './MessengerImageLightbox'
 
 const QUICK_REACTION_EMOJI: ReactionEmoji = '❤️'
-const GROUP_PHOTO_MAX_BYTES = 2 * 1024 * 1024
 
 function formatGroupBubbleTime(iso: string): string {
   const dt = new Date(iso)
@@ -346,16 +346,16 @@ export function GroupThreadPane({
   const addPendingGroupPhotoFiles = useCallback(
     (files: File[]) => {
       const imgs = files.filter((f) => f.type.startsWith('image/') && f.size > 0)
-      const tooBig = imgs.filter((f) => f.size > GROUP_PHOTO_MAX_BYTES)
+      const tooBig = imgs.filter((f) => f.size > MESSENGER_PHOTO_INPUT_MAX_BYTES)
       if (tooBig.length > 0) {
         toast.push({
           tone: 'warning',
           title: 'Слишком большой файл',
-          message: 'Каждое фото не больше 2 МБ.',
+          message: 'Каждое фото не больше 20 МБ.',
           ms: 4200,
         })
       }
-      const allowed = imgs.filter((f) => f.size <= GROUP_PHOTO_MAX_BYTES)
+      const allowed = imgs.filter((f) => f.size <= MESSENGER_PHOTO_INPUT_MAX_BYTES)
       setPendingGroupPhotos((prev) => {
         const next = [...prev]
         let skipped = 0

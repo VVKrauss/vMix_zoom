@@ -32,6 +32,7 @@ import {
   copyTextToClipboard,
   extractClipboardImageFiles,
   MESSENGER_GALLERY_MAX_ATTACH,
+  MESSENGER_PHOTO_INPUT_MAX_BYTES,
 } from '../../lib/messengerDashboardUtils'
 import { collectStoragePathsFromDraft } from '../../lib/postEditor/draftUtils'
 import type { ReactionEmoji } from '../../types/roomComms'
@@ -97,7 +98,6 @@ function formatChannelBubbleTime(iso: string): string {
 
 const CHANNEL_STAFF_ROLES = new Set(['owner', 'admin', 'moderator'])
 const QUICK_REACTION_EMOJI: ReactionEmoji = '❤️'
-const CHANNEL_PHOTO_MAX_BYTES = 2 * 1024 * 1024
 
 export function ChannelThreadPane({
   conversationId,
@@ -340,16 +340,16 @@ export function ChannelThreadPane({
   const addPendingChannelPhotoFiles = useCallback(
     (files: File[]) => {
       const imgs = files.filter((f) => f.type.startsWith('image/') && f.size > 0)
-      const tooBig = imgs.filter((f) => f.size > CHANNEL_PHOTO_MAX_BYTES)
+      const tooBig = imgs.filter((f) => f.size > MESSENGER_PHOTO_INPUT_MAX_BYTES)
       if (tooBig.length > 0) {
         toast.push({
           tone: 'warning',
           title: 'Слишком большой файл',
-          message: 'Каждое фото не больше 2 МБ.',
+          message: 'Каждое фото не больше 20 МБ.',
           ms: 4200,
         })
       }
-      const allowed = imgs.filter((f) => f.size <= CHANNEL_PHOTO_MAX_BYTES)
+      const allowed = imgs.filter((f) => f.size <= MESSENGER_PHOTO_INPUT_MAX_BYTES)
       setPendingChannelPhotos((prev) => {
         const next = [...prev]
         let skipped = 0

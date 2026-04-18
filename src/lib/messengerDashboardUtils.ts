@@ -58,8 +58,8 @@ export function conversationInitial(title: string): string {
 
 export const MESSENGER_LAST_OPEN_KEY = 'vmix.messenger.lastOpenConversation'
 export const DM_PAGE_SIZE = 50
-/** Лимит размера фото в мессенджере (клиент). */
-export const MESSENGER_PHOTO_MAX_BYTES = 2 * 1024 * 1024
+/** Макс. исходный файл до сжатия в uploadMessengerImage (совпадает с лимитом в messenger.ts). */
+export { MESSENGER_PHOTO_INPUT_MAX_BYTES } from './messenger'
 /** Макс. число фото в одном сообщении (галерея). */
 export const MESSENGER_GALLERY_MAX_ATTACH = 10
 /** Ниже этой дистанции от низа считаем, что пользователь «на хвосте» — догоняем при подгрузке картинок и т.п. */
