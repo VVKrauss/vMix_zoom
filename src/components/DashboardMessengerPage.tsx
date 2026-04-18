@@ -1112,6 +1112,33 @@ export function DashboardMessengerPage() {
     'all' | MessengerConversationKind
   >('all')
 
+  /** Фоновый web push: точка на вкладке ЛС / группы / каналы (не глобальный бейдж приложения). */
+  const [pushFilterHint, setPushFilterHint] = useState({ direct: false, group: false, channel: false })
+
+  useEffect(() => {
+    const onSwMessage = (e: MessageEvent) => {
+      const d = e.data as { type?: string; conversationKind?: string } | null
+      if (!d || d.type !== 'messenger-push-filter-badge') return
+      const k = d.conversationKind
+      if (k === 'direct' || k === 'group' || k === 'channel') {
+        setPushFilterHint((p) => ({ ...p, [k]: true }))
+      }
+    }
+    const sw = navigator.serviceWorker
+    if (!sw?.addEventListener) return
+    sw.addEventListener('message', onSwMessage)
+    return () => sw.removeEventListener('message', onSwMessage)
+  }, [])
+
+  const onKindFilterChange = useCallback((id: 'all' | MessengerConversationKind) => {
+    setConversationKindFilter(id)
+    if (id === 'all') {
+      setPushFilterHint({ direct: false, group: false, channel: false })
+    } else if (id === 'direct' || id === 'group' || id === 'channel') {
+      setPushFilterHint((p) => ({ ...p, [id]: false }))
+    }
+  }, [])
+
   const sortedItems = useMemo(
     () => sortMessengerListWithPins(mergedItems, pinnedChatIds),
     [mergedItems, pinnedChatIds],
@@ -2441,7 +2468,8 @@ export function DashboardMessengerPage() {
                 messengerMenuOpen={messengerMenuOpen}
                 setMessengerMenuOpen={setMessengerMenuOpen}
                 conversationKindFilter={conversationKindFilter}
-                setConversationKindFilter={setConversationKindFilter}
+                onKindFilterChange={onKindFilterChange}
+                pushFilterHint={pushFilterHint}
                 loading={loading}
                 sortedItems={sortedItems}
                 messengerListHasRows={messengerListHasRows}

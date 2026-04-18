@@ -35,7 +35,10 @@ export function MessengerChatListAside(props: {
   messengerMenuOpen: boolean
   setMessengerMenuOpen: (v: boolean | ((p: boolean) => boolean)) => void
   conversationKindFilter: KindFilter
-  setConversationKindFilter: (id: KindFilter) => void
+  /** Смена фильтра + сброс бейджа push по вкладке */
+  onKindFilterChange: (id: KindFilter) => void
+  /** Есть ли фоновый push по типу беседы (точка на вкладке) */
+  pushFilterHint?: { direct: boolean; group: boolean; channel: boolean }
   loading: boolean
   sortedItems: MessengerConversationSummary[]
   messengerListHasRows: boolean
@@ -68,7 +71,8 @@ export function MessengerChatListAside(props: {
     messengerMenuOpen,
     setMessengerMenuOpen,
     conversationKindFilter,
-    setConversationKindFilter,
+    onKindFilterChange,
+    pushFilterHint,
     loading,
     sortedItems,
     messengerListHasRows,
@@ -183,7 +187,12 @@ export function MessengerChatListAside(props: {
               { id: 'group' as const, label: 'Группы', shortLabel: 'Гр', Icon: MessengerFilterGroupIcon },
               { id: 'channel' as const, label: 'Каналы', shortLabel: 'Кан', Icon: MessengerFilterChannelIcon },
             ] as const
-          ).map(({ id, label, shortLabel, Icon }) => (
+          ).map(({ id, label, shortLabel, Icon }) => {
+            const hint =
+              id !== 'all' && pushFilterHint && (id === 'direct' || id === 'group' || id === 'channel')
+                ? pushFilterHint[id]
+                : false
+            return (
             <button
               key={id}
               type="button"
@@ -191,9 +200,9 @@ export function MessengerChatListAside(props: {
               title={label}
               className={`dashboard-messenger__kind-tab${
                 conversationKindFilter === id ? ' dashboard-messenger__kind-tab--active' : ''
-              }`}
+              }${hint ? ' dashboard-messenger__kind-tab--push-hint' : ''}`}
               aria-selected={conversationKindFilter === id}
-              onClick={() => setConversationKindFilter(id)}
+              onClick={() => onKindFilterChange(id)}
             >
               <span className="dashboard-messenger__kind-tab-inner">
                 <span className="dashboard-messenger__kind-tab-icon" aria-hidden>
@@ -203,7 +212,8 @@ export function MessengerChatListAside(props: {
                 <span className="dashboard-messenger__kind-tab-label-short">{shortLabel}</span>
               </span>
             </button>
-          ))}
+            )
+          })}
         </div>
       </div>
       <div className="dashboard-messenger__list-scroll">

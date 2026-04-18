@@ -80,6 +80,17 @@ function readWebPushError(e: unknown): { statusCode: number; message: string } {
   return { statusCode: 0, message: e instanceof Error ? e.message : 'send_failed' }
 }
 
+async function signedMessengerMediaUrl(
+  admin: ReturnType<typeof createClient>,
+  path: string | null | undefined,
+): Promise<string> {
+  const p = typeof path === 'string' ? path.trim() : ''
+  if (!p) return ''
+  const { data, error } = await admin.storage.from('messenger-media').createSignedUrl(p, 86_400)
+  if (error || !data?.signedUrl) return ''
+  return data.signedUrl
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -118,7 +129,7 @@ Deno.serve(async (req) => {
 
   const { data: conv, error: convErr } = await admin
     .from('chat_conversations')
-    .select('kind, title')
+    .select('kind, title, avatar_path, avatar_thumb_path')
     .eq('id', conversationId)
     .maybeSingle()
   if (convErr || !conv || (conv as { kind?: string }).kind !== 'channel') return json({ ok: true, skipped: 'not_channel' })
@@ -127,6 +138,7 @@ Deno.serve(async (req) => {
 
   let bodyText = typeof record.body === 'string' ? record.body : ''
   if (kind === 'image' && !bodyText.trim()) bodyText = `${'\u{1F4F7}'} Фото`
+  if (kind === 'audio' && !bodyText.trim()) bodyText = `${'\u{1F3A4}'} Голосовое`
 
   const senderName = typeof record.sender_name_snapshot === 'string' && record.sender_name_snapshot.trim()
     ? record.sender_name_snapshot.trim()
@@ -137,6 +149,15 @@ Deno.serve(async (req) => {
     senderRow && typeof (senderRow as { avatar_url?: unknown }).avatar_url === 'string'
       ? ((senderRow as { avatar_url?: string }).avatar_url ?? '').trim()
       : ''
+
+  const cv = conv as { avatar_path?: unknown; avatar_thumb_path?: unknown }
+  const channelPathRaw =
+    (typeof cv.avatar_thumb_path === 'string' && cv.avatar_thumb_path.trim()
+      ? cv.avatar_thumb_path
+      : null) ??
+    (typeof cv.avatar_path === 'string' && cv.avatar_path.trim() ? cv.avatar_path : null)
+  const channelIconSigned = channelPathRaw ? await signedMessengerMediaUrl(admin, channelPathRaw) : ''
+  const displayIconUrl = channelIconSigned || senderAvatar
 
   const { data: members, error: memErr } = await admin
     .from('chat_conversation_members')
@@ -182,8 +203,9 @@ Deno.serve(async (req) => {
     url: `${appBase}${openPath}`,
     tag: `ch-${conversationId}`,
     conversationId,
-    icon: senderAvatar || defaultIcon,
-    image: senderAvatar || '',
+    conversationKind: 'channel',
+    icon: displayIconUrl || defaultIcon,
+    image: displayIconUrl || '',
     badge: defaultIcon,
   })
 

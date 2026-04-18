@@ -7859,10 +7859,25 @@ html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
 }
 
 .dashboard-messenger__kind-tab-inner {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
+}
+
+/* Push в фоне: подсказка на вкладке фильтра (ЛС / группы / каналы) */
+.dashboard-messenger__kind-tab--push-hint .dashboard-messenger__kind-tab-inner::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  right: -5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff5a5a;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
 }
 
 .dashboard-messenger__kind-tab-icon {

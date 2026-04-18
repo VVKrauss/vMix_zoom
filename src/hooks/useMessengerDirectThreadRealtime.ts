@@ -157,7 +157,13 @@ export function useMessengerDirectThreadRealtime(opts: {
               markReadDebounceTimerRef.current = null
               void markDirectConversationRead(convId)
             }, MARK_DIRECT_READ_DEBOUNCE_MS)
-            if (document.hidden && !mutedConversationIdsRef.current.has(convId)) playMessageSound()
+            if (
+              document.hidden &&
+              !mutedConversationIdsRef.current.has(convId) &&
+              msg.kind !== 'reaction'
+            ) {
+              playMessageSound()
+            }
           }
         },
       )

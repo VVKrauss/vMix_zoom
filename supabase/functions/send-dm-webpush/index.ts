@@ -100,6 +100,17 @@ function readWebPushError(e: unknown): { statusCode: number; message: string } {
   return { statusCode: 0, message: e instanceof Error ? e.message : 'send_failed' }
 }
 
+async function signedMessengerMediaUrl(
+  admin: ReturnType<typeof createClient>,
+  path: string | null | undefined,
+): Promise<string> {
+  const p = typeof path === 'string' ? path.trim() : ''
+  if (!p) return ''
+  const { data, error } = await admin.storage.from('messenger-media').createSignedUrl(p, 86_400)
+  if (error || !data?.signedUrl) return ''
+  return data.signedUrl
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -151,29 +162,28 @@ Deno.serve(async (req) => {
     return json({ ok: true, skipped: 'missing_ids' })
   }
 
-  const { data: conv, error: convErr } = await admin
+  const { data: convMeta, error: convErr } = await admin
     .from('chat_conversations')
-    .select('kind')
+    .select('kind, title, avatar_path, avatar_thumb_path')
     .eq('id', conversationId)
     .maybeSingle()
 
-  const convKind = conv && typeof (conv as { kind?: unknown }).kind === 'string' ? String((conv as { kind?: string }).kind).trim() : ''
-  if (convErr || !conv || (convKind !== 'direct' && convKind !== 'group')) {
+  const convKind =
+    convMeta && typeof (convMeta as { kind?: unknown }).kind === 'string'
+      ? String((convMeta as { kind?: string }).kind).trim()
+      : ''
+  if (convErr || !convMeta || (convKind !== 'direct' && convKind !== 'group')) {
     return json({ ok: true, skipped: 'not_direct_or_group' })
   }
 
-  const { data: convTitleRow } = await admin
-    .from('chat_conversations')
-    .select('title')
-    .eq('id', conversationId)
-    .maybeSingle()
   const convTitle =
-    convTitleRow && typeof (convTitleRow as { title?: unknown }).title === 'string'
-      ? String((convTitleRow as { title?: string }).title).trim()
+    convMeta && typeof (convMeta as { title?: unknown }).title === 'string'
+      ? String((convMeta as { title?: string }).title).trim()
       : ''
 
   let bodyText = typeof record.body === 'string' ? record.body : ''
   if (kind === 'image' && !bodyText.trim()) bodyText = `${'\u{1F4F7}'} Фото`
+  if (kind === 'audio' && !bodyText.trim()) bodyText = `${'\u{1F3A4}'} Голосовое`
 
   const senderName =
     typeof record.sender_name_snapshot === 'string' && record.sender_name_snapshot.trim()
@@ -189,6 +199,18 @@ Deno.serve(async (req) => {
     senderRow && typeof (senderRow as { avatar_url?: unknown }).avatar_url === 'string'
       ? ((senderRow as { avatar_url?: string }).avatar_url ?? '').trim()
       : ''
+
+  let displayIconUrl = senderAvatar
+  if (convKind === 'group') {
+    const cm = convMeta as { avatar_path?: unknown; avatar_thumb_path?: unknown }
+    const pathRaw =
+      (typeof cm.avatar_thumb_path === 'string' && cm.avatar_thumb_path.trim()
+        ? cm.avatar_thumb_path
+        : null) ??
+      (typeof cm.avatar_path === 'string' && cm.avatar_path.trim() ? cm.avatar_path : null)
+    const signed = pathRaw ? await signedMessengerMediaUrl(admin, pathRaw) : ''
+    if (signed) displayIconUrl = signed
+  }
 
   const { data: members, error: memErr } = await admin
     .from('chat_conversation_members')
@@ -239,8 +261,9 @@ Deno.serve(async (req) => {
     url: `${appBase}${openPath}`,
     tag: `dm-${conversationId}`,
     conversationId,
-    icon: senderAvatar || defaultIcon,
-    image: senderAvatar || '',
+    conversationKind: convKind,
+    icon: displayIconUrl || defaultIcon,
+    image: displayIconUrl || '',
     badge: defaultIcon,
   })
 

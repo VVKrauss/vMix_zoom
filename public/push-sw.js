@@ -1,4 +1,30 @@
 /* Доп. скрипт service worker: push + клик по уведомлению (подключается из workbox importScripts). */
+
+/**
+ * iOS PWA часто не показывает сторонний https в `icon` (остаётся иконка из manifest).
+ * Пробуем загрузить картинку в SW и отдать как blob:-URL (same-origin для страницы уведомления).
+ */
+function tryBlobUrlForCrossOriginIcon(url) {
+  if (!url || !url.startsWith('http')) return Promise.resolve(url)
+  if (typeof self.location?.origin === 'string' && url.startsWith(self.location.origin)) {
+    return Promise.resolve(url)
+  }
+  return fetch(url, { mode: 'cors', credentials: 'omit', cache: 'force-cache' })
+    .then((res) => (res.ok ? res.blob() : Promise.reject(new Error('bad_status'))))
+    .then((blob) => {
+      const u = URL.createObjectURL(blob)
+      setTimeout(() => {
+        try {
+          URL.revokeObjectURL(u)
+        } catch (_) {
+          /* ignore */
+        }
+      }, 120000)
+      return u
+    })
+    .catch(() => url)
+}
+
 self.addEventListener('push', (event) => {
   let title = 'redflow.online'
   let body = 'Новое сообщение'
@@ -8,6 +34,7 @@ self.addEventListener('push', (event) => {
   let badge = '/logo.png'
   let conversationId = ''
   let image = ''
+  let conversationKind = ''
   try {
     const t = event.data && event.data.text && event.data.text()
     if (t) {
@@ -20,13 +47,15 @@ self.addEventListener('push', (event) => {
       if (typeof j.badge === 'string' && j.badge.trim()) badge = j.badge.trim()
       if (typeof j.conversationId === 'string' && j.conversationId.trim()) conversationId = j.conversationId.trim()
       if (typeof j.image === 'string' && j.image.trim()) image = j.image.trim()
+      if (typeof j.conversationKind === 'string' && j.conversationKind.trim()) {
+        conversationKind = j.conversationKind.trim()
+      }
     }
   } catch (_) {
     /* text() не JSON — показываем дефолт */
   }
   event.waitUntil(
     (async () => {
-      // Если вкладка с тем же чатом уже открыта и активна — push не нужен.
       if (conversationId) {
         const list = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
         for (const c of list) {
@@ -45,23 +74,37 @@ self.addEventListener('push', (event) => {
           }
         }
       }
-      // iOS PWA: часто игнорирует NotificationOptions.icon (в пользу иконки из manifest).
-      // Показываем аватар хотя бы как "image" (если поддерживается) и ставим бейдж на иконку приложения.
-      try {
-        if (self.navigator && typeof self.navigator.setAppBadge === 'function') {
-          await self.navigator.setAppBadge(1)
+
+      const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      if (conversationKind === 'direct' || conversationKind === 'group' || conversationKind === 'channel') {
+        for (const c of clientList) {
+          try {
+            c.postMessage({
+              type: 'messenger-push-filter-badge',
+              conversationKind,
+            })
+          } catch (_) {
+            /* ignore */
+          }
         }
-      } catch (_) {
-        /* ignore */
       }
+
+      const iconResolved = await tryBlobUrlForCrossOriginIcon(icon)
+      const imageForNotify =
+        image && image.trim()
+          ? (iconResolved.startsWith('blob:') ? iconResolved : image.trim())
+          : iconResolved.startsWith('blob:')
+            ? iconResolved
+            : undefined
+
       await self.registration.showNotification(title, {
         body,
-        icon,
+        icon: iconResolved,
         badge,
-        image: image || undefined,
+        image: imageForNotify,
         tag,
         renotify: true,
-        data: { url, conversationId },
+        data: { url, conversationId, conversationKind },
       })
     })(),
   )
