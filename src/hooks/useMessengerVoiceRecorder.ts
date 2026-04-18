@@ -4,8 +4,25 @@ const DEFAULT_MAX_SEC = 120
 
 export type VoiceRecorderStopResult = { blob: Blob; durationSec: number } | null
 
+/** На iOS / iPadOS WebKit запись в WebM нередко даёт тишину — сначала пробуем MP4 (AAC в контейнере). */
+function preferMp4Container(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  if (/iPhone|iPad|iPod/i.test(ua)) return true
+  return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1
+}
+
 function pickMimeType(): string {
-  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']
+  const mp4First = preferMp4Container()
+  const candidates = mp4First
+    ? [
+        'audio/mp4;codecs=mp4a.40.2',
+        'audio/mp4',
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/ogg',
+      ]
+    : ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']
   for (const m of candidates) {
     if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) return m
   }
@@ -92,6 +109,13 @@ export function useMessengerVoiceRecorder(options?: {
         resolve({ blob, durationSec })
       }
       try {
+        if (rec.state === 'recording') {
+          try {
+            rec.requestData()
+          } catch {
+            /* ignore */
+          }
+        }
         rec.stop()
       } catch {
         chunksRef.current = []
@@ -116,6 +140,8 @@ export function useMessengerVoiceRecorder(options?: {
   const start = useCallback(async (): Promise<boolean> => {
     setError(null)
     maxHitRef.current = false
+    if (recRef.current) return true
+    if (startingRef.current) return false
     startingRef.current = true
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       startingRef.current = false
@@ -123,9 +149,17 @@ export function useMessengerVoiceRecorder(options?: {
       return false
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+      })
       if (!startingRef.current) {
         stream.getTracks().forEach((t) => t.stop())
+        return false
+      }
+      if (stream.getAudioTracks().length === 0) {
+        stream.getTracks().forEach((t) => t.stop())
+        startingRef.current = false
+        setError('Микрофон не активен')
         return false
       }
       mediaRef.current = stream

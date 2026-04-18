@@ -2,6 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { MicIcon } from '../icons'
 import { useMessengerVoiceRecorder } from '../../hooks/useMessengerVoiceRecorder'
 
+/** Не passive: блокируем скролл ленты во время удержания (жест отмены вверх). */
+function preventTouchDefault(e: TouchEvent) {
+  e.preventDefault()
+}
+
 /** Порог сдвига вверх (px): выше — отмена при отпускании. */
 const SLIDE_UP_CANCEL_PX = 56
 
@@ -67,10 +72,25 @@ export function MessengerVoiceRecordBtn(props: {
     endHandlerRef.current = onWindowEnd
   }, [onWindowEnd])
 
+  /** Пока идёт запись — гасим touchmove на документе, чтобы жест «вверх» не скроллил ленту (iOS). */
+  useEffect(() => {
+    if (!isRecording) return
+    const root = document.documentElement
+    const touchOpts: AddEventListenerOptions = { passive: false }
+    root.addEventListener('touchmove', preventTouchDefault, touchOpts)
+    return () => root.removeEventListener('touchmove', preventTouchDefault, touchOpts)
+  }, [isRecording])
+
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLButtonElement>) => {
       if (disabled || busy || e.button !== 0) return
       e.preventDefault()
+      e.stopPropagation()
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId)
+      } catch {
+        /* ignore */
+      }
       activePointerIdRef.current = e.pointerId
       startClientYRef.current = e.clientY
       slideCancelRef.current = false
@@ -104,11 +124,12 @@ export function MessengerVoiceRecordBtn(props: {
     <div className="messenger-voice-wrap">
       <button
         type="button"
-        className={`dashboard-messenger__composer-icon-btn${isRecording ? ' messenger-voice-btn--rec' : ''}${slideCancelUi ? ' messenger-voice-btn--cancel-zone' : ''}`}
+        className={`dashboard-messenger__composer-icon-btn messenger-voice-mic-btn${isRecording ? ' messenger-voice-btn--rec' : ''}${slideCancelUi ? ' messenger-voice-btn--cancel-zone' : ''}`}
         title="Удерживайте для записи, отпустите для отправки. Вверх — отмена."
         aria-label="Голосовое сообщение: удержать для записи"
         disabled={disabled || busy}
         onPointerDown={onPointerDown}
+        onContextMenu={(ev) => ev.preventDefault()}
       >
         <MicIcon />
       </button>
