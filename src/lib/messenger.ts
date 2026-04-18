@@ -291,11 +291,72 @@ export function voiceMessageListPreviewLabel(preview: string): string {
 /** Контекст ЛС для индикаторов исходящих: курсор прочтения собеседника и его флаг приватности квитанций. */
 export type DirectPeerDmReceiptContext = {
   lastReadAt: string | null
-  /** Если не удалось прочитать строку users — считаем «приватно», чтобы не раскрывать лишнее. */
+  /** См. RPC `get_direct_peer_read_receipt_context` (чтение чужого users с клиента ненадёжно из‑за RLS). */
   peerReceiptsPrivate: boolean
 }
 
-/** Загрузка `last_read_at` и `profile_dm_receipts_private` собеседника в личном чате. */
+/** Берём более поздний курсор (realtime / fetch / poll не должны откатывать время назад). */
+export function mergePeerLastReadAt(prev: string | null, next: string | null): string | null {
+  if (!next?.trim()) return prev ?? null
+  if (!prev?.trim()) return next
+  const nt = new Date(next).getTime()
+  const pt = new Date(prev).getTime()
+  if (!Number.isFinite(nt)) return prev
+  if (!Number.isFinite(pt)) return next
+  return nt >= pt ? next : prev
+}
+
+function parseUnknownTimestampToIso(v: unknown): string | null {
+  if (v == null) return null
+  if (typeof v === 'string') {
+    const t = Date.parse(v)
+    return Number.isFinite(t) ? new Date(t).toISOString() : null
+  }
+  if (typeof v === 'number' && Number.isFinite(v)) return new Date(v).toISOString()
+  if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString()
+  if (typeof v === 'object' && v !== null) {
+    const o = v as Record<string, unknown>
+    if ('value' in o) return parseUnknownTimestampToIso(o.value)
+    if ('toString' in o && typeof (o as { toString: () => string }).toString === 'function') {
+      const s = String((o as { toString: () => string }).toString())
+      const t = Date.parse(s)
+      if (Number.isFinite(t)) return new Date(t).toISOString()
+    }
+  }
+  return null
+}
+
+function unwrapRpcJsonData(data: unknown): unknown {
+  if (data == null) return null
+  if (typeof data === 'string') {
+    try {
+      return JSON.parse(data) as unknown
+    } catch {
+      return null
+    }
+  }
+  return data
+}
+
+async function fetchDirectPeerDmReceiptContextMembersOnly(
+  conversationId: string,
+  uid: string,
+): Promise<{ data: DirectPeerDmReceiptContext | null; error: string | null }> {
+  const cid = conversationId.trim()
+  const { data, error } = await supabase
+    .from('chat_conversation_members')
+    .select('user_id, last_read_at')
+    .eq('conversation_id', cid)
+  if (error) return { data: null, error: error.message }
+  const peer = (data ?? []).find((r: { user_id?: string }) => r.user_id && r.user_id !== uid)
+  const lastReadAt = parseUnknownTimestampToIso(peer?.last_read_at)
+  return {
+    data: { lastReadAt, peerReceiptsPrivate: false },
+    error: null,
+  }
+}
+
+/** Загрузка `last_read_at` и `profile_dm_receipts_private` собеседника через RPC (обход RLS на `users`). */
 export async function fetchDirectPeerDmReceiptContext(
   conversationId: string,
 ): Promise<{ data: DirectPeerDmReceiptContext | null; error: string | null }> {
@@ -304,26 +365,35 @@ export async function fetchDirectPeerDmReceiptContext(
   if (!uid) return { data: null, error: 'auth' }
   const cid = conversationId.trim()
   if (!cid) return { data: null, error: 'conversation_required' }
-  const { data, error } = await supabase
-    .from('chat_conversation_members')
-    .select('user_id, last_read_at')
-    .eq('conversation_id', cid)
-  if (error) return { data: null, error: error.message }
-  const peer = (data ?? []).find((r: { user_id?: string }) => r.user_id && r.user_id !== uid)
-  const peerId = typeof peer?.user_id === 'string' ? peer.user_id : null
-  const lr = peer?.last_read_at
-  const lastReadAt = typeof lr === 'string' ? lr : null
 
-  let peerReceiptsPrivate = true
-  if (peerId) {
-    const { data: urow, error: uerr } = await supabase
-      .from('users')
-      .select('profile_dm_receipts_private')
-      .eq('id', peerId)
-      .maybeSingle()
-    if (!uerr && urow && typeof urow === 'object') {
-      peerReceiptsPrivate = (urow as { profile_dm_receipts_private?: boolean }).profile_dm_receipts_private === true
-    }
+  const { data: rawRpc, error } = await supabase.rpc('get_direct_peer_read_receipt_context', {
+    p_conversation_id: cid,
+  })
+  const msg = error?.message ?? ''
+  const rpcMissing =
+    error &&
+    (msg.includes('get_direct_peer_read_receipt_context') ||
+      /schema cache|does not exist|PGRST202/i.test(msg) ||
+      (error as { code?: string }).code === '42883')
+  if (error && rpcMissing) {
+    return fetchDirectPeerDmReceiptContextMembersOnly(cid, uid)
+  }
+  if (error) return { data: null, error: error.message }
+
+  const data = unwrapRpcJsonData(rawRpc)
+  if (!data || typeof data !== 'object') return { data: null, error: 'rpc_invalid' }
+  const j = data as Record<string, unknown>
+  if (j.ok !== true && j.ok !== 'true') {
+    const err = typeof j.error === 'string' ? j.error : 'rpc_failed'
+    return { data: null, error: err }
+  }
+
+  let lastReadAt = parseUnknownTimestampToIso(j.peer_last_read_at)
+  const peerReceiptsPrivate = j.peer_dm_receipts_private === true
+
+  if (!lastReadAt) {
+    const fb = await fetchDirectPeerDmReceiptContextMembersOnly(cid, uid)
+    if (fb.data?.lastReadAt) lastReadAt = fb.data.lastReadAt
   }
 
   return {

@@ -53,6 +53,7 @@ import {
   mapDirectMessageFromRow,
   deleteDirectMessage,
   fetchDirectPeerDmReceiptContext,
+  mergePeerLastReadAt,
   markDirectConversationRead,
   previewTextForDirectMessageTail,
   requestMessengerUnreadRefresh,
@@ -265,7 +266,7 @@ export function DashboardMessengerPage() {
   const [messages, setMessages] = useState<DirectMessage[]>([])
   /** Курсор прочтения собеседника в открытом ЛС + приватность квитанций (индикаторы исходящих). */
   const [directPeerLastReadAt, setDirectPeerLastReadAt] = useState<string | null>(null)
-  const [directPeerReceiptsPrivate, setDirectPeerReceiptsPrivate] = useState(true)
+  const [directPeerReceiptsPrivate, setDirectPeerReceiptsPrivate] = useState(false)
   const { senderContactByUserId, setSenderContactByUserId } = useMessengerSenderContacts(user?.id, messages)
   const [draft, setDraft] = useState('')
 
@@ -567,21 +568,59 @@ export function DashboardMessengerPage() {
     return null
   }, [activeConversationId, mergedItems, activeConversation])
 
+  const refreshDirectPeerDmReceiptContext = useCallback(() => {
+    const cid = activeConversationId.trim()
+    if (!cid || !user?.id || activeOpenThreadKind !== 'direct') return
+    void fetchDirectPeerDmReceiptContext(cid).then(({ data }) => {
+      if (!data) return
+      setDirectPeerLastReadAt((p) => mergePeerLastReadAt(p, data.lastReadAt))
+      setDirectPeerReceiptsPrivate(data.peerReceiptsPrivate)
+    })
+  }, [activeConversationId, activeOpenThreadKind, user?.id])
+
   useEffect(() => {
     setDirectPeerLastReadAt(null)
-    setDirectPeerReceiptsPrivate(true)
+    setDirectPeerReceiptsPrivate(false)
     const cid = activeConversationId.trim()
     if (!cid || !user?.id || activeOpenThreadKind !== 'direct') return
     let cancelled = false
     void fetchDirectPeerDmReceiptContext(cid).then(({ data }) => {
       if (cancelled || !data) return
-      setDirectPeerLastReadAt(data.lastReadAt)
+      setDirectPeerLastReadAt((p) => mergePeerLastReadAt(p, data.lastReadAt))
       setDirectPeerReceiptsPrivate(data.peerReceiptsPrivate)
     })
     return () => {
       cancelled = true
     }
   }, [activeConversationId, activeOpenThreadKind, user?.id])
+
+  useEffect(() => {
+    if (threadLoading || activeOpenThreadKind !== 'direct' || !user?.id) return
+    refreshDirectPeerDmReceiptContext()
+  }, [threadLoading, activeOpenThreadKind, user?.id, refreshDirectPeerDmReceiptContext])
+
+  useEffect(() => {
+    if (activeOpenThreadKind !== 'direct' || !user?.id) return
+    const cid = activeConversationId.trim()
+    if (!cid) return
+    const t = setInterval(() => {
+      void fetchDirectPeerDmReceiptContext(cid).then(({ data }) => {
+        if (!data) return
+        setDirectPeerLastReadAt((p) => mergePeerLastReadAt(p, data.lastReadAt))
+        setDirectPeerReceiptsPrivate(data.peerReceiptsPrivate)
+      })
+    }, 8000)
+    return () => clearInterval(t)
+  }, [activeConversationId, activeOpenThreadKind, user?.id])
+
+  useEffect(() => {
+    if (activeOpenThreadKind !== 'direct' || !user?.id) return
+    const onVis = () => {
+      if (document.visibilityState === 'visible') refreshDirectPeerDmReceiptContext()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [activeOpenThreadKind, user?.id, refreshDirectPeerDmReceiptContext])
 
   useEffect(() => {
     const cid = activeConversationId.trim()
@@ -597,10 +636,17 @@ export function DashboardMessengerPage() {
           filter: `conversation_id=eq.${cid}`,
         },
         (payload) => {
-          const row = payload.new as { user_id?: string; last_read_at?: string | null }
-          if (row.user_id && row.user_id !== user.id && typeof row.last_read_at === 'string') {
-            setDirectPeerLastReadAt(row.last_read_at)
-          }
+          const row = payload.new as { user_id?: string; last_read_at?: unknown }
+          const raw = row.last_read_at
+          if (!row.user_id || row.user_id === user.id || raw == null) return
+          const s =
+            typeof raw === 'string'
+              ? raw
+              : typeof raw === 'number'
+                ? new Date(raw).toISOString()
+                : String(raw)
+          if (s)
+            setDirectPeerLastReadAt((p) => mergePeerLastReadAt(p, s))
         },
       )
       .subscribe()
