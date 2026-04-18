@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DirectMessage } from '../lib/messenger'
-import { getMessengerImageAttachments, getMessengerImageSignedUrl } from '../lib/messenger'
+import { getMessengerImageAttachments } from '../lib/messenger'
+import { resolveMediaUrlForStoragePath } from '../lib/mediaCache'
 import { FiRrIcon } from './icons'
 import { MessengerMessageBody } from './MessengerMessageBody'
 import { MessengerLinkOgCard } from './messenger/MessengerLinkOgCard'
@@ -124,10 +125,10 @@ export function MessengerBubbleBody({
     let cancelled = false
     setAudioErr(false)
     void (async () => {
-      const r = await getMessengerImageSignedUrl(audioPath)
+      const u = await resolveMediaUrlForStoragePath(audioPath, { expiresSec: 3600 })
       if (cancelled) return
-      if (!r.url) setAudioErr(true)
-      setAudioUrl(r.url)
+      if (!u) setAudioErr(true)
+      setAudioUrl(u)
     })()
     return () => {
       cancelled = true
@@ -161,15 +162,15 @@ export function MessengerBubbleBody({
         let full: string | null = null
         if (thumbPath) {
           const [tr, fr] = await Promise.all([
-            getMessengerImageSignedUrl(thumbPath),
-            getMessengerImageSignedUrl(path),
+            resolveMediaUrlForStoragePath(thumbPath, { expiresSec: 3600 }),
+            resolveMediaUrlForStoragePath(path, { expiresSec: 3600 }),
           ])
-          thumb = tr.url
-          full = fr.url ?? tr.url
+          thumb = tr
+          full = fr ?? tr
         } else {
-          const fr = await getMessengerImageSignedUrl(path)
-          full = fr.url
-          thumb = fr.url
+          const fr = await resolveMediaUrlForStoragePath(path, { expiresSec: 3600 })
+          full = fr
+          thumb = fr
         }
         thumbs.push(thumb)
         fulls.push(full)
@@ -192,8 +193,7 @@ export function MessengerBubbleBody({
       for (let i = 0; i < attachments.length; i++) {
         let u = fullUrls[i] ?? thumbUrls[i]
         if (!u) {
-          const r = await getMessengerImageSignedUrl(attachments[i]!.path.trim())
-          u = r.url
+          u = await resolveMediaUrlForStoragePath(attachments[i]!.path.trim(), { expiresSec: 3600 })
         }
         if (u) resolved.push(u)
       }

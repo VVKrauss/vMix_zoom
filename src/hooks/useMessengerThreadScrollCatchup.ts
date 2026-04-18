@@ -25,6 +25,9 @@ export function useMessengerScrollAfterThreadLoad(opts: {
   } = opts
   const prevThreadLoadingRef = useRef(false)
   const cancelTailCatchupRef = useRef<(() => void) | null>(null)
+  /** Не кладём `messagesLength` в deps эффекта — иначе на каждое сообщение cleanup срывает tail-catchup по картинкам. */
+  const messagesLengthRef = useRef(messagesLength)
+  messagesLengthRef.current = messagesLength
 
   useLayoutEffect(() => {
     cancelTailCatchupRef.current?.()
@@ -32,7 +35,8 @@ export function useMessengerScrollAfterThreadLoad(opts: {
 
     const wasLoading = prevThreadLoadingRef.current
     prevThreadLoadingRef.current = threadLoading
-    if (wasLoading && !threadLoading && !listOnlyMobile && messagesLength > 0) {
+    const len = messagesLengthRef.current
+    if (wasLoading && !threadLoading && !listOnlyMobile && len > 0) {
       const scrollEl = messagesScrollRef.current
       const contentEl = messagesContentRef.current
       if (scrollEl) {
@@ -56,7 +60,6 @@ export function useMessengerScrollAfterThreadLoad(opts: {
   }, [
     threadLoading,
     listOnlyMobile,
-    messagesLength,
     messagesScrollRef,
     messagesContentRef,
     conversationIdRef,

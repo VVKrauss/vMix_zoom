@@ -3,6 +3,7 @@ import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Components } from 'react-markdown'
+import { messengerStoragePathToThumbPath } from '../../lib/messenger'
 import type { PostBlock, PostDraftV1 } from '../../lib/postEditor/types'
 import { extractYoutubeVideoId } from '../../lib/postEditor/youtube'
 import { YoutubePosterImg } from './YoutubePosterImg'
@@ -18,13 +19,26 @@ function resolveSrc(url: string, urlByStoragePath: Record<string, string>): stri
   return raw
 }
 
+/** В ленте отдаём `_thumb.jpg`, если для него уже есть signed URL (меньше трафика, чем полный JPEG до 1680px). */
+function resolveSrcPreferThumb(url: string, urlByStoragePath: Record<string, string>): string | null {
+  const raw = (url ?? '').trim()
+  if (!raw.startsWith('ms://')) return resolveSrc(raw, urlByStoragePath)
+  const path = raw.slice('ms://'.length)
+  const thumbPath = messengerStoragePathToThumbPath(path)
+  if (thumbPath) {
+    const u = urlByStoragePath[thumbPath]?.trim()
+    if (u) return u
+  }
+  return resolveSrc(raw, urlByStoragePath)
+}
+
 function draftMdComponents(
   urlByStoragePath: Record<string, string>,
   variant: 'block' | 'inline',
 ): Components {
   const img = ({ src, alt, ...props }: ImgHTMLAttributes<HTMLImageElement>) => {
     const raw = (src ?? '').trim()
-    const resolved = resolveSrc(raw, urlByStoragePath)
+    const resolved = resolveSrcPreferThumb(raw, urlByStoragePath)
     if (!resolved) return null
     return (
       <img
@@ -172,7 +186,7 @@ export function PostDraftReadView({
   publishedAt?: string
   editedAt?: string | null
 }) {
-  const cover = draft.coverImage ? resolveSrc(draft.coverImage, urlByStoragePath) : null
+  const cover = draft.coverImage ? resolveSrcPreferThumb(draft.coverImage, urlByStoragePath) : null
   return (
     <div className={['post-draft-read', className].filter(Boolean).join(' ')}>
       {publishedAt ? <PostPublicationLine publishedAt={publishedAt} editedAt={editedAt} /> : null}
@@ -238,7 +252,7 @@ function BlockRead({ block, urlByStoragePath }: { block: PostBlock; urlByStorage
         </h3>
       ) : null
     case 'image': {
-      const src = resolveSrc(block.url, urlByStoragePath)
+      const src = resolveSrcPreferThumb(block.url, urlByStoragePath)
       if (!src) return null
       return (
         <figure className="post-draft-read__figure">
@@ -251,7 +265,7 @@ function BlockRead({ block, urlByStoragePath }: { block: PostBlock; urlByStorage
       return (
         <div className="post-draft-read__gallery">
           {block.items.map((it, i) => {
-            const src = resolveSrc(it.url, urlByStoragePath)
+            const src = resolveSrcPreferThumb(it.url, urlByStoragePath)
             if (!src) return null
             return <img key={i} src={src} alt={it.caption ?? ''} />
           })}

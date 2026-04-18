@@ -892,6 +892,18 @@ export async function uploadMessengerAudio(
   return { path, error: null }
 }
 
+/**
+ * Путь превью `_thumb.jpg` для объекта из `uploadMessengerImage` (основной файл — `…/id.jpg`).
+ * В meta поста хранится только основной path; превью — отдельный объект в bucket.
+ */
+export function messengerStoragePathToThumbPath(storagePath: string): string | null {
+  const p = storagePath.trim()
+  if (!p || p.includes('..')) return null
+  if (/_thumb\.jpg$/i.test(p)) return null
+  if (!/\.jpg$/i.test(p)) return null
+  return p.replace(/\.jpg$/i, '_thumb.jpg')
+}
+
 /** Временная ссылка на вложение (bucket приватный; для <img src=…>). */
 export async function getMessengerImageSignedUrl(
   storagePath: string,

@@ -1,6 +1,15 @@
 import type { PostBlock, PostDraftV1 } from './types'
 import { newBlockId } from './types'
 
+/** Согласовано с `uploadMessengerImage`: рядом с `…/id.jpg` лежит `…/id_thumb.jpg`. */
+function messengerUploadThumbPath(storagePath: string): string | null {
+  const p = storagePath.trim()
+  if (!p || p.includes('..')) return null
+  if (/_thumb\.jpg$/i.test(p)) return null
+  if (!/\.jpg$/i.test(p)) return null
+  return p.replace(/\.jpg$/i, '_thumb.jpg')
+}
+
 export function createEmptyDraft(): PostDraftV1 {
   return {
     v: 1,
@@ -157,7 +166,12 @@ export function collectStoragePathsFromDraft(d: PostDraftV1): string[] {
   const paths = new Set<string>()
   const addFromUrl = (u: string | undefined | null) => {
     const s = (u ?? '').trim()
-    if (s.startsWith('ms://')) paths.add(s.slice('ms://'.length))
+    if (s.startsWith('ms://')) {
+      const path = s.slice('ms://'.length)
+      paths.add(path)
+      const thumb = messengerUploadThumbPath(path)
+      if (thumb) paths.add(thumb)
+    }
   }
   addFromUrl(d.coverImage)
   addFromUrl(d.seoImage)
@@ -180,7 +194,11 @@ export function collectStoragePathsFromDraft(d: PostDraftV1): string[] {
       MS_RE.lastIndex = 0
       while ((m = MS_RE.exec(t))) {
         const p = (m[1] ?? '').trim()
-        if (p) paths.add(p)
+        if (p) {
+          paths.add(p)
+          const thumb = messengerUploadThumbPath(p)
+          if (thumb) paths.add(thumb)
+        }
       }
     }
   }

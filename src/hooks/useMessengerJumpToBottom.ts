@@ -4,10 +4,13 @@ const SLACK_PX = 96
 
 /**
  * Кнопка «вниз»: показываем, если пользователь прокрутил ленту выше хвоста.
+ * @param activeKey Смена ключа пересоздаёт подписки (например, другой диалог).
+ * @param remeasureKey Опционально: изменение без смены подписок (например, число сообщений) — только пересчёт видимости FAB.
  */
 export function useMessengerJumpToBottom(
   scrollRef: React.RefObject<HTMLElement | null>,
   activeKey: string,
+  remeasureKey?: string | number,
 ): { showJump: boolean; jumpToBottom: () => void } {
   const [showJump, setShowJump] = useState(false)
 
@@ -29,6 +32,10 @@ export function useMessengerJumpToBottom(
       ro?.disconnect()
     }
   }, [scrollRef, measure, activeKey])
+
+  useLayoutEffect(() => {
+    measure()
+  }, [measure, remeasureKey])
 
   const jumpToBottom = useCallback(() => {
     const el = scrollRef.current

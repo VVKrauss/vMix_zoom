@@ -5853,6 +5853,13 @@ button.dashboard-messenger__row-avatar {
   min-width: 0;
 }
 
+.dashboard-messenger__channel-feed-end {
+  height: 1px;
+  width: 100%;
+  flex-shrink: 0;
+  scroll-margin-bottom: 2px;
+}
+
 .dashboard-messenger__channel-post {
   width: 100%;
   max-width: 100%;
@@ -6418,6 +6425,15 @@ span.dashboard-messenger__thread-avatar {
   gap: 6px 10px;
   min-width: 0;
   flex: 1 1 auto;
+}
+
+.dashboard-messenger__message-own-receipt-wrap {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 5px;
+  padding-right: 1px;
+  min-height: 14px;
 }
 
 .dashboard-messenger__dm-receipt {

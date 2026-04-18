@@ -7,7 +7,7 @@ import { useToast } from '../../context/ToastContext'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { supabase } from '../../lib/supabase'
 import { mapDirectMessageFromRow, previewTextForDirectMessageTail, type DirectMessage } from '../../lib/messenger'
-import { getMessengerImageSignedUrl } from '../../lib/messenger'
+import { messengerStoragePathToThumbPath } from '../../lib/messenger'
 import { buildQuotePreview } from '../../lib/messengerQuotePreview'
 import {
   appendChannelComment,
@@ -53,9 +53,12 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Link } from 'react-router-dom'
 import { useMessengerJumpToBottom } from '../../hooks/useMessengerJumpToBottom'
+import { attachMessengerTailCatchupAfterContentPaint } from '../../hooks/messengerTailCatchup'
 import { MessengerJumpToBottomFab } from '../MessengerJumpToBottomFab'
 import { DraftLinkPreviewBar } from './DraftLinkPreviewBar'
 import { MessengerImageLightbox } from './MessengerImageLightbox'
+import { loadCachedChannelFeed, saveCachedChannelFeed } from '../../lib/channelFeedCache'
+import { resolveMediaUrlsForStoragePaths } from '../../lib/mediaCache'
 
 function extractStoragePathsFromMarkdown(md: string): string[] {
   const out: string[] = []
@@ -63,7 +66,11 @@ function extractStoragePathsFromMarkdown(md: string): string[] {
   let m: RegExpExecArray | null
   while ((m = re.exec(md))) {
     const p = (m[1] ?? '').trim()
-    if (p) out.push(p)
+    if (p) {
+      out.push(p)
+      const thumb = messengerStoragePathToThumbPath(p)
+      if (thumb) out.push(thumb)
+    }
   }
   return out
 }
@@ -139,7 +146,14 @@ export function ChannelThreadPane({
 
   const [error, setError] = useState<string | null>(null)
   const [threadLoading, setThreadLoading] = useState(false)
+  const [backgroundRefreshing, setBackgroundRefreshing] = useState(false)
   const [posts, setPosts] = useState<DirectMessage[]>([])
+  /** Для scroll-to-tail после paint: не тащим весь `posts` в deps layout-эффекта. */
+  const postsForFeedScrollRef = useRef(posts)
+  postsForFeedScrollRef.current = posts
+  /** Скролл к хвосту после загрузки: не завязан на edge threadLoading (батч true→false за один кадр). */
+  const pendingChannelTailScrollRef = useRef(false)
+  const channelFeedEndRef = useRef<HTMLDivElement | null>(null)
   const [reactions, setReactions] = useState<DirectMessage[]>([])
   const [hasMoreOlder, setHasMoreOlder] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
@@ -192,31 +206,115 @@ export function ChannelThreadPane({
   const reactionPickWrapRef = useRef<HTMLDivElement | null>(null)
   const seenChannelCommentIdsRef = useRef<Set<string>>(new Set())
   const [signedUrlByPath, setSignedUrlByPath] = useState<Record<string, string>>({})
+  const signedUrlByPathRef = useRef(signedUrlByPath)
+  signedUrlByPathRef.current = signedUrlByPath
   const postAnchorRef = useRef<Map<string, HTMLElement>>(new Map())
   const commentAnchorRef = useRef<Map<string, HTMLElement>>(new Map())
   const commentsScrollRef = useRef<HTMLDivElement | null>(null)
   const postsFeedScrollRef = useRef<HTMLDivElement | null>(null)
+  const postsFeedContentRef = useRef<HTMLDivElement | null>(null)
+  const cancelPostsFeedTailCatchupRef = useRef<(() => void) | null>(null)
+  const feedPinnedToBottomRef = useRef(true)
   const commentsPinnedToBottomRef = useRef(true)
 
-  const postsJumpKey = `${conversationId}:${posts.length}:${commentsModalPostId ?? ''}`
+  const postsJumpScopeKey = `${conversationId}:${commentsModalPostId ?? ''}`
   const { showJump: showPostsJump, jumpToBottom: jumpPostsBottom } = useMessengerJumpToBottom(
     postsFeedScrollRef,
-    postsJumpKey,
+    postsJumpScopeKey,
+    posts.length,
   )
-  const commentsJumpKey = `${conversationId}:cmod:${commentsModalPostId ?? ''}:${
-    commentsModalPostId ? (commentsByPostId[commentsModalPostId] ?? []).length : 0
-  }`
+  const commentsJumpScopeKey = `${conversationId}:cmod:${commentsModalPostId ?? ''}`
+  const commentsLen = commentsModalPostId ? (commentsByPostId[commentsModalPostId] ?? []).length : 0
   const { showJump: showCommentsJump, jumpToBottom: jumpCommentsBottom } = useMessengerJumpToBottom(
     commentsScrollRef,
-    commentsJumpKey,
+    commentsJumpScopeKey,
+    commentsLen,
   )
 
   const cidRef = useRef(conversationId)
   cidRef.current = conversationId
   const reactionOpInFlightRef = useRef<Set<string>>(new Set())
 
+  const updateFeedPinnedToBottom = useCallback(() => {
+    const el = postsFeedScrollRef.current
+    if (!el) return
+    const slack = 48
+    feedPinnedToBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - slack
+  }, [])
+
   const isChannelMember = myChannelMemberRole !== null || isMemberHint === true
   const canView = viewerOnly || isChannelMember
+
+  /** Хвост ленты после загрузки: флаг pending переживает батч threadLoading true→false без промежуточного paint. */
+  useLayoutEffect(() => {
+    cancelPostsFeedTailCatchupRef.current?.()
+    cancelPostsFeedTailCatchupRef.current = null
+
+    if (!canView || threadLoading || !pendingChannelTailScrollRef.current) {
+      return () => {
+        cancelPostsFeedTailCatchupRef.current?.()
+        cancelPostsFeedTailCatchupRef.current = null
+      }
+    }
+
+    const rows = postsForFeedScrollRef.current
+    const n = rows.filter((m) => m.kind !== 'reaction').length
+    if (n === 0) {
+      pendingChannelTailScrollRef.current = false
+      return () => {
+        cancelPostsFeedTailCatchupRef.current?.()
+        cancelPostsFeedTailCatchupRef.current = null
+      }
+    }
+
+    const cid = conversationId.trim()
+    const scrollEl = postsFeedScrollRef.current
+    const contentEl = postsFeedContentRef.current
+
+    const applyTailScroll = () => {
+      const el = postsFeedScrollRef.current
+      const ce = postsFeedContentRef.current
+      if (!el) return false
+      pendingChannelTailScrollRef.current = false
+      feedPinnedToBottomRef.current = true
+      el.scrollTop = el.scrollHeight
+      channelFeedEndRef.current?.scrollIntoView({ block: 'end', inline: 'nearest' })
+      if (ce) {
+        cancelPostsFeedTailCatchupRef.current = attachMessengerTailCatchupAfterContentPaint({
+          scrollEl: el,
+          contentEl: ce,
+          pinRef: feedPinnedToBottomRef,
+          isActive: () => cidRef.current.trim() === cid,
+        })
+      }
+      return true
+    }
+
+    if (!scrollEl) {
+      let raf0 = 0
+      let raf1 = 0
+      raf0 = requestAnimationFrame(() => {
+        raf1 = requestAnimationFrame(() => {
+          if (!pendingChannelTailScrollRef.current) return
+          if (cidRef.current.trim() !== cid) return
+          if (!applyTailScroll()) pendingChannelTailScrollRef.current = false
+        })
+      })
+      return () => {
+        cancelAnimationFrame(raf0)
+        cancelAnimationFrame(raf1)
+        cancelPostsFeedTailCatchupRef.current?.()
+        cancelPostsFeedTailCatchupRef.current = null
+      }
+    }
+
+    applyTailScroll()
+
+    return () => {
+      cancelPostsFeedTailCatchupRef.current?.()
+      cancelPostsFeedTailCatchupRef.current = null
+    }
+  }, [threadLoading, canView, conversationId])
 
   const removeReactionMessageEverywhere = useCallback((messageId: string) => {
     const id = messageId.trim()
@@ -476,6 +574,7 @@ export function ChannelThreadPane({
       requestAnimationFrame(() => {
         const el = postsFeedScrollRef.current
         if (el) el.scrollTop = el.scrollHeight
+        channelFeedEndRef.current?.scrollIntoView({ block: 'end', inline: 'nearest' })
       })
       return
     }
@@ -523,6 +622,7 @@ export function ChannelThreadPane({
     requestAnimationFrame(() => {
       const el = postsFeedScrollRef.current
       if (el) el.scrollTop = el.scrollHeight
+      channelFeedEndRef.current?.scrollIntoView({ block: 'end', inline: 'nearest' })
     })
   }, [
     canCreatePosts,
@@ -589,6 +689,7 @@ export function ChannelThreadPane({
       requestAnimationFrame(() => {
         const el = postsFeedScrollRef.current
         if (el) el.scrollTop = el.scrollHeight
+        channelFeedEndRef.current?.scrollIntoView({ block: 'end', inline: 'nearest' })
       })
     },
     [
@@ -660,6 +761,11 @@ export function ChannelThreadPane({
     let active = true
     const cid = conversationId.trim()
     if (!user?.id || !cid || !canView) return
+    cancelPostsFeedTailCatchupRef.current?.()
+    cancelPostsFeedTailCatchupRef.current = null
+    feedPinnedToBottomRef.current = true
+    pendingChannelTailScrollRef.current = true
+    setBackgroundRefreshing(false)
     setThreadLoading(true)
     setError(null)
     setPosts([])
@@ -669,19 +775,37 @@ export function ChannelThreadPane({
     setCommentCountByPostId({})
     setCommentCountHasMoreByPostId({})
     seenChannelCommentIdsRef.current.clear()
-    void listChannelPostsPage(cid, { limit: 30 }).then((res) => {
+
+    void (async () => {
+      const cached = await loadCachedChannelFeed(cid)
+      if (!active) return
+      const hadCache = Boolean(cached?.posts?.length)
+      if (cached) {
+        setPosts(cached.posts ?? [])
+        setHasMoreOlder(Boolean(cached.hasMoreOlder))
+        setThreadLoading(false)
+        pendingChannelTailScrollRef.current = true
+        setBackgroundRefreshing(true)
+      }
+
+      const res = await listChannelPostsPage(cid, { limit: 30 })
       if (!active) return
       setThreadLoading(false)
+      setBackgroundRefreshing(false)
       if (res.error) {
-        setError(res.error)
+        if (!hadCache) {
+          pendingChannelTailScrollRef.current = false
+          setError(res.error)
+        }
         return
       }
       const nextPosts = (res.data ?? []).filter((m) => m.kind !== 'reaction')
       setPosts(res.data ?? [])
       setHasMoreOlder(res.hasMoreOlder)
+      if (!hadCache) pendingChannelTailScrollRef.current = true
+      void saveCachedChannelFeed(cid, res.data ?? [], Boolean(res.hasMoreOlder))
       void markChannelRead(cid)
 
-      // Fill comment counts immediately for visible posts
       const postIds = nextPosts.map((p) => p.id).filter(Boolean)
       void listChannelCommentCounts(cid, postIds).then((cc) => {
         if (!active) return
@@ -693,9 +817,12 @@ export function ChannelThreadPane({
           return { ...prev, ...patch }
         })
       })
-    })
+    })()
     return () => {
       active = false
+      setBackgroundRefreshing(false)
+      cancelPostsFeedTailCatchupRef.current?.()
+      cancelPostsFeedTailCatchupRef.current = null
     }
   }, [conversationId, user?.id, canView])
 
@@ -726,6 +853,13 @@ export function ChannelThreadPane({
             return [...withoutMatchingOptimistic, msg].sort(sortChrono)
           })
           onTouchTail?.({ lastMessageAt: msg.createdAt, lastMessagePreview: msg.body })
+          if (feedPinnedToBottomRef.current) {
+            requestAnimationFrame(() => {
+              const el = postsFeedScrollRef.current
+              if (el) el.scrollTop = el.scrollHeight
+              channelFeedEndRef.current?.scrollIntoView({ block: 'end', inline: 'nearest' })
+            })
+          }
         } else {
           const postId = msg.replyToMessageId
           if (seenChannelCommentIdsRef.current.has(msg.id)) return
@@ -852,19 +986,31 @@ export function ChannelThreadPane({
         for (const sp of extractStoragePathsFromMarkdown(c.body ?? '')) paths.add(sp)
       }
     }
-    const missing = [...paths].filter((p) => !signedUrlByPath[p])
+    const prevMap = signedUrlByPathRef.current
+    const missing = [...paths].filter((p) => !prevMap[p])
     if (missing.length === 0) return
     void (async () => {
-      for (const p of missing) {
-        const signed = await getMessengerImageSignedUrl(p, 3600)
-        if (!active) return
-        if (signed.url) setSignedUrlByPath((prev) => (prev[p] ? prev : { ...prev, [p]: signed.url! }))
-      }
+      const patch = await resolveMediaUrlsForStoragePaths(missing, { expiresSec: 3600, concurrency: 8 })
+      if (!active) return
+      if (Object.keys(patch).length === 0) return
+      setSignedUrlByPath((prev) => {
+        let next = prev
+        let touched = false
+        for (const [k, v] of Object.entries(patch)) {
+          if (prev[k]) continue
+          if (!touched) {
+            next = { ...prev }
+            touched = true
+          }
+          next[k] = v
+        }
+        return next
+      })
     })()
     return () => {
       active = false
     }
-  }, [posts, commentsByPostId, signedUrlByPath])
+  }, [posts, commentsByPostId])
 
   /** Реакции: одна строка — один id (не дублировать между posts / comments / realtime). */
   const allMessagesForReactions = useMemo(() => {
@@ -1775,7 +1921,13 @@ export function ChannelThreadPane({
   const renderChannelPostsView = () => (
     <>
       <div className="dashboard-messenger__scroll-region-wrap">
-        <div ref={postsFeedScrollRef} className="dashboard-messenger__messages-scroll" role="region" aria-label="Посты канала">
+        <div
+          ref={postsFeedScrollRef}
+          className="dashboard-messenger__messages-scroll"
+          role="region"
+          aria-label="Посты канала"
+          onScroll={updateFeedPinnedToBottom}
+        >
         {hasMoreOlder ? (
           <div style={{ padding: 10, textAlign: 'center' }}>
             <button type="button" className="dashboard-topbar__action" disabled={loadingOlder} onClick={() => void loadOlder()}>
@@ -1784,7 +1936,7 @@ export function ChannelThreadPane({
           </div>
         ) : null}
 
-        {threadLoading ? (
+        {threadLoading && posts.filter((m) => m.kind !== 'reaction').length === 0 ? (
           <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" />
         ) : !canView ? (
           joinRequestPending ? (
@@ -1821,10 +1973,16 @@ export function ChannelThreadPane({
           )
         ) : (
           <>
-            <div className="dashboard-messenger__channel-feed">
+            {backgroundRefreshing ? (
+              <div className="dashboard-messenger__list-ptr-banner" role="status" aria-live="polite">
+                <span>Обновление…</span>
+              </div>
+            ) : null}
+            <div ref={postsFeedContentRef} className="dashboard-messenger__channel-feed">
               {posts
                 .filter((m) => m.kind !== 'reaction')
                 .map((p) => renderChannelPostCard(p))}
+              <div ref={channelFeedEndRef} className="dashboard-messenger__channel-feed-end" aria-hidden />
             </div>
             {viewerOnly && publicJoinCta ? (
               <div className="messenger-viewer-join-after">

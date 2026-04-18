@@ -169,10 +169,10 @@ export function GroupThreadPane({
   const isGroupMember = myGroupMemberRole !== null || isMemberHint === true
   const canView = viewerOnly || isGroupMember
 
-  const groupJumpKey = `${conversationId}:${messages.length}`
   const { showJump: showGroupJump, jumpToBottom: jumpGroupBottom } = useMessengerJumpToBottom(
     messagesScrollRef,
-    groupJumpKey,
+    conversationId || '',
+    messages.length,
   )
 
   useEffect(() => {

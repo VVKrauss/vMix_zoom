@@ -286,22 +286,6 @@ export function ThreadMessageBubble({
           ) : null}
           <time dateTime={message.createdAt}>{formatDt(message.createdAt)}</time>
           {message.editedAt ? <span className="dashboard-messenger__edited">изм.</span> : null}
-          {dmOutgoingReceipt ? (
-            <span
-              className={`dashboard-messenger__dm-receipt dashboard-messenger__dm-receipt--${dmOutgoingReceipt}`}
-              aria-label={
-                dmOutgoingReceipt === 'pending'
-                  ? 'Отправка'
-                  : dmOutgoingReceipt === 'read'
-                    ? 'Прочитано'
-                    : dmOutgoingReceipt === 'delivered'
-                      ? 'Доставлено'
-                      : 'Отправлено'
-              }
-            >
-              <DmOutgoingReceiptGlyph level={dmOutgoingReceipt} messageId={message.id} />
-            </span>
-          ) : null}
         </div>
         <button
           type="button"
@@ -403,6 +387,24 @@ export function ThreadMessageBubble({
               </span>
             )
           })}
+        </div>
+      ) : null}
+      {isOwn && dmOutgoingReceipt ? (
+        <div className="dashboard-messenger__message-own-receipt-wrap">
+          <span
+            className={`dashboard-messenger__dm-receipt dashboard-messenger__dm-receipt--${dmOutgoingReceipt}`}
+            aria-label={
+              dmOutgoingReceipt === 'pending'
+                ? 'Отправка'
+                : dmOutgoingReceipt === 'read'
+                  ? 'Прочитано'
+                  : dmOutgoingReceipt === 'delivered'
+                    ? 'Доставлено'
+                    : 'Отправлено'
+            }
+          >
+            <DmOutgoingReceiptGlyph level={dmOutgoingReceipt} messageId={message.id} />
+          </span>
         </div>
       ) : null}
     </article>

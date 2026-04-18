@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getMessengerImageSignedUrl } from '../lib/messenger'
+import { resolveMediaUrlForStoragePath } from '../lib/mediaCache'
 
 /** Миниатюра для цитаты ответа (kind=image). */
 export function MessengerReplyMiniThumb({
@@ -16,7 +16,7 @@ export function MessengerReplyMiniThumb({
     let cancelled = false
     setUrl(null)
     void (async () => {
-      const { url: u } = await getMessengerImageSignedUrl(thumbPath)
+      const u = await resolveMediaUrlForStoragePath(thumbPath, { expiresSec: 3600 })
       if (!cancelled && u) setUrl(u)
     })()
     return () => {

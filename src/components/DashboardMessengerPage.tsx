@@ -407,8 +407,13 @@ export function DashboardMessengerPage() {
   const reactionOpInFlightRef = useRef<Set<string>>(new Set())
 
   const messagesScrollRef = useRef<HTMLDivElement | null>(null)
-  const dmJumpKey = `${conversationId}:${messages.length}`
-  const { showJump: showDmJump, jumpToBottom: jumpDmBottom } = useMessengerJumpToBottom(messagesScrollRef, dmJumpKey)
+  /** Только смена диалога: иначе каждое сообщение пересоздаёт подписки jump-to-bottom и лишний layout. */
+  const dmJumpKey = conversationId || ''
+  const { showJump: showDmJump, jumpToBottom: jumpDmBottom } = useMessengerJumpToBottom(
+    messagesScrollRef,
+    dmJumpKey,
+    messages.length,
+  )
   /** Контейнер с сообщениями — ResizeObserver ловит рост высоты после decode изображений. */
   const messagesContentRef = useRef<HTMLDivElement | null>(null)
   const messageAnchorRef = useRef<Map<string, HTMLElement>>(new Map())
