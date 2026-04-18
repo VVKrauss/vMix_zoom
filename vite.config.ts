@@ -1,8 +1,40 @@
 import { defineConfig, loadEnv } from 'vite'
+import type { Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import fs from 'node:fs'
+import path from 'node:path'
 import { execSync } from 'node:child_process'
+
+/**
+ * @import в середине index.css браузером не применяется. Подставляем фрагменты на этапе сборки,
+ * порядок каскада как при «живом» разбиении файла.
+ */
+function inlineIndexCssImports(): Plugin {
+  const markDash = "@import './styles/dashboard-page.css';"
+  const markRoom = "@import './styles/room-page.css';"
+  return {
+    name: 'inline-index-css-imports',
+    enforce: 'pre',
+    transform(code, id) {
+      const norm = id.split(path.sep).join('/')
+      if (!norm.endsWith('/src/index.css')) return null
+      if (!code.includes(markDash)) return null
+      const root = process.cwd()
+      let dash: string
+      let room: string
+      try {
+        dash = fs.readFileSync(path.join(root, 'src/styles/dashboard-page.css'), 'utf8')
+        room = fs.readFileSync(path.join(root, 'src/styles/room-page.css'), 'utf8')
+      } catch {
+        return null
+      }
+      let out = code.replace(markDash, `${dash}\n`)
+      if (out.includes(markRoom)) out = out.replace(markRoom, `${room}\n`)
+      return out
+    },
+  }
+}
 
 function pad(n: number, len: number) {
   return String(Math.max(0, Math.trunc(n))).padStart(len, '0')
@@ -81,6 +113,7 @@ export default defineConfig(({ mode }) => {
       __APP_VERSION__: JSON.stringify(appVersion),
     },
     plugins: [
+      inlineIndexCssImports(),
       react(),
       VitePWA({
         registerType: 'prompt',

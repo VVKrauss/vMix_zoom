@@ -294,7 +294,6 @@ Deno.serve(async (req) => {
     conversationId,
     conversationKind: convKind,
     icon: displayIconUrl || defaultIcon,
-    image: displayIconUrl || '',
     badge: defaultIcon,
   })
 

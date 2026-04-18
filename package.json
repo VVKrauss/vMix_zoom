@@ -4,7 +4,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "css:split": "node tools/split-css-blocks.mjs"
   },
   "dependencies": {
     "@flaticon/flaticon-uicons": "^3.3.1",

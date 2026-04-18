@@ -33,7 +33,6 @@ self.addEventListener('push', (event) => {
   let icon = '/logo.png'
   let badge = '/logo.png'
   let conversationId = ''
-  let image = ''
   let conversationKind = ''
   try {
     const t = event.data && event.data.text && event.data.text()
@@ -46,7 +45,6 @@ self.addEventListener('push', (event) => {
       if (typeof j.icon === 'string' && j.icon.trim()) icon = j.icon.trim()
       if (typeof j.badge === 'string' && j.badge.trim()) badge = j.badge.trim()
       if (typeof j.conversationId === 'string' && j.conversationId.trim()) conversationId = j.conversationId.trim()
-      if (typeof j.image === 'string' && j.image.trim()) image = j.image.trim()
       if (typeof j.conversationKind === 'string' && j.conversationKind.trim()) {
         conversationKind = j.conversationKind.trim()
       }
@@ -76,18 +74,11 @@ self.addEventListener('push', (event) => {
       }
 
       const iconResolved = await tryBlobUrlForCrossOriginIcon(icon)
-      const imageForNotify =
-        image && image.trim()
-          ? (iconResolved.startsWith('blob:') ? iconResolved : image.trim())
-          : iconResolved.startsWith('blob:')
-            ? iconResolved
-            : undefined
 
       await self.registration.showNotification(title, {
         body,
         icon: iconResolved,
         badge,
-        image: imageForNotify,
         tag,
         renotify: true,
         data: { url, conversationId, conversationKind },

@@ -205,7 +205,6 @@ Deno.serve(async (req) => {
     conversationId,
     conversationKind: 'channel',
     icon: displayIconUrl || defaultIcon,
-    image: displayIconUrl || '',
     badge: defaultIcon,
   })
 

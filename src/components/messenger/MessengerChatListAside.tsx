@@ -151,8 +151,9 @@ export function MessengerChatListAside(props: {
 
   return (
     <aside className="dashboard-messenger__list" aria-label="Список диалогов">
-      {isMobileMessenger ? (
-        <header className="dashboard-messenger__list-head dashboard-messenger__list-head--chats-toolbar">
+      <div className="dashboard-messenger__list-toolbar">
+        {isMobileMessenger ? (
+          <header className="dashboard-messenger__list-head dashboard-messenger__list-head--chats-toolbar">
           <Link
             to="/dashboard"
             className="dashboard-messenger__list-head-back"
@@ -202,10 +203,10 @@ export function MessengerChatListAside(props: {
               <MenuBurgerIcon />
             </button>
           </div>
-        </header>
-      ) : null}
-      {!isMobileMessenger ? (
-        <div className="dashboard-messenger__list-search">
+          </header>
+        ) : null}
+        {!isMobileMessenger ? (
+          <div className="dashboard-messenger__list-search">
           <label className="dashboard-messenger__list-search-label" htmlFor="messenger-chat-list-search-desktop">
             Поиск
           </label>
@@ -229,14 +230,14 @@ export function MessengerChatListAside(props: {
             autoComplete="off"
             aria-label="Поиск по чатам"
           />
-        </div>
-      ) : null}
-      <div
-        className={`dashboard-messenger__list-search${
-          isMobileMessenger ? ' dashboard-messenger__list-search--kind-tabs-only' : ''
-        }`}
-      >
-        <div className="dashboard-messenger__kind-tabs" role="tablist" aria-label="Фильтр бесед">
+          </div>
+        ) : null}
+        <div
+          className={`dashboard-messenger__list-search${
+            isMobileMessenger ? ' dashboard-messenger__list-search--kind-tabs-only' : ''
+          }`}
+        >
+          <div className="dashboard-messenger__kind-tabs" role="tablist" aria-label="Фильтр бесед">
           {(
             [
               { id: 'all' as const, label: 'Все', shortLabel: 'Все', Icon: MessengerFilterAllIcon },
@@ -253,7 +254,7 @@ export function MessengerChatListAside(props: {
                   : 0
             const badgeText = unread > 99 ? '99+' : unread > 0 ? String(unread) : ''
             return (
-            <button
+              <button
               key={id}
               type="button"
               role="tab"
@@ -277,9 +278,10 @@ export function MessengerChatListAside(props: {
                   </span>
                 ) : null}
               </span>
-            </button>
+              </button>
             )
           })}
+          </div>
         </div>
       </div>
       <div ref={listScrollRef} className="dashboard-messenger__list-scroll">

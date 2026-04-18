@@ -1,6 +1,9 @@
 import { supabase } from './supabase'
 import { extractYoutubeVideoId, fetchYoutubeOembedMeta, youtubeThumbnailUrl } from './youtubeEmbed'
 
+/** Edge `link-preview` не должна «висеть» без ответа (invoke без таймаута). */
+const LINK_PREVIEW_INVOKE_MS = 8000
+
 export type LinkPreview = {
   url: string
   title?: string
@@ -10,6 +13,29 @@ export type LinkPreview = {
 }
 
 const TRAIL_PUNCT = /[.,;:!?)]+$/
+
+/** Ссылка на само приложение: Edge не достучится до localhost; для того же origin OG с SPA обычно пустой — не дергаем preview. */
+function isInternalAppUrl(urlStr: string): boolean {
+  try {
+    const u = new URL(urlStr)
+    const host = u.hostname.toLowerCase()
+    if (host === 'localhost' || host === '127.0.0.1' || host === '[::1]') return true
+    if (typeof globalThis !== 'undefined' && 'location' in globalThis) {
+      const origin = (globalThis as unknown as { location?: { origin?: string } }).location?.origin
+      if (origin && u.origin === origin) return true
+    }
+    return false
+  } catch {
+    return false
+  }
+}
+
+/** Есть ли что показать в карточке кроме голого URL (иначе оставляем только текст со ссылкой). */
+function linkPreviewHasDisplayableMeta(p: LinkPreview): boolean {
+  return Boolean(
+    p.title?.trim() || p.description?.trim() || p.image?.trim() || p.siteName?.trim(),
+  )
+}
 
 /** Превью для ссылок на мессенджер (OG с SPA часто пустой). */
 function tryMessengerDeepLinkPreview(url: string): LinkPreview | null {
@@ -136,7 +162,24 @@ export async function fetchLinkPreview(url: string): Promise<{ data: LinkPreview
   const internal = tryMessengerDeepLinkPreview(u)
   if (internal) return { data: internal, error: null }
 
-  const { data, error } = await supabase.functions.invoke('link-preview', { body: { url: u } })
+  if (isInternalAppUrl(u)) {
+    return { data: null, error: null }
+  }
+
+  type InvokeRet = Awaited<ReturnType<typeof supabase.functions.invoke>>
+  let invoked: InvokeRet
+  try {
+    invoked = await Promise.race([
+      supabase.functions.invoke('link-preview', { body: { url: u } }),
+      new Promise<never>((_, rej) => {
+        globalThis.setTimeout(() => rej(new Error('link_preview_timeout')), LINK_PREVIEW_INVOKE_MS)
+      }),
+    ])
+  } catch {
+    return { data: null, error: null }
+  }
+
+  const { data, error } = invoked
   if (error) return { data: null, error: error.message }
   if (!data || typeof data !== 'object') return { data: null, error: 'bad_preview' }
   const r = data as Record<string, unknown>
@@ -151,6 +194,7 @@ export async function fetchLinkPreview(url: string): Promise<{ data: LinkPreview
       ? r.site_name
       : '') as string
   if (siteName.trim()) out.siteName = siteName.trim()
+  if (!linkPreviewHasDisplayableMeta(out)) return { data: null, error: null }
   return { data: out, error: null }
 }
 
