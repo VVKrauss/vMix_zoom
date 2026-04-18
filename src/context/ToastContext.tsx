@@ -10,7 +10,7 @@ export type ToastItem = {
   ms: number
 }
 
-type ToastApi = {
+export type ToastApi = {
   push: (t: Omit<ToastItem, 'id'>) => void
   remove: (id: string) => void
   clear: () => void

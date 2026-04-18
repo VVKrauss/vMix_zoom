@@ -67,6 +67,32 @@ export const MESSENGER_BOTTOM_PIN_PX = 200
 /** Сжимаем частые mark read при пачке входящих в открытом треде. */
 export const MARK_DIRECT_READ_DEBOUNCE_MS = 400
 
+export type BuildMessengerUrlShare = {
+  /** id сообщения / поста — скролл к нему при открытии ссылки */
+  messageId?: string
+  /** id поста-родителя — для комментария: открыть модалку комментариев и проскроллить к комментарию */
+  parentMessageId?: string
+}
+
+/** Путь `/dashboard/messenger` с query `chat` / `with` / `title` / `msg` / `post`. */
+export function buildMessengerUrl(
+  chatId?: string,
+  withUserId?: string,
+  withTitle?: string,
+  share?: BuildMessengerUrlShare,
+): string {
+  const params = new URLSearchParams()
+  if (chatId) params.set('chat', chatId)
+  if (withUserId) params.set('with', withUserId)
+  if (withTitle) params.set('title', withTitle)
+  const mid = share?.messageId?.trim()
+  const pid = share?.parentMessageId?.trim()
+  if (mid) params.set('msg', mid)
+  if (pid) params.set('post', pid)
+  const qs = params.toString()
+  return qs ? `/dashboard/messenger?${qs}` : '/dashboard/messenger'
+}
+
 export function sortDirectMessagesChrono(a: DirectMessage, b: DirectMessage): number {
   const ta = new Date(a.createdAt).getTime()
   const tb = new Date(b.createdAt).getTime()

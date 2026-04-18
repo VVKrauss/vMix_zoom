@@ -11,6 +11,42 @@ export type LinkPreview = {
 
 const TRAIL_PUNCT = /[.,;:!?)]+$/
 
+/** Превью для ссылок на мессенджер (OG с SPA часто пустой). */
+function tryMessengerDeepLinkPreview(url: string): LinkPreview | null {
+  try {
+    const u = new URL(url.trim())
+    if (!u.pathname.includes('/dashboard/messenger')) return null
+    const hasChat = Boolean(u.searchParams.get('chat')?.trim())
+    if (!hasChat) return null
+    const msg = u.searchParams.get('msg')?.trim()
+    const post = u.searchParams.get('post')?.trim()
+    if (msg && post) {
+      return {
+        url: u.href,
+        title: 'Комментарий к посту',
+        description: 'Откройте в мессенджере',
+        siteName: 'Мессенджер',
+      }
+    }
+    if (msg) {
+      return {
+        url: u.href,
+        title: 'Пост в канале',
+        description: 'Откройте в мессенджере',
+        siteName: 'Мессенджер',
+      }
+    }
+    return {
+      url: u.href,
+      title: 'Чат',
+      description: 'Откройте в мессенджере',
+      siteName: 'Мессенджер',
+    }
+  } catch {
+    return null
+  }
+}
+
 /** Первый http(s) URL в тексте (в т.ч. `www.` → https). */
 export function extractFirstHttpUrl(text: string): string | null {
   const re = /\b(https?:\/\/[^\s<>\]'"`]+|www\.[^\s<>\]'"`]+)/i
@@ -96,6 +132,9 @@ export async function fetchLinkPreview(url: string): Promise<{ data: LinkPreview
     }
     return { data: out, error: null }
   }
+
+  const internal = tryMessengerDeepLinkPreview(u)
+  if (internal) return { data: internal, error: null }
 
   const { data, error } = await supabase.functions.invoke('link-preview', { body: { url: u } })
   if (error) return { data: null, error: error.message }

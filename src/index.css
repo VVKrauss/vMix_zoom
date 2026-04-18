@@ -747,6 +747,11 @@ html[data-theme="light"] .dashboard-messenger__channel-post-comments {
   background: rgba(0, 0, 0, 0.05);
 }
 
+html[data-theme="light"] .dashboard-messenger__channel-post-share {
+  border-color: var(--border);
+  background: rgba(0, 0, 0, 0.05);
+}
+
 html[data-theme="light"] .messenger-msg-menu.device-popover {
   background: var(--surface2);
 }
@@ -5915,6 +5920,39 @@ button.dashboard-messenger__row-avatar {
   font-variant-numeric: tabular-nums;
 }
 
+.dashboard-messenger__channel-post-share {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text-dim);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.dashboard-messenger__channel-post-share:hover:not(:disabled) {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.dashboard-messenger__channel-post-share:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.dashboard-messenger__channel-post-share i.fi {
+  font-size: 13px;
+  opacity: 0.92;
+}
+
 .dashboard-messenger__thread-main {
   flex: 1;
   min-height: 0;
@@ -6313,9 +6351,9 @@ span.dashboard-messenger__thread-avatar {
   height: 22px;
   margin: -2px 0 0;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: none;
   border-radius: 6px;
-  background: rgba(10, 10, 10, 0.35);
+  background: transparent;
   color: var(--text-dim);
   font-size: 15px;
   line-height: 0.85;
@@ -6325,13 +6363,18 @@ span.dashboard-messenger__thread-avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: color 0.15s, opacity 0.15s;
 }
 
 .dashboard-messenger__msg-more:hover,
 .dashboard-messenger__msg-more--open {
-  background: var(--surface2);
+  background: transparent;
   color: var(--text);
+}
+
+.dashboard-messenger__msg-more:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--red) 55%, transparent);
+  outline-offset: 2px;
 }
 
 .dashboard-messenger__message-author {

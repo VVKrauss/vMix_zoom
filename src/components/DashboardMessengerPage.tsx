@@ -1,34 +1,48 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useUserPeek } from '../context/UserPeekContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
-import {
-  MESSENGER_BG_MESSAGE_EVENT,
-  type MessengerBgMessageDetail,
-} from '../lib/messengerUnreadRealtime'
-import {
-  isMessengerSoundEnabled,
-  playMessageSound,
-  setMessengerSoundEnabled,
-  unlockAudioContext,
-} from '../lib/messengerSound'
-import {
-  disableMessengerPush,
-  enableMessengerPush,
-  isMessengerPushSubscribed,
-  isMessengerWebPushConfigured,
-  isWebPushApiSupported,
-  reconcileMessengerPushSubscription,
-} from '../lib/messengerWebPush'
+import { isMessengerSoundEnabled, playMessageSound, setMessengerSoundEnabled } from '../lib/messengerSound'
 import { useMediaQuery } from '../hooks/useMediaQuery'
+import { useEphemeralErrorToast } from '../hooks/useEphemeralErrorToast'
+import { useMessengerPinnedChatsSync } from '../hooks/useMessengerPinnedChatsSync'
+import { useMessengerWebPushState } from '../hooks/useMessengerWebPushState'
+import { useMessengerSenderContacts } from '../hooks/useMessengerSenderContacts'
+import { useMessengerSidebarMergedItems } from '../hooks/useMessengerSidebarMergedItems'
+import { useMessengerConversationAvatarUrls } from '../hooks/useMessengerConversationAvatarUrls'
+import { useMessengerInvitePreview } from '../hooks/useMessengerInvitePreview'
+import { useMessengerRouteSegmentQuerySync } from '../hooks/useMessengerRouteSegmentQuerySync'
+import { useMessengerConversationNotificationMutes } from '../hooks/useMessengerConversationNotificationMutes'
+import { useMessengerListBootstrap } from '../hooks/useMessengerListBootstrap'
+import { useMessengerThreadBootstrap } from '../hooks/useMessengerThreadBootstrap'
+import { useMessengerActiveThreadMembership } from '../hooks/useMessengerActiveThreadMembership'
+import { useMessengerStaffJoinQueue } from '../hooks/useMessengerStaffJoinQueue'
+import {
+  useMessengerLastOpenPersist,
+  useMessengerPendingPhotosReset,
+  useMessengerPinnedBottomReset,
+  useMessengerResizeScrollTailCatchup,
+} from '../hooks/useMessengerThreadLayoutEffects'
+import { useMessengerDirectThreadRealtime } from '../hooks/useMessengerDirectThreadRealtime'
+import { useMessengerBackgroundMessageSidebar } from '../hooks/useMessengerBackgroundMessageSidebar'
+import { useMessengerSelfMembershipDeleteRealtime } from '../hooks/useMessengerSelfMembershipDeleteRealtime'
+import {
+  useMessengerScrollAfterThreadLoad,
+  useMessengerScrollOnMessageGrowth,
+} from '../hooks/useMessengerThreadScrollCatchup'
+import { useMessengerActiveConversationPublic } from '../hooks/useMessengerActiveConversationPublic'
+import { useMessengerGlobalTreeSearch } from '../hooks/useMessengerGlobalTreeSearch'
+import { useEscapeKey } from '../hooks/useEscapeKey'
+import { useMessengerMessageMenuPopoverLayout } from '../hooks/useMessengerMessageMenuPopoverLayout'
+import { useMobileMessengerComposerHeight } from '../hooks/useMobileMessengerComposerHeight'
+import { useMessengerPendingJumpToQuoted } from '../hooks/useMessengerPendingJumpToQuoted'
+import { useConversationInfoStaffLoad } from '../hooks/useConversationInfoStaffLoad'
 import { useProfile } from '../hooks/useProfile'
 import { useToast } from '../context/ToastContext'
 import {
   appendDirectMessage,
   editDirectMessage,
-  getMessengerImageAttachments,
   type DirectConversationSummary,
   type DirectMessage,
   ensureDirectConversationWithUser,
@@ -43,31 +57,27 @@ import {
   requestMessengerUnreadRefresh,
   toggleDirectMessageReaction,
   uploadMessengerImage,
-  getMessengerImageSignedUrl,
   isDmSoftDeletedStub,
 } from '../lib/messenger'
 import {
   buildJoinRequestPendingSidebarStub,
   listMessengerConversations,
-  searchOpenPublicConversations,
   type MessengerConversationKind,
   type MessengerConversationSummary,
   type OpenPublicConversationSearchHit,
 } from '../lib/messengerConversations'
 import {
   MESSENGER_JOIN_REQUEST_MANAGER_ROLES,
-  MESSENGER_LAST_OPEN_KEY,
   MESSENGER_BOTTOM_PIN_PX,
   MESSENGER_PHOTO_MAX_BYTES,
-  MARK_DIRECT_READ_DEBOUNCE_MS,
   QUICK_REACTION_EMOJI,
   DM_PAGE_SIZE,
+  MESSENGER_GALLERY_MAX_ATTACH,
+  buildMessengerUrl,
   conversationInitial,
   copyTextToClipboard,
   extractClipboardImageFiles,
-  MESSENGER_GALLERY_MAX_ATTACH,
   formatDateTime,
-  formatMessengerListRowTime,
   itemMatchesMessengerListSearch,
   lastNonReactionBody,
   normalizeMessengerListSearch,
@@ -76,13 +86,7 @@ import {
 } from '../lib/messengerDashboardUtils'
 import { useLinkPreviewFromText } from '../hooks/useLinkPreviewFromText'
 import { buildLinkMetaForMessageBody, ensureLinkPreviewForBody } from '../lib/linkPreview'
-import {
-  MESSENGER_MAX_PINNED_CHATS,
-  readMessengerPinnedChatIds,
-  resolveMessengerPinnedChatsForHydration,
-  sortMessengerListWithPins,
-  writeMessengerPinnedChatIds,
-} from '../lib/messengerPins'
+import { MESSENGER_MAX_PINNED_CHATS, sortMessengerListWithPins } from '../lib/messengerPins'
 import { markMessengerConversationRead } from '../lib/messengerMarkRead'
 import {
   listConversationStaffMembers,
@@ -97,7 +101,6 @@ import {
   joinConversationByInvite,
   leaveGroupChat,
   joinPublicGroupChat,
-  resolveConversationByInvite,
   updateGroupProfile,
   type InviteConversationPreview,
 } from '../lib/groups'
@@ -106,14 +109,11 @@ import {
   getMessengerFontPreset,
   resolveQuotedAvatarForDm,
   setMessengerFontPreset,
-  truncateMessengerReplySnippet,
   type MessengerFontPreset,
 } from '../lib/messengerUi'
-import { buildQuotePreview } from '../lib/messengerQuotePreview'
 import {
   approveConversationJoinRequest,
   denyConversationJoinRequest,
-  hasPendingConversationJoinRequest,
   listConversationJoinRequests,
   requestConversationJoin,
   type ConversationJoinRequest,
@@ -124,15 +124,8 @@ import {
   forwardMetaToQuotedStrip,
 } from '../lib/messengerForward'
 import type { MessengerForwardMeta } from '../lib/messenger'
-import { MESSENGER_COMPOSER_EMOJIS } from '../lib/messengerComposerEmojis'
 import { setPendingHostClaim, stashSpaceRoomCreateOptions } from '../lib/spaceRoom'
-import {
-  getContactStatuses,
-  searchRegisteredUsers,
-  setContactPin,
-  type ContactStatus,
-  type RegisteredUserSearchHit,
-} from '../lib/socialGraph'
+import { setContactPin, type RegisteredUserSearchHit } from '../lib/socialGraph'
 import {
   getMyConversationNotificationMutes,
   setConversationNotificationsMuted,
@@ -147,59 +140,55 @@ import { supabase } from '../lib/supabase'
 import { newRoomId } from '../utils/roomId'
 import { normalizeProfileSlug } from '../lib/profileSlug'
 import { BrandLogoLoader } from './BrandLogoLoader'
-import {
-  AdminPanelIcon,
-  AttachmentIcon,
-  FiRrIcon,
-  ChevronLeftIcon,
-  DashboardIcon,
-  HomeIcon,
-  JoinRequestsIcon,
-  LogOutIcon,
-  MenuBurgerIcon,
-  MessengerFilterAllIcon,
-  MessengerFilterChannelIcon,
-  MessengerFilterDirectIcon,
-  MessengerFilterGroupIcon,
-  ParticipantsBadgeIcon,
-  PlusIcon,
-  RoomsIcon,
-} from './icons'
+import { ChevronLeftIcon, JoinRequestsIcon, MenuBurgerIcon } from './icons'
 import { useMessengerJumpToBottom } from '../hooks/useMessengerJumpToBottom'
-import { MessengerJumpToBottomFab } from './MessengerJumpToBottomFab'
-import { MessengerChatListMenuPopover } from './MessengerChatListMenuPopover'
 import { DashboardShell } from './DashboardShell'
 import { MessengerForwardToDmModal } from './MessengerForwardToDmModal'
 import { MessengerMessageMenuPopover } from './MessengerMessageMenuPopover'
-import { MessengerReplyMiniThumb } from './MessengerReplyMiniThumb'
-import { ReactionEmojiPopover } from './ReactionEmojiPopover'
-import { DraftLinkPreviewBar } from './messenger/DraftLinkPreviewBar'
-import { ThreadMessageBubble } from './messenger/ThreadMessageBubble'
 import type { ReactionEmoji } from '../types/roomComms'
 import { DirectThreadPane } from './messenger/DirectThreadPane'
 import { GroupThreadPane } from './messenger/GroupThreadPane'
 import { ChannelThreadPane } from './messenger/ChannelThreadPane'
-import { DoubleTapHeartSurface } from './messenger/DoubleTapHeartSurface'
+import { MessengerThreadComposer } from './messenger/MessengerThreadComposer'
 import { MessengerConversationInfoModal } from './messenger/MessengerConversationInfoModal'
 import { MessengerCreateConversationModal } from './messenger/MessengerCreateConversationModal'
 import { MessengerImageLightbox } from './messenger/MessengerImageLightbox'
 import { MessengerJoinRequestsModal } from './messenger/MessengerJoinRequestsModal'
 import { MessengerSettingsModal } from './messenger/MessengerSettingsModal'
+import { MessengerChatListAside } from './messenger/MessengerChatListAside'
+import { MessengerQuickNavMenu } from './messenger/MessengerQuickNavMenu'
+import { MessengerDeleteChatDialog } from './messenger/MessengerDeleteChatDialog'
+import { MessengerChatListRowMenuPortal } from './messenger/MessengerChatListRowMenuPortal'
+import { MessengerDmMessageMenuPortal } from './messenger/MessengerDmMessageMenuPortal'
+import { MessengerDirectThreadBody, type MessengerDirectThreadHeadConversation } from './messenger/MessengerDirectThreadBody'
 
 export function DashboardMessengerPage() {
   const toast = useToast()
   const { conversationId: rawConversationId } = useParams<{ conversationId?: string }>()
   const routeConversationId = rawConversationId?.trim() ?? ''
   const [searchParams] = useSearchParams()
+  const location = useLocation()
   const searchConversationId = searchParams.get('chat')?.trim() ?? ''
   const inviteToken = searchParams.get('invite')?.trim() ?? ''
   const urlConversationId = searchConversationId || routeConversationId
   const targetUserId = searchParams.get('with')?.trim() ?? ''
   const targetTitle = searchParams.get('title')?.trim() ?? ''
+  const jumpMsgFromUrl = searchParams.get('msg')?.trim() ?? ''
+  const jumpPostFromUrl = searchParams.get('post')?.trim() ?? ''
   const navigate = useNavigate()
+  useMessengerRouteSegmentQuerySync({
+    routeConversationId,
+    searchConversationId,
+    targetUserId,
+    targetTitle,
+    preserveMessageId: jumpMsgFromUrl || undefined,
+    preserveParentMessageId: jumpPostFromUrl || undefined,
+    navigate,
+  })
   const { signOut, user } = useAuth()
   const { openUserPeek } = useUserPeek()
   const { profile } = useProfile()
+  const { pinnedChatIds, setPinnedChatIds } = useMessengerPinnedChatsSync(user?.id, profile, toast)
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const isMobileMessenger = useMediaQuery('(max-width: 900px)')
   const [soundEnabled, setSoundEnabled] = useState(() => isMessengerSoundEnabled())
@@ -229,153 +218,50 @@ export function DashboardMessengerPage() {
   const [createChannelComments, setCreateChannelComments] = useState<'comments' | 'reactions_only'>('comments')
   const [createBusy, setCreateBusy] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
-  const [invitePreview, setInvitePreview] = useState<InviteConversationPreview | null>(null)
-  const [inviteLoading, setInviteLoading] = useState(false)
-  const [inviteError, setInviteError] = useState<string | null>(null)
   const [inviteJoinBusy, setInviteJoinBusy] = useState(false)
   /** Есть цель для треда (deep link): при view=list всё равно показываем чат, а не только дерево. */
   const hasMobileOpenTarget =
     Boolean(inviteToken.trim()) ||
     Boolean(searchConversationId.trim()) ||
     Boolean(routeConversationId.trim()) ||
-    Boolean(targetUserId.trim())
+    Boolean(targetUserId.trim()) ||
+    Boolean(jumpMsgFromUrl)
   /** Мобильный режим «только дерево» — только если явно view=list и в URL нет chat/invite/with/сегмента диалога */
   const listOnlyMobile =
     isMobileMessenger && searchParams.get('view') === 'list' && !hasMobileOpenTarget
-  const conversationId = inviteToken && invitePreview?.id ? invitePreview.id : urlConversationId
-
-  const [pushUi, setPushUi] = useState<'absent' | 'unconfigured' | 'off' | 'on' | 'denied'>('absent')
-  const [pushBusy, setPushBusy] = useState(false)
-
-  const refreshPushUi = useCallback(async () => {
-    if (!user?.id || !isWebPushApiSupported()) {
-      setPushUi('absent')
-      return
-    }
-    if (!isMessengerWebPushConfigured()) {
-      setPushUi('unconfigured')
-      return
-    }
-    if (Notification.permission === 'denied') {
-      setPushUi('denied')
-      return
-    }
-
-    const reconciled = await reconcileMessengerPushSubscription(user.id)
-    if (!reconciled.ok && reconciled.error) {
-      setError(reconciled.error)
-    }
-    if (reconciled.state === 'denied') {
-      setPushUi('denied')
-      return
-    }
-
-    const subbed = await isMessengerPushSubscribed()
-    setPushUi(subbed ? 'on' : 'off')
-  }, [user?.id])
-
-  useEffect(() => {
-    void refreshPushUi()
-  }, [refreshPushUi])
-
-  const toggleMessengerPush = useCallback(async () => {
-    if (!user?.id || pushUi === 'absent' || pushUi === 'unconfigured' || pushBusy) return
-    unlockAudioContext()
-    if (pushUi === 'denied') return
-    if (pushUi === 'on') {
-      setPushBusy(true)
-      try {
-        const res = await disableMessengerPush(user.id)
-        if (!res.ok) {
-          setError(res.error ?? 'Не удалось отключить push')
-          await refreshPushUi()
-          return
-        }
-        setPushUi('off')
-      } finally {
-        setPushBusy(false)
-      }
-      return
-    }
-    setPushBusy(true)
-    try {
-      const res = await enableMessengerPush(user.id)
-      if (!res.ok) {
-        if (res.error === 'permission_denied') setPushUi('denied')
-        else setError(res.error ?? 'Не удалось включить push')
-        await refreshPushUi()
-        return
-      }
-      setPushUi('on')
-    } finally {
-      setPushBusy(false)
-    }
-  }, [user?.id, pushUi, pushBusy, refreshPushUi])
 
   const [loading, setLoading] = useState(true)
   const [threadLoading, setThreadLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { pushUi, pushBusy, refreshPushUi, toggleMessengerPush } = useMessengerWebPushState(user?.id, setError)
   const [items, setItems] = useState<MessengerConversationSummary[]>([])
-  const [pinnedChatIds, setPinnedChatIds] = useState<string[]>(() => readMessengerPinnedChatIds())
-  /** Не писать закрепы в БД до применения данных профиля — иначе затрём сервер старым localStorage. */
-  const messengerPinsRemoteSyncReadyRef = useRef(false)
+  const { mutedConversationIds, setMutedConversationIds, mutedConversationIdsRef } =
+    useMessengerConversationNotificationMutes(user?.id, items)
+  const {
+    invitePreview,
+    inviteLoading,
+    inviteError,
+    setInviteError,
+  } = useMessengerInvitePreview({ inviteToken, userId: user?.id, items, navigate })
+  const conversationId = inviteToken && invitePreview?.id ? invitePreview.id : urlConversationId
   const [chatListRowMenu, setChatListRowMenu] = useState<{
     item: MessengerConversationSummary
     anchor: { left: number; top: number; right: number; bottom: number }
   } | null>(null)
-  const [mutedConversationIds, setMutedConversationIds] = useState<Set<string>>(new Set())
-  const mutedConversationIdsRef = useRef<Set<string>>(new Set())
-  mutedConversationIdsRef.current = mutedConversationIds
   /** Чаты с отправленной заявкой: держим строку в дереве до появления в ответе сервера. */
   const [pendingJoinSidebarById, setPendingJoinSidebarById] = useState<
     Record<string, MessengerConversationSummary>
   >({})
-  const [conversationAvatarUrlById, setConversationAvatarUrlById] = useState<Record<string, string>>({})
+  const { mergedItems, mergedItemsRef } = useMessengerSidebarMergedItems(
+    items,
+    pendingJoinSidebarById,
+    setPendingJoinSidebarById,
+  )
+  const conversationAvatarUrlById = useMessengerConversationAvatarUrls(items)
   const [activeConversation, setActiveConversation] = useState<MessengerConversationSummary | null>(null)
   const [messages, setMessages] = useState<DirectMessage[]>([])
+  const { senderContactByUserId, setSenderContactByUserId } = useMessengerSenderContacts(user?.id, messages)
   const [draft, setDraft] = useState('')
-
-  useEffect(() => {
-    let active = true
-    if (!user?.id) {
-      setInvitePreview(null)
-      setInviteError(null)
-      setInviteLoading(false)
-      return
-    }
-    const token = inviteToken.trim()
-    if (!token) {
-      setInvitePreview(null)
-      setInviteError(null)
-      setInviteLoading(false)
-      return
-    }
-    setInviteLoading(true)
-    setInviteError(null)
-    void resolveConversationByInvite(token).then((res) => {
-      if (!active) return
-      setInviteLoading(false)
-      if (res.error) {
-        setInvitePreview(null)
-        setInviteError(res.error)
-        return
-      }
-      setInvitePreview(res.data)
-    })
-    return () => {
-      active = false
-    }
-  }, [inviteToken, user?.id])
-
-  /** Участник открыл invite-ссылку: сразу ?chat=id (без /messenger/:id → ?chat), иначе на мобилке гонка — пустой URL и только дерево. */
-  useEffect(() => {
-    const cid = invitePreview?.id?.trim()
-    const token = inviteToken.trim()
-    if (!token || !cid) return
-    if (items.some((i) => i.id === cid)) {
-      navigate(`/dashboard/messenger?chat=${encodeURIComponent(cid)}`, { replace: true })
-    }
-  }, [invitePreview?.id, inviteToken, items, navigate])
 
   const [conversationInfoOpen, setConversationInfoOpen] = useState(false)
   const [conversationInfoId, setConversationInfoId] = useState<string | null>(null)
@@ -452,72 +338,13 @@ export function DashboardMessengerPage() {
   const [activeConversationIsPublicLoading, setActiveConversationIsPublicLoading] = useState(false)
   const msgMenuWrapRef = useRef<HTMLDivElement | null>(null)
   const [messengerImageLightbox, setMessengerImageLightbox] = useState<{ urls: string[]; index: number } | null>(null)
-  const [senderContactByUserId, setSenderContactByUserId] = useState<Record<string, ContactStatus>>({})
   const [pinBusyUserId, setPinBusyUserId] = useState<string | null>(null)
   /** Снятие реакции уже отразили в списке диалогов после RPC — пропускаем дубль из realtime DELETE. */
   const reactionDeleteSidebarSyncedRef = useRef(new Set<string>())
 
-  const messengerPinsServerSig = useMemo(() => {
-    if (!profile || !user?.id || profile.id !== user.id) return ''
-    if (!('messenger_pinned_conversation_ids' in profile)) return 'missing'
-    return JSON.stringify(profile.messenger_pinned_conversation_ids)
-  }, [profile, user?.id])
-
-  useEffect(() => {
-    if (!user?.id || !profile || profile.id !== user.id) {
-      if (!user?.id) messengerPinsRemoteSyncReadyRef.current = false
-      return
-    }
-    const resolved =
-      'messenger_pinned_conversation_ids' in profile
-        ? resolveMessengerPinnedChatsForHydration(profile.messenger_pinned_conversation_ids)
-        : resolveMessengerPinnedChatsForHydration(undefined)
-    setPinnedChatIds(resolved)
-    writeMessengerPinnedChatIds(resolved)
-    messengerPinsRemoteSyncReadyRef.current = true
-  }, [user?.id, profile, messengerPinsServerSig])
-
-  useEffect(() => {
-    writeMessengerPinnedChatIds(pinnedChatIds)
-    if (!user?.id || !messengerPinsRemoteSyncReadyRef.current) return
-    const t = window.setTimeout(() => {
-      void (async () => {
-        const { error } = await supabase
-          .from('users')
-          .update({
-            messenger_pinned_conversation_ids: pinnedChatIds,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', user.id)
-        if (error) {
-          toast.push({
-            tone: 'error',
-            message: `Не удалось сохранить закрепы: ${error.message}`,
-            ms: 4200,
-          })
-        }
-      })()
-    }, 450)
-    return () => window.clearTimeout(t)
-  }, [pinnedChatIds, user?.id, toast])
-
-  useEffect(() => {
-    if (!error) return
-    toast.push({ tone: 'error', message: error, ms: 3800 })
-    setError(null)
-  }, [error, toast])
-
-  useEffect(() => {
-    if (!inviteError) return
-    toast.push({ tone: 'error', message: inviteError, ms: 3800 })
-    setInviteError(null)
-  }, [inviteError, toast])
-
-  useEffect(() => {
-    if (!joinRequestError) return
-    toast.push({ tone: 'error', message: joinRequestError, ms: 3800 })
-    setJoinRequestError(null)
-  }, [joinRequestError, toast])
+  useEphemeralErrorToast(error, setError, toast)
+  useEphemeralErrorToast(inviteError, setInviteError, toast)
+  useEphemeralErrorToast(joinRequestError, setJoinRequestError, toast)
 
   const joinFromInvite = useCallback(async () => {
     const token = inviteToken.trim()
@@ -562,89 +389,15 @@ export function DashboardMessengerPage() {
     }
   }, [inviteJoinBusy, invitePreview, inviteToken, navigate, setItems, setPendingJoinRequest, toast, user?.id])
 
-  const messengerSenderUserIds = useMemo(() => {
-    const s = new Set<string>()
-    for (const m of messages) {
-      const id = m.senderUserId?.trim()
-      if (id && id !== (user?.id ?? '')) s.add(id)
-    }
-    return [...s]
-  }, [messages, user?.id])
-
-  useEffect(() => {
-    let cancelled = false
-    if (!user?.id || messengerSenderUserIds.length === 0) {
-      setSenderContactByUserId({})
-      return
-    }
-    void getContactStatuses(messengerSenderUserIds).then((result) => {
-      if (cancelled || !result.data) return
-      setSenderContactByUserId(result.data)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [user?.id, messengerSenderUserIds.join('|')])
-
   const conversationIdRef = useRef(conversationId)
   conversationIdRef.current = conversationId
   const itemsRef = useRef(items)
   itemsRef.current = items
 
-  const mergedItems = useMemo(() => {
-    const out = [...items]
-    const ids = new Set(items.map((i) => i.id))
-    for (const stub of Object.values(pendingJoinSidebarById)) {
-      if (!ids.has(stub.id)) out.push(stub)
-    }
-    return out
-  }, [items, pendingJoinSidebarById])
-
-  const mergedItemsRef = useRef(mergedItems)
-  mergedItemsRef.current = mergedItems
-
-  useEffect(() => {
-    setPendingJoinSidebarById((prev) => {
-      let changed = false
-      const next = { ...prev }
-      for (const id of Object.keys(prev)) {
-        if (items.some((i) => i.id === id)) {
-          delete next[id]
-          changed = true
-        }
-      }
-      return changed ? next : prev
-    })
-  }, [items])
   const messagesRef = useRef(messages)
   messagesRef.current = messages
   const reactionOpInFlightRef = useRef<Set<string>>(new Set())
 
-  useEffect(() => {
-    let active = true
-    const run = async () => {
-      const missing = (itemsRef.current ?? []).filter(
-        (it) =>
-          (it.kind === 'group' || it.kind === 'channel') &&
-          Boolean(it.avatarThumbPath?.trim() || it.avatarPath?.trim()) &&
-          !conversationAvatarUrlById[it.id],
-      )
-      if (missing.length === 0) return
-      for (const it of missing) {
-        const path = (it.avatarThumbPath?.trim() || it.avatarPath?.trim() || '').trim()
-        if (!path) continue
-        const signed = await getMessengerImageSignedUrl(path, 3600)
-        if (!active) return
-        if (signed.url) {
-          setConversationAvatarUrlById((prev) => (prev[it.id] ? prev : { ...prev, [it.id]: signed.url! }))
-        }
-      }
-    }
-    void run()
-    return () => {
-      active = false
-    }
-  }, [items, conversationAvatarUrlById])
   const messagesScrollRef = useRef<HTMLDivElement | null>(null)
   const dmJumpKey = `${conversationId}:${messages.length}`
   const { showJump: showDmJump, jumpToBottom: jumpDmBottom } = useMessengerJumpToBottom(messagesScrollRef, dmJumpKey)
@@ -657,13 +410,9 @@ export function DashboardMessengerPage() {
   const composerEmojiWrapRef = useRef<HTMLDivElement | null>(null)
   const photoInputRef = useRef<HTMLInputElement | null>(null)
   const olderFetchInFlightRef = useRef(false)
-  const pendingJumpOlderAttemptsRef = useRef(0)
   const prevThreadIdForClearRef = useRef<string | null>(null)
-  const prevMessagesLenForScrollRef = useRef(0)
   /** Уже загруженные сообщения для этого id — не дергать API при повторном срабатывании эффекта (напр. loading). */
   const lastFetchedThreadIdRef = useRef<string | null>(null)
-  /** После первой успешной загрузки списка — повторный bootstrap при «Назад к чатам» не нужен */
-  const listLoadedOnceRef = useRef(false)
   const markReadDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const updateMessengerScrollPinned = useCallback(() => {
@@ -699,15 +448,6 @@ export function DashboardMessengerPage() {
     })
   }, [])
 
-  const buildMessengerUrl = (chatId?: string, withUserId?: string, withTitle?: string) => {
-    const params = new URLSearchParams()
-    if (chatId) params.set('chat', chatId)
-    if (withUserId) params.set('with', withUserId)
-    if (withTitle) params.set('title', withTitle)
-    const qs = params.toString()
-    return qs ? `/dashboard/messenger?${qs}` : '/dashboard/messenger'
-  }
-
   const navigateToForwardSource = useCallback(
     (forward: MessengerForwardMeta) => {
       const scid = forward.source_conversation_id?.trim() ?? ''
@@ -731,385 +471,56 @@ export function DashboardMessengerPage() {
     navigate(buildMessengerUrl(nextConversationId), { replace: false })
   }
 
-  useEffect(() => {
-    if (!routeConversationId || searchConversationId) return
-    navigate(buildMessengerUrl(routeConversationId, targetUserId || undefined, targetTitle || undefined), {
-      replace: true,
-    })
-  }, [navigate, routeConversationId, searchConversationId, targetTitle, targetUserId])
-
-  useEffect(() => {
-    let active = true
-    const run = async () => {
-      if (!user?.id) {
-        listLoadedOnceRef.current = false
-        lastFetchedThreadIdRef.current = null
-        prevThreadIdForClearRef.current = null
-        if (active) {
-          setItems([])
-          setActiveConversation(null)
-          setMessages([])
-          setLoading(false)
-        }
-        return
-      }
-
-      if (isMobileMessenger) {
-        const spBoot = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
-        const hasChatBoot = Boolean(spBoot.get('chat')?.trim())
-        const hasWithBoot = Boolean(spBoot.get('with')?.trim())
-        const hasInviteBoot = Boolean(spBoot.get('invite')?.trim())
-        const hasRouteConversationBoot = Boolean(routeConversationId.trim())
-        // Не уводить на ?view=list, если уже есть цель: invite, chat, with или /messenger/:id в пути.
-        if (
-          !hasChatBoot &&
-          !hasWithBoot &&
-          !hasInviteBoot &&
-          !hasRouteConversationBoot &&
-          spBoot.get('view') !== 'list'
-        ) {
-          navigate('/dashboard/messenger?view=list', { replace: true })
-          if (active) setLoading(false)
-          return
-        }
-      }
-
-      const treeOnlyReturn =
-        isMobileMessenger &&
-        searchParams.get('view') === 'list' &&
-        listLoadedOnceRef.current &&
-        !hasMobileOpenTarget
-      if (treeOnlyReturn) {
-        if (active) {
-          setLoading(false)
-          setError(null)
-        }
-        return
-      }
-
-      if (!listLoadedOnceRef.current || Boolean(targetUserId?.trim())) {
-        setLoading(true)
-      }
-      setError(null)
-
-      const ensured = targetUserId
-        ? await ensureDirectConversationWithUser(targetUserId, targetTitle || null)
-        : await ensureSelfDirectConversation()
-
-      if (!active) return
-      if (ensured.error) {
-        setError(ensured.error)
-        setLoading(false)
-        return
-      }
-
-      const listRes = await listMessengerConversations()
-      if (!active) return
-      if (listRes.error) {
-        setError(listRes.error)
-        setItems([])
-        setLoading(false)
-        return
-      }
-
-      const nextItems = listRes.data ?? []
-      setItems(nextItems)
-      listLoadedOnceRef.current = true
-
-      const fromUrl = conversationIdRef.current.trim()
-      const forTargetUser =
-        targetUserId.trim() && typeof ensured.data === 'string' && ensured.data.trim() ? ensured.data.trim() : ''
-      const inviteTok = inviteToken.trim()
-      const holdMessengerInvite =
-        Boolean(inviteTok) && !invitePreview?.id?.trim() && !inviteError
-      const defaultPick = holdMessengerInvite ? '' : pickDefaultConversationId(nextItems, ensured.data) || ''
-      const targetConversationId = fromUrl || forTargetUser || defaultPick || ''
-
-      const viewAtNavigate = new URLSearchParams(window.location.search).get('view')
-      const viewListOnly = isMobileMessenger && viewAtNavigate === 'list'
-      if (
-        !conversationIdRef.current.trim() &&
-        targetConversationId &&
-        !viewListOnly &&
-        !holdMessengerInvite
-      ) {
-        navigate(buildMessengerUrl(targetConversationId, targetUserId || undefined, targetTitle || undefined), {
-          replace: true,
-        })
-      }
-
-      if (!targetConversationId) {
-        setActiveConversation(null)
-        setMessages([])
-        setLoading(false)
-        return
-      }
-
-      setLoading(false)
-    }
-
-    void run()
-    return () => {
-      active = false
-    }
-  }, [
-    hasMobileOpenTarget,
-    inviteError,
-    invitePreview?.id,
-    inviteToken,
+  useMessengerListBootstrap({
+    userId: user?.id,
     isMobileMessenger,
     navigate,
     routeConversationId,
     searchConversationId,
     searchParams,
-    targetTitle,
+    hasMobileOpenTarget,
+    inviteToken,
+    invitePreviewId: invitePreview?.id,
+    inviteError,
     targetUserId,
-    user?.id,
-  ])
+    targetTitle,
+    conversationIdRef,
+    lastFetchedThreadIdRef,
+    prevThreadIdForClearRef,
+    setItems,
+    setActiveConversation,
+    setMessages,
+    setLoading,
+    setError,
+  })
 
-  useEffect(() => {
-    const uid = user?.id?.trim() ?? ''
-    if (!uid) {
-      setMutedConversationIds(new Set())
-      return
-    }
-    const ids = items.map((i) => i.id).filter(Boolean)
-    if (ids.length === 0) {
-      setMutedConversationIds(new Set())
-      return
-    }
-    let cancelled = false
-    void getMyConversationNotificationMutes(ids).then((res) => {
-      if (cancelled) return
-      if (res.error || !res.data) return
-      const next = new Set<string>()
-      for (const [cid, muted] of Object.entries(res.data)) {
-        if (muted) next.add(cid)
-      }
-      setMutedConversationIds(next)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [user?.id, items])
-
-  useEffect(() => {
-    const run = async () => {
-      if (!user?.id || loading) return
-      if (listOnlyMobile) {
-        lastFetchedThreadIdRef.current = null
-        setThreadLoading(false)
-        setActiveConversation(null)
-        setMessages([])
-        setHasMoreOlder(false)
-        setMessageMenu(null)
-        return
-      }
-
-      const token = inviteToken.trim()
-      const preview = invitePreview
-      if (token && !preview?.id && !inviteError) {
-        setThreadLoading(inviteLoading)
-        setError(null)
-        if (inviteLoading) return
-      }
-      if (token && preview?.id && !mergedItemsRef.current.some((i) => i.id === preview.id && !i.joinRequestPending)) {
-        setError(null)
-        setThreadLoading(false)
-        setActiveConversation({
-          id: preview.id,
-          kind: preview.kind,
-          title: preview.title,
-          createdAt: new Date(0).toISOString(),
-          lastMessageAt: null,
-          lastMessagePreview: null,
-          messageCount: 0,
-          unreadCount: 0,
-          isPublic: preview.isPublic,
-          publicNick: preview.publicNick,
-          avatarPath: preview.avatarPath,
-          avatarThumbPath: preview.avatarThumbPath,
-          memberCount: preview.memberCount,
-          ...(preview.kind === 'channel'
-            ? {
-                postingMode: preview.postingMode ?? 'admins_only',
-                commentsMode: preview.commentsMode ?? 'everyone',
-              }
-            : {}),
-        })
-        setMessages([])
-        setHasMoreOlder(false)
-        setReplyTo(null)
-        setEditingMessageId(null)
-        setComposerEmojiOpen(false)
-        setMessageMenu(null)
-        return
-      }
-      const holdInviteThreadPick =
-        Boolean(inviteToken.trim()) && !invitePreview?.id?.trim() && !inviteError
-      const startedTarget =
-        conversationId.trim() ||
-        (holdInviteThreadPick ? '' : pickDefaultConversationId(mergedItemsRef.current, null) || '')
-      if (!startedTarget) {
-        lastFetchedThreadIdRef.current = null
-        setActiveConversation(null)
-        setMessages([])
-        setHasMoreOlder(false)
-        setThreadLoading(false)
-        setMessageMenu(null)
-        return
-      }
-
-      const startedSummary = mergedItemsRef.current.find((i) => i.id === startedTarget) ?? null
-
-      const inviteWait =
-        inviteToken.trim() &&
-        startedTarget === urlConversationId.trim() &&
-        (inviteLoading || !invitePreview?.id) &&
-        !mergedItemsRef.current.some((i) => i.id === startedTarget && !i.joinRequestPending)
-      if (inviteWait) {
-        setError(null)
-        setThreadLoading(inviteLoading)
-        return
-      }
-      const pendingPlaceholder =
-        !startedSummary &&
-        pendingJump?.conversationId.trim() === startedTarget &&
-        (pendingJump.conversationKind === 'group' || pendingJump.conversationKind === 'channel')
-          ? {
-              id: startedTarget,
-              kind: pendingJump.conversationKind,
-              title:
-                pendingJump.sourceTitle?.trim() ||
-                (pendingJump.conversationKind === 'channel' ? 'Канал' : 'Группа'),
-              createdAt: new Date(0).toISOString(),
-              lastMessageAt: null,
-              lastMessagePreview: null,
-              messageCount: 0,
-              unreadCount: 0,
-              isPublic: true,
-              publicNick: null,
-              avatarPath: null,
-              avatarThumbPath: null,
-              memberCount: 0,
-              ...(pendingJump.conversationKind === 'channel'
-                ? { postingMode: 'admins_only' as const, commentsMode: 'everyone' as const }
-                : {}),
-            }
-          : null
-      const nonDirectSummary = startedSummary ?? pendingPlaceholder
-      if (nonDirectSummary && nonDirectSummary.kind !== 'direct') {
-        setError(null)
-        setActiveConversation(nonDirectSummary)
-        setThreadLoading(false)
-        lastFetchedThreadIdRef.current = null
-        // direct-only state: очищаем, чтобы не мешало UI других типов.
-        setMessages([])
-        setHasMoreOlder(false)
-        setReplyTo(null)
-        setEditingMessageId(null)
-        setComposerEmojiOpen(false)
-        setMessageMenu(null)
-        return
-      }
-
-      const prevOpenedId = prevThreadIdForClearRef.current
-      const conversationSwitched = prevOpenedId !== startedTarget
-      if (conversationSwitched) {
-        prevThreadIdForClearRef.current = startedTarget
-        lastFetchedThreadIdRef.current = null
-        setMessages([])
-        setHasMoreOlder(false)
-        setReplyTo(null)
-        setEditingMessageId(null)
-        setComposerEmojiOpen(false)
-        setMessageMenu(null)
-      }
-
-      if (lastFetchedThreadIdRef.current === startedTarget) {
-        void markDirectConversationRead(startedTarget)
-        setItems((prev) =>
-          prev.map((item) =>
-            item.id === startedTarget ? { ...item, unreadCount: 0 } : item,
-          ),
-        )
-        setActiveConversation((prev) =>
-          prev && prev.id === startedTarget ? { ...prev, unreadCount: 0 } : prev,
-        )
-        requestMessengerUnreadRefresh()
-        setThreadLoading(false)
-        return
-      }
-
-      setThreadLoading(true)
-
-      try {
-        const [conversationRes, messagesRes] = await Promise.all([
-          getDirectConversationForUser(startedTarget),
-          listDirectMessagesPage(startedTarget, { limit: DM_PAGE_SIZE }),
-        ])
-
-        const wantNow =
-          conversationIdRef.current.trim() || pickDefaultConversationId(mergedItemsRef.current, null) || ''
-        if (wantNow !== startedTarget) return
-
-        if (conversationRes.error) {
-          setError(conversationRes.error)
-          setActiveConversation(null)
-          setMessages([])
-          setHasMoreOlder(false)
-          lastFetchedThreadIdRef.current = null
-        } else if (!conversationRes.data) {
-          const looksLikeGroupOrChannelWait =
-            inviteToken.trim() &&
-            startedTarget === urlConversationId.trim() &&
-            (inviteLoading || !invitePreview?.id)
-          if (!looksLikeGroupOrChannelWait) {
-            setError('Чат не найден или у вас нет к нему доступа.')
-          }
-          setActiveConversation(null)
-          setMessages([])
-          setHasMoreOlder(false)
-          lastFetchedThreadIdRef.current = null
-        } else if (messagesRes.error) {
-          setError(messagesRes.error)
-          setActiveConversation(
-            conversationRes.data ? { ...conversationRes.data, kind: 'direct', unreadCount: 0 } : null,
-          )
-          setMessages([])
-          setHasMoreOlder(false)
-          lastFetchedThreadIdRef.current = null
-        } else {
-          void markDirectConversationRead(startedTarget)
-          setActiveConversation({ ...conversationRes.data, kind: 'direct', unreadCount: 0 })
-          setMessages(messagesRes.data ?? [])
-          setHasMoreOlder(messagesRes.hasMoreOlder)
-          lastFetchedThreadIdRef.current = startedTarget
-          setItems((prev) =>
-            prev.map((item) =>
-              item.id === startedTarget ? { ...item, unreadCount: 0 } : item,
-            ),
-          )
-          requestMessengerUnreadRefresh()
-        }
-      } finally {
-        setThreadLoading(false)
-      }
-    }
-
-    void run()
-  }, [
+  useMessengerThreadBootstrap({
+    userId: user?.id,
+    loading,
+    listOnlyMobile,
     conversationId,
+    urlConversationId,
+    inviteToken,
+    invitePreview,
     inviteError,
     inviteLoading,
-    invitePreview,
-    inviteToken,
-    listOnlyMobile,
-    loading,
+    pendingJump,
     pendingJoinSidebarById,
-    urlConversationId,
-    user?.id,
-  ])
+    mergedItemsRef,
+    conversationIdRef,
+    lastFetchedThreadIdRef,
+    prevThreadIdForClearRef,
+    setThreadLoading,
+    setError,
+    setActiveConversation,
+    setMessages,
+    setHasMoreOlder,
+    setReplyTo,
+    setEditingMessageId,
+    setComposerEmojiOpen,
+    setMessageMenu,
+    setItems,
+  })
 
   const activeConversationId = listOnlyMobile ? '' : conversationId || activeConversation?.id || ''
   const inviteJoinMode = Boolean(
@@ -1130,137 +541,47 @@ export function DashboardMessengerPage() {
     return null
   }, [activeConversationId, mergedItems, activeConversation])
 
-  useEffect(() => {
-    let active = true
-    const cid = activeConversationId.trim()
-    if (!user?.id || !cid) {
-      setActiveConversationRole(null)
-      setPendingJoinRequest(null)
-      return
-    }
+  useMessengerActiveThreadMembership({
+    activeConversationId,
+    userId: user?.id,
+    setActiveConversationRole,
+    setActiveConversationRoleLoading,
+    setPendingJoinRequest,
+    setJoinRequestError,
+  })
 
-    setActiveConversationRoleLoading(true)
-    setActiveConversationRole(null)
-    setPendingJoinRequest(null)
+  useMessengerStaffJoinQueue({
+    activeConversationId,
+    userId: user?.id,
+    activeConversationRole,
+    activeOpenThreadKind,
+    setConversationJoinRequests,
+    setJoinRequestsLoading,
+    setConversationMembers,
+    setMembersLoading,
+    setJoinRequestError,
+  })
 
-    void Promise.all([
-      supabase
-        .from('chat_conversation_members')
-        .select('role')
-        .eq('conversation_id', cid)
-        .eq('user_id', user.id)
-        .maybeSingle(),
-      hasPendingConversationJoinRequest(cid),
-    ]).then(([memberRes, pendingRes]) => {
-      if (!active) return
-      if (!memberRes.error && memberRes.data) {
-        const role = typeof (memberRes.data as { role?: unknown })?.role === 'string'
-          ? String((memberRes.data as { role: string }).role).trim()
-          : null
-        setActiveConversationRole(role)
-      } else {
-        setActiveConversationRole(null)
-      }
-      if (pendingRes.error) {
-        setPendingJoinRequest(null)
-        setJoinRequestError(pendingRes.error)
-      } else {
-        setPendingJoinRequest(Boolean(pendingRes.data))
-      }
-    }).finally(() => {
-      if (active) setActiveConversationRoleLoading(false)
-    })
+  useMessengerPendingPhotosReset(activeConversationId, setPendingMessengerPhotos)
+  useMessengerPinnedBottomReset(activeConversationId, listOnlyMobile, messengerPinnedToBottomRef)
+  useMessengerLastOpenPersist(activeConversationId, listOnlyMobile)
+  useMessengerResizeScrollTailCatchup({
+    activeConversationId,
+    listOnlyMobile,
+    threadLoading,
+    messagesContentRef,
+    messagesScrollRef,
+    messengerPinnedToBottomRef,
+  })
 
-    return () => {
-      active = false
-    }
-  }, [activeConversationId, user?.id])
-
-  useEffect(() => {
-    setPendingMessengerPhotos((prev) => {
-      for (const p of prev) URL.revokeObjectURL(p.previewUrl)
-      return []
-    })
-  }, [activeConversationId])
-
-  useEffect(() => {
-    if (
-      !user?.id ||
-      !activeConversationId.trim() ||
-      !activeConversationRole ||
-      !MESSENGER_JOIN_REQUEST_MANAGER_ROLES.has(activeConversationRole) ||
-      (activeOpenThreadKind !== 'group' && activeOpenThreadKind !== 'channel')
-    ) {
-      setConversationJoinRequests([])
-      setConversationMembers([])
-      return
-    }
-
-    let active = true
-    setJoinRequestsLoading(true)
-    setConversationJoinRequests([])
-    setMembersLoading(true)
-    setConversationMembers([])
-
-    void listConversationJoinRequests(activeConversationId.trim()).then((res) => {
-      if (!active) return
-      if (res.error) {
-        setJoinRequestError(res.error)
-        setConversationJoinRequests([])
-      } else {
-        setConversationJoinRequests(res.data ?? [])
-      }
-    }).finally(() => {
-      if (active) setJoinRequestsLoading(false)
-    })
-
-    void listConversationMembersForManagement(activeConversationId.trim()).then((res) => {
-      if (!active) return
-      if (res.error) {
-        setConversationMembers([])
-      } else {
-        setConversationMembers(res.data ?? [])
-      }
-    }).finally(() => {
-      if (active) setMembersLoading(false)
-    })
-
-    return () => {
-      active = false
-    }
-  }, [activeConversationId, activeConversationRole, activeOpenThreadKind, user?.id])
-
-  useEffect(() => {
-    messengerPinnedToBottomRef.current = true
-  }, [activeConversationId, listOnlyMobile])
-
-  useEffect(() => {
-    if (listOnlyMobile || !activeConversationId) return
-    try {
-      localStorage.setItem(MESSENGER_LAST_OPEN_KEY, activeConversationId)
-    } catch {
-      /* ignore */
-    }
-  }, [activeConversationId, listOnlyMobile])
-
-  /** Рост ленты без нового сообщения (decode картинки, смена «Загрузка…» на img) — догоняем низ, если пользователь был у хвоста. */
-  useEffect(() => {
-    if (listOnlyMobile || typeof ResizeObserver === 'undefined') return
-    const root = messagesContentRef.current
-    if (!root || threadLoading) return
-
-    const ro = new ResizeObserver(() => {
-      if (!messengerPinnedToBottomRef.current) return
-      const el = messagesScrollRef.current
-      if (!el) return
-      requestAnimationFrame(() => {
-        if (!messengerPinnedToBottomRef.current) return
-        el.scrollTop = el.scrollHeight
-      })
-    })
-    ro.observe(root)
-    return () => ro.disconnect()
-  }, [activeConversationId, listOnlyMobile, threadLoading])
+  const { adjustMobileComposerHeight } = useMobileMessengerComposerHeight({
+    isMobileMessenger,
+    draft,
+    activeConversationId,
+    editingMessageId,
+    threadLoading,
+    composerTextareaRef,
+  })
 
   /** На мобильных список на весь экран только без открытого чата и без deep link (?chat / invite / with / :id). */
   const showListPane =
@@ -1271,300 +592,53 @@ export function DashboardMessengerPage() {
     Boolean((activeConversationId || '').trim()) ||
     hasMobileOpenTarget
 
-  /** Новые сообщения в открытом треде без полной перезагрузки списка */
-  useEffect(() => {
-    const uid = user?.id
-    const convId = activeConversationId
-    if (!uid || !convId || listOnlyMobile) return
-    const kind = itemsRef.current.find((i) => i.id === convId)?.kind ?? 'direct'
-    if (kind !== 'direct') return
+  useMessengerDirectThreadRealtime({
+    userId: user?.id,
+    activeConversationId,
+    listOnlyMobile,
+    itemsRef,
+    setItems,
+    setActiveConversation,
+    setMessages,
+    bumpScrollIfPinned,
+    mergeLatestPageIntoMessages,
+    markReadDebounceTimerRef,
+    mutedConversationIdsRef,
+    reactionDeleteSidebarSyncedRef,
+  })
 
-    let sawSubscribed = false
+  useMessengerBackgroundMessageSidebar({
+    userId: user?.id,
+    activeConversationId,
+    listOnlyMobile,
+    mutedConversationIdsRef,
+    setItems,
+  })
 
-    const bumpSidebarForInsert = (msg: DirectMessage) => {
-      if (msg.kind === 'reaction') {
-        setItems((prev) =>
-          prev.map((item) =>
-            item.id === convId
-              ? {
-                  ...item,
-                  lastMessageAt: msg.createdAt,
-                  messageCount: item.messageCount + 1,
-                  unreadCount: 0,
-                }
-              : item,
-          ),
-        )
-        setActiveConversation((prev) =>
-          prev && prev.id === convId
-            ? {
-                ...prev,
-                lastMessageAt: msg.createdAt,
-                messageCount: prev.messageCount + 1,
-                unreadCount: 0,
-              }
-            : prev,
-        )
-        return
-      }
-      const preview = previewTextForDirectMessageTail(msg)
-      setItems((prev) =>
-        prev.map((item) =>
-          item.id === convId
-            ? {
-                ...item,
-                lastMessageAt: msg.createdAt,
-                lastMessagePreview: preview,
-                messageCount: item.messageCount + 1,
-                unreadCount: 0,
-              }
-            : item,
-        ),
-      )
-      setActiveConversation((prev) =>
-        prev && prev.id === convId
-          ? {
-              ...prev,
-              lastMessageAt: msg.createdAt,
-              lastMessagePreview: preview,
-              messageCount: prev.messageCount + 1,
-              unreadCount: 0,
-            }
-          : prev,
-      )
-    }
+  useMessengerSelfMembershipDeleteRealtime({
+    userId: user?.id,
+    navigate,
+    conversationIdRef,
+    setItems,
+    setPendingJoinSidebarById,
+    setMessages,
+    setActiveConversation,
+  })
 
-    const channel = supabase
-      .channel(`dm-thread:${convId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `conversation_id=eq.${convId}`,
-        },
-        (payload) => {
-          const row = payload.new as Record<string, unknown>
-          if (!row?.id) return
-          const msg = mapDirectMessageFromRow(row)
-          const isOwn = msg.senderUserId === uid
-          const skipSidebarBump = isOwn && (msg.kind === 'text' || msg.kind === 'reaction' || msg.kind === 'image')
-
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === msg.id)) return prev
-            let base = prev
-            if (isOwn) {
-              const i = prev.findIndex(
-                (m) =>
-                  m.id.startsWith('local-') &&
-                  m.senderUserId === msg.senderUserId &&
-                  m.body === msg.body &&
-                  m.kind === msg.kind &&
-                  (m.meta?.react_to ?? '') === (msg.meta?.react_to ?? '') &&
-                  (m.replyToMessageId ?? '') === (msg.replyToMessageId ?? '') &&
-                  JSON.stringify(m.meta ?? null) === JSON.stringify(msg.meta ?? null),
-              )
-              if (i !== -1) base = [...prev.slice(0, i), ...prev.slice(i + 1)]
-            }
-            const next = [...base, msg]
-            next.sort(sortDirectMessagesChrono)
-            return next
-          })
-
-          queueMicrotask(() => bumpScrollIfPinned())
-
-          if (!skipSidebarBump) bumpSidebarForInsert(msg)
-          /* Пока тред открыт: входящие от других не должны увеличивать непрочитанные (сервер + бейдж в шапке). */
-          if (!isOwn) {
-            if (markReadDebounceTimerRef.current) clearTimeout(markReadDebounceTimerRef.current)
-            markReadDebounceTimerRef.current = setTimeout(() => {
-              markReadDebounceTimerRef.current = null
-              void markDirectConversationRead(convId)
-            }, MARK_DIRECT_READ_DEBOUNCE_MS)
-            /* Звук — только если вкладка не активна (пользователь видит переписку — достаточно). */
-            if (document.hidden && !mutedConversationIdsRef.current.has(convId)) playMessageSound()
-          }
-        },
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `conversation_id=eq.${convId}`,
-        },
-        (payload) => {
-          const oldRow = payload.old as Record<string, unknown>
-          const id = typeof oldRow?.id === 'string' ? oldRow.id : ''
-          if (!id) return
-
-          setMessages((prev) => prev.filter((m) => m.id !== id))
-
-          if (reactionDeleteSidebarSyncedRef.current.has(id)) {
-            reactionDeleteSidebarSyncedRef.current.delete(id)
-            return
-          }
-
-          setItems((prev) =>
-            prev.map((item) =>
-              item.id === convId
-                ? { ...item, messageCount: Math.max(0, item.messageCount - 1) }
-                : item,
-            ),
-          )
-          setActiveConversation((prev) =>
-            prev && prev.id === convId
-              ? { ...prev, messageCount: Math.max(0, prev.messageCount - 1) }
-              : prev,
-          )
-        },
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `conversation_id=eq.${convId}`,
-        },
-        (payload) => {
-          const row = payload.new as Record<string, unknown>
-          if (!row?.id) return
-          const msg = mapDirectMessageFromRow(row)
-          setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)))
-          queueMicrotask(() => bumpScrollIfPinned())
-        },
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          sawSubscribed = true
-          return
-        }
-        if (!sawSubscribed || (status !== 'CHANNEL_ERROR' && status !== 'TIMED_OUT')) return
-        void (async () => {
-          const res = await listDirectMessagesPage(convId, { limit: DM_PAGE_SIZE })
-          if (res.error || !res.data?.length) return
-          mergeLatestPageIntoMessages(convId, res.data)
-          bumpScrollIfPinned()
-        })()
-      })
-
-    return () => {
-      if (markReadDebounceTimerRef.current) {
-        clearTimeout(markReadDebounceTimerRef.current)
-        markReadDebounceTimerRef.current = null
-        void markDirectConversationRead(convId)
-      }
-      void supabase.removeChannel(channel)
-    }
-  }, [activeConversationId, listOnlyMobile, user?.id, bumpScrollIfPinned, mergeLatestPageIntoMessages])
-
-  /**
-   * Фоновые диалоги: обновляем sidebar-превью и счётчик когда приходит сообщение
-   * в конверсацию, которая сейчас не открыта (или открыт список без треда).
-   */
-  useEffect(() => {
-    const uid = user?.id
-    if (!uid) return
-
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<MessengerBgMessageDetail>).detail
-      const { conversationId: cid, senderUserId, kind, body, createdAt, replyToMessageId } = detail
-
-      // Если тред открыт — per-thread subscription уже обработал это сообщение
-      if (cid === activeConversationId && !listOnlyMobile) return
-      // Реакции не меняют превью
-      if (kind === 'reaction') return
-
-      setItems((prev) => {
-        const idx = prev.findIndex((item) => item.id === cid)
-        if (idx === -1) {
-          queueMicrotask(() => {
-            void listMessengerConversations().then((r) => {
-              if (!r.error && r.data) setItems(r.data)
-            })
-          })
-          return prev
-        }
-        return prev.map((item) =>
-          item.id === cid
-            ? {
-                ...item,
-                lastMessageAt: createdAt,
-                lastMessagePreview:
-                  item.kind === 'channel' && replyToMessageId ? item.lastMessagePreview : body,
-                unreadCount: senderUserId !== uid ? item.unreadCount + 1 : item.unreadCount,
-                messageCount: item.messageCount + 1,
-              }
-            : item,
-        )
-      })
-
-      if (senderUserId !== uid) {
-        if (mutedConversationIdsRef.current.has(cid)) return
-        playMessageSound()
-      }
-    }
-
-    window.addEventListener(MESSENGER_BG_MESSAGE_EVENT, handler)
-    return () => window.removeEventListener(MESSENGER_BG_MESSAGE_EVENT, handler)
-  }, [activeConversationId, listOnlyMobile, user?.id])
-
-  /** Ушли из чата (в т.ч. взаимное скрытие контакта → удаление ЛС): убрать из дерева без перезагрузки. */
-  useEffect(() => {
-    const uid = user?.id?.trim() ?? ''
-    if (!uid) return
-    const channel = supabase
-      .channel(`messenger-member-self-delete:${uid}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'chat_conversation_members',
-          filter: `user_id=eq.${uid}`,
-        },
-        (payload) => {
-          const oldRow = payload.old as Record<string, unknown>
-          const raw = oldRow?.conversation_id
-          const convId = typeof raw === 'string' ? raw.trim() : raw != null ? String(raw).trim() : ''
-          if (!convId) return
-          setItems((prev) => prev.filter((i) => i.id !== convId))
-          setPendingJoinSidebarById((prev) => {
-            if (!prev[convId]) return prev
-            const next = { ...prev }
-            delete next[convId]
-            return next
-          })
-          requestMessengerUnreadRefresh()
-          if (conversationIdRef.current.trim() === convId) {
-            setMessages([])
-            setActiveConversation(null)
-            navigate('/dashboard/messenger?view=list', { replace: true })
-          }
-        },
-      )
-      .subscribe()
-
-    return () => {
-      void supabase.removeChannel(channel)
-    }
-  }, [navigate, user?.id])
-
-  const prevThreadLoadingRef = useRef(false)
-  useLayoutEffect(() => {
-    const wasLoading = prevThreadLoadingRef.current
-    prevThreadLoadingRef.current = threadLoading
-    if (wasLoading && !threadLoading && !listOnlyMobile && messages.length > 0) {
-      const el = messagesScrollRef.current
-      if (el) {
-        el.scrollTop = el.scrollHeight
-        messengerPinnedToBottomRef.current = true
-      }
-    }
-  }, [threadLoading, listOnlyMobile, messages.length])
+  useMessengerScrollAfterThreadLoad({
+    threadLoading,
+    listOnlyMobile,
+    messagesLength: messages.length,
+    messagesScrollRef,
+    messengerPinnedToBottomRef,
+  })
+  useMessengerScrollOnMessageGrowth({
+    messagesLength: messages.length,
+    threadLoading,
+    loadingOlder,
+    messagesScrollRef,
+    messengerPinnedToBottomRef,
+  })
 
   const loadOlderMessages = useCallback(async () => {
     const convId = listOnlyMobile ? '' : conversationId.trim()
@@ -1635,23 +709,6 @@ export function DashboardMessengerPage() {
     lastOlderScrollInvokeRef.current = now
     void loadOlderMessages()
   }, [threadLoading, loadingOlder, hasMoreOlder, loadOlderMessages, updateMessengerScrollPinned])
-
-  useEffect(() => {
-    if (loadingOlder || threadLoading) {
-      prevMessagesLenForScrollRef.current = messages.length
-      return
-    }
-    const el = messagesScrollRef.current
-    const prevLen = prevMessagesLenForScrollRef.current
-    const grew = messages.length > prevLen
-    prevMessagesLenForScrollRef.current = messages.length
-    if (!el || !grew) return
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < MESSENGER_BOTTOM_PIN_PX
-    if (nearBottom) {
-      el.scrollTop = el.scrollHeight
-      messengerPinnedToBottomRef.current = true
-    }
-  }, [messages.length, threadLoading, loadingOlder])
 
   const insertEmojiInDraft = useCallback(
     (emoji: string) => {
@@ -1951,53 +1008,47 @@ export function DashboardMessengerPage() {
   const threadHeadConversation =
     sortedItems.find((i) => i.id === activeConversationId) ?? activeConversation
 
+  /** Шаринг: `?msg=` / `post=` → скролл к посту/комментарию; параметры убираем из адреса после применения. */
   useEffect(() => {
-    let active = true
-    const cid = activeConversationId.trim()
-    if (!user?.id || !cid) {
-      setActiveConversationIsPublic(null)
-      setActiveConversationIsPublicLoading(false)
-      return
-    }
-    if (!threadHeadConversation || (threadHeadConversation.kind !== 'group' && threadHeadConversation.kind !== 'channel')) {
-      setActiveConversationIsPublic(null)
-      setActiveConversationIsPublicLoading(false)
-      return
-    }
-    setActiveConversationIsPublicLoading(true)
-    supabase
-      .from('chat_conversations')
-      .select('kind, group_is_public, channel_is_public')
-      .eq('id', cid)
-      .maybeSingle()
-      .then(
-        ({ data, error }) => {
-          if (!active) return
-          if (error || !data) {
-            setActiveConversationIsPublic(null)
-            return
-          }
-          const row = data as { kind?: unknown; group_is_public?: unknown; channel_is_public?: unknown }
-          const kind = typeof row.kind === 'string' ? row.kind : ''
-          const isPublic = kind === 'channel' ? row.channel_is_public === true : row.group_is_public === true
-          setActiveConversationIsPublic(Boolean(isPublic))
-        },
-        () => {
-          if (!active) return
-          setActiveConversationIsPublic(null)
-        },
-      )
-      .then(() => {
-        if (!active) return
-        setActiveConversationIsPublicLoading(false)
-      }, () => {
-        if (!active) return
-        setActiveConversationIsPublicLoading(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [activeConversationId, threadHeadConversation?.kind, user?.id])
+    const msg = searchParams.get('msg')?.trim() ?? ''
+    if (!msg) return
+    const post = searchParams.get('post')?.trim() ?? ''
+    const cid = conversationId.trim()
+    if (!cid || activeConversationId.trim() !== cid) return
+    const kind = threadHeadConversation?.kind
+    if (!kind) return
+
+    setPendingJump({
+      conversationId: cid,
+      messageId: msg,
+      parentMessageId: post || null,
+      ...(kind === 'direct' ? {} : { conversationKind: kind }),
+      sourceTitle: threadHeadConversation?.title,
+      sourceAvatarUrl: null,
+    })
+
+    const p = new URLSearchParams(searchParams)
+    p.delete('msg')
+    p.delete('post')
+    const qs = p.toString()
+    navigate({ pathname: location.pathname, search: qs ? `?${qs}` : '' }, { replace: true })
+  }, [
+    activeConversationId,
+    conversationId,
+    location.pathname,
+    navigate,
+    searchParams,
+    threadHeadConversation?.kind,
+    threadHeadConversation?.title,
+  ])
+
+  useMessengerActiveConversationPublic({
+    userId: user?.id,
+    activeConversationId,
+    threadHeadConversation,
+    setActiveConversationIsPublic,
+    setActiveConversationIsPublicLoading,
+  })
 
   const isMemberOfActiveConversation = useMemo(
     () => Boolean(activeConversationId.trim() && items.some((i) => i.id === activeConversationId)),
@@ -2286,38 +1337,13 @@ export function DashboardMessengerPage() {
     return filteredByKind.filter((item) => itemMatchesMessengerListSearch(item, chatListSearchNorm))
   }, [sortedItems, chatListSearchNorm, conversationKindFilter])
 
-  useEffect(() => {
-    if (chatListSearchNorm.length < 2) {
-      setChatListGlobalUsers([])
-      setChatListGlobalOpen([])
-      setChatListGlobalLoading(false)
-      return
-    }
-    let alive = true
-    setChatListGlobalLoading(true)
-    const t = window.setTimeout(() => {
-      void Promise.all([searchRegisteredUsers(chatListSearch, 25), searchOpenPublicConversations(chatListSearch, 25)])
-        .then(([u, o]) => {
-          if (!alive) return
-          if (u.error || o.error) {
-            setChatListGlobalUsers([])
-            setChatListGlobalOpen([])
-          } else {
-            setChatListGlobalUsers(u.data ?? [])
-            setChatListGlobalOpen(o.data ?? [])
-          }
-          setChatListGlobalLoading(false)
-        })
-        .catch(() => {
-          if (!alive) return
-          setChatListGlobalLoading(false)
-        })
-    }, 320)
-    return () => {
-      alive = false
-      window.clearTimeout(t)
-    }
-  }, [chatListSearch, chatListSearchNorm])
+  useMessengerGlobalTreeSearch({
+    chatListSearch,
+    chatListSearchNorm,
+    setChatListGlobalUsers,
+    setChatListGlobalOpen,
+    setChatListGlobalLoading,
+  })
 
   const { extraGlobalUsers, extraGlobalOpen } = useMemo(() => {
     const visibleDm = new Set(
@@ -2649,48 +1675,10 @@ export function DashboardMessengerPage() {
       setPinBusyUserId(null)
     }
     closeMessageActionMenu()
-  }, [messageMenu, user?.id, senderContactByUserId, closeMessageActionMenu])
+  }, [closeMessageActionMenu, messageMenu, senderContactByUserId, setSenderContactByUserId, user?.id])
 
-  useEffect(() => {
-    if (!messageMenu) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeMessageActionMenu()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [messageMenu, closeMessageActionMenu])
-
-  useLayoutEffect(() => {
-    const el = msgMenuWrapRef.current
-    if (!el || !messageMenu) return
-    const place = () => {
-      const rect = el.getBoundingClientRect()
-      if (rect.width < 2 || rect.height < 2) {
-        requestAnimationFrame(place)
-        return
-      }
-      const pad = 10
-      const vw = window.innerWidth
-      const vh = window.innerHeight
-      let left =
-        messageMenu.mode === 'kebab'
-          ? messageMenu.anchorX - rect.width
-          : messageMenu.anchorX
-      let top =
-        messageMenu.mode === 'kebab'
-          ? messageMenu.anchorY - rect.height - 6
-          : messageMenu.anchorY
-      if (left + rect.width > vw - pad) left = vw - pad - rect.width
-      if (left < pad) left = pad
-      if (top + rect.height > vh - pad) top = vh - pad - rect.height
-      if (top < pad) top = pad
-      el.style.left = `${left}px`
-      el.style.top = `${top}px`
-      el.style.visibility = 'visible'
-    }
-    el.style.visibility = 'hidden'
-    place()
-  }, [messageMenu])
+  useEscapeKey(Boolean(messageMenu), closeMessageActionMenu)
+  useMessengerMessageMenuPopoverLayout(messageMenu, msgMenuWrapRef)
 
   const refocusMessengerComposer = useCallback(() => {
     if (!isMobileMessenger) return
@@ -2713,31 +1701,6 @@ export function DashboardMessengerPage() {
     setMessengerImageLightbox(null)
     refocusMessengerComposer()
   }, [refocusMessengerComposer])
-
-  const adjustMobileComposerHeight = useCallback(() => {
-    const ta = composerTextareaRef.current
-    if (!ta || !isMobileMessenger) return
-    const vv = window.visualViewport
-    const vh = vv?.height ?? window.innerHeight
-    ta.style.height = 'auto'
-    ta.style.height = `${Math.min(ta.scrollHeight, Math.round(vh * 0.28))}px`
-  }, [isMobileMessenger])
-
-  useLayoutEffect(() => {
-    if (!isMobileMessenger) {
-      const ta = composerTextareaRef.current
-      if (ta) ta.style.height = ''
-      return
-    }
-    adjustMobileComposerHeight()
-  }, [
-    draft,
-    activeConversationId,
-    editingMessageId,
-    isMobileMessenger,
-    adjustMobileComposerHeight,
-    threadLoading,
-  ])
 
   const closeMessengerMenu = useCallback(() => {
     setMessengerMenuOpen(false)
@@ -2846,44 +1809,18 @@ export function DashboardMessengerPage() {
     }, 1400)
   }, [])
 
-  useEffect(() => {
-    const j = pendingJump
-    if (!j) return
-    const activeId = activeConversationId.trim()
-    if (!activeId || j.conversationId.trim() !== activeId) return
-    if (threadHeadConversation?.kind !== 'direct') return
-
-    if (messages.some((m) => m.id === j.messageId)) {
-      pendingJumpOlderAttemptsRef.current = 0
-      scrollToQuotedMessage(j.messageId)
-      setPendingJump(null)
-      return
-    }
-
-    if (threadLoading || loadingOlder) return
-    if (!hasMoreOlder) {
-      pendingJumpOlderAttemptsRef.current = 0
-      setPendingJump(null)
-      return
-    }
-    if (pendingJumpOlderAttemptsRef.current > 12) {
-      pendingJumpOlderAttemptsRef.current = 0
-      setPendingJump(null)
-      return
-    }
-    pendingJumpOlderAttemptsRef.current += 1
-    void loadOlderMessages()
-  }, [
+  useMessengerPendingJumpToQuoted({
+    pendingJump,
+    setPendingJump,
     activeConversationId,
+    threadHeadKind: threadHeadConversation?.kind,
+    messages,
+    threadLoading,
+    loadingOlder,
     hasMoreOlder,
     loadOlderMessages,
-    loadingOlder,
-    messages,
-    pendingJump,
     scrollToQuotedMessage,
-    threadHeadConversation?.kind,
-    threadLoading,
-  ])
+  })
 
   const goCreateRoomFromMessenger = useCallback(() => {
     const id = newRoomId()
@@ -3189,50 +2126,17 @@ export function DashboardMessengerPage() {
     setConversationStaffMutating(false)
   }, [activeConversation, conversationInfoId, sortedItems])
 
-  useEffect(() => {
-    if (!conversationInfoEdit) {
-      setConversationStaffRows([])
-      setConversationStaffTargetUserId('')
-      setConversationStaffNewRole('moderator')
-      setConversationStaffLoading(false)
-      return
-    }
-    const id = conversationInfoId?.trim()
-    if (
-      !id ||
-      !user?.id ||
-      !conversationInfoConv ||
-      (conversationInfoConv.kind !== 'group' && conversationInfoConv.kind !== 'channel')
-    ) {
-      return
-    }
-    if (!conversationInfoRole || !['owner', 'admin'].includes(conversationInfoRole)) {
-      return
-    }
-    let cancelled = false
-    setConversationStaffLoading(true)
-    void listConversationStaffMembers(id).then((r) => {
-      if (cancelled) return
-      setConversationStaffLoading(false)
-      if (r.error) {
-        setConversationStaffRows([])
-        return
-      }
-      setConversationStaffRows(r.data ?? [])
-      setConversationStaffTargetUserId('')
-      setConversationStaffNewRole('moderator')
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [
+  useConversationInfoStaffLoad({
     conversationInfoEdit,
     conversationInfoId,
-    conversationInfoConv?.id,
-    conversationInfoConv?.kind,
+    conversationInfoConv,
     conversationInfoRole,
-    user?.id,
-  ])
+    userId: user?.id,
+    setConversationStaffRows,
+    setConversationStaffTargetUserId,
+    setConversationStaffNewRole,
+    setConversationStaffLoading,
+  })
 
   const applyConversationStaffRole = useCallback(async () => {
     const cid = conversationInfoId?.trim() ?? ''
@@ -3379,193 +2283,7 @@ export function DashboardMessengerPage() {
     user?.id,
   ])
 
-  useEffect(() => {
-    if (!messengerMenuOpen) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeMessengerMenu()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [messengerMenuOpen, closeMessengerMenu])
-
-  const renderThreadComposer = () => (
-    <div className="dashboard-messenger__composer" role="region" aria-label="Новое сообщение">
-      {replyTo && !editingMessageId ? (
-        <div className="dashboard-messenger__composer-reply">
-          <div className="dashboard-messenger__composer-reply-text">
-            <span className="dashboard-messenger__composer-reply-label">Ответ</span>{' '}
-            <strong>{replyTo.senderNameSnapshot}</strong>
-            <span className="dashboard-messenger__composer-reply-snippet">
-              {replyTo.kind === 'image' ? (
-                <>
-                  {(() => {
-                    const att = getMessengerImageAttachments(replyTo)[0]
-                    const tp = att?.thumbPath?.trim() || att?.path?.trim()
-                    return tp ? (
-                      <MessengerReplyMiniThumb thumbPath={tp} onThumbLayout={bumpScrollIfPinned} />
-                    ) : null
-                  })()}
-                  <span>{truncateMessengerReplySnippet(replyTo.body)}</span>
-                </>
-              ) : (
-                <span>{truncateMessengerReplySnippet(replyTo.body) || '…'}</span>
-              )}
-            </span>
-          </div>
-          <button
-            type="button"
-            className="dashboard-messenger__composer-reply-cancel"
-            aria-label="Отменить ответ"
-            onClick={() => setReplyTo(null)}
-          >
-            ✕
-          </button>
-        </div>
-      ) : null}
-      {editingMessageId ? (
-        <div className="dashboard-messenger__composer-edit-bar">
-          <span>Редактирование сообщения</span>
-          <button
-            type="button"
-            className="dashboard-messenger__composer-edit-cancel"
-            onClick={() => {
-              setEditingMessageId(null)
-              setDraft('')
-            }}
-          >
-            Отмена
-          </button>
-        </div>
-      ) : null}
-      {pendingMessengerPhotos.length > 0 && !editingMessageId ? (
-        <div className="dashboard-messenger__pending-photos">
-          {pendingMessengerPhotos.map((p, idx) => (
-            <div key={p.id} className="dashboard-messenger__pending-photo">
-              <button
-                type="button"
-                className="dashboard-messenger__pending-photo-open"
-                title="Открыть"
-                aria-label="Открыть изображение"
-                onClick={() =>
-                  setMessengerImageLightbox({
-                    urls: pendingMessengerPhotos.map((x) => x.previewUrl),
-                    index: idx,
-                  })
-                }
-              >
-                <img src={p.previewUrl} alt="" />
-              </button>
-              <button
-                type="button"
-                className="dashboard-messenger__pending-photo-remove"
-                aria-label="Убрать фото"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  removePendingMessengerPhoto(p.id)
-                }}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {!editingMessageId ? (
-        <DraftLinkPreviewBar
-          preview={draftLinkPreview}
-          loading={draftLinkPreviewLoading}
-          onDismiss={dismissDraftLinkPreview}
-        />
-      ) : null}
-      <div className="dashboard-messenger__composer-main">
-        <textarea
-          ref={composerTextareaRef}
-          className="dashboard-messenger__input"
-          rows={isMobileMessenger ? 1 : 3}
-          placeholder={editingMessageId ? 'Исправьте текст…' : 'Напиши сообщение…'}
-          value={draft}
-          disabled={threadLoading || photoUploading}
-          onPaste={onComposerPaste}
-          onChange={(e) => {
-            setDraft(e.target.value)
-            if (isMobileMessenger) queueMicrotask(() => adjustMobileComposerHeight())
-          }}
-          onPointerDown={() => unlockAudioContext()}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              void sendMessage()
-            }
-          }}
-        />
-        <div className="dashboard-messenger__composer-side">
-          <div className="dashboard-messenger__composer-tools" ref={composerEmojiWrapRef}>
-            {composerEmojiOpen && !editingMessageId ? (
-              <div className="dashboard-messenger__composer-emoji-pop">
-                <ReactionEmojiPopover
-                  title="Эмодзи"
-                  emojis={MESSENGER_COMPOSER_EMOJIS}
-                  onClose={() => setComposerEmojiOpen(false)}
-                  onPick={(em) => insertEmojiInDraft(em)}
-                />
-              </div>
-            ) : null}
-            <button
-              type="button"
-              className="dashboard-messenger__composer-icon-btn"
-              title="Эмодзи"
-              aria-label="Вставить эмодзи"
-              disabled={threadLoading || Boolean(editingMessageId)}
-              onClick={() => setComposerEmojiOpen((v) => !v)}
-            >
-              😀
-            </button>
-            <button
-              type="button"
-              className="dashboard-messenger__composer-icon-btn"
-              title="Фото"
-              aria-label="Прикрепить фото"
-              disabled={threadLoading || photoUploading || Boolean(editingMessageId)}
-              onClick={() => photoInputRef.current?.click()}
-            >
-              <AttachmentIcon />
-            </button>
-            <input
-              ref={photoInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="dashboard-messenger__photo-input"
-              onChange={(e) => {
-                const files = Array.from(e.target.files ?? [])
-                e.target.value = ''
-                if (files.length === 0) return
-                addPendingMessengerPhotoFiles(files)
-              }}
-            />
-          </div>
-          <button
-            type="button"
-            className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
-            disabled={
-              (!draft.trim() && pendingMessengerPhotos.length === 0) ||
-              sending ||
-              threadLoading ||
-              photoUploading
-            }
-            onClick={() => void sendMessage()}
-          >
-            {editingMessageId ? 'Сохранить' : 'Отправить'}
-          </button>
-        </div>
-      </div>
-      {photoUploading ? (
-        <p className="dashboard-messenger__photo-status" role="status">
-          Загрузка фото…
-        </p>
-      ) : null}
-    </div>
-  )
+  useEscapeKey(messengerMenuOpen, closeMessengerMenu)
 
   return (
     <DashboardShell
@@ -3601,346 +2319,34 @@ export function DashboardMessengerPage() {
         <>
           <div className="dashboard-messenger__layout">
             {showListPane ? (
-              <aside className="dashboard-messenger__list" aria-label="Список диалогов">
-                {isMobileMessenger ? (
-                  <header className="dashboard-messenger__list-head dashboard-messenger__list-head--chats-toolbar">
-                    <Link
-                      to="/dashboard"
-                      className="dashboard-messenger__list-head-back"
-                      title="Назад в кабинет"
-                      aria-label="Назад в кабинет"
-                    >
-                      <ChevronLeftIcon />
-                    </Link>
-                    <button
-                      type="button"
-                      className="dashboard-messenger__list-head-btn"
-                      onClick={openCreateConversationModal}
-                      aria-label="Создать группу или канал"
-                      title="Создать группу или канал"
-                    >
-                      <PlusIcon />
-                    </button>
-                    <input
-                      id="messenger-chat-list-search"
-                      type="search"
-                      enterKeyHint="search"
-                      className="dashboard-messenger__list-head-search"
-                      value={chatListSearch}
-                      onChange={(e) => setChatListSearch(e.target.value)}
-                      placeholder="Имя, @ник, чат или сообщение…"
-                      autoComplete="off"
-                      aria-label="Поиск по чатам"
-                    />
-                    <div className="dashboard-messenger__list-head-actions">
-                      <button
-                        type="button"
-                        className="dashboard-messenger__list-head-btn dashboard-messenger__list-head-btn--primary"
-                        onClick={() => goCreateRoomFromMessenger()}
-                        aria-label="Новая комната"
-                        title="Новая комната"
-                      >
-                        <FiRrIcon name="circle-phone" />
-                      </button>
-                      <button
-                        type="button"
-                        className={`dashboard-messenger__list-head-btn${messengerMenuOpen ? ' dashboard-messenger__list-head-btn--open' : ''}`}
-                        onClick={() => setMessengerMenuOpen((v) => !v)}
-                        aria-label={messengerMenuOpen ? 'Закрыть меню' : 'Меню'}
-                        title="Меню"
-                        aria-expanded={messengerMenuOpen}
-                      >
-                        <MenuBurgerIcon />
-                      </button>
-                    </div>
-                  </header>
-                ) : null}
-                {!isMobileMessenger ? (
-                  <div className="dashboard-messenger__list-search">
-                    <label className="dashboard-messenger__list-search-label" htmlFor="messenger-chat-list-search-desktop">
-                      Поиск
-                    </label>
-                    <button
-                      type="button"
-                      className="dashboard-messenger__list-head-btn"
-                      onClick={openCreateConversationModal}
-                      aria-label="Создать группу или канал"
-                      title="Создать группу или канал"
-                    >
-                      <PlusIcon />
-                    </button>
-                    <input
-                      id="messenger-chat-list-search-desktop"
-                      type="search"
-                      enterKeyHint="search"
-                      className="dashboard-messenger__list-search-input"
-                      value={chatListSearch}
-                      onChange={(e) => setChatListSearch(e.target.value)}
-                      placeholder="Имя, @ник, чат или последнее сообщение…"
-                      autoComplete="off"
-                      aria-label="Поиск по чатам"
-                    />
-                  </div>
-                ) : null}
-                <div
-                  className={`dashboard-messenger__list-search${
-                    isMobileMessenger ? ' dashboard-messenger__list-search--kind-tabs-only' : ''
-                  }`}
-                >
-                  <div className="dashboard-messenger__kind-tabs" role="tablist" aria-label="Фильтр бесед">
-                    {(
-                      [
-                        { id: 'all' as const, label: 'Все', shortLabel: 'Все', Icon: MessengerFilterAllIcon },
-                        { id: 'direct' as const, label: 'ЛС', shortLabel: 'ЛС', Icon: MessengerFilterDirectIcon },
-                        { id: 'group' as const, label: 'Группы', shortLabel: 'Гр', Icon: MessengerFilterGroupIcon },
-                        { id: 'channel' as const, label: 'Каналы', shortLabel: 'Кан', Icon: MessengerFilterChannelIcon },
-                      ] as const
-                    ).map(({ id, label, shortLabel, Icon }) => (
-                      <button
-                        key={id}
-                        type="button"
-                        role="tab"
-                        title={label}
-                        className={`dashboard-messenger__kind-tab${
-                          conversationKindFilter === id ? ' dashboard-messenger__kind-tab--active' : ''
-                        }`}
-                        aria-selected={conversationKindFilter === id}
-                        onClick={() => setConversationKindFilter(id)}
-                      >
-                        <span className="dashboard-messenger__kind-tab-inner">
-                          <span className="dashboard-messenger__kind-tab-icon" aria-hidden>
-                            <Icon />
-                          </span>
-                          <span className="dashboard-messenger__kind-tab-label">{label}</span>
-                          <span className="dashboard-messenger__kind-tab-label-short">{shortLabel}</span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="dashboard-messenger__list-scroll">
-                  {loading && sortedItems.length === 0 ? (
-                    <div className="dashboard-messenger__pane-loader" aria-label="Загрузка списка…">
-                      <BrandLogoLoader size={56} />
-                    </div>
-                  ) : sortedItems.length === 0 ? (
-                    <div className="dashboard-chats-empty">Диалогов пока нет.</div>
-                  ) : !messengerListHasRows && chatListGlobalLoading ? (
-                    <div className="dashboard-chats-empty">Поиск в каталоге…</div>
-                  ) : !messengerListHasRows ? (
-                    <div className="dashboard-chats-empty">Ничего не найдено.</div>
-                  ) : (
-                    <>
-                    {filteredSortedItems.map((item) => {
-                      const avatarUrl =
-                        item.kind === 'direct'
-                          ? item.avatarUrl ?? (!item.otherUserId ? profile?.avatar_url ?? null : null)
-                          : conversationAvatarUrlById[item.id] ?? null
-                      const rowPeekUserId =
-                        item.kind === 'direct'
-                          ? item.otherUserId?.trim() || (!item.otherUserId && user?.id ? user.id : '')
-                          : ''
-                      return (
-                        <div className="dashboard-messenger__row-shell" key={item.id}>
-                        <Link
-                          to={buildMessengerUrl(item.id)}
-                          title={`${item.messageCount} сообщ.`}
-                          onClick={(e) => {
-                            e.preventDefault()
-                            selectConversation(item.id)
-                          }}
-                          className={`dashboard-messenger__row${
-                            item.id === activeConversationId ? ' dashboard-messenger__row--active' : ''
-                          }`}
-                        >
-                          <div className="dashboard-messenger__row-main">
-                            <button
-                              type="button"
-                              className="dashboard-messenger__row-avatar"
-                              aria-hidden
-                              tabIndex={-1}
-                              onClick={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                if (item.kind === 'direct') {
-                                  if (rowPeekUserId) {
-                                    openUserPeek({
-                                      userId: rowPeekUserId,
-                                      displayName: item.title,
-                                      avatarUrl,
-                                    })
-                                  }
-                                } else {
-                                  void openConversationInfo(item.id)
-                                }
-                              }}
-                            >
-                              {avatarUrl ? (
-                                <img src={avatarUrl ?? undefined} alt="" />
-                              ) : (
-                                <span>{conversationInitial(item.title)}</span>
-                              )}
-                            </button>
-                            <div className="dashboard-messenger__row-content">
-                              <div className="dashboard-messenger__row-titleline">
-                                <div className="dashboard-messenger__row-title">{item.title}</div>
-                                <div className="dashboard-messenger__row-aside">
-                                  <time
-                                    className="dashboard-messenger__row-time"
-                                    dateTime={item.lastMessageAt ?? item.createdAt}
-                                  >
-                                    {formatMessengerListRowTime(item.lastMessageAt ?? item.createdAt)}
-                                  </time>
-                                  {!item.joinRequestPending && item.unreadCount > 0 ? (
-                                    <span className="dashboard-messenger__row-badge">
-                                      {item.unreadCount > 99 ? '99+' : item.unreadCount}
-                                    </span>
-                                  ) : null}
-                                </div>
-                              </div>
-                              <div className="dashboard-messenger__row-preview">
-                                {item.lastMessagePreview?.trim() || 'Пока без сообщений'}
-                              </div>
-                            </div>
-                            <div className="dashboard-messenger__row-trailing">
-                              <button
-                                type="button"
-                                className="dashboard-messenger__row-kebab"
-                                aria-label="Действия с чатом"
-                                title="Ещё"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  const r = e.currentTarget.getBoundingClientRect()
-                                  setChatListRowMenu((cur) =>
-                                    cur?.item.id === item.id
-                                      ? null
-                                      : {
-                                          item,
-                                          anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
-                                        },
-                                  )
-                                }}
-                              >
-                                ⋮
-                              </button>
-                              {pinnedChatIds.includes(item.id) ? (
-                                <span className="dashboard-messenger__row-pin" aria-label="Закреплён" title="Закреплён">
-                                  <FiRrIcon name="thumbtack" />
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-                        </Link>
-                        </div>
-                      )
-                    })}
-                    {extraGlobalUsers.map((hit) => {
-                      const subtitle = hit.profileSlug ? `@${hit.profileSlug}` : 'Профиль'
-                      return (
-                        <div className="dashboard-messenger__row-shell" key={`glob-user-${hit.id}`}>
-                          <Link
-                            to={buildMessengerUrl(undefined, hit.id, hit.displayName)}
-                            title="Открыть диалог"
-                            onClick={(e) => {
-                              e.preventDefault()
-                              navigate(buildMessengerUrl(undefined, hit.id, hit.displayName))
-                            }}
-                            className="dashboard-messenger__row"
-                          >
-                            <div className="dashboard-messenger__row-main">
-                              <button
-                                type="button"
-                                className="dashboard-messenger__row-avatar"
-                                aria-hidden
-                                tabIndex={-1}
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  openUserPeek({
-                                    userId: hit.id,
-                                    displayName: hit.displayName,
-                                    avatarUrl: hit.avatarUrl ?? null,
-                                  })
-                                }}
-                              >
-                                {hit.avatarUrl ? (
-                                  <img src={hit.avatarUrl} alt="" />
-                                ) : (
-                                  <span>{conversationInitial(hit.displayName)}</span>
-                                )}
-                              </button>
-                              <div className="dashboard-messenger__row-content">
-                                <div className="dashboard-messenger__row-titleline">
-                                  <div className="dashboard-messenger__row-title">{hit.displayName}</div>
-                                  <div className="dashboard-messenger__row-aside">
-                                    <span className="dashboard-messenger__row-time">В каталоге</span>
-                                  </div>
-                                </div>
-                                <div className="dashboard-messenger__row-preview">{subtitle}</div>
-                              </div>
-                            </div>
-                          </Link>
-                        </div>
-                      )
-                    })}
-                    {extraGlobalOpen.map((hit) => {
-                      const avatarUrl = conversationAvatarUrlById[hit.id] ?? null
-                      const kindLabel = hit.kind === 'channel' ? 'Канал' : 'Группа'
-                      const nickBit = hit.publicNick ? ` · @${hit.publicNick}` : ''
-                      return (
-                        <div className="dashboard-messenger__row-shell" key={`glob-open-${hit.id}`}>
-                          <Link
-                            to={buildMessengerUrl(hit.id)}
-                            title={`${kindLabel}${nickBit}`}
-                            onClick={(e) => {
-                              e.preventDefault()
-                              selectConversation(hit.id)
-                            }}
-                            className={`dashboard-messenger__row${
-                              hit.id === activeConversationId ? ' dashboard-messenger__row--active' : ''
-                            }`}
-                          >
-                            <div className="dashboard-messenger__row-main">
-                              <button
-                                type="button"
-                                className="dashboard-messenger__row-avatar"
-                                aria-hidden
-                                tabIndex={-1}
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  selectConversation(hit.id)
-                                }}
-                              >
-                                {avatarUrl ? (
-                                  <img src={avatarUrl} alt="" />
-                                ) : (
-                                  <span>{conversationInitial(hit.title)}</span>
-                                )}
-                              </button>
-                              <div className="dashboard-messenger__row-content">
-                                <div className="dashboard-messenger__row-titleline">
-                                  <div className="dashboard-messenger__row-title">{hit.title}</div>
-                                  <div className="dashboard-messenger__row-aside">
-                                    <span className="dashboard-messenger__row-time">Открытый</span>
-                                  </div>
-                                </div>
-                                <div className="dashboard-messenger__row-preview">
-                                  {kindLabel}
-                                  {nickBit}
-                                  {hit.memberCount ? ` · ${hit.memberCount} участн.` : ''}
-                                </div>
-                              </div>
-                            </div>
-                          </Link>
-                        </div>
-                      )
-                    })}
-                    </>
-                  )}
-                </div>
-              </aside>
+              <MessengerChatListAside
+                isMobileMessenger={isMobileMessenger}
+                chatListSearch={chatListSearch}
+                onChatListSearchChange={setChatListSearch}
+                openCreateConversationModal={openCreateConversationModal}
+                goCreateRoomFromMessenger={goCreateRoomFromMessenger}
+                messengerMenuOpen={messengerMenuOpen}
+                setMessengerMenuOpen={setMessengerMenuOpen}
+                conversationKindFilter={conversationKindFilter}
+                setConversationKindFilter={setConversationKindFilter}
+                loading={loading}
+                sortedItems={sortedItems}
+                messengerListHasRows={messengerListHasRows}
+                chatListGlobalLoading={chatListGlobalLoading}
+                filteredSortedItems={filteredSortedItems}
+                extraGlobalUsers={extraGlobalUsers}
+                extraGlobalOpen={extraGlobalOpen}
+                profileAvatarUrl={profile?.avatar_url}
+                userId={user?.id}
+                conversationAvatarUrlById={conversationAvatarUrlById}
+                activeConversationId={activeConversationId}
+                selectConversation={selectConversation}
+                navigate={navigate}
+                openUserPeek={openUserPeek}
+                openConversationInfo={openConversationInfo}
+                pinnedChatIds={pinnedChatIds}
+                setChatListRowMenu={setChatListRowMenu}
+              />
             ) : null}
 
             {showThreadPane ? (
@@ -4233,269 +2639,77 @@ export function DashboardMessengerPage() {
                     )
                   ) : (
                   <DirectThreadPane>
-                    <div className="dashboard-messenger__thread-head">
-                      {isMobileMessenger ? (
-                        <header className="dashboard-messenger__list-head dashboard-messenger__list-head--thread">
-                          <div className="dashboard-messenger__thread-head-back-wrap">
-                            <button
-                              type="button"
-                              className="dashboard-messenger__list-head-btn"
-                              aria-label="К списку чатов"
-                              title="К списку чатов"
-                              onClick={() => navigate('/dashboard/messenger?view=list', { replace: true })}
-                            >
-                              <ChevronLeftIcon />
-                            </button>
-                            {totalOtherUnread > 0 ? (
-                              <span className="dashboard-messenger__back-badge dashboard-messenger__back-badge--thread">
-                                {totalOtherUnread > 99 ? '99+' : totalOtherUnread}
-                              </span>
-                            ) : null}
-                          </div>
-                          <button
-                            type="button"
-                            className="dashboard-messenger__thread-head-center dashboard-messenger__thread-head-center--tappable"
-                            aria-label="Профиль собеседника"
-                            onClick={() => {
-                              const oid = threadHeadConversation.otherUserId?.trim()
-                              if (oid) {
-                                openUserPeek({
-                                  userId: oid,
-                                  displayName: threadHeadConversation.title,
-                                  avatarUrl: activeAvatarUrl,
-                                })
-                              } else if (user?.id) {
-                                openUserPeek({
-                                  userId: user.id,
-                                  displayName: profile?.display_name ?? threadHeadConversation.title,
-                                  avatarUrl: profile?.avatar_url ?? null,
-                                })
-                              }
-                            }}
-                          >
-                            <span className="dashboard-messenger__thread-head-center-avatar" aria-hidden>
-                              {activeAvatarUrl ? (
-                                <img src={activeAvatarUrl ?? undefined} alt="" />
-                              ) : (
-                                <span>{conversationInitial(threadHeadConversation.title)}</span>
-                              )}
-                            </span>
-                            <div className="dashboard-messenger__thread-head-center-text">
-                              <div className="dashboard-messenger__thread-head-center-title" role="heading" aria-level={3}>
-                                {threadHeadConversation.title}
-                              </div>
-                              <div className="dashboard-messenger__thread-head-center-meta">
-                                {formatMessengerListRowTime(
-                                  threadHeadConversation.lastMessageAt ?? threadHeadConversation.createdAt,
-                                )}
-                                {isMemberOfActiveConversation &&
-                                !threadHeadConversation.joinRequestPending &&
-                                threadHeadConversation.unreadCount > 0 ? (
-                                  <>
-                                    {' · '}
-                                    <span className="dashboard-messenger__row-badge dashboard-messenger__row-badge--inline">
-                                      {threadHeadConversation.unreadCount > 99
-                                        ? '99+'
-                                        : threadHeadConversation.unreadCount}
-                                    </span>
-                                  </>
-                                ) : null}
-                              </div>
-                            </div>
-                          </button>
-                          <div className="dashboard-messenger__list-head-actions">
-                            <button
-                              type="button"
-                              className="dashboard-messenger__list-head-btn dashboard-messenger__list-head-btn--primary"
-                              onClick={() => goCreateRoomFromMessenger()}
-                              aria-label="Новая комната"
-                              title="Новая комната"
-                            >
-                              <FiRrIcon name="circle-phone" />
-                            </button>
-                          </div>
-                        </header>
-                      ) : (
-                        <div className="dashboard-messenger__thread-head-main-desktop">
-                          <button
-                            type="button"
-                            className="dashboard-messenger__thread-head-main dashboard-messenger__thread-head-main--tappable"
-                            aria-label="Профиль в диалоге"
-                            onClick={() => {
-                              const oid = threadHeadConversation.otherUserId?.trim()
-                              if (oid) {
-                                openUserPeek({
-                                  userId: oid,
-                                  displayName: threadHeadConversation.title,
-                                  avatarUrl: activeAvatarUrl,
-                                })
-                              } else if (user?.id) {
-                                openUserPeek({
-                                  userId: user.id,
-                                  displayName: profile?.display_name ?? threadHeadConversation.title,
-                                  avatarUrl: profile?.avatar_url ?? null,
-                                })
-                              }
-                            }}
-                          >
-                            <span className="dashboard-messenger__thread-avatar" aria-hidden>
-                              {activeAvatarUrl ? (
-                                <img src={activeAvatarUrl ?? undefined} alt="" />
-                              ) : (
-                                <span>{conversationInitial(threadHeadConversation.title)}</span>
-                              )}
-                            </span>
-                            <div>
-                              <div className="dashboard-messenger__thread-titleline">
-                                <div className="dashboard-section__subtitle" role="heading" aria-level={3}>
-                                  {threadHeadConversation.title}
-                                </div>
-                                {isMemberOfActiveConversation &&
-                                !threadHeadConversation.joinRequestPending &&
-                                threadHeadConversation.unreadCount > 0 ? (
-                                  <span className="dashboard-messenger__row-badge">
-                                    {threadHeadConversation.unreadCount > 99
-                                      ? '99+'
-                                      : threadHeadConversation.unreadCount}
-                                  </span>
-                                ) : null}
-                              </div>
-                              <div className="dashboard-messenger__thread-meta">
-                                <span>{threadHeadConversation.messageCount} сообщ.</span>
-                                <span>
-                                  Последняя активность:{' '}
-                                  {formatDateTime(
-                                    threadHeadConversation.lastMessageAt ?? threadHeadConversation.createdAt,
-                                  )}
-                                </span>
-                              </div>
-                            </div>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="dashboard-messenger__thread-main">
-                      <div className="dashboard-messenger__scroll-region-wrap">
-                        <div
-                          ref={messagesScrollRef}
-                          className="dashboard-messenger__messages-scroll"
-                          onScroll={onMessagesScroll}
-                        >
-                        {loadingOlder ? (
-                          <div className="dashboard-messenger__load-older" role="status" aria-live="polite">
-                            Загрузка истории…
-                          </div>
-                        ) : null}
-                        <div ref={messagesContentRef} className="dashboard-messenger__messages">
-                          {threadLoading ? (
-                            <div
-                              className="dashboard-messenger__thread-loading"
-                              role="status"
-                              aria-label="Загрузка диалога…"
-                            >
-                              <BrandLogoLoader size={56} />
-                            </div>
-                          ) : timelineMessages.length === 0 ? (
-                            <div className="dashboard-chats-empty">Напиши первое сообщение в этот чат.</div>
-                          ) : (
-                            timelineMessages.map((message) => {
-                              const isOwn = Boolean(user?.id && message.senderUserId === user.id)
-                              const reactions = reactionsByTargetId.get(message.id) ?? []
-                              const rid =
-                                message.quoteToMessageId?.trim() || message.replyToMessageId?.trim() || null
-                              const { preview: replyPreview, scrollTargetId: replyScrollTargetId } = buildQuotePreview({
-                                quotedMessageId: rid,
-                                messageById: (id) => messages.find((m) => m.id === id),
-                                resolveQuotedAvatarUrl: (senderUserId) =>
-                                  resolveQuotedAvatarForDm(
-                                    senderUserId,
-                                    user?.id,
-                                    profile?.avatar_url,
-                                    threadHeadConversation?.kind === 'direct'
-                                      ? (threadHeadConversation as unknown as DirectConversationSummary)
-                                      : null,
-                                  ),
-                              })
-                              return (
-                                <ThreadMessageBubble
-                                  key={message.id}
-                                  message={message}
-                                  isOwn={isOwn}
-                                  dmMutePeerLabels={threadHeadConversation?.kind === 'direct'}
-                                  reactions={reactions}
-                                  formatDt={formatDateTime}
-                                  replyPreview={replyPreview}
-                                  replyScrollTargetId={replyScrollTargetId}
-                                  onReplyQuoteNavigate={scrollToQuotedMessage}
-                                  onForwardQuoteNavigate={navigateToForwardSource}
-                                  bindMessageAnchor={bindMessageAnchor}
-                                  menuOpen={messageMenu?.message.id === message.id}
-                                  onOpenImageLightbox={(ctx) => {
-                                    closeMessageActionMenu()
-                                    setMessengerImageLightbox({ urls: ctx.urls, index: ctx.initialIndex })
-                                  }}
-                                  onInlineImageLayout={bumpScrollIfPinned}
-                                  onReplyThumbLayout={bumpScrollIfPinned}
-                                  onMentionSlug={onMentionSlugOpenProfile}
-                                  onMenuButtonClick={(e) => {
-                                    e.stopPropagation()
-                                    const r = e.currentTarget.getBoundingClientRect()
-                                    setMessageMenu((cur) => {
-                                      if (cur?.message.id === message.id) return null
-                                      return { message, mode: 'kebab', anchorX: r.right, anchorY: r.top }
-                                    })
-                                  }}
-                                  onBubbleContextMenu={(e) => {
-                                    e.preventDefault()
-                                    setMessageMenu((cur) => {
-                                      if (cur?.message.id === message.id) return null
-                                      return { message, mode: 'context', anchorX: e.clientX, anchorY: e.clientY }
-                                    })
-                                  }}
-                                  currentUserId={user?.id ?? null}
-                                  onReactionChipTap={(targetId, emoji) => {
-                                    if (!isDirectReactionEmoji(emoji)) return
-                                    void toggleMessengerReaction(targetId, emoji)
-                                  }}
-                                  quickReactEnabled={Boolean(
-                                    user?.id &&
-                                      (message.kind === 'text' || message.kind === 'image') &&
-                                      !message.id.startsWith('local-'),
-                                  )}
-                                  isMobileMessenger={isMobileMessenger}
-                                  onQuickHeart={() => void toggleMessengerReaction(message.id, QUICK_REACTION_EMOJI)}
-                                  swipeReplyEnabled={isMobileMessenger}
-                                  onSwipeReply={(m) => {
-                                    setReplyTo(m)
-                                    closeMessageActionMenu()
-                                    queueMicrotask(() => composerTextareaRef.current?.focus())
-                                  }}
-                                />
-                              )
-                            })
-                          )}
-                        </div>
-                        </div>
-                        <MessengerJumpToBottomFab visible={showDmJump} onClick={jumpDmBottom} />
-                      </div>
-
-                      {renderThreadComposer()}
-                    </div>
-
-                    {messageMenu
-                      ? createPortal(
-                          <div
-                            ref={msgMenuWrapRef}
-                            className="messenger-msg-menu-wrap"
-                            style={{
-                              position: 'fixed',
-                              left: 0,
-                              top: 0,
-                              zIndex: 26500,
-                              visibility: 'hidden',
-                            }}
-                          >
+                    <MessengerDirectThreadBody
+                      isMobileMessenger={isMobileMessenger}
+                      navigate={navigate}
+                      totalOtherUnread={totalOtherUnread}
+                      threadHeadConversation={threadHeadConversation as MessengerDirectThreadHeadConversation}
+                      openUserPeek={openUserPeek}
+                      user={user}
+                      profile={profile}
+                      activeAvatarUrl={activeAvatarUrl}
+                      isMemberOfActiveConversation={isMemberOfActiveConversation}
+                      goCreateRoomFromMessenger={goCreateRoomFromMessenger}
+                      messagesScrollRef={messagesScrollRef}
+                      onMessagesScroll={onMessagesScroll}
+                      loadingOlder={loadingOlder}
+                      messagesContentRef={messagesContentRef}
+                      threadLoading={threadLoading}
+                      timelineMessages={timelineMessages}
+                      reactionsByTargetId={reactionsByTargetId}
+                      messages={messages}
+                      userId={user?.id}
+                      onMentionSlugOpenProfile={onMentionSlugOpenProfile}
+                      scrollToQuotedMessage={scrollToQuotedMessage}
+                      navigateToForwardSource={navigateToForwardSource}
+                      bindMessageAnchor={bindMessageAnchor}
+                      messageMenu={messageMenu}
+                      setMessageMenu={setMessageMenu}
+                      closeMessageActionMenu={closeMessageActionMenu}
+                      setMessengerImageLightbox={setMessengerImageLightbox}
+                      bumpScrollIfPinned={bumpScrollIfPinned}
+                      toggleMessengerReaction={toggleMessengerReaction}
+                      setReplyTo={setReplyTo}
+                      composerTextareaRef={composerTextareaRef}
+                      showDmJump={showDmJump}
+                      jumpDmBottom={jumpDmBottom}
+                      composer={
+                        <MessengerThreadComposer
+                          replyTo={replyTo}
+                          editingMessageId={editingMessageId}
+                          pendingMessengerPhotos={pendingMessengerPhotos}
+                          draft={draft}
+                          onDraftChange={setDraft}
+                          threadLoading={threadLoading}
+                          photoUploading={photoUploading}
+                          sending={sending}
+                          isMobileMessenger={isMobileMessenger}
+                          bumpScrollIfPinned={bumpScrollIfPinned}
+                          onOpenLightbox={(urls, index) => setMessengerImageLightbox({ urls, index })}
+                          onRemovePendingPhoto={removePendingMessengerPhoto}
+                          draftLinkPreview={draftLinkPreview}
+                          draftLinkPreviewLoading={draftLinkPreviewLoading}
+                          onDismissDraftLinkPreview={dismissDraftLinkPreview}
+                          composerTextareaRef={composerTextareaRef}
+                          composerEmojiWrapRef={composerEmojiWrapRef}
+                          photoInputRef={photoInputRef}
+                          onComposerPaste={onComposerPaste}
+                          adjustMobileComposerHeight={adjustMobileComposerHeight}
+                          onSend={() => void sendMessage()}
+                          insertEmojiInDraft={insertEmojiInDraft}
+                          onAddPendingPhotoFiles={addPendingMessengerPhotoFiles}
+                          composerEmojiOpen={composerEmojiOpen}
+                          setComposerEmojiOpen={setComposerEmojiOpen}
+                          onClearReply={() => setReplyTo(null)}
+                          onCancelEdit={() => {
+                            setEditingMessageId(null)
+                            setDraft('')
+                          }}
+                        />
+                      }
+                      messageActionMenu={
+                        messageMenu ? (
+                          <MessengerDmMessageMenuPortal open={true} msgMenuWrapRef={msgMenuWrapRef}>
                             <MessengerMessageMenuPopover
                               canEdit={Boolean(
                                 user?.id &&
@@ -4572,11 +2786,12 @@ export function DashboardMessengerPage() {
                                 void toggleFavoriteFromMessageMenu()
                               }}
                             />
-                          </div>,
-                          document.body,
-                        )
-                      : null}
+                          </MessengerDmMessageMenuPortal>
+                        ) : null
+                      }
+                    />
                   </DirectThreadPane>
+
                   )
                 ) : (
                   <div className="dashboard-chats-empty">Выберите диалог слева.</div>
@@ -4584,216 +2799,49 @@ export function DashboardMessengerPage() {
               </div>
             ) : null}
           </div>
-        </>
 
-        {messengerMenuOpen ? (
-          <>
-            <div
-              className={`dashboard-messenger-quick-menu-backdrop${
-                messengerMenuOpen ? ' dashboard-messenger-quick-menu-backdrop--open' : ''
-              }`}
-              aria-hidden={!messengerMenuOpen}
-              onClick={closeMessengerMenu}
-            />
-            <nav
-              className={`dashboard-messenger-quick-menu${
-                messengerMenuOpen ? ' dashboard-messenger-quick-menu--open' : ''
-              } dashboard-messenger-quick-menu--anchor-head`}
-              aria-hidden={!messengerMenuOpen}
-              aria-label="Навигация"
-            >
-              <div className="dashboard-messenger-quick-menu__grid" role="toolbar">
-                <Link to="/" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
-                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
-                    <HomeIcon />
-                  </span>
-                  <span className="dashboard-messenger-quick-menu__lbl">Главная</span>
-                </Link>
-                <Link to="/dashboard" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
-                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
-                    <DashboardIcon />
-                  </span>
-                  <span className="dashboard-messenger-quick-menu__lbl">Кабинет</span>
-                </Link>
-                <Link to="/dashboard/chats" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
-                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
-                    <RoomsIcon />
-                  </span>
-                  <span className="dashboard-messenger-quick-menu__lbl">Комнаты</span>
-                </Link>
-                <Link to="/dashboard/contacts" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
-                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
-                    <ParticipantsBadgeIcon />
-                  </span>
-                  <span className="dashboard-messenger-quick-menu__lbl">Контакты</span>
-                </Link>
-                <button type="button" className="dashboard-messenger-quick-menu__btn" onClick={goCreateRoomFromMenu}>
-                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
-                    <FiRrIcon name="circle-phone" />
-                  </span>
-                  <span className="dashboard-messenger-quick-menu__lbl">Новая комната</span>
-                </button>
-                <button
-                  type="button"
-                  className="dashboard-messenger-quick-menu__btn"
-                  onClick={() => {
-                    closeMessengerMenu()
-                    setMessengerSettingsOpen(true)
-                  }}
-                  title="Настройки мессенджера"
-                  aria-label="Настройки мессенджера"
-                >
-                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
-                    <FiRrIcon name="settings" />
-                  </span>
-                  <span className="dashboard-messenger-quick-menu__lbl">Настройки</span>
-                </button>
-                {canAccessAdmin ? (
-                  <Link to="/admin" className="dashboard-messenger-quick-menu__btn" onClick={closeMessengerMenu}>
-                    <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
-                      <AdminPanelIcon />
-                    </span>
-                    <span className="dashboard-messenger-quick-menu__lbl">Админка</span>
-                  </Link>
-                ) : null}
-                <button
-                  type="button"
-                  className="dashboard-messenger-quick-menu__btn dashboard-messenger-quick-menu__btn--danger dashboard-messenger-quick-menu__btn--span"
-                  onClick={() => {
-                    closeMessengerMenu()
-                    void signOut()
-                  }}
-                >
-                  <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
-                    <LogOutIcon />
-                  </span>
-                  <span className="dashboard-messenger-quick-menu__lbl">Выход</span>
-                </button>
-              </div>
-            </nav>
-          </>
-        ) : null}
+        <MessengerQuickNavMenu
+          open={messengerMenuOpen}
+          onBackdropClick={closeMessengerMenu}
+          onClose={closeMessengerMenu}
+          goCreateRoomFromMenu={goCreateRoomFromMenu}
+          onOpenMessengerSettings={() => setMessengerSettingsOpen(true)}
+          onSignOut={signOut}
+          canAccessAdmin={canAccessAdmin}
+        />
+        </>
       </section>
 
-      {messengerDeleteUi
-        ? createPortal(
-            <div className="confirm-dialog-root">
-              <button
-                type="button"
-                className="confirm-dialog-backdrop"
-                aria-label="Закрыть"
-                disabled={deleteChatBusy}
-                onClick={() => {
-                  if (!deleteChatBusy) {
-                    setMessengerDeleteUi(null)
-                    setDeleteFlowConversationId(null)
-                  }
-                }}
-              />
-              <div
-                className="confirm-dialog"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="messenger-delete-chat-title"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {messengerDeleteUi.step === 'dm-pick' ? (
-                  <>
-                    <h2 id="messenger-delete-chat-title" className="confirm-dialog__title">
-                      Удалить чат
-                    </h2>
-                    <p className="dashboard-messenger__delete-chat-hint">
-                      <strong>Только у себя</strong> — чат пропадёт в вашем списке; у собеседника переписка останется.
-                    </p>
-                    <p className="dashboard-messenger__delete-chat-hint">
-                      <strong>У всех</strong> — диалог удалится для обоих, история сообщений будет стёрта.
-                    </p>
-                    <div className="confirm-dialog__actions">
-                      <button
-                        type="button"
-                        className="confirm-dialog__btn confirm-dialog__btn--secondary"
-                        disabled={deleteChatBusy}
-                        onClick={() => {
-                          setMessengerDeleteUi(null)
-                          setDeleteFlowConversationId(null)
-                        }}
-                      >
-                        Отмена
-                      </button>
-                      <button
-                        type="button"
-                        className="confirm-dialog__btn"
-                        disabled={deleteChatBusy}
-                        onClick={() => setMessengerDeleteUi({ step: 'confirm', kind: 'dm-me' })}
-                      >
-                        Только у меня
-                      </button>
-                      <button
-                        type="button"
-                        className="confirm-dialog__btn confirm-dialog__btn--danger"
-                        disabled={deleteChatBusy}
-                        onClick={() => setMessengerDeleteUi({ step: 'confirm', kind: 'dm-all' })}
-                      >
-                        У всех
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <h2 id="messenger-delete-chat-title" className="confirm-dialog__title">
-                      {messengerDeleteUi.kind === 'dm-me'
-                        ? 'Убрать чат у себя?'
-                        : messengerDeleteUi.kind === 'dm-all'
-                          ? 'Удалить переписку у всех?'
-                          : messengerDeleteUi.kind === 'leave-group'
-                            ? 'Выйти из группы?'
-                            : messengerDeleteUi.kind === 'leave-channel'
-                              ? 'Выйти из канала?'
-                              : deleteFlowPurgeGcKind === 'channel'
-                                ? 'Удалить канал для всех?'
-                                : 'Удалить группу для всех?'}
-                    </h2>
-                    <p className="dashboard-messenger__delete-chat-hint">
-                      {messengerDeleteUi.kind === 'dm-me'
-                        ? 'Диалог исчезнет только у вас.'
-                        : messengerDeleteUi.kind === 'dm-all'
-                          ? 'Это действие нельзя отменить. Переписка будет удалена для всех участников личного чата.'
-                          : messengerDeleteUi.kind === 'leave-group' || messengerDeleteUi.kind === 'leave-channel'
-                            ? 'Вы перестанете быть участником. История останется у остальных.'
-                            : 'Чат будет удалён для всех участников. Это действие необратимо.'}
-                    </p>
-                    <div className="confirm-dialog__actions">
-                      <button
-                        type="button"
-                        className="confirm-dialog__btn confirm-dialog__btn--secondary"
-                        disabled={deleteChatBusy}
-                        onClick={() => {
-                          if (messengerDeleteUi.kind === 'dm-me' || messengerDeleteUi.kind === 'dm-all') {
-                            setMessengerDeleteUi({ step: 'dm-pick' })
-                          } else {
-                            setMessengerDeleteUi(null)
-                            setDeleteFlowConversationId(null)
-                          }
-                        }}
-                      >
-                        {messengerDeleteUi.kind === 'dm-me' || messengerDeleteUi.kind === 'dm-all' ? 'Назад' : 'Отмена'}
-                      </button>
-                      <button
-                        type="button"
-                        className="confirm-dialog__btn confirm-dialog__btn--danger"
-                        disabled={deleteChatBusy}
-                        onClick={() => void executeDeleteChatAction(messengerDeleteUi.kind)}
-                      >
-                        {deleteChatBusy ? '…' : 'Подтвердить'}
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
+      <MessengerDeleteChatDialog
+        messengerDeleteUi={messengerDeleteUi}
+        deleteChatBusy={deleteChatBusy}
+        deleteFlowPurgeGcKind={deleteFlowPurgeGcKind}
+        onBackdropClose={() => {
+          if (!deleteChatBusy) {
+            setMessengerDeleteUi(null)
+            setDeleteFlowConversationId(null)
+          }
+        }}
+        onCancelDmPick={() => {
+          setMessengerDeleteUi(null)
+          setDeleteFlowConversationId(null)
+        }}
+        onPickDmMe={() => setMessengerDeleteUi({ step: 'confirm', kind: 'dm-me' })}
+        onPickDmAll={() => setMessengerDeleteUi({ step: 'confirm', kind: 'dm-all' })}
+        onBackOrCancelConfirm={() => {
+          if (!messengerDeleteUi || messengerDeleteUi.step !== 'confirm') return
+          if (messengerDeleteUi.kind === 'dm-me' || messengerDeleteUi.kind === 'dm-all') {
+            setMessengerDeleteUi({ step: 'dm-pick' })
+          } else {
+            setMessengerDeleteUi(null)
+            setDeleteFlowConversationId(null)
+          }
+        }}
+        onConfirm={() => {
+          if (!messengerDeleteUi || messengerDeleteUi.step !== 'confirm') return
+          void executeDeleteChatAction(messengerDeleteUi.kind)
+        }}
+      />
 
       <MessengerForwardToDmModal
         open={forwardDmModal !== null}
@@ -4827,38 +2875,29 @@ export function DashboardMessengerPage() {
         onKickMember={(id) => void kickConversationMember(id)}
       />
 
-      {chatListRowMenu
-        ? createPortal(
-            <div
-              className="messenger-chatlist-menu-anchor"
-              style={{
-                left: Math.min(
-                  chatListRowMenu.anchor.right,
-                  typeof window !== 'undefined' ? window.innerWidth - 8 : chatListRowMenu.anchor.right,
-                ),
-                top: chatListRowMenu.anchor.bottom + 4,
-                transform: 'translateX(-100%)',
-              }}
-            >
-              <MessengerChatListMenuPopover
-                onClose={() => setChatListRowMenu(null)}
-                pinned={pinnedChatIds.includes(chatListRowMenu.item.id)}
-                pinDisabled={
-                  !pinnedChatIds.includes(chatListRowMenu.item.id) &&
-                  pinnedChatIds.length >= MESSENGER_MAX_PINNED_CHATS
-                }
-                onTogglePin={() => togglePinChatListItem(chatListRowMenu.item.id)}
-                onMarkRead={() => void markChatReadFromListMenu(chatListRowMenu.item)}
-                onDeleteChat={
-                  user?.id && !chatListRowMenu.item.joinRequestPending
-                    ? () => void beginDeleteChatFromListItem(chatListRowMenu.item)
-                    : undefined
-                }
-              />
-            </div>,
-            document.body,
-          )
-        : null}
+      <MessengerChatListRowMenuPortal
+        menu={chatListRowMenu}
+        onClose={() => setChatListRowMenu(null)}
+        pinned={Boolean(chatListRowMenu && pinnedChatIds.includes(chatListRowMenu.item.id))}
+        pinDisabled={Boolean(
+          chatListRowMenu &&
+            !pinnedChatIds.includes(chatListRowMenu.item.id) &&
+            pinnedChatIds.length >= MESSENGER_MAX_PINNED_CHATS,
+        )}
+        onTogglePin={() => {
+          if (chatListRowMenu) togglePinChatListItem(chatListRowMenu.item.id)
+        }}
+        onMarkRead={() => {
+          if (chatListRowMenu) void markChatReadFromListMenu(chatListRowMenu.item)
+        }}
+        onDeleteChat={
+          user?.id && chatListRowMenu && !chatListRowMenu.item.joinRequestPending
+            ? () => {
+                if (chatListRowMenu) void beginDeleteChatFromListItem(chatListRowMenu.item)
+              }
+            : undefined
+        }
+      />
 
       <MessengerImageLightbox
         open={Boolean(messengerImageLightbox && messengerImageLightbox.urls.length > 0)}

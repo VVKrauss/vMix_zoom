@@ -28,6 +28,7 @@ import { buildLinkMetaForMessageBody, ensureLinkPreviewForBody } from '../../lib
 import { uploadMessengerImage } from '../../lib/messenger'
 import { MESSENGER_COMPOSER_EMOJIS } from '../../lib/messengerComposerEmojis'
 import {
+  buildMessengerUrl,
   copyTextToClipboard,
   extractClipboardImageFiles,
   MESSENGER_GALLERY_MAX_ATTACH,
@@ -308,6 +309,33 @@ export function ChannelThreadPane({
       }
     })
   }, [conversationId, user?.id, onTouchTail, canView])
+
+  const shareChannelPostLink = useCallback(
+    async (postId: string) => {
+      const cid = conversationId.trim()
+      if (!cid || postId.startsWith('local-')) return
+      const path = buildMessengerUrl(cid, undefined, undefined, { messageId: postId })
+      const abs = `${window.location.origin}${path}`
+      try {
+        if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+          await navigator.share({ title: 'Пост в канале', url: abs })
+        } else {
+          await copyTextToClipboard(abs)
+          toast.push({ tone: 'success', message: 'Ссылка скопирована', ms: 2400 })
+        }
+      } catch (e) {
+        const err = e as { name?: string }
+        if (err?.name === 'AbortError') return
+        try {
+          await copyTextToClipboard(abs)
+          toast.push({ tone: 'success', message: 'Ссылка скопирована', ms: 2400 })
+        } catch {
+          toast.push({ tone: 'error', message: 'Не удалось поделиться', ms: 3200 })
+        }
+      }
+    },
+    [conversationId, toast],
+  )
 
   const addPendingChannelPhotoFiles = useCallback(
     (files: File[]) => {
@@ -1533,40 +1561,52 @@ export function ChannelThreadPane({
         </DoubleTapHeartSurface>
         <div className="dashboard-messenger__channel-post-footer">
           {renderReactionChips(p, 'dashboard-messenger__channel-post-reactions', { showAddButton: false })}
-          {!viewerOnly ? (
-            <div className="dashboard-messenger__channel-post-footer-actions">
-              <button
-                type="button"
-                className="dashboard-messenger__channel-post-comments"
-                aria-label={`Комментарии, ${countLabel}`}
-                onClick={() => void openCommentsModal(p.id)}
-              >
-                <FiRrIcon name="comment" />
-                <span className="dashboard-messenger__channel-post-comments-count">{countLabel}</span>
-              </button>
-              <button
-                type="button"
-                className="dashboard-messenger__channel-post-more dashboard-messenger__channel-post-more--footer"
-                aria-label="Действия с постом"
-                title="Действия"
-                onClick={(e) => {
-                  const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
-                  setPostMenu((cur) => {
-                    if (cur?.post.id === p.id) return null
-                    return {
-                      post: p,
-                      anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
-                    }
-                  })
-                }}
-                disabled={p.id.startsWith('local-')}
-              >
-                <span className="dashboard-messenger__channel-post-more-icon" aria-hidden>
-                  ⋮
-                </span>
-              </button>
-            </div>
-          ) : null}
+          <div className="dashboard-messenger__channel-post-footer-actions">
+            <button
+              type="button"
+              className="dashboard-messenger__channel-post-share"
+              aria-label="Поделиться ссылкой на пост"
+              title="Поделиться"
+              disabled={p.id.startsWith('local-')}
+              onClick={() => void shareChannelPostLink(p.id)}
+            >
+              <FiRrIcon name="share" />
+            </button>
+            {!viewerOnly ? (
+              <>
+                <button
+                  type="button"
+                  className="dashboard-messenger__channel-post-comments"
+                  aria-label={`Комментарии, ${countLabel}`}
+                  onClick={() => void openCommentsModal(p.id)}
+                >
+                  <FiRrIcon name="comment" />
+                  <span className="dashboard-messenger__channel-post-comments-count">{countLabel}</span>
+                </button>
+                <button
+                  type="button"
+                  className="dashboard-messenger__channel-post-more dashboard-messenger__channel-post-more--footer"
+                  aria-label="Действия с постом"
+                  title="Действия"
+                  onClick={(e) => {
+                    const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
+                    setPostMenu((cur) => {
+                      if (cur?.post.id === p.id) return null
+                      return {
+                        post: p,
+                        anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+                      }
+                    })
+                  }}
+                  disabled={p.id.startsWith('local-')}
+                >
+                  <span className="dashboard-messenger__channel-post-more-icon" aria-hidden>
+                    ⋮
+                  </span>
+                </button>
+              </>
+            ) : null}
+          </div>
         </div>
       </article>
     )
