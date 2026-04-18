@@ -217,6 +217,25 @@ export function AttachmentIcon() {
   )
 }
 
+/** Отправка сообщения в композере мессенджера (самолётик). */
+export function MessengerSendPlaneIcon({ className }: { className?: string } = {}) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M22 2 11 13" />
+      <path d="M22 2 15 22l-4-9-9-4L22 2Z" />
+    </svg>
+  )
+}
+
 /** Три полоски — меню (мобильный мессенджер и др.). */
 export function MenuBurgerIcon() {
   return <FiRrIcon name="menu-burger" />

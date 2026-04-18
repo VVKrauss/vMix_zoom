@@ -47,9 +47,14 @@ function draftMdComponents(
       a,
       img,
       p: ({ children }) => <>{children}</>,
+      del: ({ children }) => <del className="post-draft-read__md-del">{children}</del>,
     }
   }
-  return { a, img }
+  return {
+    a,
+    img,
+    del: ({ children }) => <del className="post-draft-read__md-del">{children}</del>,
+  }
 }
 
 function DraftInlineMarkdown({
@@ -177,7 +182,15 @@ export function PostDraftReadView({
         </div>
       ) : null}
       {draft.title.trim() ? <h1 className="post-draft-read__title">{draft.title.trim()}</h1> : null}
-      {draft.subtitle?.trim() ? <p className="post-draft-read__subtitle">{draft.subtitle.trim()}</p> : null}
+      {draft.subtitle?.trim() ? (
+        <div className="post-draft-read__subtitle post-draft-read__subtitle--md">
+          <DraftInlineMarkdown
+            text={draft.subtitle.trim()}
+            urlByStoragePath={urlByStoragePath}
+            variant="block"
+          />
+        </div>
+      ) : null}
       <div className="post-draft-read__body">
         {draft.blocks.map((b) => (
           <BlockRead key={b.id} block={b} urlByStoragePath={urlByStoragePath} />
@@ -186,10 +199,10 @@ export function PostDraftReadView({
       {draft.materials.length > 0 ? (
         <div className="post-draft-read__materials">
           <h3 className="post-draft-read__materials-title">Материалы</h3>
-          <ul>
+          <ul className="post-draft-read__materials-list">
             {draft.materials.map((m) => (
-              <li key={m.id}>
-                <a href={m.url} target="_blank" rel="noopener noreferrer">
+              <li key={m.id} className="post-draft-read__materials-item">
+                <a href={m.url} target="_blank" rel="noopener noreferrer" className="post-draft-read__materials-link">
                   {m.title || m.url}
                 </a>
               </li>

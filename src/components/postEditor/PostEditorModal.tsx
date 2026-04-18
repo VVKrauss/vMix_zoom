@@ -95,14 +95,24 @@ export function PostEditorModal({
     setSeoExtrasOpen(false)
   }, [open, mode, editMessage, cid])
 
+  const draftStoragePathsKey = useMemo(() => {
+    if (!open) return ''
+    try {
+      const paths = collectStoragePathsFromDraft(draft)
+      const cover = draft.coverImage?.startsWith('ms://') ? draft.coverImage.slice('ms://'.length) : null
+      const extra = cover && !paths.includes(cover) ? [...paths, cover] : paths
+      return [...extra].sort().join('\n')
+    } catch {
+      return ''
+    }
+  }, [open, draft])
+
   useEffect(() => {
-    if (!open) return
+    if (!open || !draftStoragePathsKey) return
     let active = true
-    const paths = collectStoragePathsFromDraft(draft)
-    const cover = draft.coverImage?.startsWith('ms://') ? draft.coverImage.slice('ms://'.length) : null
-    const extra = cover && !paths.includes(cover) ? [...paths, cover] : paths
+    const paths = draftStoragePathsKey.split('\n').filter(Boolean)
     void (async () => {
-      for (const p of extra) {
+      for (const p of paths) {
         const signed = await getMessengerImageSignedUrl(p, 3600)
         if (!active) return
         if (signed.url) setUrlByPath((prev) => (prev[p] ? prev : { ...prev, [p]: signed.url! }))
@@ -111,7 +121,7 @@ export function PostEditorModal({
     return () => {
       active = false
     }
-  }, [open, draft])
+  }, [open, draftStoragePathsKey])
 
   useEffect(() => {
     if (!open || !dirty) return
@@ -326,7 +336,7 @@ export function PostEditorModal({
                 <textarea
                   className="post-editor-field-subtitle"
                   rows={3}
-                  placeholder="Краткое описание"
+                  placeholder="Краткое описание (Markdown: ~~зачёркнуто~~, **жирный**)"
                   value={draft.subtitle ?? ''}
                   onChange={(e) => setDraft((d) => ({ ...d, subtitle: e.target.value }))}
                   disabled={busy}

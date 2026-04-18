@@ -4,7 +4,7 @@ import { getMessengerImageAttachments, type DirectMessage } from '../../lib/mess
 import { MESSENGER_COMPOSER_EMOJIS } from '../../lib/messengerComposerEmojis'
 import { truncateMessengerReplySnippet } from '../../lib/messengerUi'
 import type { LinkPreview } from '../../lib/linkPreview'
-import { AttachmentIcon } from '../icons'
+import { AttachmentIcon, FiRrIcon, MessengerSendPlaneIcon } from '../icons'
 import { MessengerVoiceRecordBtn } from './MessengerVoiceRecordBtn'
 import { MessengerReplyMiniThumb } from '../MessengerReplyMiniThumb'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
@@ -77,7 +77,20 @@ export function MessengerThreadComposer(props: {
 
   const [voiceRecording, setVoiceRecording] = useState(false)
   const [voiceMetaEl, setVoiceMetaEl] = useState<HTMLDivElement | null>(null)
-  const showMobileVoiceRow = isMobileMessenger && Boolean(onVoiceRecorded) && !editingMessageId
+  const showVoiceMetaStrip = isMobileMessenger && Boolean(onVoiceRecorded) && !editingMessageId
+
+  const hasComposerSendPayload =
+    Boolean(editingMessageId) || draft.trim().length > 0 || pendingMessengerPhotos.length > 0
+  const showSendIcon = hasComposerSendPayload && !voiceRecording
+  const showMic =
+    Boolean(onVoiceRecorded) && !editingMessageId && (!hasComposerSendPayload || voiceRecording)
+
+  const sendDisabled =
+    (!draft.trim() && pendingMessengerPhotos.length === 0) ||
+    sending ||
+    threadLoading ||
+    photoUploading ||
+    voiceUploading
 
   useEffect(() => {
     if (voiceRecording) setComposerEmojiOpen(false)
@@ -167,30 +180,47 @@ export function MessengerThreadComposer(props: {
           onDismiss={onDismissDraftLinkPreview}
         />
       ) : null}
-      <div className="dashboard-messenger__composer-main">
-        <textarea
-          ref={composerTextareaRef}
-          className="dashboard-messenger__input"
-          rows={isMobileMessenger ? 1 : 3}
-          placeholder={editingMessageId ? 'Исправьте текст…' : 'Напиши сообщение…'}
-          value={draft}
-          disabled={threadLoading || photoUploading || voiceUploading}
-          onPaste={onComposerPaste}
-          onChange={(e) => {
-            onDraftChange(e.target.value)
-            if (isMobileMessenger) queueMicrotask(() => adjustMobileComposerHeight())
-          }}
-          onPointerDown={() => unlockAudioContext()}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              void onSend()
-            }
-          }}
-        />
+      {showVoiceMetaStrip ? (
         <div
-          className={`dashboard-messenger__composer-side${showMobileVoiceRow ? ' dashboard-messenger__composer-side--voice-stack' : ''}`}
+          ref={setVoiceMetaEl}
+          className="dashboard-messenger__composer-voice-meta dashboard-messenger__composer-voice-meta--strip"
+          aria-live="polite"
+        />
+      ) : null}
+      <div className="dashboard-messenger__composer-main dashboard-messenger__composer-main--row">
+        <button
+          type="button"
+          className="dashboard-messenger__composer-icon-btn"
+          title="Фото"
+          aria-label="Прикрепить фото"
+          disabled={threadLoading || photoUploading || voiceUploading || Boolean(editingMessageId)}
+          onClick={() => photoInputRef.current?.click()}
         >
+          <AttachmentIcon />
+        </button>
+        <div className="dashboard-messenger__composer-input-wrap">
+          <textarea
+            ref={composerTextareaRef}
+            className="dashboard-messenger__input"
+            rows={1}
+            placeholder={editingMessageId ? 'Исправьте текст…' : 'Напиши сообщение…'}
+            value={draft}
+            disabled={threadLoading || photoUploading || voiceUploading}
+            onPaste={onComposerPaste}
+            onChange={(e) => {
+              onDraftChange(e.target.value)
+              queueMicrotask(() => adjustMobileComposerHeight())
+            }}
+            onPointerDown={() => unlockAudioContext()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                void onSend()
+              }
+            }}
+          />
+        </div>
+        <div className="dashboard-messenger__composer-trailing">
           <div
             className={`dashboard-messenger__composer-tools${
               voiceRecording && Boolean(onVoiceRecorded) && !editingMessageId
@@ -219,21 +249,14 @@ export function MessengerThreadComposer(props: {
             >
               😀
             </button>
-            <button
-              type="button"
-              className="dashboard-messenger__composer-icon-btn"
-              title="Фото"
-              aria-label="Прикрепить фото"
-              disabled={threadLoading || photoUploading || voiceUploading || Boolean(editingMessageId)}
-              onClick={() => photoInputRef.current?.click()}
-            >
-              <AttachmentIcon />
-            </button>
-            {onVoiceRecorded && !editingMessageId && !showMobileVoiceRow ? (
+            {showMic ? (
               <MessengerVoiceRecordBtn
+                variant={isMobileMessenger && Boolean(onVoiceRecorded) ? 'mobileEnd' : 'default'}
+                metaPortalEl={isMobileMessenger ? voiceMetaEl : undefined}
                 disabled={threadLoading || Boolean(editingMessageId)}
                 busy={photoUploading || voiceUploading || sending}
-                onRecorded={onVoiceRecorded}
+                onRecorded={onVoiceRecorded!}
+                onRecordingChange={setVoiceRecording}
               />
             ) : null}
             <input
@@ -250,52 +273,18 @@ export function MessengerThreadComposer(props: {
               }}
             />
           </div>
-          {showMobileVoiceRow ? (
-            <div className="dashboard-messenger__composer-mobile-actions">
-              <div
-                ref={setVoiceMetaEl}
-                className="dashboard-messenger__composer-voice-meta"
-                aria-live="polite"
-              />
-              <button
-                type="button"
-                className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
-                disabled={
-                  (!draft.trim() && pendingMessengerPhotos.length === 0) ||
-                  sending ||
-                  threadLoading ||
-                  photoUploading ||
-                  voiceUploading
-                }
-                onClick={() => void onSend()}
-              >
-                {editingMessageId ? 'Сохранить' : 'Отправить'}
-              </button>
-              <MessengerVoiceRecordBtn
-                variant="mobileEnd"
-                metaPortalEl={voiceMetaEl}
-                onRecordingChange={setVoiceRecording}
-                disabled={threadLoading || Boolean(editingMessageId)}
-                busy={photoUploading || voiceUploading || sending}
-                onRecorded={onVoiceRecorded!}
-              />
-            </div>
-          ) : (
+          {showSendIcon ? (
             <button
               type="button"
-              className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
-              disabled={
-                (!draft.trim() && pendingMessengerPhotos.length === 0) ||
-                sending ||
-                threadLoading ||
-                photoUploading ||
-                voiceUploading
-              }
+              className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn dashboard-messenger__send-btn--icon"
+              title={editingMessageId ? 'Сохранить' : 'Отправить'}
+              aria-label={editingMessageId ? 'Сохранить сообщение' : 'Отправить сообщение'}
+              disabled={sendDisabled}
               onClick={() => void onSend()}
             >
-              {editingMessageId ? 'Сохранить' : 'Отправить'}
+              {editingMessageId ? <FiRrIcon name="check" /> : <MessengerSendPlaneIcon />}
             </button>
-          )}
+          ) : null}
         </div>
       </div>
       {photoUploading || voiceUploading ? (

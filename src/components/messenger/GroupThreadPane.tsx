@@ -21,7 +21,7 @@ import {
 } from '../../lib/groups'
 import type { ReactionEmoji } from '../../types/roomComms'
 import { MessengerMessageMenuPopover } from '../MessengerMessageMenuPopover'
-import { AttachmentIcon, FiRrIcon } from '../icons'
+import { AttachmentIcon, FiRrIcon, MessengerSendPlaneIcon } from '../icons'
 import {
   copyTextToClipboard,
   extractClipboardImageFiles,
@@ -34,6 +34,7 @@ import { useLinkPreviewFromText } from '../../hooks/useLinkPreviewFromText'
 import { buildLinkMetaForMessageBody, ensureLinkPreviewForBody } from '../../lib/linkPreview'
 import { attachMessengerTailCatchupAfterContentPaint } from '../../hooks/messengerTailCatchup'
 import { useMessengerJumpToBottom } from '../../hooks/useMessengerJumpToBottom'
+import { useMobileMessengerComposerHeight } from '../../hooks/useMobileMessengerComposerHeight'
 import { MessengerJumpToBottomFab } from '../MessengerJumpToBottomFab'
 import { DraftLinkPreviewBar } from './DraftLinkPreviewBar'
 import { MessengerImageLightbox } from './MessengerImageLightbox'
@@ -124,6 +125,14 @@ export function GroupThreadPane({
   const [composerEmojiOpen, setComposerEmojiOpen] = useState(false)
   const [voiceRecording, setVoiceRecording] = useState(false)
   const [voiceMetaEl, setVoiceMetaEl] = useState<HTMLDivElement | null>(null)
+  const { adjustMobileComposerHeight } = useMobileMessengerComposerHeight({
+    isMobileMessenger,
+    draft,
+    activeConversationId: conversationId,
+    editingMessageId: null,
+    threadLoading,
+    composerTextareaRef,
+  })
   const [replyTo, setReplyTo] = useState<DirectMessage | null>(null)
   const [messageMenu, setMessageMenu] = useState<{
     message: DirectMessage
@@ -145,6 +154,17 @@ export function GroupThreadPane({
   }, [conversationId])
 
   const [myGroupMemberRole, setMyGroupMemberRole] = useState<string | null>(null)
+
+  const hasGroupComposerSendPayload = draft.trim().length > 0 || pendingGroupPhotos.length > 0
+  const showGroupSendIcon = hasGroupComposerSendPayload && !voiceRecording
+  const showGroupMic = !hasGroupComposerSendPayload || voiceRecording
+  const showGroupVoiceMetaStrip = isMobileMessenger
+  const groupSendDisabled =
+    (!draft.trim() && pendingGroupPhotos.length === 0) ||
+    sending ||
+    threadLoading ||
+    photoUploading ||
+    voiceUploading
 
   const isGroupMember = myGroupMemberRole !== null || isMemberHint === true
   const canView = viewerOnly || isGroupMember
@@ -932,26 +952,46 @@ export function GroupThreadPane({
             loading={draftLinkPreviewLoading}
             onDismiss={dismissDraftLinkPreview}
           />
-          <div className="dashboard-messenger__composer-main">
-            <textarea
-              ref={composerTextareaRef}
-              className="dashboard-messenger__input"
-              rows={isMobileMessenger ? 1 : 3}
-              placeholder="Напиши сообщение…"
-              value={draft}
-              disabled={threadLoading || photoUploading || voiceUploading}
-              onPaste={onComposerPaste}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  void sendText()
-                }
-              }}
-            />
+          {showGroupVoiceMetaStrip ? (
             <div
-              className={`dashboard-messenger__composer-side${isMobileMessenger ? ' dashboard-messenger__composer-side--voice-stack' : ''}`}
+              ref={setVoiceMetaEl}
+              className="dashboard-messenger__composer-voice-meta dashboard-messenger__composer-voice-meta--strip"
+              aria-live="polite"
+            />
+          ) : null}
+          <div className="dashboard-messenger__composer-main dashboard-messenger__composer-main--row">
+            <button
+              type="button"
+              className="dashboard-messenger__composer-icon-btn"
+              title="Фото"
+              aria-label="Прикрепить фото"
+              disabled={threadLoading || photoUploading || voiceUploading}
+              onClick={() => photoInputRef.current?.click()}
             >
+              <AttachmentIcon />
+            </button>
+            <div className="dashboard-messenger__composer-input-wrap">
+              <textarea
+                ref={composerTextareaRef}
+                className="dashboard-messenger__input"
+                rows={1}
+                placeholder="Напиши сообщение…"
+                value={draft}
+                disabled={threadLoading || photoUploading || voiceUploading}
+                onPaste={onComposerPaste}
+                onChange={(e) => {
+                  setDraft(e.target.value)
+                  queueMicrotask(() => adjustMobileComposerHeight())
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    void sendText()
+                  }
+                }}
+              />
+            </div>
+            <div className="dashboard-messenger__composer-trailing">
               <div
                 className={`dashboard-messenger__composer-tools${voiceRecording ? ' dashboard-messenger__composer-tools--voice-rec' : ''}`}
                 ref={composerEmojiWrapRef}
@@ -976,21 +1016,14 @@ export function GroupThreadPane({
                 >
                   😀
                 </button>
-                <button
-                  type="button"
-                  className="dashboard-messenger__composer-icon-btn"
-                  title="Фото"
-                  aria-label="Прикрепить фото"
-                  disabled={threadLoading || photoUploading || voiceUploading}
-                  onClick={() => photoInputRef.current?.click()}
-                >
-                  <AttachmentIcon />
-                </button>
-                {!isMobileMessenger ? (
+                {showGroupMic ? (
                   <MessengerVoiceRecordBtn
+                    variant={isMobileMessenger ? 'mobileEnd' : 'default'}
+                    metaPortalEl={isMobileMessenger ? voiceMetaEl : undefined}
                     disabled={threadLoading}
                     busy={photoUploading || voiceUploading || sending}
                     onRecorded={onVoiceRecorded}
+                    onRecordingChange={setVoiceRecording}
                   />
                 ) : null}
                 <input
@@ -1007,52 +1040,18 @@ export function GroupThreadPane({
                   }}
                 />
               </div>
-              {isMobileMessenger ? (
-                <div className="dashboard-messenger__composer-mobile-actions">
-                  <div
-                    ref={setVoiceMetaEl}
-                    className="dashboard-messenger__composer-voice-meta"
-                    aria-live="polite"
-                  />
-                  <button
-                    type="button"
-                    className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
-                    disabled={
-                      (!draft.trim() && pendingGroupPhotos.length === 0) ||
-                      sending ||
-                      threadLoading ||
-                      photoUploading ||
-                      voiceUploading
-                    }
-                    onClick={() => void sendText()}
-                  >
-                    Отправить
-                  </button>
-                  <MessengerVoiceRecordBtn
-                    variant="mobileEnd"
-                    metaPortalEl={voiceMetaEl}
-                    onRecordingChange={setVoiceRecording}
-                    disabled={threadLoading}
-                    busy={photoUploading || voiceUploading || sending}
-                    onRecorded={onVoiceRecorded}
-                  />
-                </div>
-              ) : (
+              {showGroupSendIcon ? (
                 <button
                   type="button"
-                  className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
-                  disabled={
-                    (!draft.trim() && pendingGroupPhotos.length === 0) ||
-                    sending ||
-                    threadLoading ||
-                    photoUploading ||
-                    voiceUploading
-                  }
+                  className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn dashboard-messenger__send-btn--icon"
+                  title="Отправить"
+                  aria-label="Отправить сообщение"
+                  disabled={groupSendDisabled}
                   onClick={() => void sendText()}
                 >
-                  Отправить
+                  <MessengerSendPlaneIcon />
                 </button>
-              )}
+              ) : null}
             </div>
           </div>
           {photoUploading || voiceUploading ? (

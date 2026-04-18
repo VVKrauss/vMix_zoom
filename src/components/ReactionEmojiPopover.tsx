@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { shouldClosePopoverOnOutsidePointer } from '../utils/popoverOutsideClick'
 import { REACTION_EMOJI_WHITELIST } from '../types/roomComms'
+import { twemojiSvgUrl } from '../lib/twemojiUrl'
 
 export function ReactionEmojiPopover({
   onClose,
@@ -38,16 +39,33 @@ export function ReactionEmojiPopover({
       <div className="device-popover__title">{title}</div>
       <div className={`reaction-emoji-grid${grid.length > 16 ? ' reaction-emoji-grid--scroll' : ''}`}>
         {grid.map((emoji) => (
-          <button
-            key={emoji}
-            type="button"
-            className="reaction-emoji-btn"
-            onClick={() => onPick(emoji)}
-          >
-            {emoji}
-          </button>
+          <ReactionEmojiGridButton key={emoji} emoji={emoji} onPick={() => onPick(emoji)} />
         ))}
       </div>
     </div>
+  )
+}
+
+function ReactionEmojiGridButton({ emoji, onPick }: { emoji: string; onPick: () => void }) {
+  const [imgBroken, setImgBroken] = useState(false)
+  const src = twemojiSvgUrl(emoji)
+  return (
+    <button type="button" className="reaction-emoji-btn" title={emoji} aria-label={emoji} onClick={onPick}>
+      {!imgBroken ? (
+        <img
+          src={src}
+          alt=""
+          className="reaction-emoji-btn__twemoji"
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          onError={() => setImgBroken(true)}
+        />
+      ) : (
+        <span className="reaction-emoji-btn__fallback" aria-hidden>
+          {emoji}
+        </span>
+      )}
+    </button>
   )
 }

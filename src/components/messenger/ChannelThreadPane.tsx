@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { messengerBodyForMarkdown } from '../../lib/messengerMarkdownBody'
 import { shouldClosePopoverOnOutsidePointer } from '../../utils/popoverOutsideClick'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
@@ -37,7 +38,7 @@ import {
 import { collectStoragePathsFromDraft } from '../../lib/postEditor/draftUtils'
 import type { ReactionEmoji } from '../../types/roomComms'
 import { REACTION_EMOJI_WHITELIST } from '../../types/roomComms'
-import { AttachmentIcon, ChevronLeftIcon, FiRrIcon, XCloseIcon } from '../icons'
+import { AttachmentIcon, ChevronLeftIcon, FiRrIcon, MessengerSendPlaneIcon, XCloseIcon } from '../icons'
 import { MessengerBubbleBody } from '../MessengerBubbleBody'
 import { MessengerMessageMenuPopover } from '../MessengerMessageMenuPopover'
 import { PostDraftReadView, PostPublicationLine } from '../postEditor/PostDraftReadView'
@@ -239,6 +240,32 @@ export function ChannelThreadPane({
 
   const canModerateChannel = Boolean(myChannelMemberRole && CHANNEL_STAFF_ROLES.has(myChannelMemberRole))
   const canCreatePosts = isChannelMember && (postingMode === 'everyone' || canModerateChannel)
+
+  const hasFeedComposerSendPayload =
+    feedDraft.trim().length > 0 || pendingChannelPhotos.length > 0
+  const showFeedSendIcon = hasFeedComposerSendPayload && !feedVoiceRecording
+  const showFeedMic = !hasFeedComposerSendPayload || feedVoiceRecording
+  const showFeedVoiceMetaStrip = isMobileMessenger
+  const feedSendDisabled =
+    (!feedDraft.trim() && pendingChannelPhotos.length === 0) ||
+    feedSending ||
+    threadLoading ||
+    feedPhotoUploading ||
+    feedVoiceUploading
+
+  const adjustFeedComposerHeight = useCallback(() => {
+    const ta = feedComposerTextareaRef.current
+    if (!ta) return
+    const vv = window.visualViewport
+    const vh = vv?.height ?? window.innerHeight
+    const maxH = isMobileMessenger ? Math.round(vh * 0.28) : Math.min(260, Math.round(vh * 0.32))
+    ta.style.height = 'auto'
+    ta.style.height = `${Math.min(ta.scrollHeight, maxH)}px`
+  }, [isMobileMessenger])
+
+  useLayoutEffect(() => {
+    adjustFeedComposerHeight()
+  }, [feedDraft, isMobileMessenger, threadLoading, adjustFeedComposerHeight])
 
   useEffect(() => {
     setPendingChannelPhotos((prev) => {
@@ -601,9 +628,10 @@ export function ChannelThreadPane({
         ta?.focus()
         const p = start + emoji.length
         ta?.setSelectionRange(p, p)
+        adjustFeedComposerHeight()
       })
     },
-    [feedDraft],
+    [feedDraft, adjustFeedComposerHeight],
   )
 
   useEffect(() => {
@@ -685,9 +713,18 @@ export function ChannelThreadPane({
           setReactions((prev) => (prev.some((r) => r.id === msg.id) ? prev : [...prev, msg].sort(sortChrono)))
           return
         }
-        if (msg.senderUserId === user.id) return
         if (!msg.replyToMessageId) {
-          setPosts((prev) => (prev.some((p) => p.id === msg.id) ? prev : [...prev, msg].sort(sortChrono)))
+          setPosts((prev) => {
+            if (prev.some((p) => p.id === msg.id)) return prev
+            const withoutMatchingOptimistic = prev.filter((p) => {
+              if (!p.id.startsWith('local-')) return true
+              if (p.senderUserId !== msg.senderUserId) return true
+              if (p.kind !== msg.kind) return true
+              if ((p.body ?? '') !== (msg.body ?? '')) return true
+              return false
+            })
+            return [...withoutMatchingOptimistic, msg].sort(sortChrono)
+          })
           onTouchTail?.({ lastMessageAt: msg.createdAt, lastMessagePreview: msg.body })
         } else {
           const postId = msg.replyToMessageId
@@ -763,9 +800,7 @@ export function ChannelThreadPane({
     }
   }, [conversationId, user?.id, onTouchTail, removeReactionMessageEverywhere])
 
-  useEffect(() => {
-    const cid = conversationId.trim()
-    if (!cid || !canView) return
+  const reactionFetchTargets = useMemo(() => {
     const postIds = posts.filter((p) => p.kind !== 'reaction').map((p) => p.id)
     const commentIds: string[] = []
     for (const arr of Object.values(commentsByPostId)) {
@@ -773,7 +808,13 @@ export function ChannelThreadPane({
         if (c.kind !== 'reaction') commentIds.push(c.id)
       }
     }
-    const targets = [...new Set([...postIds, ...commentIds])]
+    return [...new Set([...postIds, ...commentIds])].sort()
+  }, [posts, commentsByPostId])
+
+  useEffect(() => {
+    const cid = conversationId.trim()
+    if (!cid || !canView) return
+    const targets = reactionFetchTargets
     if (targets.length === 0) return
     let cancelled = false
     void listChannelReactionsForTargets(cid, targets).then((res) => {
@@ -796,7 +837,7 @@ export function ChannelThreadPane({
     return () => {
       cancelled = true
     }
-  }, [conversationId, canView, posts, commentsByPostId])
+  }, [conversationId, canView, reactionFetchTargets])
 
   useEffect(() => {
     let active = true
@@ -1372,7 +1413,7 @@ export function ChannelThreadPane({
               },
             }}
           >
-            {m.body}
+            {messengerBodyForMarkdown(m.body ?? '')}
           </ReactMarkdown>
       </div>,
       onMentionSlug,
@@ -1635,6 +1676,7 @@ export function ChannelThreadPane({
             </>
           ) : p.meta?.postDraft ? (
             <PostDraftReadView
+              className="post-draft-read--channel-feed"
               draft={p.meta.postDraft}
               urlByStoragePath={signedUrlByPath}
               publishedAt={p.createdAt}
@@ -1843,30 +1885,47 @@ export function ChannelThreadPane({
               loading={feedLinkPreviewLoading}
               onDismiss={dismissFeedLinkPreview}
             />
-            <div className="dashboard-messenger__composer-main">
-              <textarea
-                ref={feedComposerTextareaRef}
-                className="dashboard-messenger__input"
-                rows={isMobileMessenger ? 1 : 3}
-                placeholder="Напиши пост…"
-                value={feedDraft}
-                disabled={threadLoading || feedPhotoUploading || feedVoiceUploading}
-                onPaste={onFeedComposerPaste}
-                onChange={(e) => setFeedDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    void sendChannelFeed()
-                  }
-                }}
-              />
+            {showFeedVoiceMetaStrip ? (
               <div
-                className={`dashboard-messenger__composer-side${isMobileMessenger ? ' dashboard-messenger__composer-side--voice-stack' : ''}`}
+                ref={setFeedVoiceMetaEl}
+                className="dashboard-messenger__composer-voice-meta dashboard-messenger__composer-voice-meta--strip"
+                aria-live="polite"
+              />
+            ) : null}
+            <div className="dashboard-messenger__composer-main dashboard-messenger__composer-main--row">
+              <button
+                type="button"
+                className="dashboard-messenger__composer-icon-btn"
+                title="Фото"
+                aria-label="Прикрепить фото"
+                disabled={threadLoading || feedPhotoUploading || feedVoiceUploading}
+                onClick={() => feedPhotoInputRef.current?.click()}
               >
-                <div
-                  className={`dashboard-messenger__composer-tools${feedVoiceRecording ? ' dashboard-messenger__composer-tools--voice-rec' : ''}`}
-                  ref={feedComposerEmojiWrapRef}
-                >
+                <AttachmentIcon />
+              </button>
+              <div className="dashboard-messenger__composer-input-wrap">
+                <textarea
+                  ref={feedComposerTextareaRef}
+                  className="dashboard-messenger__input"
+                  rows={1}
+                  placeholder="Напиши пост…"
+                  value={feedDraft}
+                  disabled={threadLoading || feedPhotoUploading || feedVoiceUploading}
+                  onPaste={onFeedComposerPaste}
+                  onChange={(e) => {
+                    setFeedDraft(e.target.value)
+                    queueMicrotask(() => adjustFeedComposerHeight())
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                      e.preventDefault()
+                      void sendChannelFeed()
+                    }
+                  }}
+                />
+              </div>
+              <div className="dashboard-messenger__composer-trailing">
+                <div className="dashboard-messenger__composer-tools" ref={feedComposerEmojiWrapRef}>
                   {feedComposerEmojiOpen ? (
                     <div className="dashboard-messenger__composer-emoji-pop">
                       <ReactionEmojiPopover
@@ -1880,16 +1939,6 @@ export function ChannelThreadPane({
                   <button
                     type="button"
                     className="dashboard-messenger__composer-icon-btn"
-                    title="Оформленный пост"
-                    aria-label="Оформленный пост: заголовок, обложка, блоки"
-                    disabled={threadLoading || feedSending}
-                    onClick={() => setPostEditor({ mode: 'create' })}
-                  >
-                    <FiRrIcon name="stars" />
-                  </button>
-                  <button
-                    type="button"
-                    className="dashboard-messenger__composer-icon-btn"
                     title="Эмодзи"
                     aria-label="Вставить эмодзи"
                     disabled={threadLoading}
@@ -1900,18 +1949,21 @@ export function ChannelThreadPane({
                   <button
                     type="button"
                     className="dashboard-messenger__composer-icon-btn"
-                    title="Фото"
-                    aria-label="Прикрепить фото"
-                    disabled={threadLoading || feedPhotoUploading || feedVoiceUploading}
-                    onClick={() => feedPhotoInputRef.current?.click()}
+                    title="Оформленный пост"
+                    aria-label="Оформленный пост: заголовок, обложка, блоки"
+                    disabled={threadLoading || feedSending}
+                    onClick={() => setPostEditor({ mode: 'create' })}
                   >
-                    <AttachmentIcon />
+                    <FiRrIcon name="stars" />
                   </button>
-                  {!isMobileMessenger ? (
+                  {showFeedMic ? (
                     <MessengerVoiceRecordBtn
+                      variant={isMobileMessenger ? 'mobileEnd' : 'default'}
+                      metaPortalEl={isMobileMessenger ? feedVoiceMetaEl : undefined}
                       disabled={threadLoading}
                       busy={feedPhotoUploading || feedVoiceUploading || feedSending}
                       onRecorded={onFeedVoiceRecorded}
+                      onRecordingChange={setFeedVoiceRecording}
                     />
                   ) : null}
                   <input
@@ -1928,52 +1980,18 @@ export function ChannelThreadPane({
                     }}
                   />
                 </div>
-                {isMobileMessenger ? (
-                  <div className="dashboard-messenger__composer-mobile-actions">
-                    <div
-                      ref={setFeedVoiceMetaEl}
-                      className="dashboard-messenger__composer-voice-meta"
-                      aria-live="polite"
-                    />
-                    <button
-                      type="button"
-                      className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
-                      disabled={
-                        (!feedDraft.trim() && pendingChannelPhotos.length === 0) ||
-                        feedSending ||
-                        threadLoading ||
-                        feedPhotoUploading ||
-                        feedVoiceUploading
-                      }
-                      onClick={() => void sendChannelFeed()}
-                    >
-                      Отправить
-                    </button>
-                    <MessengerVoiceRecordBtn
-                      variant="mobileEnd"
-                      metaPortalEl={feedVoiceMetaEl}
-                      onRecordingChange={setFeedVoiceRecording}
-                      disabled={threadLoading}
-                      busy={feedPhotoUploading || feedVoiceUploading || feedSending}
-                      onRecorded={onFeedVoiceRecorded}
-                    />
-                  </div>
-                ) : (
+                {showFeedSendIcon ? (
                   <button
                     type="button"
-                    className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
-                    disabled={
-                      (!feedDraft.trim() && pendingChannelPhotos.length === 0) ||
-                      feedSending ||
-                      threadLoading ||
-                      feedPhotoUploading ||
-                      feedVoiceUploading
-                    }
+                    className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn dashboard-messenger__send-btn--icon"
+                    title="Отправить (Ctrl+Enter)"
+                    aria-label="Опубликовать пост"
+                    disabled={feedSendDisabled}
                     onClick={() => void sendChannelFeed()}
                   >
-                    Отправить
+                    <MessengerSendPlaneIcon />
                   </button>
-                )}
+                ) : null}
               </div>
             </div>
             {feedPhotoUploading || feedVoiceUploading ? (
@@ -2125,14 +2143,18 @@ export function ChannelThreadPane({
                 }}
               />
               <div className="dashboard-messenger__composer-side">
-                <button
-                  type="button"
-                  className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
-                  disabled={!canSend}
-                  onClick={() => void sendComment(commentsModalPostId)}
-                >
-                  {sending ? '…' : 'Отправить'}
-                </button>
+                {draft.trim() || sending ? (
+                  <button
+                    type="button"
+                    className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn dashboard-messenger__send-btn--icon"
+                    title="Отправить"
+                    aria-label={sending ? 'Отправка…' : 'Отправить комментарий'}
+                    disabled={!canSend}
+                    onClick={() => void sendComment(commentsModalPostId)}
+                  >
+                    {sending ? '…' : <MessengerSendPlaneIcon />}
+                  </button>
+                ) : null}
               </div>
             </div>
           </div>

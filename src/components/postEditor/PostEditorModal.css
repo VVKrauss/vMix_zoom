@@ -314,6 +314,67 @@ html[data-theme='light'] .post-editor-extras-panel {
   line-height: 1.45;
 }
 
+.post-draft-read__subtitle--md {
+  margin: 0 0 20px;
+  color: var(--text-dim);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.post-draft-read__subtitle--md .post-draft-read__md {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.post-draft-read__md-del {
+  text-decoration: line-through;
+  opacity: 0.9;
+}
+
+.post-draft-read__materials {
+  margin-top: 18px;
+  padding: 0 4px 0 6px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.post-draft-read__materials-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.post-draft-read__materials-list {
+  margin: 0;
+  padding: 0 0 0 1.25em;
+  list-style-position: outside;
+  min-width: 0;
+}
+
+.post-draft-read__materials-item {
+  margin: 6px 0;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.post-draft-read__materials-link {
+  color: var(--red);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.post-draft-read--channel-feed .post-draft-read__p,
+.post-draft-read--channel-feed .post-draft-read__subtitle--md,
+.post-draft-read--channel-feed .post-draft-read__subtitle--md .post-draft-read__md {
+  font-size: var(--dm-msg-font, 15px);
+  line-height: 1.45;
+}
+
+.post-draft-read--channel-feed .post-draft-read__title {
+  font-size: clamp(18px, 2.8vw, 22px);
+}
+
 .post-draft-read__p {
   font-size: 16px;
   line-height: 1.65;
