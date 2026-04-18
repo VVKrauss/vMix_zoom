@@ -213,7 +213,12 @@ function parseOkMessageResult(data: unknown): { messageId: string | null; create
 
 export async function appendGroupMessage(
   conversationId: string,
-  args: { kind?: 'text' | 'image' | 'system'; body: string; meta?: Record<string, unknown> | null; replyToMessageId?: string | null },
+  args: {
+    kind?: 'text' | 'image' | 'audio' | 'system'
+    body: string
+    meta?: Record<string, unknown> | null
+    replyToMessageId?: string | null
+  },
 ): Promise<{ data: { messageId: string | null; createdAt: string | null } | null; error: string | null }> {
   const { data, error } = await supabase.rpc('append_group_message', {
     p_conversation_id: conversationId.trim(),

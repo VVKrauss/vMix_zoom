@@ -5,7 +5,7 @@ import { truncateMessengerReplySnippet } from './messengerUi'
 
 export type ForwardQuotedStrip = {
   snippet: string
-  kind: 'text' | 'image'
+  kind: 'text' | 'image' | 'audio'
   quotedAvatarUrl: string | null
   quotedName?: string
   thumbPath?: string
@@ -15,7 +15,8 @@ export function forwardMetaToQuotedStrip(forward: MessengerForwardMeta | null | 
   if (!forward || typeof forward.from !== 'string') return null
   if (forward.from !== 'direct' && forward.from !== 'group' && forward.from !== 'channel') return null
   const snippet = typeof forward.snippet === 'string' ? forward.snippet.trim() : ''
-  const sk = forward.source_kind === 'image' ? 'image' : 'text'
+  const sk =
+    forward.source_kind === 'image' ? 'image' : forward.source_kind === 'audio' ? 'audio' : 'text'
   const thumbPath =
     typeof forward.image_thumb_path === 'string' && forward.image_thumb_path.trim()
       ? forward.image_thumb_path.trim()
@@ -27,7 +28,7 @@ export function forwardMetaToQuotedStrip(forward: MessengerForwardMeta | null | 
         ? forward.author_avatar_url.trim()
         : null
     return {
-      snippet: snippet || (sk === 'image' ? 'Фото' : '…'),
+      snippet: snippet || (sk === 'image' ? 'Фото' : sk === 'audio' ? 'Голосовое' : '…'),
       kind: sk,
       quotedAvatarUrl: av,
       quotedName: name,
@@ -41,7 +42,7 @@ export function forwardMetaToQuotedStrip(forward: MessengerForwardMeta | null | 
       ? forward.source_avatar_url.trim()
       : null
   return {
-    snippet: snippet || (sk === 'image' ? 'Фото' : '…'),
+    snippet: snippet || (sk === 'image' ? 'Фото' : sk === 'audio' ? 'Голосовое' : '…'),
     kind: sk,
     quotedAvatarUrl: sav,
     quotedName: title,
@@ -58,7 +59,8 @@ export function buildForwardMetaFromDirectMessage(
     sourceConversationId: string
   },
 ): { forward: MessengerForwardMeta; sendBody: string } {
-  const sk: 'text' | 'image' = m.kind === 'image' ? 'image' : 'text'
+  const sk: 'text' | 'image' | 'audio' =
+    m.kind === 'image' ? 'image' : m.kind === 'audio' ? 'audio' : 'text'
   const thumb =
     m.kind === 'image'
       ? (m.meta?.image?.thumbPath?.trim() || m.meta?.image?.path?.trim() || null)
@@ -73,8 +75,11 @@ export function buildForwardMetaFromDirectMessage(
   const snippet =
     sk === 'image'
       ? truncateMessengerReplySnippet(body || 'Фото', 80)
-      : truncateMessengerReplySnippet(body || '…', 80)
-  const sendBody = sk === 'image' ? (body || 'Фото') : body || snippet || '…'
+      : sk === 'audio'
+        ? truncateMessengerReplySnippet(body || 'Голосовое сообщение', 80)
+        : truncateMessengerReplySnippet(body || '…', 80)
+  const sendBody =
+    sk === 'image' ? (body || 'Фото') : sk === 'audio' ? (body || 'Голосовое сообщение') : body || snippet || '…'
   return {
     forward: {
       from: 'direct',
@@ -95,7 +100,8 @@ export function buildForwardMetaFromChannelOrGroup(
   from: 'channel' | 'group',
   opts: { sourceTitle: string; sourceAvatarUrl: string | null; sourceConversationId: string },
 ): { forward: MessengerForwardMeta; sendBody: string } {
-  const sk: 'text' | 'image' = m.kind === 'image' ? 'image' : 'text'
+  const sk: 'text' | 'image' | 'audio' =
+    m.kind === 'image' ? 'image' : m.kind === 'audio' ? 'audio' : 'text'
   const thumb =
     m.kind === 'image'
       ? (m.meta?.image?.thumbPath?.trim() || m.meta?.image?.path?.trim() || null)
@@ -104,8 +110,11 @@ export function buildForwardMetaFromChannelOrGroup(
   const snippet =
     sk === 'image'
       ? truncateMessengerReplySnippet(body || 'Фото', 80)
-      : truncateMessengerReplySnippet(body || '…', 80)
-  const sendBody = sk === 'image' ? (body || 'Фото') : body || snippet || '…'
+      : sk === 'audio'
+        ? truncateMessengerReplySnippet(body || 'Голосовое сообщение', 80)
+        : truncateMessengerReplySnippet(body || '…', 80)
+  const sendBody =
+    sk === 'image' ? (body || 'Фото') : sk === 'audio' ? (body || 'Голосовое сообщение') : body || snippet || '…'
   return {
     forward: {
       from,

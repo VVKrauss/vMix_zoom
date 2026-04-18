@@ -315,7 +315,9 @@ export function MessengerDirectThreadBody(props: {
                         void toggleMessengerReaction(targetId, emoji)
                       }}
                       quickReactEnabled={Boolean(
-                        userId && (message.kind === 'text' || message.kind === 'image') && !message.id.startsWith('local-'),
+                        userId &&
+                          (message.kind === 'text' || message.kind === 'image' || message.kind === 'audio') &&
+                          !message.id.startsWith('local-'),
                       )}
                       isMobileMessenger={isMobileMessenger}
                       onQuickHeart={() => void toggleMessengerReaction(message.id, QUICK_REACTION_EMOJI)}

@@ -112,7 +112,7 @@ export function ThreadMessageBubble({
 
   const canSwipeReply =
     Boolean(swipeReplyEnabled && onSwipeReply) &&
-    (message.kind === 'text' || message.kind === 'image') &&
+    (message.kind === 'text' || message.kind === 'image' || message.kind === 'audio') &&
     !message.id.startsWith('local-')
 
   const endSwipeGesture = useCallback(

@@ -57,6 +57,7 @@ import {
   requestMessengerUnreadRefresh,
   toggleDirectMessageReaction,
   uploadMessengerImage,
+  uploadMessengerAudio,
   isDmSoftDeletedStub,
 } from '../lib/messenger'
 import {
@@ -286,6 +287,7 @@ export function DashboardMessengerPage() {
   const [conversationStaffMutating, setConversationStaffMutating] = useState(false)
   const [sending, setSending] = useState(false)
   const [photoUploading, setPhotoUploading] = useState(false)
+  const [voiceUploading, setVoiceUploading] = useState(false)
   /** Локальные файлы до отправки (подпись — в поле draft). */
   const [pendingMessengerPhotos, setPendingMessengerPhotos] = useState<
     { id: string; file: File; previewUrl: string }[]
@@ -984,15 +986,126 @@ export function DashboardMessengerPage() {
     })
   }
 
+  const onVoiceRecorded = useCallback(
+    async (blob: Blob, durationSec: number) => {
+      const trimmed = draft.trim()
+      const convId = activeConversationId.trim()
+      if (!user?.id || !convId || sending || voiceUploading || photoUploading) return
+
+      const replyTarget = replyTo
+      const replyId = replyTarget?.id ?? null
+
+      setSending(true)
+      setVoiceUploading(true)
+      setError(null)
+      const up = await uploadMessengerAudio(convId, blob)
+      if (up.error || !up.path) {
+        setError(up.error ?? 'Не удалось загрузить аудио')
+        setVoiceUploading(false)
+        setSending(false)
+        return
+      }
+      const dur = Math.round(durationSec * 10) / 10
+      const audioMeta: DirectMessage['meta'] = {
+        audio: { path: up.path, durationSec: dur },
+      }
+      const res = await appendDirectMessage(convId, trimmed, {
+        kind: 'audio',
+        meta: audioMeta as Record<string, unknown>,
+        replyToMessageId: replyId,
+      })
+      if (res.error) {
+        setError(res.error)
+        setVoiceUploading(false)
+        setSending(false)
+        return
+      }
+      const preview = previewTextForDirectMessageTail({
+        kind: 'audio',
+        body: trimmed,
+        meta: audioMeta,
+      })
+      setDraft('')
+      setReplyTo(null)
+      setVoiceUploading(false)
+      setSending(false)
+      const createdAt = res.data?.createdAt ?? new Date().toISOString()
+      const snap = profile?.display_name?.trim() || 'Вы'
+      const newMsg: DirectMessage = {
+        id: res.data?.messageId ?? `local-${Date.now()}`,
+        senderUserId: user.id,
+        senderNameSnapshot: snap,
+        kind: 'audio',
+        body: trimmed,
+        createdAt,
+        replyToMessageId: replyId,
+        meta: audioMeta,
+      }
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === newMsg.id)) return prev
+        return [...prev, newMsg].sort(sortDirectMessagesChrono)
+      })
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === convId
+            ? {
+                ...item,
+                lastMessageAt: createdAt,
+                lastMessagePreview: preview,
+                messageCount: item.messageCount + 1,
+                unreadCount: 0,
+              }
+            : item,
+        ),
+      )
+      setActiveConversation((prev) =>
+        prev && prev.id === convId
+          ? {
+              ...prev,
+              lastMessageAt: createdAt,
+              lastMessagePreview: preview,
+              messageCount: prev.messageCount + 1,
+              unreadCount: 0,
+            }
+          : prev,
+      )
+      requestMessengerUnreadRefresh()
+      requestAnimationFrame(() => {
+        const el = messagesScrollRef.current
+        if (el) {
+          el.scrollTop = el.scrollHeight
+          messengerPinnedToBottomRef.current = true
+        }
+        refocusMessengerComposer()
+      })
+    },
+    [
+      draft,
+      activeConversationId,
+      user?.id,
+      sending,
+      voiceUploading,
+      photoUploading,
+      replyTo,
+      profile?.display_name,
+      setMessages,
+      setItems,
+      setActiveConversation,
+      setDraft,
+      setReplyTo,
+      setError,
+    ],
+  )
+
   const onComposerPaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      if (threadLoading || photoUploading || Boolean(editingMessageId)) return
+      if (threadLoading || photoUploading || voiceUploading || Boolean(editingMessageId)) return
       const files = extractClipboardImageFiles(e.clipboardData)
       if (files.length === 0) return
       e.preventDefault()
       addPendingMessengerPhotoFiles(files)
     },
-    [photoUploading, threadLoading, editingMessageId, addPendingMessengerPhotoFiles],
+    [photoUploading, voiceUploading, threadLoading, editingMessageId, addPendingMessengerPhotoFiles],
   )
 
   const [conversationKindFilter, setConversationKindFilter] = useState<
@@ -1652,7 +1765,7 @@ export function DashboardMessengerPage() {
     const m = messageMenu?.message
     if (!user?.id || !convId || !m?.id || m.id.startsWith('local-')) return
     if (m.senderUserId !== user.id) return
-    if (m.kind !== 'text' && m.kind !== 'image') return
+    if (m.kind !== 'text' && m.kind !== 'image' && m.kind !== 'audio') return
     if (threadLoading) return
 
     closeMessageActionMenu()
@@ -2705,6 +2818,8 @@ export function DashboardMessengerPage() {
                             setEditingMessageId(null)
                             setDraft('')
                           }}
+                          voiceUploading={voiceUploading}
+                          onVoiceRecorded={onVoiceRecorded}
                         />
                       }
                       messageActionMenu={
@@ -2716,12 +2831,14 @@ export function DashboardMessengerPage() {
                                   messageMenu.message.senderUserId === user.id &&
                                   !messageMenu.message.id.startsWith('local-') &&
                                   (messageMenu.message.kind === 'text' ||
-                                    messageMenu.message.kind === 'image'),
+                                    messageMenu.message.kind === 'image' ||
+                                    messageMenu.message.kind === 'audio'),
                               )}
                               canCopy={Boolean(
                                 !messageMenu.message.id.startsWith('local-') &&
                                   (messageMenu.message.kind === 'text' ||
-                                    messageMenu.message.kind === 'image') &&
+                                    messageMenu.message.kind === 'image' ||
+                                    messageMenu.message.kind === 'audio') &&
                                   !isDmSoftDeletedStub(messageMenu.message),
                               )}
                               canDelete={Boolean(
@@ -2729,7 +2846,8 @@ export function DashboardMessengerPage() {
                                   messageMenu.message.senderUserId === user.id &&
                                   !messageMenu.message.id.startsWith('local-') &&
                                   (messageMenu.message.kind === 'text' ||
-                                    messageMenu.message.kind === 'image'),
+                                    messageMenu.message.kind === 'image' ||
+                                    messageMenu.message.kind === 'audio'),
                               )}
                               onClose={closeMessageActionMenu}
                               onCopy={async () => {
@@ -2760,7 +2878,9 @@ export function DashboardMessengerPage() {
                               onForward={
                                 threadHeadConversation?.kind === 'direct' &&
                                 !messageMenu.message.id.startsWith('local-') &&
-                                (messageMenu.message.kind === 'text' || messageMenu.message.kind === 'image')
+                                (messageMenu.message.kind === 'text' ||
+                                  messageMenu.message.kind === 'image' ||
+                                  messageMenu.message.kind === 'audio')
                                   ? () => openForwardFromDmMessage(messageMenu.message)
                                   : undefined
                               }

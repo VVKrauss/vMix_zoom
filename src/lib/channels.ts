@@ -224,7 +224,7 @@ export async function appendChannelPostRich(
 /** Лента канала: как сообщение в группе (текст + meta, фото). */
 export async function appendChannelFeedMessage(
   conversationId: string,
-  args: { kind?: 'text' | 'image'; body: string; meta?: Record<string, unknown> | null },
+  args: { kind?: 'text' | 'image' | 'audio'; body: string; meta?: Record<string, unknown> | null },
 ): Promise<{ data: { messageId: string | null; createdAt: string | null } | null; error: string | null }> {
   const { data, error } = await supabase.rpc('append_channel_feed_message', {
     p_conversation_id: conversationId.trim(),

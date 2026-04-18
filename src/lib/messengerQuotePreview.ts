@@ -49,6 +49,18 @@ export function buildQuotePreview({
     }
   }
 
+  if (src.kind === 'audio') {
+    return {
+      preview: {
+        quotedAvatarUrl,
+        quotedName,
+        snippet: truncateMessengerReplySnippet(previewTextForDirectMessageTail(src)),
+        kind: 'text',
+      },
+      scrollTargetId: rid,
+    }
+  }
+
   return {
     preview: {
       quotedAvatarUrl,

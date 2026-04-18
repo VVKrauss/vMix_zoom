@@ -124,7 +124,8 @@ export function useMessengerDirectThreadRealtime(opts: {
           if (!row?.id) return
           const msg = mapDirectMessageFromRow(row)
           const isOwn = msg.senderUserId === uid
-          const skipSidebarBump = isOwn && (msg.kind === 'text' || msg.kind === 'reaction' || msg.kind === 'image')
+          const skipSidebarBump =
+            isOwn && (msg.kind === 'text' || msg.kind === 'reaction' || msg.kind === 'image' || msg.kind === 'audio')
 
           setMessages((prev) => {
             if (prev.some((m) => m.id === msg.id)) return prev

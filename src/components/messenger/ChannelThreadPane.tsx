@@ -25,7 +25,7 @@ import {
 import { useProfile } from '../../hooks/useProfile'
 import { useLinkPreviewFromText } from '../../hooks/useLinkPreviewFromText'
 import { buildLinkMetaForMessageBody, ensureLinkPreviewForBody } from '../../lib/linkPreview'
-import { uploadMessengerImage } from '../../lib/messenger'
+import { uploadMessengerAudio, uploadMessengerImage } from '../../lib/messenger'
 import { MESSENGER_COMPOSER_EMOJIS } from '../../lib/messengerComposerEmojis'
 import {
   buildMessengerUrl,
@@ -46,6 +46,7 @@ import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
 import { DoubleTapHeartSurface } from './DoubleTapHeartSurface'
 import { MessengerLinkPreviewCard } from './MessengerLinkPreviewCard'
 import { ThreadMessageBubble } from './ThreadMessageBubble'
+import { MessengerVoiceRecordBtn } from './MessengerVoiceRecordBtn'
 import { injectMentionsInReactTree } from '../MessengerMessageBody'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -145,6 +146,7 @@ export function ChannelThreadPane({
   const [feedDraft, setFeedDraft] = useState('')
   const [feedSending, setFeedSending] = useState(false)
   const [feedPhotoUploading, setFeedPhotoUploading] = useState(false)
+  const [feedVoiceUploading, setFeedVoiceUploading] = useState(false)
   const [pendingChannelPhotos, setPendingChannelPhotos] = useState<{ id: string; file: File; previewUrl: string }[]>([])
   const {
     preview: feedLinkPreview,
@@ -388,7 +390,7 @@ export function ChannelThreadPane({
   const sendChannelFeed = useCallback(async () => {
     const cid = conversationId.trim()
     const body = feedDraft.trim()
-    if (!canCreatePosts || !user?.id || !cid || feedSending || threadLoading) return
+    if (!canCreatePosts || !user?.id || !cid || feedSending || threadLoading || feedVoiceUploading) return
     const hasPending = pendingChannelPhotos.length > 0
     if (!hasPending && !body) return
 
@@ -504,17 +506,85 @@ export function ChannelThreadPane({
     profile?.display_name,
     feedLinkPreview,
     onTouchTail,
+    feedVoiceUploading,
   ])
+
+  const onFeedVoiceRecorded = useCallback(
+    async (blob: Blob, durationSec: number) => {
+      const cid = conversationId.trim()
+      const body = feedDraft.trim()
+      if (!canCreatePosts || !user?.id || !cid || feedSending || threadLoading || feedVoiceUploading || feedPhotoUploading)
+        return
+      const snap = profile?.display_name?.trim() || 'Вы'
+      setFeedSending(true)
+      setFeedVoiceUploading(true)
+      setError(null)
+      const up = await uploadMessengerAudio(cid, blob)
+      if (up.error || !up.path) {
+        setError(up.error ?? 'Не удалось загрузить аудио')
+        setFeedVoiceUploading(false)
+        setFeedSending(false)
+        return
+      }
+      const dur = Math.round(durationSec * 10) / 10
+      const audioMeta: DirectMessage['meta'] = { audio: { path: up.path, durationSec: dur } }
+      const res = await appendChannelFeedMessage(cid, {
+        kind: 'audio',
+        body,
+        meta: audioMeta as Record<string, unknown>,
+      })
+      if (res.error) {
+        setError(res.error)
+        setFeedVoiceUploading(false)
+        setFeedSending(false)
+        return
+      }
+      setFeedDraft('')
+      setFeedVoiceUploading(false)
+      setFeedSending(false)
+      const createdAt = res.data?.createdAt ?? new Date().toISOString()
+      const newMsg: DirectMessage = {
+        id: res.data?.messageId ?? `local-${Date.now()}`,
+        senderUserId: user.id,
+        senderNameSnapshot: snap,
+        kind: 'audio',
+        body,
+        createdAt,
+        meta: audioMeta,
+      }
+      setPosts((prev) => [...prev, newMsg].sort(sortChrono))
+      onTouchTail?.({
+        lastMessageAt: createdAt,
+        lastMessagePreview: previewTextForDirectMessageTail({ kind: 'audio', body, meta: audioMeta }),
+      })
+      requestAnimationFrame(() => {
+        const el = postsFeedScrollRef.current
+        if (el) el.scrollTop = el.scrollHeight
+      })
+    },
+    [
+      canCreatePosts,
+      user?.id,
+      conversationId,
+      feedDraft,
+      feedSending,
+      threadLoading,
+      feedVoiceUploading,
+      feedPhotoUploading,
+      profile?.display_name,
+      onTouchTail,
+    ],
+  )
 
   const onFeedComposerPaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      if (threadLoading || feedPhotoUploading) return
+      if (threadLoading || feedPhotoUploading || feedVoiceUploading) return
       const files = extractClipboardImageFiles(e.clipboardData)
       if (files.length === 0) return
       e.preventDefault()
       addPendingChannelPhotoFiles(files)
     },
-    [threadLoading, feedPhotoUploading, addPendingChannelPhotoFiles],
+    [threadLoading, feedPhotoUploading, feedVoiceUploading, addPendingChannelPhotoFiles],
   )
 
   const insertEmojiInFeedDraft = useCallback(
@@ -1379,11 +1449,19 @@ export function ChannelThreadPane({
     )
   }
 
-  const canEditOrDeleteComment = (m: DirectMessage) =>
+  const canEditChannelComment = (m: DirectMessage) =>
     Boolean(
       user?.id &&
         !m.id.startsWith('local-') &&
         (m.kind === 'text' || m.kind === 'image') &&
+        (m.senderUserId === user.id || canModerateChannel),
+    )
+
+  const canDeleteChannelComment = (m: DirectMessage) =>
+    Boolean(
+      user?.id &&
+        !m.id.startsWith('local-') &&
+        (m.kind === 'text' || m.kind === 'image' || m.kind === 'audio') &&
         (m.senderUserId === user.id || canModerateChannel),
     )
 
@@ -1477,7 +1555,7 @@ export function ChannelThreadPane({
           isChannelMember &&
             user?.id &&
             !m.id.startsWith('local-') &&
-            (m.kind === 'text' || m.kind === 'image'),
+            (m.kind === 'text' || m.kind === 'image' || m.kind === 'audio'),
         )}
         isMobileMessenger={isMobileMessenger}
         onQuickHeart={() => void toggleReaction(m.id, QUICK_REACTION_EMOJI)}
@@ -1543,6 +1621,11 @@ export function ChannelThreadPane({
                 onMentionSlug={onMentionSlug}
                 onOpenImageLightbox={(ctx) => setChannelFeedLightbox({ urls: ctx.urls, index: ctx.initialIndex })}
               />
+            </>
+          ) : p.kind === 'audio' ? (
+            <>
+              <PostPublicationLine publishedAt={p.createdAt} editedAt={p.editedAt} />
+              <MessengerBubbleBody message={p} onMentionSlug={onMentionSlug} />
             </>
           ) : p.meta?.postDraft ? (
             <PostDraftReadView
@@ -1620,6 +1703,10 @@ export function ChannelThreadPane({
   const selectedPostTitle = useMemo(() => {
     const p = selectedCommentsPost
     if (!p) return 'Пост'
+    if (p.kind === 'audio') {
+      const raw = (p.body ?? '').replace(/\s+/g, ' ').trim()
+      return raw || 'Голосовое сообщение'
+    }
     const raw = (p.body ?? '').replace(/\s+/g, ' ').trim()
     if (!raw) return 'Пост'
     const cut = raw.length > 72 ? `${raw.slice(0, 72).trim()}…` : raw
@@ -1757,7 +1844,7 @@ export function ChannelThreadPane({
                 rows={isMobileMessenger ? 1 : 3}
                 placeholder="Напиши пост…"
                 value={feedDraft}
-                disabled={threadLoading || feedPhotoUploading}
+                disabled={threadLoading || feedPhotoUploading || feedVoiceUploading}
                 onPaste={onFeedComposerPaste}
                 onChange={(e) => setFeedDraft(e.target.value)}
                 onKeyDown={(e) => {
@@ -1804,11 +1891,16 @@ export function ChannelThreadPane({
                     className="dashboard-messenger__composer-icon-btn"
                     title="Фото"
                     aria-label="Прикрепить фото"
-                    disabled={threadLoading || feedPhotoUploading}
+                    disabled={threadLoading || feedPhotoUploading || feedVoiceUploading}
                     onClick={() => feedPhotoInputRef.current?.click()}
                   >
                     <AttachmentIcon />
                   </button>
+                  <MessengerVoiceRecordBtn
+                    disabled={threadLoading}
+                    busy={feedPhotoUploading || feedVoiceUploading || feedSending}
+                    onRecorded={onFeedVoiceRecorded}
+                  />
                   <input
                     ref={feedPhotoInputRef}
                     type="file"
@@ -1830,7 +1922,8 @@ export function ChannelThreadPane({
                     (!feedDraft.trim() && pendingChannelPhotos.length === 0) ||
                     feedSending ||
                     threadLoading ||
-                    feedPhotoUploading
+                    feedPhotoUploading ||
+                    feedVoiceUploading
                   }
                   onClick={() => void sendChannelFeed()}
                 >
@@ -1838,9 +1931,9 @@ export function ChannelThreadPane({
                 </button>
               </div>
             </div>
-            {feedPhotoUploading ? (
+            {feedPhotoUploading || feedVoiceUploading ? (
               <p className="dashboard-messenger__photo-status" role="status">
-                Загрузка фото…
+                {feedVoiceUploading ? 'Загрузка аудио…' : 'Загрузка фото…'}
               </p>
             ) : null}
           </div>
@@ -2028,19 +2121,26 @@ export function ChannelThreadPane({
                   user?.id &&
                     postMenu.post.senderUserId === user.id &&
                     !postMenu.post.id.startsWith('local-') &&
-                    (postMenu.post.kind === 'text' || postMenu.post.kind === 'image' || postMenu.post.kind === 'system'),
+                    (postMenu.post.kind === 'text' ||
+                      postMenu.post.kind === 'image' ||
+                      postMenu.post.kind === 'audio' ||
+                      postMenu.post.kind === 'system'),
                 )}
                 canCopy={Boolean(
                   !postMenu.post.id.startsWith('local-') &&
                     (postMenu.post.kind === 'text' ||
                       postMenu.post.kind === 'image' ||
+                      postMenu.post.kind === 'audio' ||
                       postMenu.post.kind === 'system'),
                 )}
                 canDelete={Boolean(
                   user?.id &&
                     postMenu.post.senderUserId === user.id &&
                     !postMenu.post.id.startsWith('local-') &&
-                    (postMenu.post.kind === 'text' || postMenu.post.kind === 'image' || postMenu.post.kind === 'system'),
+                    (postMenu.post.kind === 'text' ||
+                      postMenu.post.kind === 'image' ||
+                      postMenu.post.kind === 'audio' ||
+                      postMenu.post.kind === 'system'),
                 )}
                 onClose={() => setPostMenu(null)}
                 onCopy={async () => {
@@ -2072,7 +2172,9 @@ export function ChannelThreadPane({
                 onForward={
                   onForwardMessage &&
                   !postMenu.post.id.startsWith('local-') &&
-                  (postMenu.post.kind === 'text' || postMenu.post.kind === 'image')
+                  (postMenu.post.kind === 'text' ||
+                    postMenu.post.kind === 'image' ||
+                    postMenu.post.kind === 'audio')
                     ? () => {
                         onForwardMessage(postMenu.post)
                         setPostMenu(null)
@@ -2093,12 +2195,14 @@ export function ChannelThreadPane({
               style={{ position: 'fixed', left: 0, top: 0, zIndex: 26500, visibility: 'hidden' }}
             >
               <MessengerMessageMenuPopover
-                canEdit={canEditOrDeleteComment(commentMenu.message)}
+                canEdit={canEditChannelComment(commentMenu.message)}
                 canCopy={Boolean(
                   !commentMenu.message.id.startsWith('local-') &&
-                    (commentMenu.message.kind === 'text' || commentMenu.message.kind === 'image'),
+                    (commentMenu.message.kind === 'text' ||
+                      commentMenu.message.kind === 'image' ||
+                      commentMenu.message.kind === 'audio'),
                 )}
-                canDelete={canEditOrDeleteComment(commentMenu.message)}
+                canDelete={canDeleteChannelComment(commentMenu.message)}
                 onClose={() => setCommentMenu(null)}
                 onCopy={async () => {
                   const text = previewTextForDirectMessageTail(commentMenu.message)
@@ -2129,7 +2233,9 @@ export function ChannelThreadPane({
                 onForward={
                   onForwardMessage &&
                   !commentMenu.message.id.startsWith('local-') &&
-                  (commentMenu.message.kind === 'text' || commentMenu.message.kind === 'image')
+                  (commentMenu.message.kind === 'text' ||
+                    commentMenu.message.kind === 'image' ||
+                    commentMenu.message.kind === 'audio')
                     ? () => {
                         onForwardMessage(commentMenu.message)
                         setCommentMenu(null)

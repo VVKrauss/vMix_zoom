@@ -24,7 +24,7 @@ export type DirectConversationSummary = {
   avatarUrl: string | null
 }
 
-export type DirectMessageKind = 'text' | 'system' | 'reaction' | 'image'
+export type DirectMessageKind = 'text' | 'system' | 'reaction' | 'image' | 'audio'
 
 /** Переслано в ЛС: источник и отображение «шапки» как у цитаты. */
 export type MessengerForwardMeta = {
@@ -40,7 +40,7 @@ export type MessengerForwardMeta = {
   /** Для комментариев канала: id поста-родителя (reply_to_message_id). */
   source_parent_message_id?: string
   snippet: string
-  source_kind: 'text' | 'image'
+  source_kind: 'text' | 'image' | 'audio' | 'audio'
   image_thumb_path?: string | null
 }
 
@@ -66,6 +66,8 @@ export type DirectMessage = {
     image?: { path: string; thumbPath?: string }
     /** Несколько фото в одном сообщении (meta.image при этом не используется). */
     images?: Array<{ path: string; thumbPath?: string }>
+    /** Голосовое: путь в messenger-media, длительность с опционально. */
+    audio?: { path: string; durationSec?: number }
     link?: { url: string; title?: string; description?: string; image?: string; siteName?: string }
     /** Редактор поста канала v1 */
     postDraft?: PostDraftV1
@@ -117,6 +119,20 @@ function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
   const pd = o.postDraft
   if (isPostDraftV1(pd)) postDraft = pd
 
+  let audio: { path: string; durationSec?: number } | undefined
+  const rawAudio = o.audio
+  if (rawAudio && typeof rawAudio === 'object') {
+    const ao = rawAudio as Record<string, unknown>
+    const p = ao.path
+    const ds = ao.duration_sec ?? ao.durationSec
+    if (typeof p === 'string' && p.trim()) {
+      const path = p.trim()
+      const n = typeof ds === 'number' && Number.isFinite(ds) ? ds : Number(ds)
+      audio =
+        typeof n === 'number' && Number.isFinite(n) ? { path, durationSec: n } : { path }
+    }
+  }
+
   const deleted = o.deleted === true
 
   let images: Array<{ path: string; thumbPath?: string }> | undefined
@@ -145,7 +161,9 @@ function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
     const from = f.from
     if (from === 'direct' || from === 'group' || from === 'channel') {
       const snippet = typeof f.snippet === 'string' ? f.snippet : ''
-      const sk = f.source_kind === 'image' ? 'image' : 'text'
+      const skRaw = f.source_kind
+      const sk =
+        skRaw === 'image' ? 'image' : skRaw === 'audio' ? 'audio' : 'text'
       const itp = f.image_thumb_path
       const scid =
         typeof f.source_conversation_id === 'string' && f.source_conversation_id.trim()
@@ -183,13 +201,14 @@ function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
     }
   }
 
-  if (!react && !image && !images && !linkMeta && !postDraft && !deleted && !forward) return null
+  if (!react && !image && !images && !linkMeta && !postDraft && !deleted && !forward && !audio) return null
   return {
     ...(deleted ? { deleted: true } : {}),
     ...(forward ? { forward } : {}),
     ...(react ? { react_to: react } : {}),
     ...(images ? { images } : {}),
     ...(image && !images ? { image } : {}),
+    ...(audio ? { audio } : {}),
     ...(linkMeta ? { link: linkMeta } : {}),
     ...(postDraft ? { postDraft } : {}),
   }
@@ -204,7 +223,7 @@ export function isDmSoftDeletedStub(msg: Pick<DirectMessage, 'kind' | 'body' | '
 
 /** Строка из PostgREST / Realtime (snake_case). */
 function mapMessageKind(raw: unknown): DirectMessageKind {
-  if (raw === 'reaction' || raw === 'system' || raw === 'image') return raw
+  if (raw === 'reaction' || raw === 'system' || raw === 'image' || raw === 'audio') return raw
   return 'text'
 }
 
@@ -235,6 +254,11 @@ export function getMessengerImageAttachments(
 export function previewTextForDirectMessageTail(msg: Pick<DirectMessage, 'kind' | 'body' | 'meta'>): string {
   const sn = msg.meta?.forward?.snippet?.trim()
   if (sn) return `↪ ${sn}`
+  if (msg.kind === 'audio') {
+    const cap = msg.body.replace(/\s+/g, ' ').trim()
+    if (cap) return cap
+    return 'Голосовое сообщение'
+  }
   if (msg.kind !== 'image') return msg.body
   const cap = msg.body.replace(/\s+/g, ' ').trim()
   const imgs = msg.meta?.images
@@ -597,6 +621,20 @@ export async function deleteDirectMessage(
 /** Макс. размер исходного файла до пережатия в uploadMessengerImage. */
 export const MESSENGER_PHOTO_INPUT_MAX_BYTES = 20 * 1024 * 1024
 
+/** Макс. размер голосового после записи (совпадает с лимитом bucket после миграции). */
+export const MESSENGER_AUDIO_MAX_BYTES = 10 * 1024 * 1024
+
+function extensionForAudioBlob(blob: Blob): string {
+  const t = (blob.type || '').toLowerCase()
+  if (t.includes('webm')) return 'webm'
+  if (t.includes('ogg')) return 'ogg'
+  if (t.includes('mp4') || t.includes('m4a')) return 'm4a'
+  if (t.includes('mpeg') || t.includes('mp3')) return 'mp3'
+  if (t.includes('wav')) return 'wav'
+  if (t.includes('aac')) return 'aac'
+  return 'webm'
+}
+
 const MESSENGER_IMAGE_MAX_EDGE = 1680
 const MESSENGER_IMAGE_JPEG_QUALITY = 0.86
 /** Превью в ленте: меньший файл, отдельный объект в storage. */
@@ -665,6 +703,31 @@ export async function uploadMessengerImage(
     const msg = e instanceof Error ? e.message : 'upload_failed'
     return { path: null, thumbPath: null, error: msg }
   }
+}
+
+/** Загрузка аудио в `messenger-media` (первый сегмент пути = conversation_id). */
+export async function uploadMessengerAudio(
+  conversationId: string,
+  blob: Blob,
+): Promise<{ path: string | null; error: string | null }> {
+  const cid = conversationId.trim()
+  if (!cid) return { path: null, error: 'Нет чата' }
+  if (blob.size > MESSENGER_AUDIO_MAX_BYTES)
+    return { path: null, error: 'Запись слишком длинная или файл слишком большой' }
+  const ext = extensionForAudioBlob(blob)
+  const id =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const path = `${cid}/${id}.${ext}`
+  const ct =
+    blob.type && blob.type.startsWith('audio/') ? blob.type : ext === 'webm' ? 'audio/webm' : `audio/${ext}`
+  const { error } = await supabase.storage.from('messenger-media').upload(path, blob, {
+    contentType: ct,
+    upsert: false,
+  })
+  if (error) return { path: null, error: error.message }
+  return { path, error: null }
 }
 
 /** Временная ссылка на вложение (bucket приватный; для <img src=…>). */

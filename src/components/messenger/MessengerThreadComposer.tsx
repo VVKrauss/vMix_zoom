@@ -5,6 +5,7 @@ import { MESSENGER_COMPOSER_EMOJIS } from '../../lib/messengerComposerEmojis'
 import { truncateMessengerReplySnippet } from '../../lib/messengerUi'
 import type { LinkPreview } from '../../lib/linkPreview'
 import { AttachmentIcon } from '../icons'
+import { MessengerVoiceRecordBtn } from './MessengerVoiceRecordBtn'
 import { MessengerReplyMiniThumb } from '../MessengerReplyMiniThumb'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
 import { DraftLinkPreviewBar } from './DraftLinkPreviewBar'
@@ -39,6 +40,8 @@ export function MessengerThreadComposer(props: {
   setComposerEmojiOpen: Dispatch<SetStateAction<boolean>>
   onClearReply: () => void
   onCancelEdit: () => void
+  voiceUploading?: boolean
+  onVoiceRecorded?: (blob: Blob, durationSec: number) => void | Promise<void>
 }) {
   const {
     replyTo,
@@ -68,6 +71,8 @@ export function MessengerThreadComposer(props: {
     setComposerEmojiOpen,
     onClearReply,
     onCancelEdit,
+    voiceUploading = false,
+    onVoiceRecorded,
   } = props
 
   return (
@@ -78,7 +83,9 @@ export function MessengerThreadComposer(props: {
             <span className="dashboard-messenger__composer-reply-label">Ответ</span>{' '}
             <strong>{replyTo.senderNameSnapshot}</strong>
             <span className="dashboard-messenger__composer-reply-snippet">
-              {replyTo.kind === 'image' ? (
+              {replyTo.kind === 'audio' ? (
+                <span>{truncateMessengerReplySnippet(replyTo.body) || 'Голосовое сообщение'}</span>
+              ) : replyTo.kind === 'image' ? (
                 <>
                   {(() => {
                     const att = getMessengerImageAttachments(replyTo)[0]
@@ -159,7 +166,7 @@ export function MessengerThreadComposer(props: {
           rows={isMobileMessenger ? 1 : 3}
           placeholder={editingMessageId ? 'Исправьте текст…' : 'Напиши сообщение…'}
           value={draft}
-          disabled={threadLoading || photoUploading}
+          disabled={threadLoading || photoUploading || voiceUploading}
           onPaste={onComposerPaste}
           onChange={(e) => {
             onDraftChange(e.target.value)
@@ -200,11 +207,18 @@ export function MessengerThreadComposer(props: {
               className="dashboard-messenger__composer-icon-btn"
               title="Фото"
               aria-label="Прикрепить фото"
-              disabled={threadLoading || photoUploading || Boolean(editingMessageId)}
+              disabled={threadLoading || photoUploading || voiceUploading || Boolean(editingMessageId)}
               onClick={() => photoInputRef.current?.click()}
             >
               <AttachmentIcon />
             </button>
+            {onVoiceRecorded && !editingMessageId ? (
+              <MessengerVoiceRecordBtn
+                disabled={threadLoading || Boolean(editingMessageId)}
+                busy={photoUploading || voiceUploading || sending}
+                onRecorded={onVoiceRecorded}
+              />
+            ) : null}
             <input
               ref={photoInputRef}
               type="file"
@@ -223,7 +237,11 @@ export function MessengerThreadComposer(props: {
             type="button"
             className="dashboard-topbar__action dashboard-topbar__action--primary dashboard-messenger__send-btn"
             disabled={
-              (!draft.trim() && pendingMessengerPhotos.length === 0) || sending || threadLoading || photoUploading
+              (!draft.trim() && pendingMessengerPhotos.length === 0) ||
+              sending ||
+              threadLoading ||
+              photoUploading ||
+              voiceUploading
             }
             onClick={() => void onSend()}
           >
@@ -231,9 +249,9 @@ export function MessengerThreadComposer(props: {
           </button>
         </div>
       </div>
-      {photoUploading ? (
+      {photoUploading || voiceUploading ? (
         <p className="dashboard-messenger__photo-status" role="status">
-          Загрузка фото…
+          {voiceUploading ? 'Загрузка аудио…' : 'Загрузка фото…'}
         </p>
       ) : null}
     </div>

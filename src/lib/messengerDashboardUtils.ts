@@ -147,7 +147,7 @@ export function lastNonReactionBody(rows: DirectMessage[]): string | null {
   for (let i = sorted.length - 1; i >= 0; i--) {
     const m = sorted[i]!
     if (m.kind === 'text' || m.kind === 'system') return m.body
-    if (m.kind === 'image') return previewTextForDirectMessageTail(m)
+    if (m.kind === 'image' || m.kind === 'audio') return previewTextForDirectMessageTail(m)
   }
   return null
 }

@@ -10,7 +10,7 @@ import { truncateMessengerReplySnippet } from '../../lib/messengerUi'
 import { buildQuotePreview } from '../../lib/messengerQuotePreview'
 import { MESSENGER_COMPOSER_EMOJIS } from '../../lib/messengerComposerEmojis'
 import { mapDirectMessageFromRow, previewTextForDirectMessageTail, type DirectMessage } from '../../lib/messenger'
-import { uploadMessengerImage } from '../../lib/messenger'
+import { uploadMessengerAudio, uploadMessengerImage } from '../../lib/messenger'
 import {
   appendGroupMessage,
   deleteGroupMessage,
@@ -36,6 +36,7 @@ import { useMessengerJumpToBottom } from '../../hooks/useMessengerJumpToBottom'
 import { MessengerJumpToBottomFab } from '../MessengerJumpToBottomFab'
 import { DraftLinkPreviewBar } from './DraftLinkPreviewBar'
 import { MessengerImageLightbox } from './MessengerImageLightbox'
+import { MessengerVoiceRecordBtn } from './MessengerVoiceRecordBtn'
 
 const QUICK_REACTION_EMOJI: ReactionEmoji = '❤️'
 
@@ -104,6 +105,7 @@ export function GroupThreadPane({
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [photoUploading, setPhotoUploading] = useState(false)
+  const [voiceUploading, setVoiceUploading] = useState(false)
   const [pendingGroupPhotos, setPendingGroupPhotos] = useState<{ id: string; file: File; previewUrl: string }[]>([])
   const {
     preview: draftLinkPreview,
@@ -394,7 +396,7 @@ export function GroupThreadPane({
   const sendText = useCallback(async () => {
     const cid = conversationId.trim()
     const body = draft.trim()
-    if (!isGroupMember || !user?.id || !cid || sending || threadLoading) return
+    if (!isGroupMember || !user?.id || !cid || sending || threadLoading || voiceUploading) return
 
     const hasPending = pendingGroupPhotos.length > 0
     if (!hasPending && !body) return
@@ -505,17 +507,83 @@ export function GroupThreadPane({
     onTouchTail,
     isGroupMember,
     draftLinkPreview,
+    voiceUploading,
   ])
+
+  const onVoiceRecorded = useCallback(
+    async (blob: Blob, durationSec: number) => {
+      const cid = conversationId.trim()
+      const body = draft.trim()
+      if (!isGroupMember || !user?.id || !cid || sending || threadLoading || voiceUploading || photoUploading) return
+      const replyId = replyTo?.id ?? null
+      setSending(true)
+      setVoiceUploading(true)
+      setError(null)
+      const up = await uploadMessengerAudio(cid, blob)
+      if (up.error || !up.path) {
+        setError(up.error ?? 'Не удалось загрузить аудио')
+        setVoiceUploading(false)
+        setSending(false)
+        return
+      }
+      const dur = Math.round(durationSec * 10) / 10
+      const audioMeta: DirectMessage['meta'] = { audio: { path: up.path, durationSec: dur } }
+      const res = await appendGroupMessage(cid, {
+        kind: 'audio',
+        body,
+        meta: audioMeta as Record<string, unknown>,
+        replyToMessageId: replyId,
+      })
+      if (res.error) {
+        setError(res.error)
+        setVoiceUploading(false)
+        setSending(false)
+        return
+      }
+      const preview = previewTextForDirectMessageTail({ kind: 'audio', body, meta: audioMeta })
+      const createdAt = res.data?.createdAt ?? new Date().toISOString()
+      const snap = profile?.display_name?.trim() || 'Вы'
+      const newMsg: DirectMessage = {
+        id: res.data?.messageId ?? `local-${Date.now()}`,
+        senderUserId: user.id,
+        senderNameSnapshot: snap,
+        kind: 'audio',
+        body,
+        createdAt,
+        replyToMessageId: replyId,
+        meta: audioMeta,
+      }
+      setDraft('')
+      setReplyTo(null)
+      setVoiceUploading(false)
+      setSending(false)
+      setMessages((prev) => [...prev, newMsg].sort(sortChrono))
+      onTouchTail?.({ lastMessageAt: createdAt, lastMessagePreview: preview })
+    },
+    [
+      conversationId,
+      draft,
+      isGroupMember,
+      user?.id,
+      sending,
+      threadLoading,
+      voiceUploading,
+      photoUploading,
+      replyTo?.id,
+      profile?.display_name,
+      onTouchTail,
+    ],
+  )
 
   const onComposerPaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      if (threadLoading || photoUploading) return
+      if (threadLoading || photoUploading || voiceUploading) return
       const files = extractClipboardImageFiles(e.clipboardData)
       if (files.length === 0) return
       e.preventDefault()
       addPendingGroupPhotoFiles(files)
     },
-    [photoUploading, threadLoading, addPendingGroupPhotoFiles],
+    [photoUploading, voiceUploading, threadLoading, addPendingGroupPhotoFiles],
   )
 
   useLayoutEffect(() => {
@@ -621,7 +689,7 @@ export function GroupThreadPane({
       if (!user?.id || !cid || deleteBusy) return
       if (!message?.id || message.id.startsWith('local-')) return
       if (message.senderUserId !== user.id) return
-      if (!(message.kind === 'text' || message.kind === 'image')) return
+      if (!(message.kind === 'text' || message.kind === 'image' || message.kind === 'audio')) return
       if (!window.confirm('Удалить это сообщение?')) return
 
       setDeleteBusy(true)
@@ -728,7 +796,7 @@ export function GroupThreadPane({
                     quickReactEnabled={Boolean(
                       isGroupMember &&
                         user?.id &&
-                        (m.kind === 'text' || m.kind === 'image') &&
+                        (m.kind === 'text' || m.kind === 'image' || m.kind === 'audio') &&
                         !m.id.startsWith('local-'),
                     )}
                     onQuickHeart={() => void toggleReaction(m.id, QUICK_REACTION_EMOJI)}
@@ -784,7 +852,11 @@ export function GroupThreadPane({
                 <span className="dashboard-messenger__composer-reply-label">Ответ</span>{' '}
                 <strong>{replyTo.senderNameSnapshot}</strong>
                 <span className="dashboard-messenger__composer-reply-snippet">
-                  <span>{truncateMessengerReplySnippet(replyTo.body, 48) || '…'}</span>
+                  <span>
+                    {replyTo.kind === 'audio'
+                      ? truncateMessengerReplySnippet(replyTo.body, 48) || 'Голосовое сообщение'
+                      : truncateMessengerReplySnippet(replyTo.body, 48) || '…'}
+                  </span>
                 </span>
               </div>
               <button
@@ -842,7 +914,7 @@ export function GroupThreadPane({
               rows={isMobileMessenger ? 1 : 3}
               placeholder="Напиши сообщение…"
               value={draft}
-              disabled={threadLoading || photoUploading}
+              disabled={threadLoading || photoUploading || voiceUploading}
               onPaste={onComposerPaste}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
@@ -879,11 +951,16 @@ export function GroupThreadPane({
                   className="dashboard-messenger__composer-icon-btn"
                   title="Фото"
                   aria-label="Прикрепить фото"
-                  disabled={threadLoading || photoUploading}
+                  disabled={threadLoading || photoUploading || voiceUploading}
                   onClick={() => photoInputRef.current?.click()}
                 >
                   <AttachmentIcon />
                 </button>
+                <MessengerVoiceRecordBtn
+                  disabled={threadLoading}
+                  busy={photoUploading || voiceUploading || sending}
+                  onRecorded={onVoiceRecorded}
+                />
                 <input
                   ref={photoInputRef}
                   type="file"
@@ -905,7 +982,8 @@ export function GroupThreadPane({
                   (!draft.trim() && pendingGroupPhotos.length === 0) ||
                   sending ||
                   threadLoading ||
-                  photoUploading
+                  photoUploading ||
+                  voiceUploading
                 }
                 onClick={() => void sendText()}
               >
@@ -913,9 +991,9 @@ export function GroupThreadPane({
               </button>
             </div>
           </div>
-          {photoUploading ? (
+          {photoUploading || voiceUploading ? (
             <p className="dashboard-messenger__photo-status" role="status">
-              Загрузка фото…
+              {voiceUploading ? 'Загрузка аудио…' : 'Загрузка фото…'}
             </p>
           ) : null}
         </div>
@@ -932,13 +1010,17 @@ export function GroupThreadPane({
                 canEdit={false}
                 canCopy={Boolean(
                   !messageMenu.message.id.startsWith('local-') &&
-                    (messageMenu.message.kind === 'text' || messageMenu.message.kind === 'image'),
+                    (messageMenu.message.kind === 'text' ||
+                      messageMenu.message.kind === 'image' ||
+                      messageMenu.message.kind === 'audio'),
                 )}
                 canDelete={Boolean(
                   user?.id &&
                     messageMenu.message.senderUserId === user.id &&
                     !messageMenu.message.id.startsWith('local-') &&
-                    (messageMenu.message.kind === 'text' || messageMenu.message.kind === 'image'),
+                    (messageMenu.message.kind === 'text' ||
+                      messageMenu.message.kind === 'image' ||
+                      messageMenu.message.kind === 'audio'),
                 )}
                 onClose={() => setMessageMenu(null)}
                 onCopy={async () => {
@@ -967,7 +1049,9 @@ export function GroupThreadPane({
                 onForward={
                   onForwardMessage &&
                   !messageMenu.message.id.startsWith('local-') &&
-                  (messageMenu.message.kind === 'text' || messageMenu.message.kind === 'image')
+                  (messageMenu.message.kind === 'text' ||
+                    messageMenu.message.kind === 'image' ||
+                    messageMenu.message.kind === 'audio')
                     ? () => {
                         onForwardMessage(messageMenu.message)
                         setMessageMenu(null)
