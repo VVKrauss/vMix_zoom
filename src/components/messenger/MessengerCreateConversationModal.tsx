@@ -192,7 +192,10 @@ export function MessengerCreateConversationModal({
           </div>
         ) : null}
 
-        <div className="messenger-settings-modal__actions">
+        <div className="messenger-settings-modal__actions messenger-settings-modal__actions--split messenger-settings-modal__actions--spread">
+          <button type="button" className="messenger-settings-modal__cancel" onClick={onClose} disabled={createBusy}>
+            Отмена
+          </button>
           <button type="button" className="messenger-settings-modal__done" onClick={onSubmit} disabled={createBusy}>
             {createBusy ? 'Создаём…' : 'Создать'}
           </button>

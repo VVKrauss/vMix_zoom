@@ -2,21 +2,16 @@ import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } 
 import {
   listDirectMessagesPage,
   mapDirectMessageFromRow,
-  markDirectConversationRead,
   previewTextForDirectMessageTail,
   type DirectMessage,
 } from '../lib/messenger'
 import type { MessengerConversationSummary } from '../lib/messengerConversations'
-import {
-  DM_PAGE_SIZE,
-  MARK_DIRECT_READ_DEBOUNCE_MS,
-  sortDirectMessagesChrono,
-} from '../lib/messengerDashboardUtils'
+import { DM_PAGE_SIZE, sortDirectMessagesChrono } from '../lib/messengerDashboardUtils'
 import { playMessageSound } from '../lib/messengerSound'
 import { supabase } from '../lib/supabase'
 
 /**
- * Realtime по открытому direct-треду: INSERT/DELETE/UPDATE в chat_messages, mark read, звук, ресинк при ошибке канала.
+ * Realtime по открытому direct-треду: INSERT/DELETE/UPDATE в chat_messages, звук, ресинк при ошибке канала.
  */
 export function useMessengerDirectThreadRealtime(opts: {
   userId: string | undefined
@@ -28,7 +23,6 @@ export function useMessengerDirectThreadRealtime(opts: {
   setMessages: Dispatch<SetStateAction<DirectMessage[]>>
   bumpScrollIfPinned: () => void
   mergeLatestPageIntoMessages: (convId: string, page: DirectMessage[]) => void
-  markReadDebounceTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>
   mutedConversationIdsRef: MutableRefObject<Set<string>>
   reactionDeleteSidebarSyncedRef: MutableRefObject<Set<string>>
 }): void {
@@ -42,7 +36,6 @@ export function useMessengerDirectThreadRealtime(opts: {
     setMessages,
     bumpScrollIfPinned,
     mergeLatestPageIntoMessages,
-    markReadDebounceTimerRef,
     mutedConversationIdsRef,
     reactionDeleteSidebarSyncedRef,
   } = opts
@@ -57,31 +50,7 @@ export function useMessengerDirectThreadRealtime(opts: {
     let sawSubscribed = false
 
     const bumpSidebarForInsert = (msg: DirectMessage) => {
-      if (msg.kind === 'reaction') {
-        setItems((prev) =>
-          prev.map((item) =>
-            item.id === convId
-              ? {
-                  ...item,
-                  lastMessageAt: msg.createdAt,
-                  messageCount: item.messageCount + 1,
-                  unreadCount: 0,
-                }
-              : item,
-          ),
-        )
-        setActiveConversation((prev) =>
-          prev && prev.id === convId
-            ? {
-                ...prev,
-                lastMessageAt: msg.createdAt,
-                messageCount: prev.messageCount + 1,
-                unreadCount: 0,
-              }
-            : prev,
-        )
-        return
-      }
+      if (msg.kind === 'reaction') return
       const preview = previewTextForDirectMessageTail(msg)
       setItems((prev) =>
         prev.map((item) =>
@@ -91,7 +60,7 @@ export function useMessengerDirectThreadRealtime(opts: {
                 lastMessageAt: msg.createdAt,
                 lastMessagePreview: preview,
                 messageCount: item.messageCount + 1,
-                unreadCount: 0,
+                unreadCount: item.unreadCount + 1,
               }
             : item,
         ),
@@ -103,7 +72,7 @@ export function useMessengerDirectThreadRealtime(opts: {
               lastMessageAt: msg.createdAt,
               lastMessagePreview: preview,
               messageCount: prev.messageCount + 1,
-              unreadCount: 0,
+              unreadCount: prev.unreadCount + 1,
             }
           : prev,
       )
@@ -150,20 +119,14 @@ export function useMessengerDirectThreadRealtime(opts: {
 
           queueMicrotask(() => bumpScrollIfPinned())
 
-          if (!skipSidebarBump) bumpSidebarForInsert(msg)
-          if (!isOwn) {
-            if (markReadDebounceTimerRef.current) clearTimeout(markReadDebounceTimerRef.current)
-            markReadDebounceTimerRef.current = setTimeout(() => {
-              markReadDebounceTimerRef.current = null
-              void markDirectConversationRead(convId)
-            }, MARK_DIRECT_READ_DEBOUNCE_MS)
-            if (
-              document.hidden &&
-              !mutedConversationIdsRef.current.has(convId) &&
-              msg.kind !== 'reaction'
-            ) {
-              playMessageSound()
-            }
+          if (!skipSidebarBump && msg.kind !== 'reaction') bumpSidebarForInsert(msg)
+          if (
+            !isOwn &&
+            document.hidden &&
+            !mutedConversationIdsRef.current.has(convId) &&
+            msg.kind !== 'reaction'
+          ) {
+            playMessageSound()
           }
         },
       )
@@ -232,11 +195,6 @@ export function useMessengerDirectThreadRealtime(opts: {
       })
 
     return () => {
-      if (markReadDebounceTimerRef.current) {
-        clearTimeout(markReadDebounceTimerRef.current)
-        markReadDebounceTimerRef.current = null
-        void markDirectConversationRead(convId)
-      }
       void supabase.removeChannel(channel)
     }
   }, [activeConversationId, listOnlyMobile, userId, bumpScrollIfPinned, mergeLatestPageIntoMessages])

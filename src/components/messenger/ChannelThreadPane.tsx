@@ -6,8 +6,15 @@ import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { supabase } from '../../lib/supabase'
-import { mapDirectMessageFromRow, previewTextForDirectMessageTail, type DirectMessage } from '../../lib/messenger'
-import { messengerStoragePathToThumbPath } from '../../lib/messenger'
+import {
+  mapDirectMessageFromRow,
+  messengerStoragePathToThumbPath,
+  previewTextForDirectMessageTail,
+  requestMessengerUnreadRefresh,
+  uploadMessengerAudio,
+  uploadMessengerImage,
+  type DirectMessage,
+} from '../../lib/messenger'
 import { buildQuotePreview } from '../../lib/messengerQuotePreview'
 import {
   appendChannelComment,
@@ -20,13 +27,11 @@ import {
   listChannelCommentCounts,
   listChannelPostsPage,
   listChannelReactionsForTargets,
-  markChannelRead,
   toggleChannelMessageReaction,
 } from '../../lib/channels'
 import { useProfile } from '../../hooks/useProfile'
 import { useLinkPreviewFromText } from '../../hooks/useLinkPreviewFromText'
 import { buildLinkMetaForMessageBody, ensureLinkPreviewForBody } from '../../lib/linkPreview'
-import { uploadMessengerAudio, uploadMessengerImage } from '../../lib/messenger'
 import { MESSENGER_COMPOSER_EMOJIS } from '../../lib/messengerComposerEmojis'
 import {
   buildMessengerUrl,
@@ -53,6 +58,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Link } from 'react-router-dom'
 import { useMessengerJumpToBottom } from '../../hooks/useMessengerJumpToBottom'
+import { useMessengerThreadReadCoordinator } from '../../hooks/useMessengerThreadReadCoordinator'
 import { attachMessengerTailCatchupAfterContentPaint } from '../../hooks/messengerTailCatchup'
 import { MessengerJumpToBottomFab } from '../MessengerJumpToBottomFab'
 import { DraftLinkPreviewBar } from './DraftLinkPreviewBar'
@@ -244,6 +250,29 @@ export function ChannelThreadPane({
 
   const isChannelMember = myChannelMemberRole !== null || isMemberHint === true
   const canView = viewerOnly || isChannelMember
+
+  const channelLastSignificantPostId = useMemo(() => {
+    const sig = posts.filter((p) => p.kind !== 'reaction')
+    return sig[sig.length - 1]?.id ?? null
+  }, [posts])
+
+  useMessengerThreadReadCoordinator({
+    conversationId: conversationId.trim(),
+    kind: 'channel',
+    enabled: Boolean(
+      user?.id &&
+        conversationId.trim() &&
+        canView &&
+        !commentsModalPostId &&
+        !threadLoading &&
+        channelLastSignificantPostId,
+    ),
+    threadLoading,
+    scrollRef: postsFeedScrollRef,
+    readTailRef: channelFeedEndRef,
+    lastSignificantMessageId: channelLastSignificantPostId,
+    onMarkedRead: () => requestMessengerUnreadRefresh(),
+  })
 
   /** Хвост ленты после загрузки: флаг pending переживает батч threadLoading true→false без промежуточного paint. */
   useLayoutEffect(() => {
@@ -803,10 +832,9 @@ export function ChannelThreadPane({
       setPosts(res.data ?? [])
       setHasMoreOlder(res.hasMoreOlder)
       if (!hadCache) pendingChannelTailScrollRef.current = true
-      void saveCachedChannelFeed(cid, res.data ?? [], Boolean(res.hasMoreOlder))
-      void markChannelRead(cid)
+        void saveCachedChannelFeed(cid, res.data ?? [], Boolean(res.hasMoreOlder))
 
-      const postIds = nextPosts.map((p) => p.id).filter(Boolean)
+        const postIds = nextPosts.map((p) => p.id).filter(Boolean)
       void listChannelCommentCounts(cid, postIds).then((cc) => {
         if (!active) return
         if (cc.error || !cc.data) return
@@ -878,7 +906,6 @@ export function ChannelThreadPane({
             })
           }
         }
-        if (document.visibilityState === 'visible') void markChannelRead(cid)
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages', filter }, (payload) => {
         const msg = mapDirectMessageFromRow(payload.new as Record<string, unknown>)
@@ -2050,7 +2077,11 @@ export function ChannelThreadPane({
                 aria-live="polite"
               />
             ) : null}
-            <div className="dashboard-messenger__composer-main dashboard-messenger__composer-main--row">
+            <div
+              className={`dashboard-messenger__composer-main dashboard-messenger__composer-main--row${
+                feedVoiceRecording ? ' dashboard-messenger__composer-main--voice-rec-mobile' : ''
+              }`}
+            >
               <button
                 type="button"
                 className="dashboard-messenger__composer-icon-btn"
@@ -2083,7 +2114,12 @@ export function ChannelThreadPane({
                 />
               </div>
               <div className="dashboard-messenger__composer-trailing">
-                <div className="dashboard-messenger__composer-tools" ref={feedComposerEmojiWrapRef}>
+                <div
+                  className={`dashboard-messenger__composer-tools${
+                    feedVoiceRecording ? ' dashboard-messenger__composer-tools--voice-rec' : ''
+                  }`}
+                  ref={feedComposerEmojiWrapRef}
+                >
                   {feedComposerEmojiOpen ? (
                     <div className="dashboard-messenger__composer-emoji-pop">
                       <ReactionEmojiPopover

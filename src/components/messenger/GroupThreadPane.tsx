@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useMessengerThreadReadCoordinator } from '../../hooks/useMessengerThreadReadCoordinator'
 import { shouldClosePopoverOnOutsidePointer } from '../../utils/popoverOutsideClick'
 import { useAuth } from '../../context/AuthContext'
 import { useProfile } from '../../hooks/useProfile'
@@ -15,10 +16,10 @@ import {
   appendGroupMessage,
   deleteGroupMessage,
   listGroupMessagesPage,
-  markGroupRead,
   toggleGroupMessageReaction,
   isAllowedReactionEmoji,
 } from '../../lib/groups'
+import { requestMessengerUnreadRefresh } from '../../lib/messenger'
 import type { ReactionEmoji } from '../../types/roomComms'
 import { MessengerMessageMenuPopover } from '../MessengerMessageMenuPopover'
 import { AttachmentIcon, FiRrIcon, MessengerSendPlaneIcon } from '../icons'
@@ -141,6 +142,7 @@ export function GroupThreadPane({
   const [deleteBusy, setDeleteBusy] = useState(false)
   const messageMenuWrapRef = useRef<HTMLDivElement | null>(null)
   const messageAnchorRef = useRef<Map<string, HTMLElement>>(new Map())
+  const groupReadTailRef = useRef<HTMLDivElement | null>(null)
 
   const cidRef = useRef(conversationId)
   cidRef.current = conversationId
@@ -168,6 +170,29 @@ export function GroupThreadPane({
 
   const isGroupMember = myGroupMemberRole !== null || isMemberHint === true
   const canView = viewerOnly || isGroupMember
+
+  const groupLastSignificantMessageId = useMemo(() => {
+    const sig = messages.filter((m) => m.kind !== 'reaction')
+    return sig[sig.length - 1]?.id ?? null
+  }, [messages])
+
+  useMessengerThreadReadCoordinator({
+    conversationId: conversationId.trim(),
+    kind: 'group',
+    enabled: Boolean(
+      user?.id &&
+        conversationId.trim() &&
+        canView &&
+        !viewerOnly &&
+        !threadLoading &&
+        groupLastSignificantMessageId,
+    ),
+    threadLoading,
+    scrollRef: messagesScrollRef,
+    readTailRef: groupReadTailRef,
+    lastSignificantMessageId: groupLastSignificantMessageId,
+    onMarkedRead: () => requestMessengerUnreadRefresh(),
+  })
 
   const { showJump: showGroupJump, jumpToBottom: jumpGroupBottom } = useMessengerJumpToBottom(
     messagesScrollRef,
@@ -237,7 +262,6 @@ export function GroupThreadPane({
         return
       }
       setMessages(res.data ?? [])
-      if (!viewerOnly) void markGroupRead(cid)
       cancelGroupTailCatchupRef.current?.()
       cancelGroupTailCatchupRef.current = null
       pinnedToBottomRef.current = true
@@ -302,7 +326,6 @@ export function GroupThreadPane({
             if (el) el.scrollTop = el.scrollHeight
           })
         }
-        if (!viewerOnly && document.visibilityState === 'visible') void markGroupRead(cid)
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages', filter }, (payload) => {
         const msg = mapDirectMessageFromRow(payload.new as Record<string, unknown>)
@@ -884,6 +907,7 @@ export function GroupThreadPane({
               ) : null}
             </>
           )}
+          <div ref={groupReadTailRef} className="dashboard-messenger__read-tail-sentinel" aria-hidden />
         </div>
         </div>
         <MessengerJumpToBottomFab visible={showGroupJump} onClick={jumpGroupBottom} />
@@ -959,7 +983,11 @@ export function GroupThreadPane({
               aria-live="polite"
             />
           ) : null}
-          <div className="dashboard-messenger__composer-main dashboard-messenger__composer-main--row">
+          <div
+            className={`dashboard-messenger__composer-main dashboard-messenger__composer-main--row${
+              voiceRecording ? ' dashboard-messenger__composer-main--voice-rec-mobile' : ''
+            }`}
+          >
             <button
               type="button"
               className="dashboard-messenger__composer-icon-btn"

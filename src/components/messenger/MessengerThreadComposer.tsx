@@ -187,7 +187,13 @@ export function MessengerThreadComposer(props: {
           aria-live="polite"
         />
       ) : null}
-      <div className="dashboard-messenger__composer-main dashboard-messenger__composer-main--row">
+      <div
+        className={`dashboard-messenger__composer-main dashboard-messenger__composer-main--row${
+          voiceRecording && Boolean(onVoiceRecorded) && !editingMessageId
+            ? ' dashboard-messenger__composer-main--voice-rec-mobile'
+            : ''
+        }`}
+      >
         <button
           type="button"
           className="dashboard-messenger__composer-icon-btn"

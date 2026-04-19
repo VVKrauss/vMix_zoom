@@ -1,12 +1,6 @@
 import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
 import type { InviteConversationPreview } from '../lib/groups'
-import {
-  getDirectConversationForUser,
-  listDirectMessagesPage,
-  markDirectConversationRead,
-  requestMessengerUnreadRefresh,
-  type DirectMessage,
-} from '../lib/messenger'
+import { getDirectConversationForUser, listDirectMessagesPage, type DirectMessage } from '../lib/messenger'
 import type { MessengerConversationKind, MessengerConversationSummary } from '../lib/messengerConversations'
 import { DM_PAGE_SIZE, pickDefaultConversationId } from '../lib/messengerDashboardUtils'
 
@@ -217,14 +211,6 @@ export function useMessengerThreadBootstrap(opts: {
       }
 
       if (lastFetchedThreadIdRef.current === startedTarget) {
-        void markDirectConversationRead(startedTarget)
-        setItems((prev) =>
-          prev.map((item) => (item.id === startedTarget ? { ...item, unreadCount: 0 } : item)),
-        )
-        setActiveConversation((prev) =>
-          prev && prev.id === startedTarget ? { ...prev, unreadCount: 0 } : prev,
-        )
-        requestMessengerUnreadRefresh()
         setThreadLoading(false)
         return
       }
@@ -268,15 +254,10 @@ export function useMessengerThreadBootstrap(opts: {
           setHasMoreOlder(false)
           lastFetchedThreadIdRef.current = null
         } else {
-          void markDirectConversationRead(startedTarget)
-          setActiveConversation({ ...conversationRes.data, kind: 'direct', unreadCount: 0 })
+          setActiveConversation({ ...conversationRes.data, kind: 'direct' })
           setMessages(messagesRes.data ?? [])
           setHasMoreOlder(messagesRes.hasMoreOlder)
           lastFetchedThreadIdRef.current = startedTarget
-          setItems((prev) =>
-            prev.map((item) => (item.id === startedTarget ? { ...item, unreadCount: 0 } : item)),
-          )
-          requestMessengerUnreadRefresh()
         }
       } finally {
         setThreadLoading(false)

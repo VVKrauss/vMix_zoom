@@ -31,7 +31,7 @@ self.addEventListener('push', (event) => {
   let url = '/dashboard/messenger'
   let tag = 'dm'
   let icon = '/logo.png'
-  let badge = '/logo.png'
+  let badge = '/push-badge.png'
   let conversationId = ''
   let conversationKind = ''
   try {

@@ -197,6 +197,7 @@ Deno.serve(async (req) => {
   const appBase = (Deno.env.get('PUBLIC_APP_URL') ?? 'https://redflow.online').replace(/\/$/, '')
   const openPath = `/dashboard/messenger?chat=${encodeURIComponent(conversationId)}`
   const defaultIcon = `${appBase}/logo.png`
+  const defaultBadge = `${appBase}/push-badge.png`
   const payload = JSON.stringify({
     title: truncate(channelTitle, 60),
     body: truncate(`${senderName}: ${bodyText}`, 140),
@@ -205,7 +206,7 @@ Deno.serve(async (req) => {
     conversationId,
     conversationKind: 'channel',
     icon: displayIconUrl || defaultIcon,
-    badge: defaultIcon,
+    badge: defaultBadge,
   })
 
   let sent = 0

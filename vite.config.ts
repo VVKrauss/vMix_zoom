@@ -118,7 +118,7 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: 'prompt',
         injectRegister: null,
-        includeAssets: ['logo.png', 'logo-h.png'],
+        includeAssets: ['logo.png', 'logo-h.png', 'push-badge.png'],
         manifest: {
           name: 'redflow.online',
           short_name: 'redflow',

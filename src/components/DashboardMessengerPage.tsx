@@ -54,7 +54,6 @@ import {
   deleteDirectMessage,
   fetchDirectPeerDmReceiptContext,
   mergePeerLastReadAt,
-  markDirectConversationRead,
   previewTextForDirectMessageTail,
   requestMessengerUnreadRefresh,
   toggleDirectMessageReaction,
@@ -145,6 +144,7 @@ import { normalizeProfileSlug } from '../lib/profileSlug'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import { ChevronLeftIcon, JoinRequestsIcon, MenuBurgerIcon } from './icons'
 import { useMessengerJumpToBottom } from '../hooks/useMessengerJumpToBottom'
+import { useMessengerThreadReadCoordinator } from '../hooks/useMessengerThreadReadCoordinator'
 import { DashboardShell } from './DashboardShell'
 import { MessengerForwardToDmModal } from './MessengerForwardToDmModal'
 import { MessengerMessageMenuPopover } from './MessengerMessageMenuPopover'
@@ -426,7 +426,7 @@ export function DashboardMessengerPage() {
   const prevThreadIdForClearRef = useRef<string | null>(null)
   /** Уже загруженные сообщения для этого id — не дергать API при повторном срабатывании эффекта (напр. loading). */
   const lastFetchedThreadIdRef = useRef<string | null>(null)
-  const markReadDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dmReadTailRef = useRef<HTMLDivElement | null>(null)
   const chatListRefreshInFlightRef = useRef(false)
 
   const refreshChatList = useCallback(async () => {
@@ -572,6 +572,16 @@ export function DashboardMessengerPage() {
     if (activeConversation?.id === id) return activeConversation.kind
     return null
   }, [activeConversationId, mergedItems, activeConversation])
+
+  /** Тип треда по `conversationId` из маршрута (на мобилке `activeConversationId` может быть пустым). */
+  const openRouteThreadKind = useMemo((): MessengerConversationKind | null => {
+    const id = conversationId.trim()
+    if (!id) return null
+    const fromList = mergedItems.find((i) => i.id === id)
+    if (fromList) return fromList.kind
+    if (activeConversation?.id === id) return activeConversation.kind
+    return null
+  }, [conversationId, mergedItems, activeConversation])
 
   const refreshDirectPeerDmReceiptContext = useCallback(() => {
     const cid = activeConversationId.trim()
@@ -721,7 +731,6 @@ export function DashboardMessengerPage() {
     setMessages,
     bumpScrollIfPinned,
     mergeLatestPageIntoMessages,
-    markReadDebounceTimerRef,
     mutedConversationIdsRef,
     reactionDeleteSidebarSyncedRef,
   })
@@ -1688,6 +1697,36 @@ export function DashboardMessengerPage() {
     () => messages.filter((m) => m.kind !== 'reaction'),
     [messages],
   )
+
+  const dmLastSignificantMessageId = useMemo(() => {
+    const last = timelineMessages[timelineMessages.length - 1]
+    return last?.id ?? null
+  }, [timelineMessages])
+
+  const onDmMarkedRead = useCallback(() => {
+    const cid = conversationId.trim()
+    if (!cid) return
+    setItems((prev) => prev.map((item) => (item.id === cid ? { ...item, unreadCount: 0 } : item)))
+    setActiveConversation((prev) => (prev && prev.id === cid ? { ...prev, unreadCount: 0 } : prev))
+    refreshDirectPeerDmReceiptContext()
+  }, [conversationId, refreshDirectPeerDmReceiptContext])
+
+  useMessengerThreadReadCoordinator({
+    conversationId: conversationId.trim(),
+    kind: openRouteThreadKind === 'direct' ? 'direct' : null,
+    enabled: Boolean(
+      user?.id &&
+        conversationId.trim() &&
+        openRouteThreadKind === 'direct' &&
+        mergedItems.some((i) => i.id === conversationId.trim()) &&
+        !threadLoading,
+    ),
+    threadLoading,
+    scrollRef: messagesScrollRef,
+    readTailRef: dmReadTailRef,
+    lastSignificantMessageId: dmLastSignificantMessageId,
+    onMarkedRead: onDmMarkedRead,
+  })
 
   const reactionsByTargetId = useMemo(() => {
     const map = new Map<string, DirectMessage[]>()
@@ -2904,6 +2943,7 @@ export function DashboardMessengerPage() {
                       isMemberOfActiveConversation={isMemberOfActiveConversation}
                       goCreateRoomFromMessenger={goCreateRoomFromMessenger}
                       messagesScrollRef={messagesScrollRef}
+                      readTailRef={dmReadTailRef}
                       onMessagesScroll={onMessagesScroll}
                       loadingOlder={loadingOlder}
                       messagesContentRef={messagesContentRef}

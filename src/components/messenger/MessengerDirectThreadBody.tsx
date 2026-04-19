@@ -1,4 +1,4 @@
-import type { Dispatch, MutableRefObject, ReactNode, SetStateAction } from 'react'
+import type { Dispatch, MutableRefObject, ReactNode, Ref, RefObject, SetStateAction } from 'react'
 import { BrandLogoLoader } from '../BrandLogoLoader'
 import { ChevronLeftIcon, FiRrIcon } from '../icons'
 import { MessengerJumpToBottomFab } from '../MessengerJumpToBottomFab'
@@ -39,6 +39,8 @@ export function MessengerDirectThreadBody(props: {
   isMemberOfActiveConversation: boolean
   goCreateRoomFromMessenger: () => void
   messagesScrollRef: MutableRefObject<HTMLDivElement | null>
+  /** Sentinel внизу скролла — пересечение с viewport = хвост ленты «увиден» (mark read). */
+  readTailRef?: RefObject<HTMLDivElement | null>
   onMessagesScroll: () => void
   loadingOlder: boolean
   messagesContentRef: MutableRefObject<HTMLDivElement | null>
@@ -86,6 +88,7 @@ export function MessengerDirectThreadBody(props: {
     isMemberOfActiveConversation,
     goCreateRoomFromMessenger,
     messagesScrollRef,
+    readTailRef,
     onMessagesScroll,
     loadingOlder,
     messagesContentRef,
@@ -347,6 +350,9 @@ export function MessengerDirectThreadBody(props: {
                   )
                 })
               )}
+              {readTailRef ? (
+                <div ref={readTailRef as Ref<HTMLDivElement>} className="dashboard-messenger__read-tail-sentinel" aria-hidden />
+              ) : null}
             </div>
           </div>
           <MessengerJumpToBottomFab visible={showDmJump} onClick={jumpDmBottom} />
