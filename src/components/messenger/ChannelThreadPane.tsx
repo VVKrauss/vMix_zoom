@@ -116,6 +116,7 @@ const QUICK_REACTION_EMOJI: ReactionEmoji = '❤️'
 
 export function ChannelThreadPane({
   conversationId,
+  messengerOnline = true,
   onTouchTail,
   onForwardMessage,
   onMentionSlug,
@@ -129,6 +130,7 @@ export function ChannelThreadPane({
   onJumpHandled,
 }: {
   conversationId: string
+  messengerOnline?: boolean
   onTouchTail?: (patch: { lastMessageAt: string; lastMessagePreview: string }) => void
   /** Переслать текст/фото в личный чат (открывает модалку на уровне страницы). */
   onForwardMessage?: (message: DirectMessage) => void
@@ -452,7 +454,7 @@ export function ChannelThreadPane({
   const reloadPosts = useCallback(() => {
     const cid = conversationId.trim()
     if (!user?.id || !cid || !canView) return
-    void listChannelPostsPage(cid, { limit: 30 }).then((res) => {
+    void listChannelPostsPage(cid, { limit: 50 }).then((res) => {
       if (res.error) {
         setError(res.error)
         return
@@ -817,7 +819,18 @@ export function ChannelThreadPane({
         setBackgroundRefreshing(true)
       }
 
-      const res = await listChannelPostsPage(cid, { limit: 30 })
+      if (!messengerOnline) {
+        if (!active) return
+        setThreadLoading(false)
+        setBackgroundRefreshing(false)
+        if (!hadCache) {
+          pendingChannelTailScrollRef.current = false
+          setError('Нет сети.')
+        }
+        return
+      }
+
+      const res = await listChannelPostsPage(cid, { limit: 50 })
       if (!active) return
       setThreadLoading(false)
       setBackgroundRefreshing(false)
@@ -829,12 +842,12 @@ export function ChannelThreadPane({
         return
       }
       const nextPosts = (res.data ?? []).filter((m) => m.kind !== 'reaction')
-      setPosts(res.data ?? [])
+      setPosts(nextPosts)
       setHasMoreOlder(res.hasMoreOlder)
       if (!hadCache) pendingChannelTailScrollRef.current = true
-        void saveCachedChannelFeed(cid, res.data ?? [], Boolean(res.hasMoreOlder))
+      void saveCachedChannelFeed(cid, nextPosts, Boolean(res.hasMoreOlder))
 
-        const postIds = nextPosts.map((p) => p.id).filter(Boolean)
+      const postIds = nextPosts.map((p) => p.id).filter(Boolean)
       void listChannelCommentCounts(cid, postIds).then((cc) => {
         if (!active) return
         if (cc.error || !cc.data) return
@@ -852,7 +865,7 @@ export function ChannelThreadPane({
       cancelPostsFeedTailCatchupRef.current?.()
       cancelPostsFeedTailCatchupRef.current = null
     }
-  }, [conversationId, user?.id, canView])
+  }, [conversationId, user?.id, canView, messengerOnline])
 
   useEffect(() => {
     const cid = conversationId.trim()
@@ -1075,7 +1088,7 @@ export function ChannelThreadPane({
     if (!oldest?.id) return
     setLoadingOlder(true)
     try {
-      const res = await listChannelPostsPage(cid, { limit: 30, before: { createdAt: oldest.createdAt, id: oldest.id } })
+      const res = await listChannelPostsPage(cid, { limit: 50, before: { createdAt: oldest.createdAt, id: oldest.id } })
       if (res.error) {
         setError(res.error)
         return

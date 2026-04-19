@@ -1,7 +1,8 @@
-import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
+import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
 import type { InviteConversationPreview } from '../lib/groups'
 import { getDirectConversationForUser, listDirectMessagesPage, type DirectMessage } from '../lib/messenger'
 import type { MessengerConversationKind, MessengerConversationSummary } from '../lib/messengerConversations'
+import { readMessengerThreadTailCache, writeMessengerThreadTailCache } from '../lib/messengerThreadTailCache'
 import { DM_PAGE_SIZE, pickDefaultConversationId } from '../lib/messengerDashboardUtils'
 
 export type MessengerPendingJumpState = {
@@ -49,11 +50,13 @@ export function useMessengerThreadBootstrap(opts: {
     } | null>
   >
   setItems: Dispatch<SetStateAction<MessengerConversationSummary[]>>
+  isOnline: boolean
 }): void {
   const {
     userId,
     loading,
     listOnlyMobile,
+    isOnline,
     conversationId,
     urlConversationId,
     inviteToken,
@@ -78,8 +81,16 @@ export function useMessengerThreadBootstrap(opts: {
     setItems,
   } = opts
 
+  const prevIsOnlineRef = useRef<boolean | null>(null)
+
   useEffect(() => {
     const run = async () => {
+      const prevOn = prevIsOnlineRef.current
+      prevIsOnlineRef.current = isOnline
+      if (prevOn === false && isOnline === true) {
+        lastFetchedThreadIdRef.current = null
+      }
+
       if (!userId || loading) return
       if (listOnlyMobile) {
         lastFetchedThreadIdRef.current = null
@@ -210,7 +221,46 @@ export function useMessengerThreadBootstrap(opts: {
         setMessageMenu(null)
       }
 
-      if (lastFetchedThreadIdRef.current === startedTarget) {
+      if (lastFetchedThreadIdRef.current === startedTarget && isOnline) {
+        setThreadLoading(false)
+        return
+      }
+
+      if (!isOnline && lastFetchedThreadIdRef.current === startedTarget) {
+        setThreadLoading(false)
+        return
+      }
+
+      if (!isOnline) {
+        setThreadLoading(true)
+        setError(null)
+        const cached = await readMessengerThreadTailCache('direct', startedTarget)
+        const summary =
+          mergedItemsRef.current.find((i) => i.id === startedTarget && i.kind === 'direct') ?? null
+        const wantNow =
+          conversationIdRef.current.trim() || pickDefaultConversationId(mergedItemsRef.current, null) || ''
+        if (wantNow !== startedTarget) {
+          setThreadLoading(false)
+          return
+        }
+        if (cached?.length && summary) {
+          setActiveConversation({ ...summary, kind: 'direct' })
+          setMessages(cached)
+          setHasMoreOlder(true)
+          lastFetchedThreadIdRef.current = startedTarget
+        } else if (summary) {
+          setActiveConversation({ ...summary, kind: 'direct' })
+          setMessages([])
+          setHasMoreOlder(false)
+          lastFetchedThreadIdRef.current = null
+          setError('Нет сети. Сохранённых сообщений для этого чата нет.')
+        } else {
+          setActiveConversation(null)
+          setMessages([])
+          setHasMoreOlder(false)
+          lastFetchedThreadIdRef.current = null
+          setError('Нет сети.')
+        }
         setThreadLoading(false)
         return
       }
@@ -246,18 +296,29 @@ export function useMessengerThreadBootstrap(opts: {
           setHasMoreOlder(false)
           lastFetchedThreadIdRef.current = null
         } else if (messagesRes.error) {
-          setError(messagesRes.error)
-          setActiveConversation(
-            conversationRes.data ? { ...conversationRes.data, kind: 'direct', unreadCount: 0 } : null,
-          )
-          setMessages([])
-          setHasMoreOlder(false)
-          lastFetchedThreadIdRef.current = null
+          const cached = await readMessengerThreadTailCache('direct', startedTarget)
+          if (cached?.length && conversationRes.data) {
+            setError(null)
+            setActiveConversation({ ...conversationRes.data, kind: 'direct' })
+            setMessages(cached)
+            setHasMoreOlder(true)
+            lastFetchedThreadIdRef.current = startedTarget
+          } else {
+            setError(messagesRes.error)
+            setActiveConversation(
+              conversationRes.data ? { ...conversationRes.data, kind: 'direct', unreadCount: 0 } : null,
+            )
+            setMessages([])
+            setHasMoreOlder(false)
+            lastFetchedThreadIdRef.current = null
+          }
         } else {
           setActiveConversation({ ...conversationRes.data, kind: 'direct' })
-          setMessages(messagesRes.data ?? [])
+          const list = messagesRes.data ?? []
+          setMessages(list)
           setHasMoreOlder(messagesRes.hasMoreOlder)
           lastFetchedThreadIdRef.current = startedTarget
+          void writeMessengerThreadTailCache('direct', startedTarget, list)
         }
       } finally {
         setThreadLoading(false)
@@ -271,6 +332,7 @@ export function useMessengerThreadBootstrap(opts: {
     inviteLoading,
     invitePreview,
     inviteToken,
+    isOnline,
     listOnlyMobile,
     loading,
     pendingJoinSidebarById,

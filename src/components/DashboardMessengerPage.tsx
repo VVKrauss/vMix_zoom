@@ -139,12 +139,15 @@ import {
   leaveGroupOrChannelClient,
 } from '../lib/messengerConversationLifecycle'
 import { supabase } from '../lib/supabase'
+import { fetchPublicUserProfile } from '../lib/userPublicProfile'
+import { writeMessengerThreadTailCache } from '../lib/messengerThreadTailCache'
 import { newRoomId } from '../utils/roomId'
 import { normalizeProfileSlug } from '../lib/profileSlug'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import { ChevronLeftIcon, JoinRequestsIcon, MenuBurgerIcon } from './icons'
 import { useMessengerJumpToBottom } from '../hooks/useMessengerJumpToBottom'
 import { useMessengerThreadReadCoordinator } from '../hooks/useMessengerThreadReadCoordinator'
+import { useNavigatorOnline } from '../hooks/useNavigatorOnline'
 import { DashboardShell } from './DashboardShell'
 import { MessengerForwardToDmModal } from './MessengerForwardToDmModal'
 import { MessengerMessageMenuPopover } from './MessengerMessageMenuPopover'
@@ -159,6 +162,7 @@ import { MessengerImageLightbox } from './messenger/MessengerImageLightbox'
 import { MessengerJoinRequestsModal } from './messenger/MessengerJoinRequestsModal'
 import { MessengerSettingsModal } from './messenger/MessengerSettingsModal'
 import { MessengerChatListAside } from './messenger/MessengerChatListAside'
+import { MessengerNetStrip } from './messenger/MessengerNetStrip'
 import { MessengerQuickNavMenu } from './messenger/MessengerQuickNavMenu'
 import { MessengerDeleteChatDialog } from './messenger/MessengerDeleteChatDialog'
 import { MessengerChatListRowMenuPortal } from './messenger/MessengerChatListRowMenuPortal'
@@ -194,6 +198,7 @@ export function DashboardMessengerPage() {
   const { pinnedChatIds, setPinnedChatIds } = useMessengerPinnedChatsSync(user?.id, profile, toast)
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const isMobileMessenger = useMediaQuery('(max-width: 900px)')
+  const { isOnline, netBanner } = useNavigatorOnline()
   const [soundEnabled, setSoundEnabled] = useState(() => isMessengerSoundEnabled())
   const [messengerFontPreset, setMessengerFontPresetState] = useState<MessengerFontPreset>(() =>
     getMessengerFontPreset(),
@@ -261,12 +266,17 @@ export function DashboardMessengerPage() {
     pendingJoinSidebarById,
     setPendingJoinSidebarById,
   )
-  const conversationAvatarUrlById = useMessengerConversationAvatarUrls(items)
+  const [chatListAvatarPullEpoch, setChatListAvatarPullEpoch] = useState(0)
+  const conversationAvatarUrlById = useMessengerConversationAvatarUrls(mergedItems, chatListAvatarPullEpoch)
   const [activeConversation, setActiveConversation] = useState<MessengerConversationSummary | null>(null)
   const [messages, setMessages] = useState<DirectMessage[]>([])
   /** Курсор прочтения собеседника в открытом ЛС + приватность квитанций (индикаторы исходящих). */
   const [directPeerLastReadAt, setDirectPeerLastReadAt] = useState<string | null>(null)
   const [directPeerReceiptsPrivate, setDirectPeerReceiptsPrivate] = useState(false)
+  const [directPeerPresence, setDirectPeerPresence] = useState<{
+    lastActivityAt: string | null
+    isOnline: boolean
+  } | null>(null)
   const { senderContactByUserId, setSenderContactByUserId } = useMessengerSenderContacts(user?.id, messages)
   const [draft, setDraft] = useState('')
 
@@ -440,7 +450,10 @@ export function DashboardMessengerPage() {
         setError(listRes.error)
         return
       }
-      if (listRes.data) setItems(listRes.data)
+      if (listRes.data) {
+        setItems(listRes.data)
+        setChatListAvatarPullEpoch((e) => e + 1)
+      }
     } finally {
       chatListRefreshInFlightRef.current = false
       setChatListRefreshing(false)
@@ -552,6 +565,7 @@ export function DashboardMessengerPage() {
     setComposerEmojiOpen,
     setMessageMenu,
     setItems,
+    isOnline,
   })
 
   const activeConversationId = listOnlyMobile ? '' : conversationId || activeConversation?.id || ''
@@ -582,6 +596,15 @@ export function DashboardMessengerPage() {
     if (activeConversation?.id === id) return activeConversation.kind
     return null
   }, [conversationId, mergedItems, activeConversation])
+
+  useEffect(() => {
+    const id = activeConversationId.trim()
+    if (!id || activeOpenThreadKind !== 'direct' || !messages.length) return
+    const t = window.setTimeout(() => {
+      void writeMessengerThreadTailCache('direct', id, messages)
+    }, 700)
+    return () => window.clearTimeout(t)
+  }, [messages, activeConversationId, activeOpenThreadKind])
 
   const refreshDirectPeerDmReceiptContext = useCallback(() => {
     const cid = activeConversationId.trim()
@@ -1263,6 +1286,69 @@ export function DashboardMessengerPage() {
   /** Шапка треда: сразу из списка по URL, пока грузится полная карточка с сервера */
   const threadHeadConversation =
     sortedItems.find((i) => i.id === activeConversationId) ?? activeConversation
+
+  const directOtherUserId = useMemo(() => {
+    const id = activeConversationId.trim()
+    if (!id) return ''
+    const row = sortedItems.find((i) => i.id === id) ?? activeConversation
+    if (!row || row.kind !== 'direct') return ''
+    return row.otherUserId?.trim() ?? ''
+  }, [activeConversationId, sortedItems, activeConversation])
+
+  const refreshDirectPeerPresence = useCallback(() => {
+    const oid = directOtherUserId.trim()
+    if (!oid || !user?.id || oid === user.id) return
+    void fetchPublicUserProfile(oid).then((r) => {
+      if (!r.data || r.error) return
+      setDirectPeerPresence({
+        lastActivityAt: r.data.lastActivityAt,
+        isOnline: r.data.isOnline,
+      })
+    })
+  }, [directOtherUserId, user?.id])
+
+  useEffect(() => {
+    setDirectPeerPresence(null)
+    const oid = directOtherUserId.trim()
+    if (!oid || !user?.id || oid === user.id) return
+    let cancelled = false
+    void fetchPublicUserProfile(oid).then((r) => {
+      if (cancelled || !r.data || r.error) return
+      setDirectPeerPresence({
+        lastActivityAt: r.data.lastActivityAt,
+        isOnline: r.data.isOnline,
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [directOtherUserId, user?.id])
+
+  useEffect(() => {
+    const oid = directOtherUserId.trim()
+    if (!oid || !user?.id || oid === user.id) return
+    const t = window.setInterval(() => {
+      void fetchPublicUserProfile(oid).then((r) => {
+        if (!r.data || r.error) return
+        setDirectPeerPresence({
+          lastActivityAt: r.data.lastActivityAt,
+          isOnline: r.data.isOnline,
+        })
+      })
+    }, 25_000)
+    return () => window.clearInterval(t)
+  }, [directOtherUserId, user?.id])
+
+  useEffect(() => {
+    const oid = directOtherUserId.trim()
+    if (!oid || !user?.id || oid === user.id) return
+    const onVis = () => {
+      if (document.visibilityState !== 'visible') return
+      refreshDirectPeerPresence()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [directOtherUserId, user?.id, refreshDirectPeerPresence])
 
   /** Шаринг: `?msg=` / `post=` → скролл к посту/комментарию; параметры убираем из адреса после применения. */
   useEffect(() => {
@@ -2603,6 +2689,7 @@ export function DashboardMessengerPage() {
         }`}
       >
         <>
+          <MessengerNetStrip state={netBanner} />
           <div className="dashboard-messenger__layout">
             {showListPane ? (
               <MessengerChatListAside
@@ -2870,6 +2957,7 @@ export function DashboardMessengerPage() {
                         ) : threadHeadConversation.kind === 'group' ? (
                           <GroupThreadPane
                             conversationId={activeConversationId}
+                            messengerOnline={isOnline}
                             isMemberHint={isMemberOfActiveConversation}
                             viewerOnly={viewerOnly}
                             publicJoinCta={publicBrowseJoinCta}
@@ -2895,6 +2983,7 @@ export function DashboardMessengerPage() {
                         ) : (
                           <ChannelThreadPane
                             conversationId={activeConversationId}
+                            messengerOnline={isOnline}
                             isMemberHint={isMemberOfActiveConversation}
                             postingMode={threadHeadConversation?.postingMode}
                             viewerOnly={viewerOnly}
@@ -2935,6 +3024,8 @@ export function DashboardMessengerPage() {
                       directPeerLastReadAt={directPeerLastReadAt}
                       viewerDmReceiptsPrivate={profile?.profile_dm_receipts_private === true}
                       peerDmReceiptsPrivate={directPeerReceiptsPrivate}
+                      directPeerIsOnline={directPeerPresence?.isOnline ?? false}
+                      directPeerLastActivityAt={directPeerPresence?.lastActivityAt ?? null}
                       threadHeadConversation={threadHeadConversation as MessengerDirectThreadHeadConversation}
                       openUserPeek={openUserPeek}
                       user={user}
@@ -3105,6 +3196,7 @@ export function DashboardMessengerPage() {
           onBackdropClick={closeMessengerMenu}
           onClose={closeMessengerMenu}
           goCreateRoomFromMenu={goCreateRoomFromMenu}
+          onRefreshChats={user?.id ? refreshChatList : undefined}
           onOpenMessengerSettings={() => setMessengerSettingsOpen(true)}
           onSignOut={signOut}
           canAccessAdmin={canAccessAdmin}

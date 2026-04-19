@@ -10,7 +10,7 @@ export type CachedChannelFeed = {
 }
 
 const KEY_PREFIX = 'channel:'
-const MAX_POSTS = 30
+const MAX_POSTS = 50
 
 export async function loadCachedChannelFeed(conversationId: string): Promise<CachedChannelFeed | null> {
   const cid = conversationId.trim()

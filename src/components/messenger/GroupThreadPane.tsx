@@ -20,6 +20,7 @@ import {
   isAllowedReactionEmoji,
 } from '../../lib/groups'
 import { requestMessengerUnreadRefresh } from '../../lib/messenger'
+import { readMessengerThreadTailCache, writeMessengerThreadTailCache } from '../../lib/messengerThreadTailCache'
 import type { ReactionEmoji } from '../../types/roomComms'
 import { MessengerMessageMenuPopover } from '../MessengerMessageMenuPopover'
 import { AttachmentIcon, FiRrIcon, MessengerSendPlaneIcon } from '../icons'
@@ -74,6 +75,7 @@ function chatMessageDeleteRowId(oldRow: Record<string, unknown>): string | null 
 
 export function GroupThreadPane({
   conversationId,
+  messengerOnline = true,
   onTouchTail,
   onForwardMessage,
   onMentionSlug,
@@ -85,6 +87,8 @@ export function GroupThreadPane({
   onJumpHandled,
 }: {
   conversationId: string
+  /** Состояние сети с уровня страницы мессенджера (офлайн → кэш хвоста). */
+  messengerOnline?: boolean
   onTouchTail?: (patch: { lastMessageAt: string; lastMessagePreview: string }) => void
   onForwardMessage?: (message: DirectMessage) => void
   onMentionSlug?: (slug: string) => void
@@ -254,14 +258,8 @@ export function GroupThreadPane({
     setError(null)
     setMessages([])
     setReplyTo(null)
-    void listGroupMessagesPage(cid, { limit: 60 }).then((res) => {
-      if (!active) return
-      setThreadLoading(false)
-      if (res.error) {
-        setError(res.error)
-        return
-      }
-      setMessages(res.data ?? [])
+
+    const afterLoadScroll = () => {
       cancelGroupTailCatchupRef.current?.()
       cancelGroupTailCatchupRef.current = null
       pinnedToBottomRef.current = true
@@ -281,13 +279,58 @@ export function GroupThreadPane({
       requestAnimationFrame(() => {
         if (isGroupMember) composerTextareaRef.current?.focus()
       })
-    })
+    }
+
+    void (async () => {
+      if (!messengerOnline) {
+        const cached = await readMessengerThreadTailCache('group', cid)
+        if (!active) return
+        setThreadLoading(false)
+        if (cached?.length) {
+          setMessages(cached)
+          afterLoadScroll()
+          return
+        }
+        setError('Нет сети. Сохранённых сообщений для этой группы нет.')
+        return
+      }
+
+      const res = await listGroupMessagesPage(cid, { limit: 60 })
+      if (!active) return
+      setThreadLoading(false)
+      if (res.error) {
+        const cached = await readMessengerThreadTailCache('group', cid)
+        if (!active) return
+        if (cached?.length) {
+          setError(null)
+          setMessages(cached)
+          afterLoadScroll()
+          return
+        }
+        setError(res.error)
+        return
+      }
+      const list = res.data ?? []
+      setMessages(list)
+      void writeMessengerThreadTailCache('group', cid, list)
+      afterLoadScroll()
+    })()
+
     return () => {
       active = false
       cancelGroupTailCatchupRef.current?.()
       cancelGroupTailCatchupRef.current = null
     }
-  }, [conversationId, user?.id, canView, viewerOnly, isGroupMember])
+  }, [conversationId, user?.id, canView, viewerOnly, isGroupMember, messengerOnline])
+
+  useEffect(() => {
+    const cid = conversationId.trim()
+    if (!cid || !messages.length || !messengerOnline) return
+    const t = window.setTimeout(() => {
+      void writeMessengerThreadTailCache('group', cid, messages)
+    }, 700)
+    return () => window.clearTimeout(t)
+  }, [messages, conversationId, messengerOnline])
 
   const updatePinnedToBottom = useCallback(() => {
     const el = messagesScrollRef.current

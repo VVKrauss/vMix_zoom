@@ -117,7 +117,7 @@ export function UserProfilePeekModal({
   const displayName = profile?.displayName ?? (target.displayName?.trim() || 'Пользователь')
   const avatarUrl = profile?.avatarUrl ?? target.avatarUrl ?? null
   const slug = profile?.profileSlug
-  const lastLine = formatLastActive(profile?.lastLoginAt ?? null)
+  const lastLine = formatLastActive(profile?.lastActivityAt ?? null)
 
   const initials = (displayName.trim().charAt(0) || '?').toUpperCase()
 
@@ -197,7 +197,10 @@ export function UserProfilePeekModal({
         </div>
         <p className="user-peek-modal__name">{displayName}</p>
         {slug ? <p className="user-peek-modal__slug">@{slug}</p> : null}
-        <p className="user-peek-modal__active">Последняя активность: {lastLine}</p>
+        <p className="user-peek-modal__active">
+          Последняя активность: {lastLine}
+          {profile?.isOnline ? ' · в сети' : ''}
+        </p>
         {loadErr ? <p className="join-error user-peek-modal__err">{loadErr}</p> : null}
         {loading ? <p className="user-peek-modal__hint">Загрузка…</p> : null}
 

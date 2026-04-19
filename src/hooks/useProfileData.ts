@@ -34,6 +34,7 @@ export interface UserProfile {
   profile_show_avatar: boolean
   profile_show_slug: boolean
   profile_show_last_active: boolean
+  profile_show_online: boolean
   /** Не показывать собеседникам детальные статусы доставки/прочтения исходящих ЛС */
   profile_dm_receipts_private: boolean
   /** Закреплённые в дереве мессенджера (порядок важен), max 3; если ключа нет — только localStorage (до колонки в API). */
@@ -69,6 +70,7 @@ export interface UseProfileReturn {
     profile_show_avatar: boolean
     profile_show_slug: boolean
     profile_show_last_active: boolean
+    profile_show_online: boolean
     profile_dm_receipts_private: boolean
   }) => Promise<{ error: string | null }>
   uploadAvatar: (file: File) => Promise<{ error: string | null }>
@@ -106,7 +108,7 @@ export function useProfileData(): UseProfileReturn {
         supabase
           .from('users')
           .select(
-            'id, display_name, profile_slug, email, avatar_url, status, room_ui_preferences, messenger_pinned_conversation_ids, profile_search_closed, profile_search_allow_by_name, profile_search_allow_by_email, profile_search_allow_by_slug, dm_allow_from, profile_view_allow_from, profile_show_avatar, profile_show_slug, profile_show_last_active, profile_dm_receipts_private',
+            'id, display_name, profile_slug, email, avatar_url, status, room_ui_preferences, messenger_pinned_conversation_ids, profile_search_closed, profile_search_allow_by_name, profile_search_allow_by_email, profile_search_allow_by_slug, dm_allow_from, profile_view_allow_from, profile_show_avatar, profile_show_slug, profile_show_last_active, profile_show_online, profile_dm_receipts_private',
           )
           .eq('id', uid)
           .single(),
@@ -173,6 +175,7 @@ export function useProfileData(): UseProfileReturn {
         profile_show_avatar: userData.profile_show_avatar !== false,
         profile_show_slug: userData.profile_show_slug !== false,
         profile_show_last_active: userData.profile_show_last_active !== false,
+        profile_show_online: (userData as Record<string, unknown>).profile_show_online !== false,
         profile_dm_receipts_private:
           (userData as Record<string, unknown>).profile_dm_receipts_private === true,
         ...('messenger_pinned_conversation_ids' in userData
@@ -370,6 +373,7 @@ export function useProfileData(): UseProfileReturn {
       profile_show_avatar: boolean
       profile_show_slug: boolean
       profile_show_last_active: boolean
+      profile_show_online: boolean
       profile_dm_receipts_private: boolean
     }): Promise<{ error: string | null }> => {
       if (!user || !profile) return { error: 'Нет пользователя' }
@@ -380,6 +384,7 @@ export function useProfileData(): UseProfileReturn {
         profile_show_avatar: patch.profile_show_avatar,
         profile_show_slug: patch.profile_show_slug,
         profile_show_last_active: patch.profile_show_last_active,
+        profile_show_online: patch.profile_show_online,
         profile_dm_receipts_private: patch.profile_dm_receipts_private,
         updated_at: new Date().toISOString(),
       }

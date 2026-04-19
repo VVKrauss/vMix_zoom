@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
 import { useProfileData, type UseProfileReturn } from '../hooks/useProfileData'
+import { usePresenceHeartbeat } from '../hooks/usePresenceHeartbeat'
 import { ProfileEditModalHost } from '../components/ProfileEditModalHost'
 
 export type { PlanInfo, UserGlobalRole, UserProfile } from '../hooks/useProfileData'
@@ -11,6 +12,11 @@ export type ProfileContextValue = UseProfileReturn & {
 }
 
 const ProfileContext = createContext<ProfileContextValue | null>(null)
+
+function PresenceHeartbeatHost() {
+  usePresenceHeartbeat()
+  return null
+}
 
 export function ProfileProvider({ children }: { children: ReactNode }) {
   const data = useProfileData()
@@ -27,6 +33,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
 
   return (
     <ProfileContext.Provider value={value}>
+      <PresenceHeartbeatHost />
       {children}
       <ProfileEditModalHost
         open={profileEditOpen}

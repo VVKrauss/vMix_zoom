@@ -1,11 +1,29 @@
 import { supabase } from './supabase'
 
+/** PostgREST отдаёт timestamptz в JSON как строку; на всякий случай принимаем и число ms. */
+function parseRpcTimestamp(v: unknown): string | null {
+  if (v == null) return null
+  if (typeof v === 'string') {
+    const s = v.trim()
+    return s ? s : null
+  }
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    const d = new Date(v)
+    return Number.isNaN(d.getTime()) ? null : d.toISOString()
+  }
+  if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString()
+  return null
+}
+
 export type PublicUserProfileRow = {
   id: string
   displayName: string
   avatarUrl: string | null
   profileSlug: string | null
-  lastLoginAt: string | null
+  /** Сведённая «последняя активность» (heartbeat и/или вход). */
+  lastActivityAt: string | null
+  /** Статус «в сети» с учётом приватности `profile_show_online`. */
+  isOnline: boolean
   /** Профиль скрыт настройками владельца (только для чужих). */
   restricted?: boolean
 }
@@ -32,6 +50,11 @@ export async function fetchPublicUserProfile(
     return { data: null, error: 'Некорректный ответ сервера' }
   }
 
+  const rawActivity =
+    parseRpcTimestamp(row.last_activity_at) ??
+    parseRpcTimestamp(row.last_login_at) ??
+    null
+
   return {
     data: {
       id: String(row.id ?? ''),
@@ -43,10 +66,8 @@ export async function fetchPublicUserProfile(
         typeof row.avatar_url === 'string' && row.avatar_url.trim() ? row.avatar_url.trim() : null,
       profileSlug:
         typeof row.profile_slug === 'string' && row.profile_slug.trim() ? row.profile_slug.trim() : null,
-      lastLoginAt:
-        typeof row.last_login_at === 'string' && row.last_login_at.trim()
-          ? row.last_login_at.trim()
-          : null,
+      lastActivityAt: rawActivity,
+      isOnline: row.is_online === true,
       restricted: row.restricted === true,
     },
     error: null,

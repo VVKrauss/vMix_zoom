@@ -127,8 +127,10 @@ export function DashboardPage() {
   const [profileViewAllowFrom, setProfileViewAllowFrom] = useState<'everyone' | 'contacts_only'>('everyone')
   const [profileShowAvatar, setProfileShowAvatar] = useState(true)
   const [profileShowSlug, setProfileShowSlug] = useState(true)
-  /** true — не показывать последнюю активность другим (инверсия profile_show_last_active). */
+  /** true — не показывать время последней активности другим (инверсия profile_show_last_active). */
   const [hideActivity, setHideActivity] = useState(false)
+  /** true — не показывать статус «в сети» другим (инверсия profile_show_online). */
+  const [hideOnlineStatus, setHideOnlineStatus] = useState(false)
   const [profileDmReceiptsPrivate, setProfileDmReceiptsPrivate] = useState(false)
   const [contactPrivacyErr, setContactPrivacyErr] = useState<string | null>(null)
   const [myRooms, setMyRooms] = useState<PersistentSpaceRoomRow[]>([])
@@ -184,6 +186,7 @@ export function DashboardPage() {
     setProfileShowAvatar(profile.profile_show_avatar)
     setProfileShowSlug(profile.profile_show_slug)
     setHideActivity(!profile.profile_show_last_active)
+    setHideOnlineStatus(!profile.profile_show_online)
     setProfileDmReceiptsPrivate(profile.profile_dm_receipts_private)
     setContactPrivacyErr(null)
     privacyAutosaveSkipRef.current = true
@@ -266,6 +269,7 @@ export function DashboardPage() {
           profile_show_avatar: profileShowAvatar,
           profile_show_slug: profileShowSlug,
           profile_show_last_active: !hideActivity,
+          profile_show_online: !hideOnlineStatus,
           profile_dm_receipts_private: profileDmReceiptsPrivate,
         })
         if (err) setContactPrivacyErr(err)
@@ -279,6 +283,7 @@ export function DashboardPage() {
     profileShowAvatar,
     profileShowSlug,
     hideActivity,
+    hideOnlineStatus,
     profileDmReceiptsPrivate,
     saveContactPrivacy,
   ])
@@ -665,11 +670,21 @@ export function DashboardPage() {
             </div>
             <div className="dashboard-field">
               <div className="dashboard-field__inline dashboard-field__inline--toggle">
-                <span className="dashboard-field__label">Скрывать активность</span>
+                <span className="dashboard-field__label">Скрывать время последней активности</span>
                 <PillToggle
                   checked={hideActivity}
                   onCheckedChange={setHideActivity}
-                  ariaLabel="Скрывать последнюю активность от других"
+                  ariaLabel="Скрывать время последней активности от других"
+                />
+              </div>
+            </div>
+            <div className="dashboard-field">
+              <div className="dashboard-field__inline dashboard-field__inline--toggle">
+                <span className="dashboard-field__label">Скрывать статус «в сети»</span>
+                <PillToggle
+                  checked={hideOnlineStatus}
+                  onCheckedChange={setHideOnlineStatus}
+                  ariaLabel="Скрывать статус «в сети» от других"
                 />
               </div>
             </div>

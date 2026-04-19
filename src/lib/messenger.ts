@@ -800,8 +800,8 @@ function extensionForAudioBlob(blob: Blob): string {
 const MESSENGER_IMAGE_MAX_EDGE = 1680
 const MESSENGER_IMAGE_JPEG_QUALITY = 0.86
 /** Превью в ленте: меньший файл, отдельный объект в storage. */
-const MESSENGER_THUMB_MAX_EDGE = 480
-const MESSENGER_THUMB_JPEG_QUALITY = 0.76
+const MESSENGER_THUMB_MAX_EDGE = 320
+const MESSENGER_THUMB_JPEG_QUALITY = 0.62
 
 async function encodeJpegFromBitmap(bmp: ImageBitmap, maxEdge: number, quality: number): Promise<Blob> {
   const scale = Math.min(1, maxEdge / Math.max(bmp.width, bmp.height))

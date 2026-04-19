@@ -14,6 +14,8 @@ export function MessengerQuickNavMenu(props: {
   onBackdropClick: () => void
   onClose: () => void
   goCreateRoomFromMenu: () => void
+  /** Явное обновление дерева чатов и аватарок (десктоп, меню «⋯»). */
+  onRefreshChats?: () => void | Promise<void>
   onOpenMessengerSettings: () => void
   onSignOut: () => void | Promise<void>
   canAccessAdmin: boolean
@@ -23,6 +25,7 @@ export function MessengerQuickNavMenu(props: {
     onBackdropClick,
     onClose,
     goCreateRoomFromMenu,
+    onRefreshChats,
     onOpenMessengerSettings,
     onSignOut,
     canAccessAdmin,
@@ -75,6 +78,23 @@ export function MessengerQuickNavMenu(props: {
             </span>
             <span className="dashboard-messenger-quick-menu__lbl">Новая комната</span>
           </button>
+          {onRefreshChats ? (
+            <button
+              type="button"
+              className="dashboard-messenger-quick-menu__btn"
+              onClick={() => {
+                onClose()
+                void onRefreshChats()
+              }}
+              title="Обновить список чатов и превью аватарок"
+              aria-label="Обновить список чатов"
+            >
+              <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                <FiRrIcon name="rotate-right" />
+              </span>
+              <span className="dashboard-messenger-quick-menu__lbl">Обновить чаты</span>
+            </button>
+          ) : null}
           <button
             type="button"
             className="dashboard-messenger-quick-menu__btn"

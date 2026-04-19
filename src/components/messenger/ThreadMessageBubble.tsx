@@ -229,7 +229,7 @@ export function ThreadMessageBubble({
       }}
       className={`dashboard-messenger__message${isOwn ? ' dashboard-messenger__message--own' : ''}${
         canSwipeReply ? ' dashboard-messenger__message--swipe-reply' : ''
-      }`}
+      }${message.kind === 'image' ? ' dashboard-messenger__message--image' : ''}`}
       style={
         swipeTx !== 0
           ? { transform: `translateX(${swipeTx}px)`, transition: 'none' }

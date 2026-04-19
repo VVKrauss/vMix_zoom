@@ -32,6 +32,10 @@ export function MessengerDirectThreadBody(props: {
   viewerDmReceiptsPrivate: boolean
   peerDmReceiptsPrivate: boolean
   threadHeadConversation: MessengerDirectThreadHeadConversation
+  /** Собеседник в сети (с учётом приватности). */
+  directPeerIsOnline?: boolean
+  /** Последняя активность собеседника (ISO), если разрешено профилем. */
+  directPeerLastActivityAt?: string | null
   openUserPeek: (p: { userId: string; displayName: string; avatarUrl: string | null }) => void
   user: { id: string } | null | undefined
   profile: { display_name?: string | null; avatar_url?: string | null } | null | undefined
@@ -81,6 +85,8 @@ export function MessengerDirectThreadBody(props: {
     viewerDmReceiptsPrivate,
     peerDmReceiptsPrivate,
     threadHeadConversation,
+    directPeerIsOnline = false,
+    directPeerLastActivityAt = null,
     openUserPeek,
     user,
     profile,
@@ -165,8 +171,22 @@ export function MessengerDirectThreadBody(props: {
                 )}
               </span>
               <div className="dashboard-messenger__thread-head-center-text">
-                <div className="dashboard-messenger__thread-head-center-title" role="heading" aria-level={3}>
-                  {threadHeadConversation.title}
+                <div
+                  className="dashboard-messenger__thread-head-center-title dashboard-messenger__thread-head-center-title--row"
+                  role="heading"
+                  aria-level={3}
+                >
+                  <span className="dashboard-messenger__thread-head-center-title-text">
+                    {threadHeadConversation.title}
+                  </span>
+                  {directPeerIsOnline ? (
+                    <span
+                      className="dashboard-messenger__peer-online-dot"
+                      title="В сети"
+                      aria-label="В сети"
+                      role="status"
+                    />
+                  ) : null}
                 </div>
                 <div className="dashboard-messenger__thread-head-center-meta">
                   {formatMessengerListRowTime(threadHeadConversation.lastMessageAt ?? threadHeadConversation.createdAt)}
@@ -227,8 +247,18 @@ export function MessengerDirectThreadBody(props: {
               </span>
               <div>
                 <div className="dashboard-messenger__thread-titleline">
-                  <div className="dashboard-section__subtitle" role="heading" aria-level={3}>
-                    {threadHeadConversation.title}
+                  <div className="dashboard-messenger__thread-title-with-dot">
+                    <div className="dashboard-section__subtitle" role="heading" aria-level={3}>
+                      {threadHeadConversation.title}
+                    </div>
+                    {directPeerIsOnline ? (
+                      <span
+                        className="dashboard-messenger__peer-online-dot"
+                        title="В сети"
+                        aria-label="В сети"
+                        role="status"
+                      />
+                    ) : null}
                   </div>
                   {isMemberOfActiveConversation &&
                   !threadHeadConversation.joinRequestPending &&
@@ -242,7 +272,11 @@ export function MessengerDirectThreadBody(props: {
                   <span>{threadHeadConversation.messageCount} сообщ.</span>
                   <span>
                     Последняя активность:{' '}
-                    {formatDateTime(threadHeadConversation.lastMessageAt ?? threadHeadConversation.createdAt)}
+                    {formatDateTime(
+                      directPeerLastActivityAt ??
+                        threadHeadConversation.lastMessageAt ??
+                        threadHeadConversation.createdAt,
+                    )}
                   </span>
                 </div>
               </div>

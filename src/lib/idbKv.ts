@@ -1,7 +1,7 @@
-type StoreName = 'channelFeedV1'
+type StoreName = 'channelFeedV1' | 'messengerSidebarAvatarsV1' | 'messengerThreadTailV1'
 
 const DB_NAME = 'vmix-cache'
-const DB_VERSION = 1
+const DB_VERSION = 3
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -10,6 +10,12 @@ function openDb(): Promise<IDBDatabase> {
       const db = req.result
       if (!db.objectStoreNames.contains('channelFeedV1')) {
         db.createObjectStore('channelFeedV1')
+      }
+      if (!db.objectStoreNames.contains('messengerSidebarAvatarsV1')) {
+        db.createObjectStore('messengerSidebarAvatarsV1')
+      }
+      if (!db.objectStoreNames.contains('messengerThreadTailV1')) {
+        db.createObjectStore('messengerThreadTailV1')
       }
     }
     req.onsuccess = () => resolve(req.result)
