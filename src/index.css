@@ -5712,6 +5712,29 @@ button.dashboard-chat-row__last-author-avatar--btn {
   object-fit: cover;
 }
 
+.dashboard-messenger__row-avatar-wrap {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.dashboard-messenger__row-avatar-wrap--online {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--surface, #121212) 92%, transparent),
+    0 0 0 4px #15803d;
+}
+
+html[data-theme='light'] .dashboard-messenger__row-avatar-wrap--online {
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 4px #15803d;
+}
+
 button.dashboard-messenger__row-avatar {
   border: none;
   padding: 0;

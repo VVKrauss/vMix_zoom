@@ -172,6 +172,7 @@ import { MessengerChatListRowMenuPortal } from './messenger/MessengerChatListRow
 import { MessengerDmMessageMenuPortal } from './messenger/MessengerDmMessageMenuPortal'
 import { MessengerDirectThreadBody, type MessengerDirectThreadHeadConversation } from './messenger/MessengerDirectThreadBody'
 import { devMark, useDevRenderTrace } from '../lib/devTrace'
+import { useMessengerSidebarDirectPeersOnline } from '../hooks/useMessengerSidebarDirectPeersOnline'
 
 export function DashboardMessengerPage() {
   useDevRenderTrace('DashboardMessengerPage')
@@ -1273,6 +1274,9 @@ export function DashboardMessengerPage() {
     () => sortMessengerListWithPins(mergedItems, pinnedChatIds),
     [mergedItems, pinnedChatIds],
   )
+
+  const chatListExtraUserIds = useMemo(() => chatListGlobalUsers.map((u) => u.id), [chatListGlobalUsers])
+  const directPeersOnline = useMessengerSidebarDirectPeersOnline(user?.id, sortedItems, chatListExtraUserIds)
 
   /** Сумма непрочитанного по типу беседы — для бейджей на вкладках «Все / ЛС / …». */
   const filterUnreadByKind = useMemo(() => {
@@ -2783,8 +2787,7 @@ export function DashboardMessengerPage() {
                 activeConversationId={sidebarActiveConversationId}
                 selectConversation={selectConversation}
                 navigate={navigate}
-                openUserPeek={openUserPeek}
-                openConversationInfo={openConversationInfo}
+                directPeersOnline={directPeersOnline}
                 pinnedChatIds={pinnedChatIds}
                 setChatListRowMenu={setChatListRowMenu}
               />

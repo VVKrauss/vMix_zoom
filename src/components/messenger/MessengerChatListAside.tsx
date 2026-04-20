@@ -53,8 +53,8 @@ function MessengerChatListAsideImpl(props: {
   activeConversationId: string
   selectConversation: (id: string) => void
   navigate: NavigateFunction
-  openUserPeek: (p: { userId: string; displayName: string; avatarUrl: string | null }) => void
-  openConversationInfo: (id: string) => void | Promise<void>
+  /** user_id собеседника в ЛС → в сети (для зелёного кольца у аватарки) */
+  directPeersOnline: Record<string, boolean>
   pinnedChatIds: string[]
   setChatListRowMenu: Dispatch<
     SetStateAction<{
@@ -90,8 +90,7 @@ function MessengerChatListAsideImpl(props: {
     activeConversationId,
     selectConversation,
     navigate,
-    openUserPeek,
-    openConversationInfo,
+    directPeersOnline,
     pinnedChatIds,
     setChatListRowMenu,
     onRefreshChatList,
@@ -102,7 +101,6 @@ function MessengerChatListAsideImpl(props: {
   const ptrInnerRef = useRef<HTMLDivElement | null>(null)
   const ptrStartY = useRef(0)
   const ptrPullPx = useRef(0)
-
   useEffect(() => {
     const scrollEl = listScrollRef.current
     const inner = ptrInnerRef.current
@@ -114,6 +112,7 @@ function MessengerChatListAsideImpl(props: {
     const onStart = (e: TouchEvent) => {
       ptrStartY.current = e.touches[0].clientY
       ptrPullPx.current = 0
+      inner.style.transition = ''
     }
     const onMove = (e: TouchEvent) => {
       if (chatListRefreshing) return
@@ -131,10 +130,17 @@ function MessengerChatListAsideImpl(props: {
       }
     }
     const onEnd = () => {
-      inner.style.transform = ''
       const pulled = ptrPullPx.current
       ptrPullPx.current = 0
-      if (pulled >= THRESHOLD && !chatListRefreshing) void Promise.resolve(onRefresh())
+      const shouldRefresh = pulled >= THRESHOLD && !chatListRefreshing
+      inner.style.transition = 'transform 0.32s cubic-bezier(0.33, 1, 0.68, 1)'
+      inner.style.transform = 'translateY(0px)'
+      const clearTr = () => {
+        inner.style.transition = ''
+        inner.removeEventListener('transitionend', clearTr)
+      }
+      inner.addEventListener('transitionend', clearTr, { once: true })
+      if (shouldRefresh) void Promise.resolve(onRefresh())
     }
 
     scrollEl.addEventListener('touchstart', onStart, { passive: true })
@@ -313,6 +319,8 @@ function MessengerChatListAsideImpl(props: {
                 item.kind === 'direct'
                   ? item.otherUserId?.trim() || (!item.otherUserId && userId ? userId : '')
                   : ''
+              const peerOnline =
+                item.kind === 'direct' && rowPeekUserId ? Boolean(directPeersOnline[rowPeekUserId]) : false
               return (
                 <div className="dashboard-messenger__row-shell" key={item.id}>
                   <Link
@@ -327,33 +335,20 @@ function MessengerChatListAsideImpl(props: {
                     }`}
                   >
                     <div className="dashboard-messenger__row-main">
-                      <button
-                        type="button"
-                        className="dashboard-messenger__row-avatar"
+                      <div
+                        className={`dashboard-messenger__row-avatar-wrap${
+                          peerOnline ? ' dashboard-messenger__row-avatar-wrap--online' : ''
+                        }`}
                         aria-hidden
-                        tabIndex={-1}
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          if (item.kind === 'direct') {
-                            if (rowPeekUserId) {
-                              openUserPeek({
-                                userId: rowPeekUserId,
-                                displayName: item.title,
-                                avatarUrl,
-                              })
-                            }
-                          } else {
-                            void openConversationInfo(item.id)
-                          }
-                        }}
                       >
-                        {avatarUrl ? (
-                          <img src={avatarUrl ?? undefined} alt="" />
-                        ) : (
-                          <span>{conversationInitial(item.title)}</span>
-                        )}
-                      </button>
+                        <div className="dashboard-messenger__row-avatar">
+                          {avatarUrl ? (
+                            <img src={avatarUrl ?? undefined} alt="" />
+                          ) : (
+                            <span>{conversationInitial(item.title)}</span>
+                          )}
+                        </div>
+                      </div>
                       <div className="dashboard-messenger__row-content">
                         <div className="dashboard-messenger__row-titleline">
                           <div className="dashboard-messenger__row-title">
@@ -432,6 +427,7 @@ function MessengerChatListAsideImpl(props: {
             })}
             {extraGlobalUsers.map((hit) => {
               const subtitle = hit.profileSlug ? `@${hit.profileSlug}` : 'Профиль'
+              const hitOnline = Boolean(directPeersOnline[hit.id])
               return (
                 <div className="dashboard-messenger__row-shell" key={`glob-user-${hit.id}`}>
                   <Link
@@ -444,27 +440,20 @@ function MessengerChatListAsideImpl(props: {
                     className="dashboard-messenger__row"
                   >
                     <div className="dashboard-messenger__row-main">
-                      <button
-                        type="button"
-                        className="dashboard-messenger__row-avatar"
+                      <div
+                        className={`dashboard-messenger__row-avatar-wrap${
+                          hitOnline ? ' dashboard-messenger__row-avatar-wrap--online' : ''
+                        }`}
                         aria-hidden
-                        tabIndex={-1}
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          openUserPeek({
-                            userId: hit.id,
-                            displayName: hit.displayName,
-                            avatarUrl: hit.avatarUrl ?? null,
-                          })
-                        }}
                       >
-                        {hit.avatarUrl ? (
-                          <img src={hit.avatarUrl} alt="" />
-                        ) : (
-                          <span>{conversationInitial(hit.displayName)}</span>
-                        )}
-                      </button>
+                        <div className="dashboard-messenger__row-avatar">
+                          {hit.avatarUrl ? (
+                            <img src={hit.avatarUrl} alt="" />
+                          ) : (
+                            <span>{conversationInitial(hit.displayName)}</span>
+                          )}
+                        </div>
+                      </div>
                       <div className="dashboard-messenger__row-content">
                         <div className="dashboard-messenger__row-titleline">
                           <div className="dashboard-messenger__row-title">{hit.displayName}</div>
@@ -497,23 +486,15 @@ function MessengerChatListAsideImpl(props: {
                     }`}
                   >
                     <div className="dashboard-messenger__row-main">
-                      <button
-                        type="button"
-                        className="dashboard-messenger__row-avatar"
-                        aria-hidden
-                        tabIndex={-1}
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          selectConversation(hit.id)
-                        }}
-                      >
-                        {avatarUrl ? (
-                          <img src={avatarUrl} alt="" />
-                        ) : (
-                          <span>{conversationInitial(hit.title)}</span>
-                        )}
-                      </button>
+                      <div className="dashboard-messenger__row-avatar-wrap" aria-hidden>
+                        <div className="dashboard-messenger__row-avatar">
+                          {avatarUrl ? (
+                            <img src={avatarUrl} alt="" />
+                          ) : (
+                            <span>{conversationInitial(hit.title)}</span>
+                          )}
+                        </div>
+                      </div>
                       <div className="dashboard-messenger__row-content">
                         <div className="dashboard-messenger__row-titleline">
                           <div className="dashboard-messenger__row-title">{hit.title}</div>
