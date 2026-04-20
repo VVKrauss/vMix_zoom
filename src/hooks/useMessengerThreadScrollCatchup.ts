@@ -92,7 +92,13 @@ export function useMessengerScrollOnMessageGrowth(opts: {
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < MESSENGER_BOTTOM_PIN_PX
     const stickToTail = messengerPinnedToBottomRef.current || nearBottom
     if (stickToTail) {
-      el.scrollTop = el.scrollHeight
+      const delta = Math.max(0, messagesLength - prevLen)
+      // Плавно только для "обычного" прихода одного сообщения, чтобы не трясло ленту на bulk-обновлениях.
+      if (delta === 1) {
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+      } else {
+        el.scrollTop = el.scrollHeight
+      }
       messengerPinnedToBottomRef.current = true
     }
   }, [messagesLength, threadLoading, loadingOlder])

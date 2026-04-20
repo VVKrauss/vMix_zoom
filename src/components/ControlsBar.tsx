@@ -487,7 +487,14 @@ export function ControlsBar({
         <ShareSourcePopover
           isSharing={isScreenSharing}
           onClose={() => setOpen(null)}
-          onPick={(surface) => { if (canStartScreenShare) void onStartScreenShare(surface); setOpen(null) }}
+          onPick={(surface) => {
+            if (canStartScreenShare) {
+              void onStartScreenShare(surface).catch((e) => {
+                console.error('[ui] onStartScreenShare failed', e)
+              })
+            }
+            setOpen(null)
+          }}
           onStop={() => { onToggleScreenShare(); setOpen(null) }}
         />
       )}
@@ -953,7 +960,9 @@ export function ControlsBar({
           onClose={() => setScreenPickerOpen(false)}
           onPickSurface={(surface, opts) => {
             setScreenPickerOpen(false)
-            void onStartScreenShare(surface, opts)
+            void onStartScreenShare(surface, opts).catch((e) => {
+              console.error('[ui] onStartScreenShare failed', e)
+            })
           }}
         />
       )}

@@ -1,96 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { DirectMessage } from '../lib/messenger'
 import { getMessengerImageAttachments } from '../lib/messenger'
 import { resolveMediaUrlForStoragePath } from '../lib/mediaCache'
-import { FiRrIcon } from './icons'
 import { MessengerMessageBody } from './MessengerMessageBody'
 import { MessengerLinkOgCard } from './messenger/MessengerLinkOgCard'
+import { MessengerAudioPlayer } from './messenger/MessengerAudioPlayer'
 
 export type MessengerImageLightboxOpen = {
   urls: string[]
   initialIndex: number
-}
-
-function formatAudioDurationSec(sec: number): string {
-  if (!Number.isFinite(sec) || sec < 0) return '0:00'
-  const s = Math.floor(sec % 60)
-  const m = Math.floor(sec / 60)
-  return `${m}:${String(s).padStart(2, '0')}`
-}
-
-function MessengerInlineAudioPlayer(props: {
-  src: string
-  durationSecMeta: number | undefined
-  onReady?: () => void
-}) {
-  const { src, durationSecMeta, onReady } = props
-  const audioRef = useRef<HTMLAudioElement>(null)
-  const [playing, setPlaying] = useState(false)
-  const [cur, setCur] = useState(0)
-  const [dur, setDur] = useState(() =>
-    typeof durationSecMeta === 'number' && Number.isFinite(durationSecMeta) && durationSecMeta >= 0 ? durationSecMeta : 0,
-  )
-
-  useEffect(() => {
-    const el = audioRef.current
-    if (!el) return
-    const onTime = () => setCur(el.currentTime)
-    const syncDur = () => {
-      if (Number.isFinite(el.duration) && el.duration > 0) setDur(el.duration)
-    }
-    const onPlay = () => setPlaying(true)
-    const onPause = () => setPlaying(false)
-    const onEnded = () => {
-      setPlaying(false)
-      setCur(0)
-    }
-    el.addEventListener('timeupdate', onTime)
-    el.addEventListener('durationchange', syncDur)
-    el.addEventListener('loadedmetadata', syncDur)
-    el.addEventListener('play', onPlay)
-    el.addEventListener('pause', onPause)
-    el.addEventListener('ended', onEnded)
-    return () => {
-      el.removeEventListener('timeupdate', onTime)
-      el.removeEventListener('durationchange', syncDur)
-      el.removeEventListener('loadedmetadata', syncDur)
-      el.removeEventListener('play', onPlay)
-      el.removeEventListener('pause', onPause)
-      el.removeEventListener('ended', onEnded)
-    }
-  }, [src])
-
-  const totalSec = dur > 0 ? dur : typeof durationSecMeta === 'number' && Number.isFinite(durationSecMeta) ? durationSecMeta : 0
-
-  const toggle = () => {
-    const el = audioRef.current
-    if (!el) return
-    if (playing) el.pause()
-    else void el.play().catch(() => {})
-  }
-
-  return (
-    <>
-      <audio
-        ref={audioRef}
-        className="messenger-audio-native"
-        preload="metadata"
-        src={src}
-        onLoadedMetadata={() => onReady?.()}
-      />
-      <button
-        type="button"
-        className="messenger-audio-playbtn dashboard-messenger__composer-icon-btn"
-        onClick={toggle}
-        aria-label={playing ? 'Пауза' : 'Воспроизвести'}
-      >
-        <FiRrIcon name={playing ? 'pause' : 'play'} />
-      </button>
-      <span className="messenger-audio-time" aria-live="polite">
-        {playing ? `${formatAudioDurationSec(cur)} / ${formatAudioDurationSec(totalSec)}` : formatAudioDurationSec(totalSec)}
-      </span>
-    </>
-  )
 }
 
 export function MessengerBubbleBody({
@@ -210,7 +128,7 @@ export function MessengerBubbleBody({
       <div className="messenger-bubble-stack messenger-bubble-stack--audio">
         <div className="messenger-audio-row">
           {audioUrl && !audioErr ? (
-            <MessengerInlineAudioPlayer
+            <MessengerAudioPlayer
               src={audioUrl}
               durationSecMeta={typeof durationMeta === 'number' && Number.isFinite(durationMeta) ? durationMeta : undefined}
               onReady={() => onInlineImageLayout?.()}

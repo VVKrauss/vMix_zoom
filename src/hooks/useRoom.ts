@@ -1859,22 +1859,30 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         return
       }
       if (remoteScreenConsumePendingRef.current) {
-        if (import.meta.env.DEV) console.warn('[startScreenShare] skip: remoteScreenConsumePending')
+        if (import.meta.env.DEV) console.warn('[startScreenShare] skip: remoteScreenConsumePending', {
+          remoteScreenConsumePending: remoteScreenConsumePendingRef.current,
+        })
         return
       }
       if (couchModeOpenRef.current) {
         const host = couchModeHostPeerIdRef.current
         const sid = socketRef.current?.id
         if (host && sid && host !== sid) {
-          if (import.meta.env.DEV) console.warn('[startScreenShare] skip: couch host is another peer')
+          if (import.meta.env.DEV) console.warn('[startScreenShare] skip: couch host is another peer', { host, sid })
           return
         }
       }
+      const sid = socketRef.current?.id?.trim() || ''
       for (const p of participantsRef.current.values()) {
-        if (p.screenStream) {
-          if (import.meta.env.DEV) console.warn('[startScreenShare] skip: screen already active in participants', p.peerId)
-          return
-        }
+        if (!p.screenStream) continue
+        // Не блокируем локальный повторный старт из-за рассинхрона карты участников:
+        // если `screenStream` висит на своём peerId, разрешаем старт (producerRef уже проверили выше).
+        if (sid && p.peerId === sid) continue
+        if (import.meta.env.DEV) console.warn('[startScreenShare] skip: screen already active in participants', {
+          peerId: p.peerId,
+          localPeerId: sid || null,
+        })
+        return
       }
       try {
         const withAudio = options?.withAudio === true
@@ -1967,7 +1975,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           setScreenShareAudioActive(false)
         }
       } catch (e) {
-        if (import.meta.env.DEV) console.error('[startScreenShare] getDisplayMedia failed', e)
+        console.error('[startScreenShare] getDisplayMedia failed', e)
         localScreenStreamRef.current?.getTracks().forEach((t) => t.stop())
         localScreenStreamRef.current = null
         setLocalScreenStream(null)

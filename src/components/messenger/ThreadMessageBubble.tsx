@@ -49,6 +49,8 @@ export type ThreadMessageBubbleProps = {
   quickReactEnabled?: boolean
   isMobileMessenger?: boolean
   onQuickHeart?: () => void
+  /** Лёгкая анимация появления (только для новых входящих). */
+  enterAnim?: boolean
 }
 
 export function ThreadMessageBubble({
@@ -78,6 +80,7 @@ export function ThreadMessageBubble({
   quickReactEnabled,
   isMobileMessenger,
   onQuickHeart,
+  enterAnim = false,
 }: ThreadMessageBubbleProps) {
   const [swipeTx, setSwipeTx] = useState(0)
   const swipeRef = useRef<{
@@ -230,7 +233,7 @@ export function ThreadMessageBubble({
       }}
       className={`dashboard-messenger__message${isOwn ? ' dashboard-messenger__message--own' : ''}${
         canSwipeReply ? ' dashboard-messenger__message--swipe-reply' : ''
-      }${message.kind === 'image' ? ' dashboard-messenger__message--image' : ''}`}
+      }${message.kind === 'image' ? ' dashboard-messenger__message--image' : ''}${enterAnim ? ' dashboard-messenger__message--enter' : ''}`}
       style={
         swipeTx !== 0
           ? { transform: `translateX(${swipeTx}px)`, transition: 'none' }

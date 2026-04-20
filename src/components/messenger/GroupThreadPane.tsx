@@ -107,6 +107,7 @@ export function GroupThreadPane({
   const isMobileMessenger = useMediaQuery('(max-width: 900px)')
 
   const [threadLoading, setThreadLoading] = useState(false)
+  const [backgroundRefreshing, setBackgroundRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [messages, setMessages] = useState<DirectMessage[]>([])
   const [draft, setDraft] = useState('')
@@ -255,8 +256,9 @@ export function GroupThreadPane({
     const cid = conversationId.trim()
     if (!user?.id || !cid || !canView) return
     setThreadLoading(true)
+    setBackgroundRefreshing(false)
     setError(null)
-    setMessages([])
+    // Не чистим сообщения сразу: если есть кэш — показываем мгновенно и обновляем в фоне.
     setReplyTo(null)
 
     const afterLoadScroll = () => {
@@ -282,15 +284,21 @@ export function GroupThreadPane({
     }
 
     void (async () => {
-      if (!messengerOnline) {
-        const cached = await readMessengerThreadTailCache('group', cid)
-        if (!active) return
+      const cachedNow = await readMessengerThreadTailCache('group', cid)
+      if (!active) return
+
+      if (cachedNow?.length) {
+        setMessages(cachedNow)
         setThreadLoading(false)
-        if (cached?.length) {
-          setMessages(cached)
-          afterLoadScroll()
-          return
-        }
+        setBackgroundRefreshing(Boolean(messengerOnline))
+        afterLoadScroll()
+      } else {
+        setMessages([])
+      }
+
+      if (!messengerOnline) {
+        setBackgroundRefreshing(false)
+        if (cachedNow?.length) return
         setError('Нет сети. Сохранённых сообщений для этой группы нет.')
         return
       }
@@ -298,15 +306,9 @@ export function GroupThreadPane({
       const res = await listGroupMessagesPage(cid, { limit: 60 })
       if (!active) return
       setThreadLoading(false)
+      setBackgroundRefreshing(false)
       if (res.error) {
-        const cached = await readMessengerThreadTailCache('group', cid)
-        if (!active) return
-        if (cached?.length) {
-          setError(null)
-          setMessages(cached)
-          afterLoadScroll()
-          return
-        }
+        if (cachedNow?.length) return
         setError(res.error)
         return
       }

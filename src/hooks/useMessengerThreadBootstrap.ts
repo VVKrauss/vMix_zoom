@@ -14,6 +14,13 @@ export type MessengerPendingJumpState = {
   sourceAvatarUrl?: string | null
 } | null
 
+export type MessengerThreadState = {
+  threadLoading: boolean
+  activeConversation: MessengerConversationSummary | null
+  messages: DirectMessage[]
+  hasMoreOlder: boolean
+}
+
 /**
  * Открытие активного треда: invite-плейсхолдеры, группа/канал без DM-ленты, загрузка direct + сообщений.
  */
@@ -33,11 +40,7 @@ export function useMessengerThreadBootstrap(opts: {
   conversationIdRef: MutableRefObject<string>
   lastFetchedThreadIdRef: MutableRefObject<string | null>
   prevThreadIdForClearRef: MutableRefObject<string | null>
-  setThreadLoading: Dispatch<SetStateAction<boolean>>
   setError: Dispatch<SetStateAction<string | null>>
-  setActiveConversation: Dispatch<SetStateAction<MessengerConversationSummary | null>>
-  setMessages: Dispatch<SetStateAction<DirectMessage[]>>
-  setHasMoreOlder: Dispatch<SetStateAction<boolean>>
   setReplyTo: Dispatch<SetStateAction<DirectMessage | null>>
   setEditingMessageId: Dispatch<SetStateAction<string | null>>
   setComposerEmojiOpen: Dispatch<SetStateAction<boolean>>
@@ -50,6 +53,7 @@ export function useMessengerThreadBootstrap(opts: {
     } | null>
   >
   setItems: Dispatch<SetStateAction<MessengerConversationSummary[]>>
+  setThreadState: Dispatch<SetStateAction<MessengerThreadState>>
   isOnline: boolean
 }): void {
   const {
@@ -69,16 +73,13 @@ export function useMessengerThreadBootstrap(opts: {
     conversationIdRef,
     lastFetchedThreadIdRef,
     prevThreadIdForClearRef,
-    setThreadLoading,
     setError,
-    setActiveConversation,
-    setMessages,
-    setHasMoreOlder,
     setReplyTo,
     setEditingMessageId,
     setComposerEmojiOpen,
     setMessageMenu,
     setItems,
+    setThreadState,
   } = opts
 
   const prevIsOnlineRef = useRef<boolean | null>(null)
@@ -94,10 +95,7 @@ export function useMessengerThreadBootstrap(opts: {
       if (!userId || loading) return
       if (listOnlyMobile) {
         lastFetchedThreadIdRef.current = null
-        setThreadLoading(false)
-        setActiveConversation(null)
-        setMessages([])
-        setHasMoreOlder(false)
+        setThreadState((prev) => ({ ...prev, threadLoading: false, activeConversation: null, messages: [], hasMoreOlder: false }))
         setMessageMenu(null)
         return
       }
@@ -105,14 +103,13 @@ export function useMessengerThreadBootstrap(opts: {
       const token = inviteToken.trim()
       const preview = invitePreview
       if (token && !preview?.id && !inviteError) {
-        setThreadLoading(inviteLoading)
+        setThreadState((prev) => ({ ...prev, threadLoading: inviteLoading }))
         setError(null)
         if (inviteLoading) return
       }
       if (token && preview?.id && !mergedItemsRef.current.some((i) => i.id === preview.id && !i.joinRequestPending)) {
         setError(null)
-        setThreadLoading(false)
-        setActiveConversation({
+        const placeholder: MessengerConversationSummary = {
           id: preview.id,
           kind: preview.kind,
           title: preview.title,
@@ -132,9 +129,14 @@ export function useMessengerThreadBootstrap(opts: {
                 commentsMode: preview.commentsMode ?? 'everyone',
               }
             : {}),
-        })
-        setMessages([])
-        setHasMoreOlder(false)
+        }
+        setThreadState((prev) => ({
+          ...prev,
+          threadLoading: false,
+          activeConversation: placeholder,
+          messages: [],
+          hasMoreOlder: false,
+        }))
         setReplyTo(null)
         setEditingMessageId(null)
         setComposerEmojiOpen(false)
@@ -148,10 +150,7 @@ export function useMessengerThreadBootstrap(opts: {
         (holdInviteThreadPick ? '' : pickDefaultConversationId(mergedItemsRef.current, null) || '')
       if (!startedTarget) {
         lastFetchedThreadIdRef.current = null
-        setActiveConversation(null)
-        setMessages([])
-        setHasMoreOlder(false)
-        setThreadLoading(false)
+        setThreadState((prev) => ({ ...prev, threadLoading: false, activeConversation: null, messages: [], hasMoreOlder: false }))
         setMessageMenu(null)
         return
       }
@@ -165,7 +164,7 @@ export function useMessengerThreadBootstrap(opts: {
         !mergedItemsRef.current.some((i) => i.id === startedTarget && !i.joinRequestPending)
       if (inviteWait) {
         setError(null)
-        setThreadLoading(inviteLoading)
+        setThreadState((prev) => ({ ...prev, threadLoading: inviteLoading }))
         return
       }
       const pendingPlaceholder =
@@ -196,11 +195,8 @@ export function useMessengerThreadBootstrap(opts: {
       const nonDirectSummary = startedSummary ?? pendingPlaceholder
       if (nonDirectSummary && nonDirectSummary.kind !== 'direct') {
         setError(null)
-        setActiveConversation(nonDirectSummary)
-        setThreadLoading(false)
+        setThreadState((prev) => ({ ...prev, threadLoading: false, activeConversation: nonDirectSummary, messages: [], hasMoreOlder: false }))
         lastFetchedThreadIdRef.current = null
-        setMessages([])
-        setHasMoreOlder(false)
         setReplyTo(null)
         setEditingMessageId(null)
         setComposerEmojiOpen(false)
@@ -213,8 +209,7 @@ export function useMessengerThreadBootstrap(opts: {
       if (conversationSwitched) {
         prevThreadIdForClearRef.current = startedTarget
         lastFetchedThreadIdRef.current = null
-        setMessages([])
-        setHasMoreOlder(false)
+        setThreadState((prev) => ({ ...prev, messages: [], hasMoreOlder: false }))
         setReplyTo(null)
         setEditingMessageId(null)
         setComposerEmojiOpen(false)
@@ -222,17 +217,17 @@ export function useMessengerThreadBootstrap(opts: {
       }
 
       if (lastFetchedThreadIdRef.current === startedTarget && isOnline) {
-        setThreadLoading(false)
+        setThreadState((prev) => ({ ...prev, threadLoading: false }))
         return
       }
 
       if (!isOnline && lastFetchedThreadIdRef.current === startedTarget) {
-        setThreadLoading(false)
+        setThreadState((prev) => ({ ...prev, threadLoading: false }))
         return
       }
 
       if (!isOnline) {
-        setThreadLoading(true)
+        setThreadState((prev) => ({ ...prev, threadLoading: true }))
         setError(null)
         const cached = await readMessengerThreadTailCache('direct', startedTarget)
         const summary =
@@ -244,28 +239,32 @@ export function useMessengerThreadBootstrap(opts: {
           return
         }
         if (cached?.length && summary) {
-          setActiveConversation({ ...summary, kind: 'direct' })
-          setMessages(cached)
-          setHasMoreOlder(true)
+          setThreadState((prev) => ({
+            ...prev,
+            activeConversation: { ...summary, kind: 'direct' },
+            messages: cached,
+            hasMoreOlder: true,
+          }))
           lastFetchedThreadIdRef.current = startedTarget
         } else if (summary) {
-          setActiveConversation({ ...summary, kind: 'direct' })
-          setMessages([])
-          setHasMoreOlder(false)
+          setThreadState((prev) => ({
+            ...prev,
+            activeConversation: { ...summary, kind: 'direct' },
+            messages: [],
+            hasMoreOlder: false,
+          }))
           lastFetchedThreadIdRef.current = null
           setError('Нет сети. Сохранённых сообщений для этого чата нет.')
         } else {
-          setActiveConversation(null)
-          setMessages([])
-          setHasMoreOlder(false)
+          setThreadState((prev) => ({ ...prev, activeConversation: null, messages: [], hasMoreOlder: false }))
           lastFetchedThreadIdRef.current = null
           setError('Нет сети.')
         }
-        setThreadLoading(false)
+        setThreadState((prev) => ({ ...prev, threadLoading: false }))
         return
       }
 
-      setThreadLoading(true)
+      setThreadState((prev) => ({ ...prev, threadLoading: true }))
 
       try {
         const [conversationRes, messagesRes] = await Promise.all([
@@ -279,9 +278,7 @@ export function useMessengerThreadBootstrap(opts: {
 
         if (conversationRes.error) {
           setError(conversationRes.error)
-          setActiveConversation(null)
-          setMessages([])
-          setHasMoreOlder(false)
+          setThreadState((prev) => ({ ...prev, activeConversation: null, messages: [], hasMoreOlder: false }))
           lastFetchedThreadIdRef.current = null
         } else if (!conversationRes.data) {
           const looksLikeGroupOrChannelWait =
@@ -291,37 +288,44 @@ export function useMessengerThreadBootstrap(opts: {
           if (!looksLikeGroupOrChannelWait) {
             setError('Чат не найден или у вас нет к нему доступа.')
           }
-          setActiveConversation(null)
-          setMessages([])
-          setHasMoreOlder(false)
+          setThreadState((prev) => ({ ...prev, activeConversation: null, messages: [], hasMoreOlder: false }))
           lastFetchedThreadIdRef.current = null
         } else if (messagesRes.error) {
           const cached = await readMessengerThreadTailCache('direct', startedTarget)
           if (cached?.length && conversationRes.data) {
             setError(null)
-            setActiveConversation({ ...conversationRes.data, kind: 'direct' })
-            setMessages(cached)
-            setHasMoreOlder(true)
+            setThreadState((prev) => ({
+              ...prev,
+              activeConversation: { ...conversationRes.data, kind: 'direct' },
+              messages: cached,
+              hasMoreOlder: true,
+            }))
             lastFetchedThreadIdRef.current = startedTarget
           } else {
             setError(messagesRes.error)
-            setActiveConversation(
-              conversationRes.data ? { ...conversationRes.data, kind: 'direct', unreadCount: 0 } : null,
-            )
-            setMessages([])
-            setHasMoreOlder(false)
+            setThreadState((prev) => ({
+              ...prev,
+              activeConversation: conversationRes.data
+                ? { ...conversationRes.data, kind: 'direct', unreadCount: 0 }
+                : null,
+              messages: [],
+              hasMoreOlder: false,
+            }))
             lastFetchedThreadIdRef.current = null
           }
         } else {
-          setActiveConversation({ ...conversationRes.data, kind: 'direct' })
           const list = messagesRes.data ?? []
-          setMessages(list)
-          setHasMoreOlder(messagesRes.hasMoreOlder)
+          setThreadState((prev) => ({
+            ...prev,
+            activeConversation: { ...conversationRes.data, kind: 'direct' },
+            messages: list,
+            hasMoreOlder: messagesRes.hasMoreOlder,
+          }))
           lastFetchedThreadIdRef.current = startedTarget
           void writeMessengerThreadTailCache('direct', startedTarget, list)
         }
       } finally {
-        setThreadLoading(false)
+        setThreadState((prev) => ({ ...prev, threadLoading: false }))
       }
     }
 

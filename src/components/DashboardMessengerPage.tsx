@@ -15,7 +15,7 @@ import { useMessengerInvitePreview } from '../hooks/useMessengerInvitePreview'
 import { useMessengerRouteSegmentQuerySync } from '../hooks/useMessengerRouteSegmentQuerySync'
 import { useMessengerConversationNotificationMutes } from '../hooks/useMessengerConversationNotificationMutes'
 import { useMessengerListBootstrap } from '../hooks/useMessengerListBootstrap'
-import { useMessengerThreadBootstrap } from '../hooks/useMessengerThreadBootstrap'
+import { useMessengerThreadVM } from '../hooks/useMessengerThreadVM'
 import { useMessengerActiveThreadMembership } from '../hooks/useMessengerActiveThreadMembership'
 import { useMessengerStaffJoinQueue } from '../hooks/useMessengerStaffJoinQueue'
 import {
@@ -170,8 +170,10 @@ import { MessengerDeleteChatDialog } from './messenger/MessengerDeleteChatDialog
 import { MessengerChatListRowMenuPortal } from './messenger/MessengerChatListRowMenuPortal'
 import { MessengerDmMessageMenuPortal } from './messenger/MessengerDmMessageMenuPortal'
 import { MessengerDirectThreadBody, type MessengerDirectThreadHeadConversation } from './messenger/MessengerDirectThreadBody'
+import { devMark, useDevRenderTrace } from '../lib/devTrace'
 
 export function DashboardMessengerPage() {
+  useDevRenderTrace('DashboardMessengerPage')
   const toast = useToast()
   const { conversationId: rawConversationId } = useParams<{ conversationId?: string }>()
   const routeConversationId = rawConversationId?.trim() ?? ''
@@ -185,6 +187,10 @@ export function DashboardMessengerPage() {
   const jumpMsgFromUrl = searchParams.get('msg')?.trim() ?? ''
   const jumpPostFromUrl = searchParams.get('post')?.trim() ?? ''
   const navigate = useNavigate()
+
+  useEffect(() => {
+    devMark('messenger.route_changed', { routeConversationId, searchConversationId, urlConversationId })
+  }, [routeConversationId, searchConversationId, urlConversationId])
   useMessengerRouteSegmentQuerySync({
     routeConversationId,
     searchConversationId,
@@ -241,7 +247,6 @@ export function DashboardMessengerPage() {
     isMobileMessenger && searchParams.get('view') === 'list' && !hasMobileOpenTarget
 
   const [loading, setLoading] = useState(true)
-  const [threadLoading, setThreadLoading] = useState(false)
   const [chatListRefreshing, setChatListRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { pushUi, pushBusy, refreshPushUi, toggleMessengerPush } = useMessengerWebPushState(user?.id, setError)
@@ -270,8 +275,6 @@ export function DashboardMessengerPage() {
   )
   const [chatListAvatarPullEpoch, setChatListAvatarPullEpoch] = useState(0)
   const conversationAvatarUrlById = useMessengerConversationAvatarUrls(mergedItems, chatListAvatarPullEpoch)
-  const [activeConversation, setActiveConversation] = useState<MessengerConversationSummary | null>(null)
-  const [messages, setMessages] = useState<DirectMessage[]>([])
   /** Курсор прочтения собеседника в открытом ЛС + приватность квитанций (индикаторы исходящих). */
   const [directPeerLastReadAt, setDirectPeerLastReadAt] = useState<string | null>(null)
   const [directPeerReceiptsPrivate, setDirectPeerReceiptsPrivate] = useState(false)
@@ -279,7 +282,6 @@ export function DashboardMessengerPage() {
     lastActivityAt: string | null
     isOnline: boolean
   } | null>(null)
-  const { senderContactByUserId, setSenderContactByUserId } = useMessengerSenderContacts(user?.id, messages)
   const [draft, setDraft] = useState('')
 
   const [conversationInfoOpen, setConversationInfoOpen] = useState(false)
@@ -322,7 +324,6 @@ export function DashboardMessengerPage() {
     enabled: !editingMessageId && pendingMessengerPhotos.length === 0,
   })
   const [composerEmojiOpen, setComposerEmojiOpen] = useState(false)
-  const [hasMoreOlder, setHasMoreOlder] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
   /** Меню «⋯» у сообщения: якорь и данные для поповера */
   const [messageMenu, setMessageMenu] = useState<{
@@ -342,6 +343,38 @@ export function DashboardMessengerPage() {
     sourceTitle?: string
     sourceAvatarUrl?: string | null
   } | null>(null)
+
+  const conversationIdRef = useRef(conversationId)
+  conversationIdRef.current = conversationId
+  const prevThreadIdForClearRef = useRef<string | null>(null)
+  /** Уже загруженные сообщения для этого id — не дергать API при повторном срабатывании эффекта (напр. loading). */
+  const lastFetchedThreadIdRef = useRef<string | null>(null)
+  const {
+    vm: threadVM,
+    setActiveConversation,
+    setMessages,
+    setHasMoreOlder,
+  } = useMessengerThreadVM({
+    userId: user?.id,
+    loading,
+    listOnlyMobile,
+    isOnline,
+    conversationId,
+    urlConversationId,
+    inviteToken,
+    invitePreview,
+    inviteError,
+    inviteLoading,
+    pendingJump,
+    mergedItemsRef,
+    conversationIdRef,
+    lastFetchedThreadIdRef,
+    prevThreadIdForClearRef,
+    setError,
+  })
+  const { activeConversation, messages, hasMoreOlder } = threadVM
+  const threadLoading = threadVM.phase === 'loading'
+  const { senderContactByUserId, setSenderContactByUserId } = useMessengerSenderContacts(user?.id, messages)
   const [conversationJoinRequests, setConversationJoinRequests] = useState<ConversationJoinRequest[]>([])
   const [joinRequestsLoading, setJoinRequestsLoading] = useState(false)
   const [joinRequestsOpen, setJoinRequestsOpen] = useState(false)
@@ -409,8 +442,6 @@ export function DashboardMessengerPage() {
     }
   }, [inviteJoinBusy, invitePreview, inviteToken, navigate, setItems, setPendingJoinRequest, toast, user?.id])
 
-  const conversationIdRef = useRef(conversationId)
-  conversationIdRef.current = conversationId
   const itemsRef = useRef(items)
   itemsRef.current = items
 
@@ -435,9 +466,6 @@ export function DashboardMessengerPage() {
   const composerEmojiWrapRef = useRef<HTMLDivElement | null>(null)
   const photoInputRef = useRef<HTMLInputElement | null>(null)
   const olderFetchInFlightRef = useRef(false)
-  const prevThreadIdForClearRef = useRef<string | null>(null)
-  /** Уже загруженные сообщения для этого id — не дергать API при повторном срабатывании эффекта (напр. loading). */
-  const lastFetchedThreadIdRef = useRef<string | null>(null)
   const dmReadTailRef = useRef<HTMLDivElement | null>(null)
   const chatListRefreshInFlightRef = useRef(false)
 
@@ -541,40 +569,13 @@ export function DashboardMessengerPage() {
     setError,
   })
 
-  useMessengerThreadBootstrap({
-    userId: user?.id,
-    loading,
-    listOnlyMobile,
-    conversationId,
-    urlConversationId,
-    inviteToken,
-    invitePreview,
-    inviteError,
-    inviteLoading,
-    pendingJump,
-    pendingJoinSidebarById,
-    mergedItemsRef,
-    conversationIdRef,
-    lastFetchedThreadIdRef,
-    prevThreadIdForClearRef,
-    setThreadLoading,
-    setError,
-    setActiveConversation,
-    setMessages,
-    setHasMoreOlder,
-    setReplyTo,
-    setEditingMessageId,
-    setComposerEmojiOpen,
-    setMessageMenu,
-    setItems,
-    isOnline,
-  })
-
-  const activeConversationId = listOnlyMobile ? '' : conversationId || activeConversation?.id || ''
+  const sidebarActiveConversationId = listOnlyMobile ? '' : conversationId || activeConversation?.id || ''
+  /** Для эффектов/догонов хвоста/secondary side-effects: отключаем пока VM в loading/error. */
+  const activeConversationId = listOnlyMobile || threadVM.phase !== 'ready' ? '' : sidebarActiveConversationId
   const inviteJoinMode = Boolean(
     inviteToken.trim() &&
       invitePreview?.id &&
-      activeConversationId === invitePreview.id &&
+      sidebarActiveConversationId === invitePreview.id &&
       !mergedItems.some((i) => i.id === invitePreview.id && !i.joinRequestPending) &&
       invitePreview.isPublic !== true,
   )
@@ -1287,7 +1288,7 @@ export function DashboardMessengerPage() {
 
   /** Шапка треда: сразу из списка по URL, пока грузится полная карточка с сервера */
   const threadHeadConversation =
-    sortedItems.find((i) => i.id === activeConversationId) ?? activeConversation
+    sortedItems.find((i) => i.id === sidebarActiveConversationId) ?? activeConversation
 
   const directOtherUserId = useMemo(() => {
     const id = activeConversationId.trim()
@@ -2777,7 +2778,7 @@ export function DashboardMessengerPage() {
                 profileAvatarUrl={profile?.avatar_url}
                 userId={user?.id}
                 conversationAvatarUrlById={conversationAvatarUrlById}
-                activeConversationId={activeConversationId}
+                activeConversationId={sidebarActiveConversationId}
                 selectConversation={selectConversation}
                 navigate={navigate}
                 openUserPeek={openUserPeek}

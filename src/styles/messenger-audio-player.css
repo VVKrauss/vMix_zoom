@@ -1,0 +1,124 @@
+/* Messenger: inline audio player (voice message) */
+
+.messenger-audio-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.messenger-audio-player {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  grid-template-areas:
+    "btn bar"
+    "btn meta";
+  column-gap: 10px;
+  row-gap: 6px;
+  align-items: center;
+  min-width: 220px;
+  max-width: 100%;
+}
+
+.messenger-audio-player__native {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.messenger-audio-player__btn {
+  grid-area: btn;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--btn-red-grad);
+  border: 1px solid rgba(136, 25, 25, 0.65);
+  color: #fff;
+  cursor: pointer;
+  transition: filter 0.15s, border-color 0.15s, transform 0.08s;
+  flex: 0 0 auto;
+}
+
+.messenger-audio-player__btn:hover:not(:disabled) {
+  border-color: rgba(210, 0, 0, 0.55);
+  filter: brightness(1.08);
+}
+
+.messenger-audio-player__btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.messenger-audio-player__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.messenger-audio-player__bar {
+  grid-area: bar;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.messenger-audio-player__range {
+  width: 100%;
+  min-width: 0;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface2) 90%, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  outline: none;
+}
+
+.messenger-audio-player__range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #fff;
+  border: 2px solid color-mix(in srgb, var(--red) 75%, #fff);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.messenger-audio-player__range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #fff;
+  border: 2px solid color-mix(in srgb, var(--red) 75%, #fff);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.messenger-audio-player__meta {
+  grid-area: meta;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.messenger-audio-player__time {
+  white-space: nowrap;
+}
+
+.messenger-audio-player__duration {
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+html[data-theme="light"] .messenger-audio-player__range {
+  border-color: rgba(0, 0, 0, 0.12);
+}
+

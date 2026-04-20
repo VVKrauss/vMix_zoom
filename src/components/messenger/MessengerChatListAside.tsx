@@ -1,4 +1,4 @@
-import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react'
+import { memo, useEffect, useRef, type Dispatch, type SetStateAction } from 'react'
 import { Link } from 'react-router-dom'
 import type { NavigateFunction } from 'react-router-dom'
 import { BrandLogoLoader } from '../BrandLogoLoader'
@@ -28,7 +28,7 @@ import type { RegisteredUserSearchHit } from '../../lib/socialGraph'
 
 type KindFilter = 'all' | MessengerConversationKind
 
-export function MessengerChatListAside(props: {
+function MessengerChatListAsideImpl(props: {
   isMobileMessenger: boolean
   chatListSearch: string
   onChatListSearchChange: (value: string) => void
@@ -539,3 +539,5 @@ export function MessengerChatListAside(props: {
     </aside>
   )
 }
+
+export const MessengerChatListAside = memo(MessengerChatListAsideImpl)

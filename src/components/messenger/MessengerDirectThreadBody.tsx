@@ -1,4 +1,4 @@
-import type { Dispatch, MutableRefObject, ReactNode, Ref, RefObject, SetStateAction } from 'react'
+import { memo, useRef, type Dispatch, type MutableRefObject, type ReactNode, type Ref, type RefObject, type SetStateAction } from 'react'
 import { BrandLogoLoader } from '../BrandLogoLoader'
 import { ChevronLeftIcon, FiRrIcon } from '../icons'
 import { MessengerJumpToBottomFab } from '../MessengerJumpToBottomFab'
@@ -23,7 +23,7 @@ import { ThreadMessageBubble } from './ThreadMessageBubble'
 
 export type MessengerDirectThreadHeadConversation = MessengerConversationSummary & { kind: 'direct' }
 
-export function MessengerDirectThreadBody(props: {
+function MessengerDirectThreadBodyImpl(props: {
   isMobileMessenger: boolean
   navigate: (to: string, opts?: { replace?: boolean }) => void
   totalOtherUnread: number
@@ -120,6 +120,8 @@ export function MessengerDirectThreadBody(props: {
     composer,
     messageActionMenu,
   } = props
+
+  const seenMessageIdsRef = useRef<Set<string>>(new Set())
 
   return (
     <>
@@ -289,6 +291,8 @@ export function MessengerDirectThreadBody(props: {
               ) : (
                 timelineMessages.map((message) => {
                   const isOwn = Boolean(userId && message.senderUserId === userId)
+                  const isNew = !seenMessageIdsRef.current.has(message.id)
+                  if (isNew) seenMessageIdsRef.current.add(message.id)
                   const reactions = reactionsByTargetId.get(message.id) ?? []
                   const rid = message.quoteToMessageId?.trim() || message.replyToMessageId?.trim() || null
                   const { preview: replyPreview, scrollTargetId: replyScrollTargetId } = buildQuotePreview({
@@ -316,6 +320,7 @@ export function MessengerDirectThreadBody(props: {
                       key={message.id}
                       message={message}
                       isOwn={isOwn}
+                      enterAnim={Boolean(isNew && !isOwn)}
                       dmOutgoingReceipt={dmOutgoingReceipt}
                       dmMutePeerLabels={threadHeadConversation?.kind === 'direct'}
                       reactions={reactions}
@@ -385,3 +390,5 @@ export function MessengerDirectThreadBody(props: {
     </>
   )
 }
+
+export const MessengerDirectThreadBody = memo(MessengerDirectThreadBodyImpl)

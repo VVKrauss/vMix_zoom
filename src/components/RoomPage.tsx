@@ -2647,7 +2647,11 @@ export function RoomPage({
         isScreenSharing={isScreenSharing}
         canStartScreenShare={canStartCouchShare}
         onToggleScreenShare={requestStopScreenSharing}
-        onStartScreenShare={(surface) => onStartScreenShare(surface)}
+        onStartScreenShare={(surface) =>
+          onStartScreenShare(surface).catch((e) => {
+            console.error('[room] onStartScreenShare failed', e)
+          })
+        }
         playoutVolume={playoutVolume}
         onPlayoutVolumeChange={setPlayoutVolume}
         audioOutputs={audioOutputs}
@@ -2793,7 +2797,9 @@ export function RoomPage({
                 .map((p) => ({ id: p.peerId, stream: p.videoStream!, isLocal: false })),
             ]}
             onPickSource={(surface) =>
-              void onStartScreenShare(surface, { withAudio: true, maxBitrateBps: readScreenShareMaxBitrateBps() })
+              void onStartScreenShare(surface, { withAudio: true, maxBitrateBps: readScreenShareMaxBitrateBps() }).catch((e) => {
+                console.error('[couch] onStartScreenShare failed', e)
+              })
             }
             onStopShare={requestStopScreenSharing}
             couchDemoAudioActive={couchStageHasAudio}
