@@ -11,7 +11,7 @@ import {
   MessengerFilterDirectIcon,
   MessengerFilterGroupIcon,
   PlusIcon,
-  VoiceChatListIcon,
+  VoiceRecordComposerIcon,
 } from '../icons'
 import {
   buildMessengerUrl,
@@ -382,7 +382,7 @@ function MessengerChatListAsideImpl(props: {
                               return (
                                 <span className="dashboard-messenger__row-preview--voice">
                                   <span className="dashboard-messenger__row-preview-voice-ic" aria-hidden>
-                                    <VoiceChatListIcon />
+                                    <VoiceRecordComposerIcon />
                                   </span>
                                   {voiceMessageListPreviewLabel(raw)}
                                 </span>
