@@ -3,7 +3,7 @@ import { useCallback, useRef, useState } from 'react'
 import type { DirectMessage, DmOutgoingReceiptLevel, MessengerForwardMeta } from '../../lib/messenger'
 import { isDmSoftDeletedStub } from '../../lib/messenger'
 import { forwardMetaToQuotedStrip } from '../../lib/messengerForward'
-import { DmSolidReceiptCircle } from './DmSolidReceiptCircle'
+import { DmOutgoingReceiptGlyph } from './DmOutgoingReceiptGlyph'
 import { DoubleTapHeartSurface } from './DoubleTapHeartSurface'
 import { MessengerBubbleBody, type MessengerImageLightboxOpen } from '../MessengerBubbleBody'
 import { MessengerReplyMiniThumb } from '../MessengerReplyMiniThumb'
@@ -23,8 +23,6 @@ export type ThreadMessageBubbleProps = {
   dmMutePeerLabels?: boolean
   /** ЛС: статус исходящего (контур / половина / полный круг). */
   dmOutgoingReceipt?: DmOutgoingReceiptLevel | null
-  /** ЛС: собеседник в сети — та же квитанция в мете бабла зелёная вместо серой. */
-  dmPeerIsOnline?: boolean
   reactions: DirectMessage[]
   formatDt: (iso: string) => string
   replyPreview: ThreadReplyPreview | null
@@ -58,7 +56,6 @@ export function ThreadMessageBubble({
   isOwn,
   dmMutePeerLabels,
   dmOutgoingReceipt = null,
-  dmPeerIsOnline = false,
   reactions,
   formatDt,
   replyPreview,
@@ -290,7 +287,7 @@ export function ThreadMessageBubble({
           ) : null}
           {isOwn && dmOutgoingReceipt ? (
             <span
-              className={`dashboard-messenger__dm-receipt dashboard-messenger__dm-receipt--${dmOutgoingReceipt}${dmPeerIsOnline ? ' dashboard-messenger__dm-receipt--peer-online' : ''}`}
+              className={`dashboard-messenger__dm-receipt dashboard-messenger__dm-receipt--${dmOutgoingReceipt}`}
               aria-label={
                 dmOutgoingReceipt === 'pending'
                   ? 'Отправка'
@@ -413,62 +410,4 @@ export function ThreadMessageBubble({
   )
 }
 
-function DmOutgoingReceiptGlyph({
-  level,
-  messageId,
-}: {
-  level: DmOutgoingReceiptLevel
-  messageId: string
-}) {
-  const clipId = `dmrch-${messageId.replace(/[^a-zA-Z0-9_-]/g, '_') || 'm'}`
-  const vb = 12
-  const c = 6
-  const r = 4.5
-  const sw = 1.2
-  if (level === 'pending') {
-    return (
-      <svg
-        className="dashboard-messenger__dm-receipt-svg"
-        width={12}
-        height={12}
-        viewBox={`0 0 ${vb} ${vb}`}
-        aria-hidden
-      >
-        <circle cx={c} cy={c} r={r} fill="none" stroke="currentColor" strokeWidth={sw} strokeDasharray="2 2" />
-      </svg>
-    )
-  }
-  if (level === 'sent') {
-    return (
-      <svg
-        className="dashboard-messenger__dm-receipt-svg"
-        width={12}
-        height={12}
-        viewBox={`0 0 ${vb} ${vb}`}
-        aria-hidden
-      >
-        <circle cx={c} cy={c} r={r} fill="none" stroke="currentColor" strokeWidth={sw} />
-      </svg>
-    )
-  }
-  if (level === 'delivered') {
-    return (
-      <svg
-        className="dashboard-messenger__dm-receipt-svg"
-        width={12}
-        height={12}
-        viewBox={`0 0 ${vb} ${vb}`}
-        aria-hidden
-      >
-        <defs>
-          <clipPath id={clipId}>
-            <rect x={c} y={0} width={c} height={vb} />
-          </clipPath>
-        </defs>
-        <circle cx={c} cy={c} r={r} fill="none" stroke="currentColor" strokeWidth={sw} />
-        <circle cx={c} cy={c} r={r} fill="currentColor" fillOpacity={0.45} clipPath={`url(#${clipId})`} />
-      </svg>
-    )
-  }
-  return <DmSolidReceiptCircle className="dashboard-messenger__dm-receipt-svg" />
-}
+// (moved to src/components/messenger/DmOutgoingReceiptGlyph.tsx)

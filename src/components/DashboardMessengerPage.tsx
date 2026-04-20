@@ -52,6 +52,7 @@ import {
   listDirectMessagesPage,
   mapDirectMessageFromRow,
   deleteDirectMessage,
+  directOutgoingReceiptStatus,
   fetchDirectPeerDmReceiptContext,
   mergePeerLastReadAt,
   previewTextForDirectMessageTail,
@@ -3181,6 +3182,21 @@ export function DashboardMessengerPage() {
                                     messageMenu.message.kind === 'image' ||
                                     messageMenu.message.kind === 'audio'),
                               )}
+                              dmOutgoingReceipt={
+                                threadHeadConversation?.kind === 'direct'
+                                  ? (() => {
+                                      const uid = user?.id ?? ''
+                                      const level = directOutgoingReceiptStatus(messageMenu.message, {
+                                        isOwn: Boolean(uid && messageMenu.message.senderUserId === uid),
+                                        isDirectThread: true,
+                                        peerLastReadAt: directPeerLastReadAt,
+                                        viewerReceiptsPrivate: profile?.profile_dm_receipts_private === true,
+                                        peerReceiptsPrivate: directPeerReceiptsPrivate,
+                                      })
+                                      return level ? { level, messageId: messageMenu.message.id } : null
+                                    })()
+                                  : null
+                              }
                               onClose={closeMessageActionMenu}
                               onCopy={async () => {
                                 const text = previewTextForDirectMessageTail(messageMenu.message)

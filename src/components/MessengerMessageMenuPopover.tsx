@@ -2,11 +2,14 @@ import { useEffect, useRef } from 'react'
 import { shouldClosePopoverOnOutsidePointer } from '../utils/popoverOutsideClick'
 import { REACTION_EMOJI_WHITELIST } from '../types/roomComms'
 import type { ReactionEmoji } from '../types/roomComms'
+import type { DmOutgoingReceiptLevel } from '../lib/messenger'
+import { DmOutgoingReceiptGlyph } from './messenger/DmOutgoingReceiptGlyph'
 
 export function MessengerMessageMenuPopover({
   canEdit,
   canDelete,
   canCopy,
+  dmOutgoingReceipt,
   onClose,
   onEdit,
   onDelete,
@@ -24,6 +27,8 @@ export function MessengerMessageMenuPopover({
   canDelete: boolean
   /** Скопировать текст сообщения в буфер обмена. */
   canCopy?: boolean
+  /** ЛС: легенда статуса исходящего (кольцо/полукруг/круг) — только информационная строка. */
+  dmOutgoingReceipt?: { level: DmOutgoingReceiptLevel; messageId: string } | null
   onClose: () => void
   onEdit: () => void
   onDelete: () => void
@@ -40,6 +45,17 @@ export function MessengerMessageMenuPopover({
   onTogglePin?: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
+
+  const receiptLabel =
+    dmOutgoingReceipt?.level === 'pending'
+      ? 'Отправка'
+      : dmOutgoingReceipt?.level === 'read'
+        ? 'Прочитано'
+        : dmOutgoingReceipt?.level === 'delivered'
+          ? 'Доставлено'
+          : dmOutgoingReceipt?.level === 'sent'
+            ? 'Отправлено'
+            : null
 
   useEffect(() => {
     const onDown = (e: MouseEvent | TouchEvent) => {
@@ -60,6 +76,14 @@ export function MessengerMessageMenuPopover({
 
   return (
     <div className="messenger-msg-menu device-popover" ref={ref} role="menu">
+      {dmOutgoingReceipt && receiptLabel ? (
+        <div className="messenger-msg-menu__legend" role="presentation" aria-label="Статус сообщения">
+          <span className="messenger-msg-menu__legend-glyph" aria-hidden>
+            <DmOutgoingReceiptGlyph level={dmOutgoingReceipt.level} messageId={dmOutgoingReceipt.messageId} />
+          </span>
+          <span className="messenger-msg-menu__legend-text">{receiptLabel}</span>
+        </div>
+      ) : null}
       {canEdit ? (
         <button type="button" className="messenger-msg-menu__item" role="menuitem" onClick={onEdit}>
           Редактировать

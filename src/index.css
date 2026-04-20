@@ -6317,6 +6317,18 @@ html[data-theme='light'] button.dashboard-messenger__thread-head-main--tappable:
   min-width: 0;
 }
 
+.dashboard-messenger__presence-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: hsl(142 76% 42%);
+  flex: 0 0 auto;
+}
+
+html[data-theme='light'] .dashboard-messenger__presence-dot {
+  background: hsl(142 70% 32%);
+}
+
 .dashboard-messenger__thread-avatar {
   width: 38px;
   height: 38px;
@@ -6841,6 +6853,29 @@ html[data-theme="light"] .messenger-msg-menu-wrap.messenger-channel-reaction-pic
 
 .messenger-msg-menu__item:hover {
   background: var(--surface2);
+}
+
+.messenger-msg-menu__legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 11px;
+  color: var(--text-dim);
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+
+.messenger-msg-menu__legend-glyph {
+  line-height: 0;
+  color: var(--text-dim);
+}
+
+.messenger-msg-menu__legend-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .messenger-msg-menu__emoji-row {

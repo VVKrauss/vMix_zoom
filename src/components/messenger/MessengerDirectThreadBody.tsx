@@ -179,6 +179,7 @@ export function MessengerDirectThreadBody(props: {
                   <span className="dashboard-messenger__thread-head-center-title-text">
                     {threadHeadConversation.title}
                   </span>
+                  {directPeerIsOnline ? <span className="dashboard-messenger__presence-dot" aria-hidden /> : null}
                 </div>
                 <div className="dashboard-messenger__thread-head-center-meta">
                   {formatMessengerListRowTime(threadHeadConversation.lastMessageAt ?? threadHeadConversation.createdAt)}
@@ -243,6 +244,7 @@ export function MessengerDirectThreadBody(props: {
                     <div className="dashboard-section__subtitle" role="heading" aria-level={3}>
                       {threadHeadConversation.title}
                     </div>
+                    {directPeerIsOnline ? <span className="dashboard-messenger__presence-dot" aria-hidden /> : null}
                   </div>
                   {isMemberOfActiveConversation &&
                   !threadHeadConversation.joinRequestPending &&
@@ -315,7 +317,6 @@ export function MessengerDirectThreadBody(props: {
                       message={message}
                       isOwn={isOwn}
                       dmOutgoingReceipt={dmOutgoingReceipt}
-                      dmPeerIsOnline={directPeerIsOnline}
                       dmMutePeerLabels={threadHeadConversation?.kind === 'direct'}
                       reactions={reactions}
                       formatDt={formatDateTime}

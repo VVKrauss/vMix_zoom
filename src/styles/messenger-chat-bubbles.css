@@ -93,19 +93,6 @@
   line-height: 0;
 }
 
-.dashboard-messenger__message-meta .dashboard-messenger__dm-receipt--peer-online .dashboard-messenger__dm-receipt-svg {
-  color: hsl(142 76% 42%);
-  opacity: 1;
-}
-
-.dashboard-messenger__message-meta .dashboard-messenger__dm-receipt--peer-online.dashboard-messenger__dm-receipt--read .dashboard-messenger__dm-receipt-svg,
-.dashboard-messenger__message-meta .dashboard-messenger__dm-receipt--peer-online.dashboard-messenger__dm-receipt--sent .dashboard-messenger__dm-receipt-svg,
-.dashboard-messenger__message-meta .dashboard-messenger__dm-receipt--peer-online.dashboard-messenger__dm-receipt--delivered .dashboard-messenger__dm-receipt-svg,
-.dashboard-messenger__message-meta .dashboard-messenger__dm-receipt--peer-online.dashboard-messenger__dm-receipt--pending .dashboard-messenger__dm-receipt-svg {
-  color: hsl(142 76% 42%);
-  opacity: 1;
-}
-
 .dashboard-messenger__dm-receipt {
   display: inline-flex;
   align-items: center;
@@ -640,17 +627,6 @@ button.messenger-message-img-trigger:focus-visible {
 .msg-chat-media--n9 {
   grid-template-columns: repeat(3, 84px);
   grid-auto-rows: 84px;
-}
-
-html[data-theme='light'] .dashboard-messenger__message-meta .dashboard-messenger__dm-receipt--peer-online .dashboard-messenger__dm-receipt-svg {
-  color: hsl(142 70% 32%);
-}
-
-html[data-theme='light'] .dashboard-messenger__message-meta .dashboard-messenger__dm-receipt--peer-online.dashboard-messenger__dm-receipt--read .dashboard-messenger__dm-receipt-svg,
-html[data-theme='light'] .dashboard-messenger__message-meta .dashboard-messenger__dm-receipt--peer-online.dashboard-messenger__dm-receipt--sent .dashboard-messenger__dm-receipt-svg,
-html[data-theme='light'] .dashboard-messenger__message-meta .dashboard-messenger__dm-receipt--peer-online.dashboard-messenger__dm-receipt--delivered .dashboard-messenger__dm-receipt-svg,
-html[data-theme='light'] .dashboard-messenger__message-meta .dashboard-messenger__dm-receipt--peer-online.dashboard-messenger__dm-receipt--pending .dashboard-messenger__dm-receipt-svg {
-  color: hsl(142 70% 32%);
 }
 
 html[data-theme='light'] .dashboard-messenger__message {
