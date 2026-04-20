@@ -536,6 +536,13 @@ button.messenger-message-img-trigger:focus-visible {
 
 .messenger-message-caption {
   font-size: var(--dm-msg-font, 13px);
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* Несколько фото: фиксированная сетка 2 колонки, inline-grid = ширина по контенту */

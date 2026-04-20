@@ -8,6 +8,7 @@ import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { supabase } from '../../lib/supabase'
 import {
   mapDirectMessageFromRow,
+  messengerConversationListTailPatch,
   messengerStoragePathToThumbPath,
   previewTextForDirectMessageTail,
   requestMessengerUnreadRefresh,
@@ -58,6 +59,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Link } from 'react-router-dom'
 import { useMessengerJumpToBottom } from '../../hooks/useMessengerJumpToBottom'
+import { useMessengerPerConversationDraft } from '../../hooks/useMessengerPerConversationDraft'
 import { useMessengerThreadReadCoordinator } from '../../hooks/useMessengerThreadReadCoordinator'
 import { attachMessengerTailCatchupAfterContentPaint } from '../../hooks/messengerTailCatchup'
 import { MessengerJumpToBottomFab } from '../MessengerJumpToBottomFab'
@@ -166,7 +168,8 @@ export function ChannelThreadPane({
   const [hasMoreOlder, setHasMoreOlder] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [postEditor, setPostEditor] = useState<null | { mode: 'create' } | { mode: 'edit'; message: DirectMessage }>(null)
-  const [feedDraft, setFeedDraft] = useState('')
+  const { draft: feedDraft, setDraft: setFeedDraft, resetDraft: resetFeedDraft } =
+    useMessengerPerConversationDraft(conversationId)
   const [feedSending, setFeedSending] = useState(false)
   const [feedPhotoUploading, setFeedPhotoUploading] = useState(false)
   const [feedVoiceUploading, setFeedVoiceUploading] = useState(false)
@@ -401,7 +404,6 @@ export function ChannelThreadPane({
       for (const p of prev) URL.revokeObjectURL(p.previewUrl)
       return []
     })
-    setFeedDraft('')
   }, [conversationId])
 
   useEffect(() => {
@@ -462,11 +464,7 @@ export function ChannelThreadPane({
       setPosts(res.data ?? [])
       setHasMoreOlder(res.hasMoreOlder)
       const list = (res.data ?? []).filter((m) => m.kind !== 'reaction')
-      if (list.length > 0) {
-        const sorted = [...list].sort(sortChrono)
-        const tail = sorted[sorted.length - 1]!
-        onTouchTail?.({ lastMessageAt: tail.createdAt, lastMessagePreview: tail.body })
-      }
+      onTouchTail?.(messengerConversationListTailPatch(list))
     })
   }, [conversationId, user?.id, onTouchTail, canView])
 
@@ -584,7 +582,7 @@ export function ChannelThreadPane({
       }
       for (const p of pendingChannelPhotos) URL.revokeObjectURL(p.previewUrl)
       setPendingChannelPhotos([])
-      setFeedDraft('')
+      resetFeedDraft()
       setFeedPhotoUploading(false)
       setFeedSending(false)
       const createdAt = res.data?.createdAt ?? new Date().toISOString()
@@ -625,7 +623,7 @@ export function ChannelThreadPane({
       ...(linkMeta ? { meta: linkMeta } : {}),
     }
     setPosts((prev) => [...prev, optimistic].sort(sortChrono))
-    setFeedDraft('')
+    resetFeedDraft()
     const res = await appendChannelFeedMessage(cid, { kind: 'text', body, meta: metaRecord })
     if (res.error) {
       setError(res.error)
@@ -667,6 +665,7 @@ export function ChannelThreadPane({
     feedLinkPreview,
     onTouchTail,
     feedVoiceUploading,
+    resetFeedDraft,
   ])
 
   const onFeedVoiceRecorded = useCallback(
@@ -699,7 +698,7 @@ export function ChannelThreadPane({
         setFeedSending(false)
         return
       }
-      setFeedDraft('')
+      resetFeedDraft()
       setFeedVoiceUploading(false)
       setFeedSending(false)
       const createdAt = res.data?.createdAt ?? new Date().toISOString()
@@ -734,6 +733,7 @@ export function ChannelThreadPane({
       feedPhotoUploading,
       profile?.display_name,
       onTouchTail,
+      resetFeedDraft,
     ],
   )
 
@@ -893,7 +893,10 @@ export function ChannelThreadPane({
             })
             return [...withoutMatchingOptimistic, msg].sort(sortChrono)
           })
-          onTouchTail?.({ lastMessageAt: msg.createdAt, lastMessagePreview: msg.body })
+          onTouchTail?.({
+            lastMessageAt: msg.createdAt,
+            lastMessagePreview: previewTextForDirectMessageTail(msg),
+          })
           if (feedPinnedToBottomRef.current) {
             requestAnimationFrame(() => {
               const el = postsFeedScrollRef.current
@@ -965,7 +968,11 @@ export function ChannelThreadPane({
           return
         }
 
-        setPosts((prev) => prev.filter((p) => p.id !== id))
+        setPosts((prev) => {
+          const next = prev.filter((p) => p.id !== id)
+          queueMicrotask(() => onTouchTail?.(messengerConversationListTailPatch(next)))
+          return next
+        })
       })
       .subscribe()
 
@@ -1316,7 +1323,11 @@ export function ChannelThreadPane({
           setError(res.error)
           return
         }
-        setPosts((prev) => prev.filter((m) => m.id !== postId))
+        setPosts((prev) => {
+          const next = prev.filter((m) => m.id !== postId)
+          queueMicrotask(() => onTouchTail?.(messengerConversationListTailPatch(next)))
+          return next
+        })
         setCommentsByPostId((prev) => {
           if (!prev[postId]) return prev
           const { [postId]: _, ...rest } = prev
@@ -1337,7 +1348,7 @@ export function ChannelThreadPane({
         setDeleteBusy(false)
       }
     },
-    [commentsModalPostId, conversationId, deleteBusy, user?.id],
+    [commentsModalPostId, conversationId, deleteBusy, user?.id, onTouchTail],
   )
 
   const runDeleteComment = useCallback(

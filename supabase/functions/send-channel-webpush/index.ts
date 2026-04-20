@@ -45,7 +45,9 @@ function unwrapRoot(raw: Record<string, unknown>): Record<string, unknown> {
 
 function parseChatMessageInsert(root: Record<string, unknown>): { record: Record<string, unknown> } | null {
   const tableRaw = typeof root.table === 'string' ? root.table.trim() : ''
-  const typeRaw = typeof root.type === 'string' ? root.type.trim() : ''
+  const typeRaw =
+    (typeof root.type === 'string' ? root.type.trim() : '') ||
+    (typeof root.eventType === 'string' ? root.eventType.trim() : '')
   const table = tableRaw.replace(/^public\./, '')
   if (table !== 'chat_messages') return null
   if (typeRaw.toUpperCase() !== 'INSERT') return null

@@ -43,6 +43,34 @@ export async function isMessengerPushSubscribed(): Promise<boolean> {
   }
 }
 
+async function subscribePushOrThrow(reg: ServiceWorkerRegistration, keyBytes: BufferSource): Promise<PushSubscription> {
+  try {
+    return await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: keyBytes,
+    })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    const retriable =
+      /registration failed/i.test(msg) ||
+      /push service error/i.test(msg) ||
+      /invalid.*applicationServerKey/i.test(msg)
+    if (!retriable) throw e
+    const existing = await reg.pushManager.getSubscription()
+    if (existing) {
+      try {
+        await existing.unsubscribe()
+      } catch {
+        /* noop */
+      }
+    }
+    return await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: keyBytes,
+    })
+  }
+}
+
 export async function enableMessengerPush(userId: string): Promise<{ ok: boolean; error?: string }> {
   if (!isWebPushApiSupported() || !isMessengerWebPushConfigured()) {
     return { ok: false, error: 'push_not_configured' }
@@ -63,10 +91,7 @@ export async function enableMessengerPush(userId: string): Promise<{ ok: boolean
 
     if (!sub) {
       const keyBytes = urlBase64ToUint8Array(key)
-      sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: keyBytes as BufferSource,
-      })
+      sub = await subscribePushOrThrow(reg, keyBytes as BufferSource)
     }
 
     const json = sub.toJSON()

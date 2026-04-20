@@ -10,7 +10,12 @@ import { supabase } from '../../lib/supabase'
 import { truncateMessengerReplySnippet } from '../../lib/messengerUi'
 import { buildQuotePreview } from '../../lib/messengerQuotePreview'
 import { MESSENGER_COMPOSER_EMOJIS } from '../../lib/messengerComposerEmojis'
-import { mapDirectMessageFromRow, previewTextForDirectMessageTail, type DirectMessage } from '../../lib/messenger'
+import {
+  mapDirectMessageFromRow,
+  messengerConversationListTailPatch,
+  previewTextForDirectMessageTail,
+  type DirectMessage,
+} from '../../lib/messenger'
 import { uploadMessengerAudio, uploadMessengerImage } from '../../lib/messenger'
 import {
   appendGroupMessage,
@@ -36,6 +41,7 @@ import { useLinkPreviewFromText } from '../../hooks/useLinkPreviewFromText'
 import { buildLinkMetaForMessageBody, ensureLinkPreviewForBody } from '../../lib/linkPreview'
 import { attachMessengerTailCatchupAfterContentPaint } from '../../hooks/messengerTailCatchup'
 import { useMessengerJumpToBottom } from '../../hooks/useMessengerJumpToBottom'
+import { useMessengerPerConversationDraft } from '../../hooks/useMessengerPerConversationDraft'
 import { useMobileMessengerComposerHeight } from '../../hooks/useMobileMessengerComposerHeight'
 import { MessengerJumpToBottomFab } from '../MessengerJumpToBottomFab'
 import { DraftLinkPreviewBar } from './DraftLinkPreviewBar'
@@ -110,7 +116,7 @@ export function GroupThreadPane({
   const [backgroundRefreshing, setBackgroundRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [messages, setMessages] = useState<DirectMessage[]>([])
-  const [draft, setDraft] = useState('')
+  const { draft, setDraft, resetDraft } = useMessengerPerConversationDraft(conversationId)
   const [sending, setSending] = useState(false)
   const [photoUploading, setPhotoUploading] = useState(false)
   const [voiceUploading, setVoiceUploading] = useState(false)
@@ -232,11 +238,18 @@ export function GroupThreadPane({
     }
   }, [conversationId, user?.id])
 
-  const removeMessageById = useCallback((messageId: string) => {
-    const id = messageId.trim()
-    if (!id) return
-    setMessages((prev) => prev.filter((m) => m.id !== id))
-  }, [])
+  const removeMessageById = useCallback(
+    (messageId: string) => {
+      const id = messageId.trim()
+      if (!id) return
+      setMessages((prev) => {
+        const next = prev.filter((m) => m.id !== id)
+        queueMicrotask(() => onTouchTail?.(messengerConversationListTailPatch(next)))
+        return next
+      })
+    },
+    [onTouchTail],
+  )
 
   useEffect(() => {
     const id = jumpToMessageId?.trim() ?? ''
@@ -555,7 +568,7 @@ export function GroupThreadPane({
       }
       for (const p of pendingGroupPhotos) URL.revokeObjectURL(p.previewUrl)
       setPendingGroupPhotos([])
-      setDraft('')
+      resetDraft()
       setReplyTo(null)
       setPhotoUploading(false)
       setSending(false)
@@ -579,7 +592,7 @@ export function GroupThreadPane({
       ...(linkMetaRecord ? { meta: linkMetaRecord } : {}),
     }
     setMessages((prev) => [...prev, optimistic].sort(sortChrono))
-    setDraft('')
+    resetDraft()
     setReplyTo(null)
     const res = await appendGroupMessage(cid, {
       kind: 'text',
@@ -616,6 +629,7 @@ export function GroupThreadPane({
     isGroupMember,
     draftLinkPreview,
     voiceUploading,
+    resetDraft,
   ])
 
   const onVoiceRecorded = useCallback(
@@ -661,7 +675,7 @@ export function GroupThreadPane({
         replyToMessageId: replyId,
         meta: audioMeta,
       }
-      setDraft('')
+      resetDraft()
       setReplyTo(null)
       setVoiceUploading(false)
       setSending(false)
@@ -680,6 +694,7 @@ export function GroupThreadPane({
       replyTo?.id,
       profile?.display_name,
       onTouchTail,
+      resetDraft,
     ],
   )
 
@@ -811,18 +826,20 @@ export function GroupThreadPane({
           toast.push({ tone: 'error', message: `Не удалось удалить: ${res.error}`, ms: 2600 })
           return
         }
-        setMessages((prev) =>
-          prev.filter((m) => {
+        setMessages((prev) => {
+          const next = prev.filter((m) => {
             if (m.id === message.id) return false
             if (m.kind === 'reaction' && (m.meta?.react_to?.trim() || '') === message.id) return false
             return true
-          }),
-        )
+          })
+          queueMicrotask(() => onTouchTail?.(messengerConversationListTailPatch(next)))
+          return next
+        })
       } finally {
         setDeleteBusy(false)
       }
     },
-    [conversationId, deleteBusy, toast, user?.id],
+    [conversationId, deleteBusy, toast, user?.id, onTouchTail],
   )
 
   return (

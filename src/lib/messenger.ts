@@ -275,6 +275,37 @@ export function previewTextForDirectMessageTail(msg: Pick<DirectMessage, 'kind' 
   return 'Изображение'
 }
 
+/** Превью пустого треда в боковом списке (после удаления всех сообщений). */
+export const MESSENGER_EMPTY_THREAD_LIST_PREVIEW = 'Нет сообщений'
+
+function sortMessagesChronoForListTail(a: DirectMessage, b: DirectMessage): number {
+  const ta = new Date(a.createdAt).getTime()
+  const tb = new Date(b.createdAt).getTime()
+  if (Number.isNaN(ta) || Number.isNaN(tb)) return a.id.localeCompare(b.id)
+  if (ta !== tb) return ta - tb
+  return a.id.localeCompare(b.id)
+}
+
+/** Хвост для строки списка чатов: последнее не-reaction сообщение или плейсхолдер. */
+export function messengerConversationListTailPatch(messages: DirectMessage[]): {
+  lastMessageAt: string
+  lastMessagePreview: string
+} {
+  const visible = messages.filter((m) => m.kind !== 'reaction')
+  if (visible.length === 0) {
+    return {
+      lastMessageAt: new Date().toISOString(),
+      lastMessagePreview: MESSENGER_EMPTY_THREAD_LIST_PREVIEW,
+    }
+  }
+  const sorted = [...visible].sort(sortMessagesChronoForListTail)
+  const tail = sorted[sorted.length - 1]!
+  return {
+    lastMessageAt: tail.createdAt,
+    lastMessagePreview: previewTextForDirectMessageTail(tail),
+  }
+}
+
 /** Превью в списке чатов для голосовых (сервер: «🎤 Голосовое» или подпись из body). */
 export function shouldShowVoiceMessageListIcon(preview: string | null | undefined): boolean {
   const t = preview?.trim() ?? ''

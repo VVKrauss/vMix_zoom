@@ -24,6 +24,7 @@ import {
   useMessengerPinnedBottomReset,
   useMessengerResizeScrollTailCatchup,
 } from '../hooks/useMessengerThreadLayoutEffects'
+import { useMessengerPerConversationDraft } from '../hooks/useMessengerPerConversationDraft'
 import { useMessengerDirectThreadRealtime } from '../hooks/useMessengerDirectThreadRealtime'
 import { useMessengerBackgroundMessageSidebar } from '../hooks/useMessengerBackgroundMessageSidebar'
 import { useMessengerSelfMembershipDeleteRealtime } from '../hooks/useMessengerSelfMembershipDeleteRealtime'
@@ -282,7 +283,6 @@ export function DashboardMessengerPage() {
     lastActivityAt: string | null
     isOnline: boolean
   } | null>(null)
-  const [draft, setDraft] = useState('')
 
   const [conversationInfoOpen, setConversationInfoOpen] = useState(false)
   const [conversationInfoId, setConversationInfoId] = useState<string | null>(null)
@@ -316,13 +316,6 @@ export function DashboardMessengerPage() {
   const [replyTo, setReplyTo] = useState<DirectMessage | null>(null)
   /** Редактирование своего сообщения: id сообщения. */
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
-  const {
-    preview: draftLinkPreview,
-    loading: draftLinkPreviewLoading,
-    dismiss: dismissDraftLinkPreview,
-  } = useLinkPreviewFromText(draft, {
-    enabled: !editingMessageId && pendingMessengerPhotos.length === 0,
-  })
   const [composerEmojiOpen, setComposerEmojiOpen] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
   /** Меню «⋯» у сообщения: якорь и данные для поповера */
@@ -374,6 +367,15 @@ export function DashboardMessengerPage() {
   })
   const { activeConversation, messages, hasMoreOlder } = threadVM
   const threadLoading = threadVM.phase === 'loading'
+  const dmDraftKey = (conversationId || activeConversation?.id || '').trim()
+  const { draft, setDraft, resetDraft } = useMessengerPerConversationDraft(dmDraftKey)
+  const {
+    preview: draftLinkPreview,
+    loading: draftLinkPreviewLoading,
+    dismiss: dismissDraftLinkPreview,
+  } = useLinkPreviewFromText(draft, {
+    enabled: !editingMessageId && pendingMessengerPhotos.length === 0,
+  })
   const { senderContactByUserId, setSenderContactByUserId } = useMessengerSenderContacts(user?.id, messages)
   const [conversationJoinRequests, setConversationJoinRequests] = useState<ConversationJoinRequest[]>([])
   const [joinRequestsLoading, setJoinRequestsLoading] = useState(false)
@@ -951,7 +953,7 @@ export function DashboardMessengerPage() {
         prev.map((m) => (m.id === editingMessageId ? { ...m, body: trimmed, editedAt: nowIso } : m)),
       )
       setEditingMessageId(null)
-      setDraft('')
+      resetDraft()
       setSending(false)
       queueMicrotask(() => composerTextareaRef.current?.focus())
       return
@@ -1001,7 +1003,7 @@ export function DashboardMessengerPage() {
         URL.revokeObjectURL(p.previewUrl)
       }
       setPendingMessengerPhotos([])
-      setDraft('')
+      resetDraft()
       setReplyTo(null)
       setPhotoUploading(false)
       setSending(false)
@@ -1071,7 +1073,7 @@ export function DashboardMessengerPage() {
       ...(linkMetaRecord ? { meta: linkMetaRecord } : {}),
     }
     setMessages((prev) => [...prev, optimistic])
-    setDraft('')
+    resetDraft()
     setReplyTo(null)
 
     const res = await appendDirectMessage(convId, trimmed, {
@@ -1180,7 +1182,7 @@ export function DashboardMessengerPage() {
         body: trimmed,
         meta: audioMeta,
       })
-      setDraft('')
+      resetDraft()
       setReplyTo(null)
       setVoiceUploading(false)
       setSending(false)
@@ -1246,7 +1248,7 @@ export function DashboardMessengerPage() {
       setMessages,
       setItems,
       setActiveConversation,
-      setDraft,
+      resetDraft,
       setReplyTo,
       setError,
     ],
@@ -2936,15 +2938,6 @@ export function DashboardMessengerPage() {
                             <div className="dashboard-messenger__thread-head-main-desktop">
                               <button
                                 type="button"
-                                className="dashboard-messenger__thread-head-back-btn"
-                                aria-label="К списку чатов"
-                                title="К списку чатов"
-                                onClick={() => navigate('/dashboard/messenger?view=list', { replace: true })}
-                              >
-                                <ChevronLeftIcon />
-                              </button>
-                              <button
-                                type="button"
                                 className="dashboard-messenger__thread-head-center dashboard-messenger__thread-head-center--tappable"
                                 aria-label="Информация о чате"
                                 onClick={() => void openConversationInfo(activeConversationId)}
@@ -3150,7 +3143,7 @@ export function DashboardMessengerPage() {
                           onClearReply={() => setReplyTo(null)}
                           onCancelEdit={() => {
                             setEditingMessageId(null)
-                            setDraft('')
+                            resetDraft()
                           }}
                           voiceUploading={voiceUploading}
                           onVoiceRecorded={onVoiceRecorded}
