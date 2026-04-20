@@ -14,7 +14,8 @@
     "btn bar"
     "btn meta";
   column-gap: 10px;
-  row-gap: 6px;
+  /* Меньше зазор между слайдером и строкой времени — компенсируем отступом сверху у полосы */
+  row-gap: 2px;
   align-items: center;
   min-width: 220px;
   max-width: 100%;
@@ -64,6 +65,9 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
+  /* Ползунок визуально выступает над треком — даём воздух к шапке пузыря без роста сетки плеера */
+  padding-top: 5px;
+  box-sizing: border-box;
 }
 
 .messenger-audio-player__range {

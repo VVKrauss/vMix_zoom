@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { announceMessengerAudioExclusive, subscribeMessengerAudioExclusive } from '../../lib/messengerAudioExclusive'
 import { FiRrIcon } from '../icons'
 
 function formatAudioDurationSec(sec: number): string {
@@ -14,6 +15,10 @@ export function MessengerAudioPlayer(props: {
   onReady?: () => void
 }) {
   const { src, durationSecMeta, onReady } = props
+  const instanceId = useMemo(
+    () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `a-${Date.now()}-${Math.random()}`),
+    [],
+  )
   const audioRef = useRef<HTMLAudioElement>(null)
   const rafRef = useRef<number | null>(null)
 
@@ -71,6 +76,15 @@ export function MessengerAudioPlayer(props: {
   }, [src])
 
   useEffect(() => {
+    return subscribeMessengerAudioExclusive(instanceId, () => {
+      const el = audioRef.current
+      if (!el) return
+      el.pause()
+      setPlaying(false)
+    })
+  }, [instanceId])
+
+  useEffect(() => {
     const el = audioRef.current
     if (!el) return
 
@@ -95,6 +109,7 @@ export function MessengerAudioPlayer(props: {
       el.pause()
       return
     }
+    announceMessengerAudioExclusive(instanceId)
     setPlaying(true)
     void el.play().catch(() => {
       // если браузер запретил autoplay/воспроизведение — откатим UI

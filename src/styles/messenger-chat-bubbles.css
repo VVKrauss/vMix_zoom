@@ -94,6 +94,15 @@
   font-size: var(--dm-meta-font, 10px);
 }
 
+/* Голосовое: больше воздуха между датой и слайдером; нижний паддинг пузыря чуть меньше — высота блока плеера без изменений */
+.dashboard-messenger__message:has(.messenger-bubble-stack--audio) .dashboard-messenger__message-meta {
+  margin-bottom: 10px;
+}
+
+.dashboard-messenger__message:has(.messenger-bubble-stack--audio) {
+  padding-bottom: 6px;
+}
+
 .dashboard-messenger__message-meta-main {
   display: flex;
   flex-wrap: wrap;

@@ -223,7 +223,7 @@ Deno.serve(async (req) => {
       continue
     }
     try {
-      await webPush.sendNotification(subObj, payload, { TTL: 86_400 })
+      await webPush.sendNotification(subObj, payload, { TTL: 86_400, urgency: 'high' })
       sent += 1
     } catch (e: unknown) {
       const { statusCode } = readWebPushError(e)
