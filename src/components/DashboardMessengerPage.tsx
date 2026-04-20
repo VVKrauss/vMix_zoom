@@ -1335,7 +1335,7 @@ export function DashboardMessengerPage() {
           isOnline: r.data.isOnline,
         })
       })
-    }, 25_000)
+    }, 60_000)
     return () => window.clearInterval(t)
   }, [directOtherUserId, user?.id])
 
@@ -1348,6 +1348,30 @@ export function DashboardMessengerPage() {
     }
     document.addEventListener('visibilitychange', onVis)
     return () => document.removeEventListener('visibilitychange', onVis)
+  }, [directOtherUserId, user?.id, refreshDirectPeerPresence])
+
+  /** Собеседник обновил строку users (пульс / фон) — сразу перечитываем peek, без опроса. */
+  useEffect(() => {
+    const oid = directOtherUserId.trim()
+    if (!oid || !user?.id || oid === user.id) return
+    const channel = supabase
+      .channel(`dm-peer-presence:${oid}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_presence_public',
+          filter: `user_id=eq.${oid}`,
+        },
+        () => {
+          refreshDirectPeerPresence()
+        },
+      )
+      .subscribe()
+    return () => {
+      void supabase.removeChannel(channel)
+    }
   }, [directOtherUserId, user?.id, refreshDirectPeerPresence])
 
   /** Шаринг: `?msg=` / `post=` → скролл к посту/комментарию; параметры убираем из адреса после применения. */

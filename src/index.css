@@ -6317,15 +6317,6 @@ html[data-theme='light'] button.dashboard-messenger__thread-head-main--tappable:
   min-width: 0;
 }
 
-.dashboard-messenger__peer-online-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: hsl(142 76% 42%);
-  box-shadow: 0 0 0 2px var(--bg);
-}
-
 .dashboard-messenger__thread-avatar {
   width: 38px;
   height: 38px;

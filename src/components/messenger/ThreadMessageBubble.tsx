@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from 'react'
 import type { DirectMessage, DmOutgoingReceiptLevel, MessengerForwardMeta } from '../../lib/messenger'
 import { isDmSoftDeletedStub } from '../../lib/messenger'
 import { forwardMetaToQuotedStrip } from '../../lib/messengerForward'
+import { DmSolidReceiptCircle } from './DmSolidReceiptCircle'
 import { DoubleTapHeartSurface } from './DoubleTapHeartSurface'
 import { MessengerBubbleBody, type MessengerImageLightboxOpen } from '../MessengerBubbleBody'
 import { MessengerReplyMiniThumb } from '../MessengerReplyMiniThumb'
@@ -22,6 +23,8 @@ export type ThreadMessageBubbleProps = {
   dmMutePeerLabels?: boolean
   /** ЛС: статус исходящего (контур / половина / полный круг). */
   dmOutgoingReceipt?: DmOutgoingReceiptLevel | null
+  /** ЛС: собеседник в сети — та же квитанция в мете бабла зелёная вместо серой. */
+  dmPeerIsOnline?: boolean
   reactions: DirectMessage[]
   formatDt: (iso: string) => string
   replyPreview: ThreadReplyPreview | null
@@ -55,6 +58,7 @@ export function ThreadMessageBubble({
   isOwn,
   dmMutePeerLabels,
   dmOutgoingReceipt = null,
+  dmPeerIsOnline = false,
   reactions,
   formatDt,
   replyPreview,
@@ -284,6 +288,22 @@ export function ThreadMessageBubble({
           {showAuthorInMeta ? (
             <span className="dashboard-messenger__message-author">{message.senderNameSnapshot}</span>
           ) : null}
+          {isOwn && dmOutgoingReceipt ? (
+            <span
+              className={`dashboard-messenger__dm-receipt dashboard-messenger__dm-receipt--${dmOutgoingReceipt}${dmPeerIsOnline ? ' dashboard-messenger__dm-receipt--peer-online' : ''}`}
+              aria-label={
+                dmOutgoingReceipt === 'pending'
+                  ? 'Отправка'
+                  : dmOutgoingReceipt === 'read'
+                    ? 'Прочитано'
+                    : dmOutgoingReceipt === 'delivered'
+                      ? 'Доставлено'
+                      : 'Отправлено'
+              }
+            >
+              <DmOutgoingReceiptGlyph level={dmOutgoingReceipt} messageId={message.id} />
+            </span>
+          ) : null}
           <time dateTime={message.createdAt}>{formatDt(message.createdAt)}</time>
           {message.editedAt ? <span className="dashboard-messenger__edited">изм.</span> : null}
         </div>
@@ -389,24 +409,6 @@ export function ThreadMessageBubble({
           })}
         </div>
       ) : null}
-      {isOwn && dmOutgoingReceipt ? (
-        <div className="dashboard-messenger__message-own-receipt-wrap">
-          <span
-            className={`dashboard-messenger__dm-receipt dashboard-messenger__dm-receipt--${dmOutgoingReceipt}`}
-            aria-label={
-              dmOutgoingReceipt === 'pending'
-                ? 'Отправка'
-                : dmOutgoingReceipt === 'read'
-                  ? 'Прочитано'
-                  : dmOutgoingReceipt === 'delivered'
-                    ? 'Доставлено'
-                    : 'Отправлено'
-            }
-          >
-            <DmOutgoingReceiptGlyph level={dmOutgoingReceipt} messageId={message.id} />
-          </span>
-        </div>
-      ) : null}
     </article>
   )
 }
@@ -468,15 +470,5 @@ function DmOutgoingReceiptGlyph({
       </svg>
     )
   }
-  return (
-    <svg
-      className="dashboard-messenger__dm-receipt-svg"
-      width={12}
-      height={12}
-      viewBox={`0 0 ${vb} ${vb}`}
-      aria-hidden
-    >
-      <circle cx={c} cy={c} r={r} fill="currentColor" />
-    </svg>
-  )
+  return <DmSolidReceiptCircle className="dashboard-messenger__dm-receipt-svg" />
 }

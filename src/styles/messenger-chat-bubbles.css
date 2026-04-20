@@ -51,10 +51,6 @@
   align-self: stretch;
 }
 
-.dashboard-messenger__message .dashboard-messenger__message-own-receipt-wrap {
-  align-self: flex-end;
-}
-
 .dashboard-messenger__message--highlight {
   outline: 2px solid rgba(159, 214, 255, 0.55);
   outline-offset: 2px;
@@ -69,12 +65,16 @@
 }
 
 .dashboard-messenger__message-meta {
+  position: relative;
+  align-self: stretch;
+  width: 100%;
+  box-sizing: border-box;
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 6px;
   margin-bottom: 4px;
-  padding-right: 2px;
+  padding-right: 26px;
   color: var(--text-dim);
   font-size: var(--dm-meta-font, 10px);
 }
@@ -85,21 +85,17 @@
   align-items: baseline;
   gap: 6px 10px;
   min-width: 0;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
 }
 
-.dashboard-messenger__message-own-receipt-wrap {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  margin-top: 5px;
-  padding-right: 1px;
-  min-height: 14px;
+.dashboard-messenger__message-meta-main > .dashboard-messenger__dm-receipt {
+  align-self: center;
+  line-height: 0;
 }
 
-.dashboard-messenger__message--image .dashboard-messenger__message-own-receipt-wrap {
-  margin-top: 3px;
-  min-height: 12px;
+.dashboard-messenger__message-meta .dashboard-messenger__dm-receipt--peer-online .dashboard-messenger__dm-receipt-svg {
+  color: hsl(142 76% 42%);
+  opacity: 1;
 }
 
 .dashboard-messenger__dm-receipt {
@@ -130,12 +126,14 @@
 }
 
 .dashboard-messenger__msg-more {
-  position: relative;
+  position: absolute;
+  top: -2px;
+  right: 0;
   flex-shrink: 0;
   width: 22px;
   min-width: 22px;
   height: 22px;
-  margin: -2px 0 0;
+  margin: 0;
   padding: 0;
   border: none;
   border-radius: 6px;
@@ -145,7 +143,6 @@
   line-height: 0.85;
   letter-spacing: 0;
   cursor: pointer;
-  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -635,6 +632,10 @@ button.messenger-message-img-trigger:focus-visible {
 .msg-chat-media--n9 {
   grid-template-columns: repeat(3, 84px);
   grid-auto-rows: 84px;
+}
+
+html[data-theme='light'] .dashboard-messenger__message-meta .dashboard-messenger__dm-receipt--peer-online .dashboard-messenger__dm-receipt-svg {
+  color: hsl(142 70% 32%);
 }
 
 html[data-theme='light'] .dashboard-messenger__message {
