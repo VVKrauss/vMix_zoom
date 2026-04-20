@@ -48,6 +48,11 @@ export const REACTION_EMOJI_WHITELIST = [
   '🖖',
   '👎',
   '💩',
+  '🤗',
+  '😘',
+  '😛',
+  '😳',
+  '😉',
 ] as const
 export type ReactionEmoji = (typeof REACTION_EMOJI_WHITELIST)[number]
 

@@ -101,7 +101,7 @@ function parseHostMetrics(body: Record<string, unknown>): AdminHostMetrics {
   const gpuPercent = pickFiniteNumber(
     src.gpuPercent ?? src.gpu_percent ?? src.gpu ?? src.gpuLoad ?? src.gpu_load,
   )
-  const memoryUsedMb = pickFiniteNumber(
+  const memoryUsedMbDirect = pickFiniteNumber(
     src.memoryUsedMb ??
       src.memory_used_mb ??
       src.memUsedMb ??
@@ -109,7 +109,7 @@ function parseHostMetrics(body: Record<string, unknown>): AdminHostMetrics {
       src.rssMb ??
       src.rss_mb,
   )
-  const memoryTotalMb = pickFiniteNumber(
+  const memoryTotalMbDirect = pickFiniteNumber(
     src.memoryTotalMb ??
       src.memory_total_mb ??
       src.memTotalMb ??
@@ -117,6 +117,45 @@ function parseHostMetrics(body: Record<string, unknown>): AdminHostMetrics {
       src.totalMemMb ??
       src.total_mem_mb,
   )
+
+  /** Байты: системное ОЗУ (Node os) или явные поля от signaling. */
+  const totalMemBytes = pickFiniteNumber(
+    src.totalMemBytes ??
+      src.total_mem_bytes ??
+      src.memoryTotalBytes ??
+      src.memory_total_bytes ??
+      src.totalmem,
+  )
+  const freeMemBytes = pickFiniteNumber(
+    src.freeMemBytes ??
+      src.free_mem_bytes ??
+      src.memoryFreeBytes ??
+      src.memory_free_bytes ??
+      src.freemem,
+  )
+  /** RSS процесса Node (байты) — если нет системных полей. */
+  const rssBytes = pickFiniteNumber(
+    src.rssBytes ?? src.rss_bytes ?? src.memoryRssBytes ?? src.memory_rss_bytes ?? src.rss,
+  )
+
+  let memoryUsedMb = memoryUsedMbDirect
+  let memoryTotalMb = memoryTotalMbDirect
+
+  if (memoryTotalMb == null && totalMemBytes != null && totalMemBytes > 0) {
+    memoryTotalMb = totalMemBytes / (1024 * 1024)
+  }
+  if (
+    memoryUsedMb == null &&
+    totalMemBytes != null &&
+    freeMemBytes != null &&
+    totalMemBytes > 0 &&
+    freeMemBytes >= 0
+  ) {
+    memoryUsedMb = Math.max(0, (totalMemBytes - freeMemBytes) / (1024 * 1024))
+  }
+  if (memoryUsedMb == null && rssBytes != null && rssBytes > 0) {
+    memoryUsedMb = rssBytes / (1024 * 1024)
+  }
   const uptimeSec = pickFiniteNumber(
     src.uptimeSec ?? src.uptime_sec ?? src.uptime ?? src.uptimeSeconds,
   )

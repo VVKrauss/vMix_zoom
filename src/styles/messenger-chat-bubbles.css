@@ -303,17 +303,17 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 2px 7px 2px 5px;
-  border-radius: 999px;
+  padding: 0 4px 0 2px;
+  border-radius: 0;
   font-size: 12px;
   line-height: 1.2;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.22);
+  border: none;
+  background: transparent;
 }
 
 .dashboard-messenger__message--own .dashboard-messenger__reaction-chip {
-  border-color: rgba(122, 198, 255, 0.22);
-  background: rgba(0, 0, 0, 0.18);
+  border: none;
+  background: transparent;
 }
 
 .dashboard-messenger__reaction-emoji {
@@ -645,11 +645,11 @@ html[data-theme='light'] .dashboard-messenger__message--own .dashboard-messenger
 }
 
 html[data-theme='light'] .dashboard-messenger__reaction-chip {
-  border-color: var(--border);
-  background: rgba(0, 0, 0, 0.06);
+  border: none;
+  background: transparent;
 }
 
 html[data-theme='light'] .dashboard-messenger__message--own .dashboard-messenger__reaction-chip {
-  border-color: rgba(158, 92, 92, 0.28);
-  background: rgba(255, 255, 255, 0.45);
+  border: none;
+  background: transparent;
 }

@@ -20,11 +20,27 @@ function formatPercent1(n: number | null): string {
   return `${n.toFixed(1)}%`
 }
 
-function formatMemMb(used: number | null, total: number | null): string {
+function formatMbAsRam(m: number): string {
+  if (m >= 1024) return `${(m / 1024).toFixed(1)} ГиБ`
+  return `${m.toFixed(0)} МиБ`
+}
+
+/** ОЗУ: занято/всего; при известном total — процент занято. */
+function formatRam(used: number | null, total: number | null): string {
   if (used === null && total === null) return '—'
-  if (total === null) return used === null ? '—' : `${used.toFixed(0)} МиБ`
-  if (used === null) return `— / ${total.toFixed(0)} МиБ`
-  return `${used.toFixed(0)} / ${total.toFixed(0)} МиБ`
+  let line: string
+  if (total === null) {
+    line = used === null ? '—' : formatMbAsRam(used)
+  } else if (used === null) {
+    line = `— / ${formatMbAsRam(total)}`
+  } else {
+    line = `${formatMbAsRam(used)} / ${formatMbAsRam(total)}`
+  }
+  if (used != null && total != null && total > 0) {
+    const pct = Math.min(100, Math.round((used / total) * 100))
+    line += ` · ${pct}%`
+  }
+  return line
 }
 
 function formatUptime(sec: number | null): string {
@@ -62,7 +78,9 @@ function HostMetricsStrip({ host }: { host: AdminHostMetrics }) {
         <code className="admin-dashboard-code">GET /api/admin/stats</code> можно добавить поля:{' '}
         <code className="admin-dashboard-code">cpuPercent</code>,{' '}
         <code className="admin-dashboard-code">memoryUsedMb</code>,{' '}
-        <code className="admin-dashboard-code">memoryTotalMb</code>,{' '}
+        <code className="admin-dashboard-code">memoryTotalMb</code> (или байты{' '}
+        <code className="admin-dashboard-code">totalmem</code>/<code className="admin-dashboard-code">freemem</code>,{' '}
+        <code className="admin-dashboard-code">rss</code>),{' '}
         <code className="admin-dashboard-code">uptimeSec</code>,{' '}
         <code className="admin-dashboard-code">loadAvg1m</code>,{' '}
         <code className="admin-dashboard-code">nodeVersion</code> (или те же ключи в snake_case / вложенный объект{' '}
@@ -78,8 +96,8 @@ function HostMetricsStrip({ host }: { host: AdminHostMetrics }) {
         <span className="admin-host-metrics__value">{formatPercent1(host.cpuPercent)}</span>
       </div>
       <div className="admin-host-metrics__item">
-        <span className="admin-host-metrics__label">Память</span>
-        <span className="admin-host-metrics__value">{formatMemMb(host.memoryUsedMb, host.memoryTotalMb)}</span>
+        <span className="admin-host-metrics__label">ОЗУ</span>
+        <span className="admin-host-metrics__value">{formatRam(host.memoryUsedMb, host.memoryTotalMb)}</span>
       </div>
       <div className="admin-host-metrics__item">
         <span className="admin-host-metrics__label">Аптайм</span>

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../hooks/useProfile'
 import { useToast } from '../context/ToastContext'
+import { GuestAuthPanel } from './GuestAuthPanel'
 import { ensureDirectConversationWithUser } from '../lib/messenger'
 import { getContactStatuses, setContactPin } from '../lib/socialGraph'
 
@@ -32,7 +33,9 @@ function parsePublicProfile(raw: unknown): PublicProfile | null {
 export function PublicUserPage() {
   const { slug: rawSlug = '' } = useParams<{ slug: string }>()
   const slug = useMemo(() => rawSlug.trim(), [rawSlug])
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
+  const [guestExpandSignal, setGuestExpandSignal] = useState(0)
+  const [guestPanelExpanded, setGuestPanelExpanded] = useState(false)
   const { openProfileEdit } = useProfile()
   const toast = useToast()
   const navigate = useNavigate()
@@ -92,12 +95,12 @@ export function PublicUserPage() {
   }, [user?.id, profile?.id])
 
   const isOwnProfile = Boolean(user?.id && profile?.id && user.id === profile.id)
+  const showGuestPanel = Boolean(profile && !authLoading && !user)
 
   const goChat = useCallback(async () => {
     if (!profile?.id || busy) return
     if (!user?.id) {
-      toast.push({ tone: 'info', title: 'Нужна регистрация', message: 'Войдите, чтобы писать в чат.', ms: 3800 })
-      navigate('/login?mode=register')
+      setGuestExpandSignal((n) => n + 1)
       return
     }
     setBusy(true)
@@ -121,8 +124,7 @@ export function PublicUserPage() {
   const addToContacts = useCallback(async () => {
     if (!profile?.id || busy) return
     if (!user?.id) {
-      toast.push({ tone: 'info', title: 'Нужна регистрация', message: 'Войдите, чтобы добавлять контакты.', ms: 3800 })
-      navigate('/login?mode=register')
+      setGuestExpandSignal((n) => n + 1)
       return
     }
     setBusy(true)
@@ -141,10 +143,14 @@ export function PublicUserPage() {
     } finally {
       setBusy(false)
     }
-  }, [profile?.id, toast, navigate, user?.id, busy, inContacts])
+  }, [profile?.id, toast, user?.id, busy, inContacts])
 
   return (
-    <div className="join-screen join-screen--themed">
+    <div
+      className={`join-screen join-screen--themed${showGuestPanel ? ' join-screen--public-guest' : ''}${
+        showGuestPanel && guestPanelExpanded ? ' join-screen--public-guest-expanded' : ''
+      }`}
+    >
       <div className="join-card">
         <Link to="/" className="join-logo-btn" aria-label="Главная">
           <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
@@ -214,21 +220,19 @@ export function PublicUserPage() {
                   >
                     {inContacts ? 'Убрать из контактов' : 'Добавить в контакты'}
                   </button>
-                  {!user?.id ? (
-                    <div style={{ color: 'var(--text-dim)', fontSize: 13, textAlign: 'center' }}>
-                      Чтобы написать или добавить в контакты, нужно{' '}
-                      <Link to="/login?mode=register" className="messenger-message-link">
-                        зарегистрироваться
-                      </Link>
-                      .
-                    </div>
-                  ) : null}
                 </>
               )}
             </div>
           </div>
         ) : null}
       </div>
+
+      {showGuestPanel ? (
+        <GuestAuthPanel
+          expandSignal={guestExpandSignal}
+          onExpandedChange={setGuestPanelExpanded}
+        />
+      ) : null}
     </div>
   )
 }

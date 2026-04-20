@@ -96,6 +96,11 @@ const PublicUserPage = lazy(async () => {
   return { default: mod.PublicUserPage }
 })
 
+const PublicGroupChannelPage = lazy(async () => {
+  const mod = await import('./components/PublicGroupChannelPage')
+  return { default: mod.PublicGroupChannelPage }
+})
+
 function RouteLoadingFallback() {
   return (
     <div className="join-screen">
@@ -155,6 +160,7 @@ export function App() {
         <Route path="/" element={<HomeRoute />} />
         <Route path="/news" element={<NewsPage />} />
         <Route path="/u/:slug" element={<PublicUserPage />} />
+        <Route path="/g/:publicNick" element={<PublicGroupChannelPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/auth/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/auth/email-confirmed" element={<EmailConfirmedPage />} />
