@@ -136,34 +136,9 @@ export function MessengerFilterGroupIcon({ className }: { className?: string } =
   return <FiRrIcon name="users" className={className} />
 }
 
-/** Фильтр: каналы — вышка / вещание (как «антенна с сигналом»). */
+/** Фильтр: каналы — эфир / трансляция (@flaticon uicons: `fi-rr-signal-stream`). */
 export function MessengerFilterChannelIcon({ className }: { className?: string } = {}) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden
-    >
-      {/* Левая тройка дуг */}
-      <path d="M10.25 8.2 Q6.8 12 10.25 15.8" />
-      <path d="M9.35 5.8 Q3.6 12 9.35 18.2" />
-      <path d="M8.4 3.5 Q1.2 12 8.4 20.5" />
-      {/* Правая тройка дуг */}
-      <path d="M13.75 8.2 Q17.2 12 13.75 15.8" />
-      <path d="M14.65 5.8 Q20.4 12 14.65 18.2" />
-      <path d="M15.6 3.5 Q22.8 12 15.6 20.5" />
-      {/* Мачта + шар наверху */}
-      <line x1="12" y1="7.8" x2="12" y2="17.6" />
-      <circle cx="12" cy="5.5" r="2.15" />
-      {/* Сужающееся основание */}
-      <path d="M10.2 17.6h3.6l1.1 3.9H9.1l1.1-3.9z" />
-    </svg>
-  )
+  return <FiRrIcon name="signal-stream" className={className} />
 }
 
 export function StarIcon({ filled = false }: { filled?: boolean }) {

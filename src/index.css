@@ -5803,6 +5803,11 @@ button.dashboard-messenger__row-avatar {
   height: 12px;
 }
 
+.dashboard-messenger__row-kind-icon .fi {
+  font-size: 12px;
+  line-height: 1;
+}
+
 .dashboard-messenger__row-aside {
   display: flex;
   flex-direction: column;
