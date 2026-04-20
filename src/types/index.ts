@@ -29,6 +29,8 @@ export type ProducerDescriptor = {
   authUserId?: string | null
   /** Явный источник видео (из producer.appData на бэке). */
   videoSource?: 'camera' | 'screen' | 'vmix' | 'studio_program'
+  /** Явный источник аудио (из producer.appData на бэке). */
+  audioSource?: 'mic' | 'screen'
   /** Если peerId у видео экрана — отдельный, здесь peerId «хозяина» (камера/имя в комнате). */
   ownerPeerId?: string
   /** Сырой appData с бэка; часто `{ source: 'screen', ownerPeerId }`. */
@@ -54,7 +56,12 @@ export type RemoteParticipant = {
   authUserId?: string | null
   virtualSourceType?: 'studio_program'
   sourceOwnerPeerId?: string
+  /** Сведённый в один поток звук участника (legacy). */
   audioStream?: MediaStream
+  /** Вариант A: микрофон участника — отдельный входящий поток. */
+  micAudioStream?: MediaStream
+  /** Вариант A: звук демонстрации (вкладка/окно/экран) — отдельный входящий поток. */
+  screenAudioStream?: MediaStream
   videoStream?: MediaStream
   /** Второй video producer (демонстрация экрана). */
   screenStream?: MediaStream

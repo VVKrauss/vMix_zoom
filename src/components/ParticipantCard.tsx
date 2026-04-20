@@ -1,4 +1,4 @@
-import { CSSProperties, useCallback, useEffect, useMemo, useRef } from 'react'
+import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RemoteParticipant } from '../types'
 import type { RoomReactionBurst } from '../types/roomComms'
 import type { InboundVideoQuality } from '../utils/inboundVideoStats'
@@ -58,6 +58,15 @@ export function ParticipantCard({
 }: Props) {
   const mainVideoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
+  const [micGainOpen, setMicGainOpen] = useState(false)
+  const [micGain, setMicGain] = useState(1)
+
+  const micGainKey = useMemo(() => {
+    const rid = roomId?.trim() ?? ''
+    const pid = participant.peerId?.trim() ?? ''
+    if (!rid || !pid) return ''
+    return `vmix:mix:mic:${rid}:${pid}`
+  }, [roomId, participant.peerId])
 
   /** Только камера; демонстрация — отдельная плитка `peerId::screen`. */
   const mainStream = participant.videoStream ?? null
@@ -113,7 +122,19 @@ export function ParticipantCard({
   }, [participant.audioStream])
 
   useBindPlayout(mainVideoRef, playoutVolume, playoutSinkId, !!mainStream)
-  useBindPlayout(audioRef, playoutVolume, playoutSinkId, !!participant.audioStream)
+  useBindPlayout(audioRef, playoutVolume * micGain, playoutSinkId, !!participant.audioStream)
+
+  useEffect(() => {
+    if (!micGainKey || typeof window === 'undefined') return
+    const raw = window.localStorage.getItem(micGainKey)
+    const n = raw != null ? Number(raw) : NaN
+    if (Number.isFinite(n)) setMicGain(Math.max(0, Math.min(2, n)))
+  }, [micGainKey])
+
+  useEffect(() => {
+    if (!micGainKey || typeof window === 'undefined') return
+    window.localStorage.setItem(micGainKey, String(Math.max(0, Math.min(2, micGain))))
+  }, [micGain, micGainKey])
 
   return (
     <div className="participant-card" style={style}>
@@ -186,6 +207,54 @@ export function ParticipantCard({
           ) : null}
         </div>
         {badge && <span className="card-badge">{badge}</span>}
+        {participant.audioStream ? (
+          <span className="card-bar-actions">
+            <button
+              type="button"
+              className="card-bar-fav"
+              title="Громкость микрофона"
+              aria-label="Громкость микрофона"
+              onClick={(e) => {
+                e.stopPropagation()
+                setMicGainOpen((v) => !v)
+              }}
+            >
+              🔊
+            </button>
+            {micGainOpen ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  right: 10,
+                  bottom: 44,
+                  padding: 10,
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  background: 'rgba(10,8,7,0.75)',
+                  backdropFilter: 'blur(10px)',
+                  zIndex: 6,
+                  width: 180,
+                }}
+                role="group"
+                aria-label="Громкость микрофона"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, opacity: 0.85 }}>Микрофон</span>
+                  <span style={{ fontSize: 12, opacity: 0.7 }}>{Math.round(micGain * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={200}
+                  value={Math.round(micGain * 100)}
+                  onChange={(e) => setMicGain(Number(e.target.value) / 100)}
+                  style={{ width: '100%' }}
+                />
+              </div>
+            ) : null}
+          </span>
+        ) : null}
       </div>
     </div>
   )

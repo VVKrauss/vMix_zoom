@@ -13,6 +13,8 @@ type Props = {
   couchDemoLive: boolean
   /** Поток для большого превью: свой screen share или удалённый с хоста. */
   stageScreenStream: MediaStream | null
+  /** Отдельный поток звука демонстрации (variant A). */
+  stageScreenAudioStream: MediaStream | null
   /** Громкость воспроизведения демонстрации (0…1), не влияет на исходящий микс хоста. */
   stagePlayoutVolume: number
   onStagePlayoutVolumeChange: (v: number) => void
@@ -56,6 +58,7 @@ export function CouchModeWorkspace({
   onClose,
   couchDemoLive,
   stageScreenStream,
+  stageScreenAudioStream,
   stagePlayoutVolume,
   onStagePlayoutVolumeChange,
   stageVideoMuted,
@@ -76,6 +79,7 @@ export function CouchModeWorkspace({
   if (!open) return null
 
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
   const stageRef = useRef<HTMLDivElement | null>(null)
   const [sourcePickerOpen, setSourcePickerOpen] = useState(false)
   const pickerClose = useCallback(() => setSourcePickerOpen(false), [])
@@ -181,6 +185,20 @@ export function CouchModeWorkspace({
       void el.play().catch(() => {})
     }
   }, [stageScreenStream, stagePlayoutVolume, stageVideoMuted])
+
+  useEffect(() => {
+    const el = audioRef.current
+    if (!el) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(el as any).srcObject = stageScreenAudioStream ?? null
+    el.volume = Math.max(0, Math.min(1, stagePlayoutVolume))
+    if (!stageScreenAudioStream) return
+    // Как в SoloViewer: сначала пробуем с muted=true для автоплея, затем снимаем mute.
+    el.muted = true
+    void el.play().catch(() => {})
+    el.muted = false
+    void el.play().catch(() => {})
+  }, [stageScreenAudioStream, stagePlayoutVolume])
 
   const pipRow = pipPeers.length > 1
 
@@ -468,6 +486,9 @@ export function CouchModeWorkspace({
                 </div>
               )}
             </div>
+            {stageScreenAudioStream ? (
+              <audio ref={audioRef} autoPlay playsInline />
+            ) : null}
 
             {/* Hotspot для выезда чата справа (когда не закреплён). */}
             {!isFullscreen && !chatPinned ? (

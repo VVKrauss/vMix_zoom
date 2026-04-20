@@ -1190,6 +1190,18 @@ export function RoomPage({
     isScreenSharing,
   ])
 
+  const couchStageScreenAudioStream = useMemo(() => {
+    if (!couchOpen) return null
+    const hid = couchModeHostPeerId ?? null
+    // Локальный предпросмотр звука — нет (эхо). Для хоста дивана звук идёт через реальный room playout.
+    if (hid === localPeerId) return null
+    if (!hid) {
+      const p = remoteList.find((x) => x.screenStream)
+      return p?.screenAudioStream ?? null
+    }
+    return participants.get(hid)?.screenAudioStream ?? null
+  }, [couchOpen, couchModeHostPeerId, localPeerId, participants, remoteList])
+
   const canStartCouchShare = useMemo(() => {
     if (!couchOpen) return canStartScreenShare
     const hid = couchModeHostPeerId ?? null
@@ -1204,11 +1216,7 @@ export function RoomPage({
     return localPeerId === hid
   }, [couchOpen, couchModeHostPeerId, localPeerId, isPlatformAdminish])
 
-  const couchStageHasAudio = useMemo(() => {
-    const s = couchStageScreenStream
-    if (!s) return false
-    return s.getAudioTracks().some((t) => t.readyState === 'live')
-  }, [couchStageScreenStream])
+  const couchStageHasAudio = useMemo(() => Boolean(couchStageScreenAudioStream), [couchStageScreenAudioStream])
 
   const handleCouchBarToggle = useCallback(() => {
     if (couchOpen && !canCloseCouchWorkspace) return
@@ -1575,6 +1583,10 @@ export function RoomPage({
           showInfo={showInfo}
           srtConnectUrl={localSrt?.connectUrlPublic}
           srtListenPort={localSrt?.listenPort}
+          audioStream={null}
+          playoutVolume={playoutVolume}
+          playoutSinkId={playoutSinkId}
+          screenAudioGainOwnerPeerId={localPeerId}
           onStopShare={requestStopScreenSharing}
           reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
           showSoloViewerCopy={canUseElevatedRoomTools}
@@ -1599,6 +1611,10 @@ export function RoomPage({
           showInfo={showInfo}
           srtConnectUrl={srtByPeer[remotePresenter.peerId]?.connectUrlPublic}
           srtListenPort={srtByPeer[remotePresenter.peerId]?.listenPort}
+          audioStream={remotePresenter.screenAudioStream ?? null}
+          playoutVolume={playoutVolume}
+          playoutSinkId={playoutSinkId}
+          screenAudioGainOwnerPeerId={remotePresenter.peerId}
           reactionBurst={pickLatestBurstForPeer(reactionBursts, remotePresenter.peerId)}
           showSoloViewerCopy={canUseElevatedRoomTools}
           guestMute={
@@ -1626,6 +1642,10 @@ export function RoomPage({
             showInfo={showInfo}
             srtConnectUrl={localSrt?.connectUrlPublic}
             srtListenPort={localSrt?.listenPort}
+            audioStream={null}
+            playoutVolume={playoutVolume}
+            playoutSinkId={playoutSinkId}
+            screenAudioGainOwnerPeerId={localPeerId}
             onStopShare={requestStopScreenSharing}
             reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
             showSoloViewerCopy={canUseElevatedRoomTools}
@@ -1650,6 +1670,10 @@ export function RoomPage({
           showInfo={showInfo}
           srtConnectUrl={srtByPeer[p.peerId]?.connectUrlPublic}
           srtListenPort={srtByPeer[p.peerId]?.listenPort}
+          audioStream={p.screenAudioStream ?? null}
+          playoutVolume={playoutVolume}
+          playoutSinkId={playoutSinkId}
+          screenAudioGainOwnerPeerId={owner}
           reactionBurst={pickLatestBurstForPeer(reactionBursts, owner)}
           showSoloViewerCopy={canUseElevatedRoomTools}
           guestMute={
@@ -2648,7 +2672,7 @@ export function RoomPage({
         canStartScreenShare={canStartCouchShare}
         onToggleScreenShare={requestStopScreenSharing}
         onStartScreenShare={(surface) =>
-          onStartScreenShare(surface).catch((e) => {
+          Promise.resolve(onStartScreenShare(surface)).catch((e: unknown) => {
             console.error('[room] onStartScreenShare failed', e)
           })
         }
@@ -2772,6 +2796,7 @@ export function RoomPage({
             }}
             couchDemoLive={Boolean(couchStageScreenStream)}
             stageScreenStream={couchStageScreenStream}
+            stageScreenAudioStream={couchStageScreenAudioStream}
             stagePlayoutVolume={couchCaptureVolume}
             onStagePlayoutVolumeChange={setCouchCaptureVolume}
             stageVideoMuted={
@@ -2797,7 +2822,9 @@ export function RoomPage({
                 .map((p) => ({ id: p.peerId, stream: p.videoStream!, isLocal: false })),
             ]}
             onPickSource={(surface) =>
-              void onStartScreenShare(surface, { withAudio: true, maxBitrateBps: readScreenShareMaxBitrateBps() }).catch((e) => {
+              Promise.resolve(
+                onStartScreenShare(surface, { withAudio: true, maxBitrateBps: readScreenShareMaxBitrateBps() }),
+              ).catch((e: unknown) => {
                 console.error('[couch] onStartScreenShare failed', e)
               })
             }

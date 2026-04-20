@@ -15,10 +15,12 @@ import {
   REACTION_TTL_DEFAULT_MS,
 } from '../types/roomComms'
 import {
+  descriptorAudioSource,
   ownerPeerFromDescriptor,
   resolveConsumeVideoRole,
   videoAnchorPeerId,
 } from '../utils/producerVideoRole'
+import { screenTileKey } from '../utils/screenTileKey'
 import { studioProgramTileKey } from '../utils/studioProgramTileKey'
 import { readVmixIngressEmitExtras } from '../config/serverSettingsStorage'
 import {
@@ -184,6 +186,8 @@ function applyRosterRow(
       avatarUrl: row.avatarUrl ?? ex?.avatarUrl ?? null,
       authUserId: row.authUserId ?? ex?.authUserId ?? null,
       audioStream: ex?.audioStream,
+      micAudioStream: ex?.micAudioStream,
+      screenAudioStream: ex?.screenAudioStream,
     videoStream: ex?.videoStream,
     screenStream: ex?.screenStream,
     screenPeerId: ex?.screenPeerId,
@@ -197,6 +201,7 @@ type ProducerMeta = {
   anchorPeerId: string
   producerPeerId: string
   kind: 'audio' | 'video'
+  audioSource?: 'mic' | 'screen'
   videoSource?: 'camera' | 'screen' | 'vmix' | 'studio_program'
 }
 
@@ -550,7 +555,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         }
         const cleared: Partial<RemoteParticipant> =
           meta.kind === 'audio'
-            ? { audioStream: undefined }
+            ? meta.audioSource === 'screen'
+              ? { screenAudioStream: undefined }
+              : { audioStream: undefined, micAudioStream: undefined }
             : meta.videoSource === 'screen'
               ? { screenStream: undefined, screenPeerId: undefined }
               : meta.videoSource === 'studio_program'
@@ -649,24 +656,37 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           const next = new Map(prev)
 
           if (consumer.kind === 'audio') {
-            const anchorId = producer.peerId
+            const src = descriptorAudioSource(producer) ?? 'mic'
+            const owner = ownerPeerFromDescriptor(producer) ?? null
+            const anchorId = owner ?? producer.peerId
             const existing: RemoteParticipant = next.get(anchorId) ?? {
               peerId: anchorId,
               name: producer.name,
               avatarUrl: producer.avatarUrl ?? undefined,
+              // Для screen-audio без отдельного screen peerId: экранная плитка живёт как псевдо-id,
+              // но запись участника остаётся на владельце.
+              ...(src === 'screen' && owner ? { screenPeerId: screenTileKey(owner) } : {}),
             }
             const audioMeta = {
               consumerId: consumer.id,
               anchorPeerId: anchorId,
               producerPeerId: producer.peerId,
               kind: 'audio' as const,
+              audioSource: src,
             }
             registerProducerMeta(producerMetaRef.current, producer.producerId, consumer.producerId, audioMeta)
             next.set(anchorId, {
               ...existing,
               name: producer.name || existing.name,
               avatarUrl: producer.avatarUrl ?? existing.avatarUrl ?? null,
-              audioStream: stream,
+              ...(src === 'screen'
+                ? {
+                    screenAudioStream: stream,
+                  }
+                : {
+                    micAudioStream: stream,
+                    audioStream: stream, // legacy: если UI ещё слушает audioStream
+                  }),
             })
             return next
           }

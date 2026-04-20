@@ -17,6 +17,17 @@ export function descriptorVideoSource(
   return undefined
 }
 
+export function descriptorAudioSource(p: ProducerDescriptor): 'mic' | 'screen' | undefined {
+  if (p.kind !== 'audio') return undefined
+  if (p.audioSource === 'mic' || p.audioSource === 'screen') return p.audioSource
+  const src = p.appData?.source
+  if (src === 'screen_audio') return 'screen'
+  if (src === 'mic') return 'mic'
+  // совместимость: некоторые бэки помечают аудио экрана как source='screen' при kind='audio'
+  if (src === 'screen') return 'screen'
+  return undefined
+}
+
 export function isVmixProducer(p: ProducerDescriptor): boolean {
   return descriptorVideoSource(p) === 'vmix' || p.name === 'vMix'
 }
@@ -43,6 +54,15 @@ export function videoAnchorPeerId(p: ProducerDescriptor): string {
   if (isVmixProducer(p)) return p.peerId
   const owner = ownerPeerFromDescriptor(p)
   return owner ?? p.peerId
+}
+
+/** Для audio producer: mic крепим к peerId участника, screen-audio — к источнику экрана (виртуальный peerId если есть). */
+export function audioAnchorPeerId(p: ProducerDescriptor): string {
+  if (p.kind !== 'audio') return p.peerId
+  const src = descriptorAudioSource(p)
+  if (src !== 'screen') return p.peerId
+  // Если screen публикуется как отдельный peerId (virtual) — аудио должно следовать за ним.
+  return p.peerId
 }
 
 /**

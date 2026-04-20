@@ -4,6 +4,7 @@ import type { Transport, Consumer } from 'mediasoup-client/lib/types'
 import { io, Socket } from 'socket.io-client'
 import type { ProducerDescriptor } from '../types'
 import { resolveVideoProducerRole } from '../utils/producerVideoRole'
+import { descriptorAudioSource, ownerPeerFromDescriptor } from '../utils/producerVideoRole'
 
 import { signalingSocketUrl } from '../utils/signalingBase'
 
@@ -21,7 +22,8 @@ export function useSoloViewer(roomId: string, watchPeerId: string) {
   const [error, setError] = useState<string | null>(null)
   const [camVideo, setCamVideo] = useState<MediaStream | null>(null)
   const [scrVideo, setScrVideo] = useState<MediaStream | null>(null)
-  const [audioStream, setAudioStream] = useState<MediaStream | null>(null)
+  const [micAudioStream, setMicAudioStream] = useState<MediaStream | null>(null)
+  const [screenAudioStream, setScreenAudioStream] = useState<MediaStream | null>(null)
   /** Один watchPeerId — один тип видео; при отдельном peerId демонстрации заполняется только один слот. */
   const videoStream = camVideo ?? scrVideo
   const [attempt, setAttempt] = useState(0)
@@ -58,7 +60,8 @@ export function useSoloViewer(roomId: string, watchPeerId: string) {
       setError(null)
       setCamVideo(null)
       setScrVideo(null)
-      setAudioStream(null)
+      setMicAudioStream(null)
+      setScreenAudioStream(null)
 
       try {
         socket = io(signalingSocketUrl(), { transports: ['polling', 'websocket'] })
@@ -107,7 +110,10 @@ export function useSoloViewer(roomId: string, watchPeerId: string) {
         })
 
         const consumeOne = async (producer: ProducerDescriptor) => {
-          if (producer.peerId !== watchPeerId || cancelled) return
+          const owner = ownerPeerFromDescriptor(producer) ?? null
+          const matchesWatch = producer.peerId === watchPeerId
+          const matchesOwner = owner != null && owner === watchPeerId
+          if ((!matchesWatch && !matchesOwner) || cancelled) return
 
           const data = await new Promise<Record<string, unknown>>((res) => {
             socket!.emit(
@@ -132,6 +138,7 @@ export function useSoloViewer(roomId: string, watchPeerId: string) {
 
           const stream = new MediaStream([consumer.track])
           if (consumer.kind === 'video') {
+            if (!matchesWatch) return
             const role = resolveVideoProducerRole(producer, hadCameraVideo)
             if (role === 'camera') hadCameraVideo = true
             producerMeta.set(producer.producerId, {
@@ -143,7 +150,9 @@ export function useSoloViewer(roomId: string, watchPeerId: string) {
             else setCamVideo(stream)
           } else {
             producerMeta.set(producer.producerId, { consumerId: consumer.id, kind: 'audio' })
-            setAudioStream(stream)
+            const src = descriptorAudioSource(producer) ?? 'mic'
+            if (src === 'screen') setScreenAudioStream(stream)
+            else setMicAudioStream(stream)
           }
 
           socket!.emit('resumeConsumer', { roomId, consumerId: consumer.id }, () => {})
@@ -171,7 +180,11 @@ export function useSoloViewer(roomId: string, watchPeerId: string) {
           }
           consumers.delete(m.consumerId)
           producerMeta.delete(pid)
-          if (m.kind === 'audio') setAudioStream(null)
+          if (m.kind === 'audio') {
+            // Консервативно: если закрыли audio producer — очищаем оба слота (будут восстановлены newProducer).
+            setMicAudioStream(null)
+            setScreenAudioStream(null)
+          }
           else if (m.videoRole === 'screen') {
             setScrVideo(null)
             /* Новый MediaStream с теми же треками — иначе videoStream может совпасть по ссылке
@@ -221,7 +234,8 @@ export function useSoloViewer(roomId: string, watchPeerId: string) {
     videoStream,
     camVideo,
     scrVideo,
-    audioStream,
+    micAudioStream,
+    screenAudioStream,
     retry,
   }
 }

@@ -235,7 +235,7 @@ export function useMessengerThreadBootstrap(opts: {
         const wantNow =
           conversationIdRef.current.trim() || pickDefaultConversationId(mergedItemsRef.current, null) || ''
         if (wantNow !== startedTarget) {
-          setThreadLoading(false)
+          setThreadState((prev) => ({ ...prev, threadLoading: false }))
           return
         }
         if (cached?.length && summary) {
@@ -293,10 +293,11 @@ export function useMessengerThreadBootstrap(opts: {
         } else if (messagesRes.error) {
           const cached = await readMessengerThreadTailCache('direct', startedTarget)
           if (cached?.length && conversationRes.data) {
+            const conv = conversationRes.data
             setError(null)
             setThreadState((prev) => ({
               ...prev,
-              activeConversation: { ...conversationRes.data, kind: 'direct' },
+              activeConversation: { ...conv, kind: 'direct' },
               messages: cached,
               hasMoreOlder: true,
             }))
@@ -315,9 +316,10 @@ export function useMessengerThreadBootstrap(opts: {
           }
         } else {
           const list = messagesRes.data ?? []
+          const conv = conversationRes.data
           setThreadState((prev) => ({
             ...prev,
-            activeConversation: { ...conversationRes.data, kind: 'direct' },
+            activeConversation: { ...conv, kind: 'direct' },
             messages: list,
             hasMoreOlder: messagesRes.hasMoreOlder,
           }))

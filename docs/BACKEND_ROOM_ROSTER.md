@@ -112,6 +112,8 @@ type ProducerDescriptor = {
   kind: 'audio' | 'video'
   name: string
   avatarUrl?: string | null   // то же, что в ростере на момент produce
+  /** Для аудио: источник (микрофон участника или звук демонстрации). */
+  audioSource?: 'mic' | 'screen'
   // ... videoSource, appData, ownerPeerId — как у вас сейчас
 }
 ```

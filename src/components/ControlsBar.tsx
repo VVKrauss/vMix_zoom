@@ -489,7 +489,7 @@ export function ControlsBar({
           onClose={() => setOpen(null)}
           onPick={(surface) => {
             if (canStartScreenShare) {
-              void onStartScreenShare(surface).catch((e) => {
+              Promise.resolve(onStartScreenShare(surface)).catch((e: unknown) => {
                 console.error('[ui] onStartScreenShare failed', e)
               })
             }
@@ -960,7 +960,7 @@ export function ControlsBar({
           onClose={() => setScreenPickerOpen(false)}
           onPickSurface={(surface, opts) => {
             setScreenPickerOpen(false)
-            void onStartScreenShare(surface, opts).catch((e) => {
+            Promise.resolve(onStartScreenShare(surface, opts)).catch((e: unknown) => {
               console.error('[ui] onStartScreenShare failed', e)
             })
           }}
