@@ -12,9 +12,29 @@ export function usePresenceSession() {
   useEffect(() => {
     if (!user?.id) return
 
+    let pulseRpc: 'presence_foreground_pulse' | 'touch_my_presence' = 'presence_foreground_pulse'
+
+    const callPulse = async () => {
+      const { error } = await supabase.rpc(pulseRpc)
+      if (!error) return
+
+      const msg = String(error.message ?? '')
+      const missingFn =
+        error.code === '42883' ||
+        msg.includes('does not exist') ||
+        msg.includes('schema cache') ||
+        msg.includes('function') ||
+        msg.includes('not found')
+
+      if (pulseRpc === 'presence_foreground_pulse' && missingFn) {
+        pulseRpc = 'touch_my_presence'
+        await supabase.rpc(pulseRpc)
+      }
+    }
+
     const pulseForeground = () => {
       if (typeof document === 'undefined' || document.visibilityState !== 'visible') return
-      void supabase.rpc('presence_foreground_pulse')
+      void callPulse()
     }
 
     const markBackground = () => {

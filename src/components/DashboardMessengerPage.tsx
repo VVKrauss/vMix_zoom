@@ -139,6 +139,7 @@ import {
   leaveGroupOrChannelClient,
 } from '../lib/messengerConversationLifecycle'
 import { supabase } from '../lib/supabase'
+import { isPeerPresenceOnlineFromMirror, peerPresenceMirrorFromRow } from '../lib/messengerPeerPresence'
 import { fetchPublicUserProfile } from '../lib/userPublicProfile'
 import { writeMessengerThreadTailCache } from '../lib/messengerThreadTailCache'
 import { newRoomId } from '../utils/roomId'
@@ -1295,16 +1296,34 @@ export function DashboardMessengerPage() {
     return row.otherUserId?.trim() ?? ''
   }, [activeConversationId, sortedItems, activeConversation])
 
+  const directOtherUserIdRef = useRef(directOtherUserId)
+  directOtherUserIdRef.current = directOtherUserId
+
   const refreshDirectPeerPresence = useCallback(() => {
-    const oid = directOtherUserId.trim()
+    const oid = directOtherUserIdRef.current.trim()
     if (!oid || !user?.id || oid === user.id) return
-    void fetchPublicUserProfile(oid).then((r) => {
-      if (!r.data || r.error) return
+    const requestedOid = oid
+    void (async () => {
+      const [peek, mirror] = await Promise.all([
+        fetchPublicUserProfile(requestedOid),
+        supabase
+          .from('user_presence_public')
+          .select('last_active_at,presence_last_background_at,profile_show_online')
+          .eq('user_id', requestedOid)
+          .maybeSingle(),
+      ])
+      if (requestedOid !== directOtherUserIdRef.current.trim()) return
+      if (!peek.data || peek.error) return
+      const row = mirror.data as Record<string, unknown> | null
+      const mirrorInput = row ? peerPresenceMirrorFromRow(row) : null
+      const mirrorSaysHide = mirrorInput?.profileShowOnline === false
+      const mirrorSaysOnline = mirrorInput ? isPeerPresenceOnlineFromMirror(mirrorInput) : false
+      const isOnline = mirrorSaysHide ? false : mirrorSaysOnline || peek.data.isOnline
       setDirectPeerPresence({
-        lastActivityAt: r.data.lastActivityAt,
-        isOnline: r.data.isOnline,
+        lastActivityAt: peek.data.lastActivityAt,
+        isOnline,
       })
-    })
+    })()
   }, [directOtherUserId, user?.id])
 
   useEffect(() => {
@@ -1312,13 +1331,27 @@ export function DashboardMessengerPage() {
     const oid = directOtherUserId.trim()
     if (!oid || !user?.id || oid === user.id) return
     let cancelled = false
-    void fetchPublicUserProfile(oid).then((r) => {
-      if (cancelled || !r.data || r.error) return
+    void (async () => {
+      const [peek, mirror] = await Promise.all([
+        fetchPublicUserProfile(oid),
+        supabase
+          .from('user_presence_public')
+          .select('last_active_at,presence_last_background_at,profile_show_online')
+          .eq('user_id', oid)
+          .maybeSingle(),
+      ])
+      if (cancelled) return
+      if (!peek.data || peek.error) return
+      const row = mirror.data as Record<string, unknown> | null
+      const mirrorInput = row ? peerPresenceMirrorFromRow(row) : null
+      const mirrorSaysHide = mirrorInput?.profileShowOnline === false
+      const mirrorSaysOnline = mirrorInput ? isPeerPresenceOnlineFromMirror(mirrorInput) : false
+      const isOnline = mirrorSaysHide ? false : mirrorSaysOnline || peek.data.isOnline
       setDirectPeerPresence({
-        lastActivityAt: r.data.lastActivityAt,
-        isOnline: r.data.isOnline,
+        lastActivityAt: peek.data.lastActivityAt,
+        isOnline,
       })
-    })
+    })()
     return () => {
       cancelled = true
     }
@@ -1328,16 +1361,10 @@ export function DashboardMessengerPage() {
     const oid = directOtherUserId.trim()
     if (!oid || !user?.id || oid === user.id) return
     const t = window.setInterval(() => {
-      void fetchPublicUserProfile(oid).then((r) => {
-        if (!r.data || r.error) return
-        setDirectPeerPresence({
-          lastActivityAt: r.data.lastActivityAt,
-          isOnline: r.data.isOnline,
-        })
-      })
+      refreshDirectPeerPresence()
     }, 60_000)
     return () => window.clearInterval(t)
-  }, [directOtherUserId, user?.id])
+  }, [directOtherUserId, user?.id, refreshDirectPeerPresence])
 
   useEffect(() => {
     const oid = directOtherUserId.trim()
@@ -1364,7 +1391,17 @@ export function DashboardMessengerPage() {
           table: 'user_presence_public',
           filter: `user_id=eq.${oid}`,
         },
-        () => {
+        (payload) => {
+          const row = payload.new as Record<string, unknown> | undefined
+          if (row && typeof row === 'object') {
+            const mirrorInput = peerPresenceMirrorFromRow(row)
+            const mirrorSaysHide = mirrorInput.profileShowOnline === false
+            const mirrorSaysOnline = isPeerPresenceOnlineFromMirror(mirrorInput)
+            setDirectPeerPresence((prev) => ({
+              lastActivityAt: prev?.lastActivityAt ?? null,
+              isOnline: mirrorSaysHide ? false : mirrorSaysOnline || (prev?.isOnline ?? false),
+            }))
+          }
           refreshDirectPeerPresence()
         },
       )
