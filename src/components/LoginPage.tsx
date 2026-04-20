@@ -137,6 +137,14 @@ export function LoginPage() {
 
         {error && <p className="join-error">{error}</p>}
 
+        {mode === 'login' ? (
+          <p className="login-switch" style={{ marginTop: 8 }}>
+            <Link to="/auth/forgot-password" className="login-switch__btn" role="button">
+              Забыли пароль?
+            </Link>
+          </p>
+        ) : null}
+
         <p className="login-switch">
           {mode === 'login' ? 'Нет аккаунта?' : 'Уже есть аккаунт?'}{' '}
           <button type="button" className="login-switch__btn" onClick={toggleMode}>

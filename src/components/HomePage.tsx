@@ -135,6 +135,9 @@ export function HomePage() {
                 >
                   Зарегистрироваться
                 </Link>
+                <Link to="/auth/forgot-password" className="home-auth-links__forgot">
+                  Забыли пароль?
+                </Link>
               </div>
             )}
           </div>
