@@ -10,6 +10,7 @@ export function MessengerMessageMenuPopover({
   canDelete,
   canCopy,
   dmOutgoingReceipt,
+  timestampLabel,
   onClose,
   onEdit,
   onDelete,
@@ -29,6 +30,8 @@ export function MessengerMessageMenuPopover({
   canCopy?: boolean
   /** ЛС: легенда статуса исходящего (кольцо/полукруг/круг) — только информационная строка. */
   dmOutgoingReceipt?: { level: DmOutgoingReceiptLevel; messageId: string } | null
+  /** Дата/время сообщения (показывается внизу меню). */
+  timestampLabel?: string | null
   onClose: () => void
   onEdit: () => void
   onDelete: () => void
@@ -148,6 +151,11 @@ export function MessengerMessageMenuPopover({
         >
           {pinActive ? 'Убрать из контактов' : 'Добавить в контакты'}
         </button>
+      ) : null}
+      {timestampLabel?.trim() ? (
+        <div className="messenger-msg-menu__time" role="presentation">
+          {timestampLabel.trim()}
+        </div>
       ) : null}
     </div>
   )

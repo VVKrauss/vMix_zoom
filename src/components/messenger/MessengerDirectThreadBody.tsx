@@ -13,6 +13,7 @@ import {
   conversationInitial,
   formatDateTime,
   formatMessengerListRowTime,
+  formatMessengerDaySeparatorLabel,
   QUICK_REACTION_EMOJI,
 } from '../../lib/messengerDashboardUtils'
 import { resolveQuotedAvatarForDm } from '../../lib/messengerUi'
@@ -264,12 +265,7 @@ function MessengerDirectThreadBodyImpl(props: {
                 <div className="dashboard-messenger__thread-meta">
                   <span>{threadHeadConversation.messageCount} сообщ.</span>
                   <span>
-                    Последняя активность:{' '}
-                    {formatDateTime(
-                      directPeerLastActivityAt ??
-                        threadHeadConversation.lastMessageAt ??
-                        threadHeadConversation.createdAt,
-                    )}
+                    Был{'\u00A0'}(а): {directPeerLastActivityAt ? formatDateTime(directPeerLastActivityAt) : 'Нет данных'}
                   </span>
                 </div>
               </div>
@@ -294,90 +290,112 @@ function MessengerDirectThreadBodyImpl(props: {
               ) : timelineMessages.length === 0 ? (
                 <div className="dashboard-chats-empty">Напиши первое сообщение в этот чат.</div>
               ) : (
-                timelineMessages.map((message) => {
-                  const isOwn = Boolean(userId && message.senderUserId === userId)
-                  const isNew = !seenMessageIdsRef.current.has(message.id)
-                  if (isNew) seenMessageIdsRef.current.add(message.id)
-                  const reactions = reactionsByTargetId.get(message.id) ?? []
-                  const rid = message.quoteToMessageId?.trim() || message.replyToMessageId?.trim() || null
-                  const { preview: replyPreview, scrollTargetId: replyScrollTargetId } = buildQuotePreview({
-                    quotedMessageId: rid,
-                    messageById: (id) => messages.find((m) => m.id === id),
-                    resolveQuotedAvatarUrl: (senderUserId) =>
-                      resolveQuotedAvatarForDm(
-                        senderUserId,
-                        userId,
-                        profile?.avatar_url,
-                        threadHeadConversation?.kind === 'direct'
-                          ? (threadHeadConversation as unknown as DirectConversationSummary)
-                          : null,
-                      ),
-                  })
-                  const dmOutgoingReceipt = directOutgoingReceiptStatus(message, {
-                    isOwn,
-                    isDirectThread: threadHeadConversation.kind === 'direct',
-                    peerLastReadAt: directPeerLastReadAt,
-                    viewerReceiptsPrivate: viewerDmReceiptsPrivate,
-                    peerReceiptsPrivate: peerDmReceiptsPrivate,
-                  })
-                  return (
-                    <ThreadMessageBubble
-                      key={message.id}
-                      message={message}
-                      isOwn={isOwn}
-                      enterAnim={Boolean(isNew && !isOwn)}
-                      dmOutgoingReceipt={dmOutgoingReceipt}
-                      dmMutePeerLabels={threadHeadConversation?.kind === 'direct'}
-                      reactions={reactions}
-                      formatDt={formatDateTime}
-                      replyPreview={replyPreview}
-                      replyScrollTargetId={replyScrollTargetId}
-                      onReplyQuoteNavigate={scrollToQuotedMessage}
-                      bindMessageAnchor={bindMessageAnchor}
-                      menuOpen={messageMenu?.message.id === message.id}
-                      onOpenImageLightbox={(ctx) => {
-                        closeMessageActionMenu()
-                        setMessengerImageLightbox({ urls: ctx.urls, index: ctx.initialIndex })
-                      }}
-                      onInlineImageLayout={bumpScrollIfPinned}
-                      onReplyThumbLayout={bumpScrollIfPinned}
-                      onMentionSlug={onMentionSlugOpenProfile}
-                      onMenuButtonClick={(e) => {
-                        e.stopPropagation()
-                        const r = e.currentTarget.getBoundingClientRect()
-                        setMessageMenu((cur) => {
-                          if (cur?.message.id === message.id) return null
-                          return { message, mode: 'kebab', anchorX: r.right, anchorY: r.top }
-                        })
-                      }}
-                      onBubbleContextMenu={(e) => {
-                        e.preventDefault()
-                        setMessageMenu((cur) => {
-                          if (cur?.message.id === message.id) return null
-                          return { message, mode: 'context', anchorX: e.clientX, anchorY: e.clientY }
-                        })
-                      }}
-                      currentUserId={userId ?? null}
-                      onReactionChipTap={(targetId, emoji) => {
-                        if (!isDirectReactionEmoji(emoji)) return
-                        void toggleMessengerReaction(targetId, emoji)
-                      }}
-                      quickReactEnabled={Boolean(
-                        userId &&
-                          (message.kind === 'text' || message.kind === 'image' || message.kind === 'audio') &&
-                          !message.id.startsWith('local-'),
-                      )}
-                      isMobileMessenger={isMobileMessenger}
-                      onQuickHeart={() => void toggleMessengerReaction(message.id, QUICK_REACTION_EMOJI)}
-                      swipeReplyEnabled={isMobileMessenger}
-                      onSwipeReply={(m) => {
-                        setReplyTo(m)
-                        closeMessageActionMenu()
-                        queueMicrotask(() => composerTextareaRef.current?.focus())
-                      }}
-                    />
-                  )
-                })
+                (() => {
+                  const nodes: ReactNode[] = []
+                  let prevDayKey: string | null = null
+                  for (const message of timelineMessages) {
+                    const isContent =
+                      message.kind !== 'reaction' && message.kind !== 'system' && !message.id.startsWith('local-reaction-')
+                    if (isContent) {
+                      const dt = new Date(message.createdAt)
+                      const dayKey = Number.isNaN(dt.getTime())
+                        ? null
+                        : `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`
+                      if (prevDayKey && dayKey && dayKey !== prevDayKey) {
+                        nodes.push(
+                          <div key={`${message.id}-day`} className="dashboard-messenger__dm-deleted-plain" aria-hidden>
+                            {formatMessengerDaySeparatorLabel(message.createdAt)}
+                          </div>,
+                        )
+                      }
+                      if (dayKey) prevDayKey = dayKey
+                    }
+
+                    const isOwn = Boolean(userId && message.senderUserId === userId)
+                    const isNew = !seenMessageIdsRef.current.has(message.id)
+                    if (isNew) seenMessageIdsRef.current.add(message.id)
+                    const reactions = reactionsByTargetId.get(message.id) ?? []
+                    const rid = message.quoteToMessageId?.trim() || message.replyToMessageId?.trim() || null
+                    const { preview: replyPreview, scrollTargetId: replyScrollTargetId } = buildQuotePreview({
+                      quotedMessageId: rid,
+                      messageById: (id) => messages.find((m) => m.id === id),
+                      resolveQuotedAvatarUrl: (senderUserId) =>
+                        resolveQuotedAvatarForDm(
+                          senderUserId,
+                          userId,
+                          profile?.avatar_url,
+                          threadHeadConversation?.kind === 'direct'
+                            ? (threadHeadConversation as unknown as DirectConversationSummary)
+                            : null,
+                        ),
+                    })
+                    const dmOutgoingReceipt = directOutgoingReceiptStatus(message, {
+                      isOwn,
+                      isDirectThread: threadHeadConversation.kind === 'direct',
+                      peerLastReadAt: directPeerLastReadAt,
+                      viewerReceiptsPrivate: viewerDmReceiptsPrivate,
+                      peerReceiptsPrivate: peerDmReceiptsPrivate,
+                    })
+                    nodes.push(
+                      <ThreadMessageBubble
+                        key={message.id}
+                        message={message}
+                        isOwn={isOwn}
+                        enterAnim={Boolean(isNew && !isOwn)}
+                        dmOutgoingReceipt={dmOutgoingReceipt}
+                        dmMutePeerLabels={threadHeadConversation?.kind === 'direct'}
+                        reactions={reactions}
+                        formatDt={formatDateTime}
+                        replyPreview={replyPreview}
+                        replyScrollTargetId={replyScrollTargetId}
+                        onReplyQuoteNavigate={scrollToQuotedMessage}
+                        bindMessageAnchor={bindMessageAnchor}
+                        menuOpen={messageMenu?.message.id === message.id}
+                        onOpenImageLightbox={(ctx) => {
+                          closeMessageActionMenu()
+                          setMessengerImageLightbox({ urls: ctx.urls, index: ctx.initialIndex })
+                        }}
+                        onInlineImageLayout={bumpScrollIfPinned}
+                        onReplyThumbLayout={bumpScrollIfPinned}
+                        onMentionSlug={onMentionSlugOpenProfile}
+                        onMenuButtonClick={(e) => {
+                          e.stopPropagation()
+                          const r = e.currentTarget.getBoundingClientRect()
+                          setMessageMenu((cur) => {
+                            if (cur?.message.id === message.id) return null
+                            return { message, mode: 'kebab', anchorX: r.right, anchorY: r.top }
+                          })
+                        }}
+                        onBubbleContextMenu={(e) => {
+                          e.preventDefault()
+                          setMessageMenu((cur) => {
+                            if (cur?.message.id === message.id) return null
+                            return { message, mode: 'context', anchorX: e.clientX, anchorY: e.clientY }
+                          })
+                        }}
+                        currentUserId={userId ?? null}
+                        onReactionChipTap={(targetId, emoji) => {
+                          if (!isDirectReactionEmoji(emoji)) return
+                          void toggleMessengerReaction(targetId, emoji)
+                        }}
+                        quickReactEnabled={Boolean(
+                          userId &&
+                            (message.kind === 'text' || message.kind === 'image' || message.kind === 'audio') &&
+                            !message.id.startsWith('local-'),
+                        )}
+                        isMobileMessenger={isMobileMessenger}
+                        onQuickHeart={() => void toggleMessengerReaction(message.id, QUICK_REACTION_EMOJI)}
+                        swipeReplyEnabled={isMobileMessenger}
+                        onSwipeReply={(m) => {
+                          setReplyTo(m)
+                          closeMessageActionMenu()
+                          queueMicrotask(() => composerTextareaRef.current?.focus())
+                        }}
+                      />,
+                    )
+                  }
+                  return nodes
+                })()
               )}
               {readTailRef ? (
                 <div ref={readTailRef as Ref<HTMLDivElement>} className="dashboard-messenger__read-tail-sentinel" aria-hidden />

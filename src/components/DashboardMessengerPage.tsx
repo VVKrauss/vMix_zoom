@@ -124,7 +124,7 @@ import {
   type ConversationJoinRequest,
 } from '../lib/chatRequests'
 import { setPendingHostClaim, stashSpaceRoomCreateOptions } from '../lib/spaceRoom'
-import { setContactPin, type RegisteredUserSearchHit } from '../lib/socialGraph'
+import { listMyContactAliases, setContactPin, type RegisteredUserSearchHit } from '../lib/socialGraph'
 import {
   getMyConversationNotificationMutes,
   setConversationNotificationsMuted,
@@ -483,7 +483,25 @@ export function DashboardMessengerPage() {
         return
       }
       if (listRes.data) {
-        setItems(listRes.data)
+        const list = listRes.data
+        const directPeerIds = Array.from(
+          new Set(
+            list
+              .filter((x) => x.kind === 'direct')
+              .map((x) => (typeof x.otherUserId === 'string' ? x.otherUserId.trim() : ''))
+              .filter(Boolean),
+          ),
+        )
+        const aliasRes = await listMyContactAliases(directPeerIds)
+        const aliases = aliasRes.data ?? {}
+        const mapped = list.map((x) => {
+          if (x.kind !== 'direct') return x
+          const pid = typeof x.otherUserId === 'string' ? x.otherUserId.trim() : ''
+          const a = pid ? (aliases[pid]?.trim() ?? '') : ''
+          if (!a) return x
+          return { ...x, title: a }
+        })
+        setItems(mapped)
         setChatListAvatarPullEpoch((e) => e + 1)
       }
     } finally {
@@ -3307,6 +3325,7 @@ export function DashboardMessengerPage() {
                                     })()
                                   : null
                               }
+                              timestampLabel={formatDateTime(messageMenu.message.createdAt)}
                               onClose={closeMessageActionMenu}
                               onCopy={async () => {
                                 const text = previewTextForDirectMessageTail(messageMenu.message)

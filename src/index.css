@@ -7503,6 +7503,14 @@ html[data-theme="light"] .messenger-msg-menu-wrap.messenger-channel-reaction-pic
   max-width: 100%;
 }
 
+.messenger-msg-menu__time {
+  padding: 7px 11px 6px;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.25;
+  user-select: none;
+}
+
 /* Разделитель над реакциями только если сверху есть «Редактировать» */
 .messenger-msg-menu__item + .messenger-msg-menu__emoji-row {
   border-top: 1px solid var(--border);
@@ -14972,6 +14980,42 @@ html[data-theme="light"] .card-bar-fav--on {
   font-size: 13px;
   line-height: 1.35;
   color: var(--text-dim);
+}
+
+.user-peek-modal__alias-edit {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font: inherit;
+  padding: 0 6px;
+  border-radius: 8px;
+}
+
+.user-peek-modal__alias-edit:hover {
+  color: var(--text);
+}
+
+.user-peek-modal__profile-name {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.user-peek-modal__alias-row {
+  margin: 0 0 10px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.user-peek-modal__alias-input {
+  width: min(320px, 84vw);
 }
 
 .user-peek-modal__hint {

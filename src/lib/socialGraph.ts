@@ -25,6 +25,42 @@ export type RegisteredUserSearchHit = {
   avatarUrl: string | null
 }
 
+export async function listMyContactAliases(
+  contactUserIds: string[],
+): Promise<{ data: Record<string, string> | null; error: string | null }> {
+  const ids = Array.from(new Set(contactUserIds.map((x) => x.trim()).filter(Boolean)))
+  if (ids.length === 0) return { data: {}, error: null }
+  const { data, error } = await supabase.rpc('list_my_contact_aliases', {
+    p_contact_user_ids: ids,
+  })
+  if (error) return { data: null, error: error.message }
+  const out: Record<string, string> = {}
+  for (const row of Array.isArray(data) ? data : []) {
+    const r = row as Record<string, unknown>
+    const uid = typeof r.contact_user_id === 'string' ? r.contact_user_id.trim() : String(r.contact_user_id ?? '').trim()
+    const alias = typeof r.alias === 'string' ? r.alias.trim() : String(r.alias ?? '').trim()
+    if (uid && alias) out[uid] = alias
+  }
+  return { data: out, error: null }
+}
+
+export async function setMyContactAlias(
+  contactUserId: string,
+  alias: string,
+): Promise<{ data: string | null; error: string | null }> {
+  const id = contactUserId.trim()
+  if (!id) return { data: null, error: 'Не выбран пользователь' }
+  const { data, error } = await supabase.rpc('set_my_contact_alias', {
+    p_contact_user_id: id,
+    p_alias: alias,
+  })
+  if (error) return { data: null, error: error.message }
+  const row = data as Record<string, unknown> | null
+  if (!row || row.ok !== true) return { data: null, error: typeof row?.error === 'string' ? row.error : 'request_failed' }
+  const a = typeof row.alias === 'string' && row.alias.trim() ? row.alias.trim() : null
+  return { data: a, error: null }
+}
+
 function mapContactStatusRow(row: Record<string, unknown>): ContactStatus {
   const targetUserId = String(row.target_user_id ?? '')
   const pinnedByMe =

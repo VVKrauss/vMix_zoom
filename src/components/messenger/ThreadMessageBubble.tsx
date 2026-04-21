@@ -265,35 +265,8 @@ export function ThreadMessageBubble({
           {showAuthorInMeta ? (
             <span className="dashboard-messenger__message-author">{message.senderNameSnapshot}</span>
           ) : null}
-          {isOwn && dmOutgoingReceipt ? (
-            <span
-              className={`dashboard-messenger__dm-receipt dashboard-messenger__dm-receipt--${dmOutgoingReceipt}`}
-              aria-label={
-                dmOutgoingReceipt === 'pending'
-                  ? 'Отправка'
-                  : dmOutgoingReceipt === 'read'
-                    ? 'Прочитано'
-                    : dmOutgoingReceipt === 'delivered'
-                      ? 'Доставлено'
-                      : 'Отправлено'
-              }
-            >
-              <DmOutgoingReceiptGlyph level={dmOutgoingReceipt} messageId={message.id} />
-            </span>
-          ) : null}
-          <time dateTime={message.createdAt}>{formatDt(message.createdAt)}</time>
           {message.editedAt ? <span className="dashboard-messenger__edited">изм.</span> : null}
         </div>
-        <button
-          type="button"
-          className={`dashboard-messenger__msg-more${menuOpen ? ' dashboard-messenger__msg-more--open' : ''}`}
-          aria-label="Действия с сообщением"
-          aria-expanded={menuOpen}
-          aria-haspopup="menu"
-          onClick={onMenuButtonClick}
-        >
-          ⋮
-        </button>
       </div>
       {quotePreview ? (
         replyNavOk ? (
@@ -316,23 +289,38 @@ export function ThreadMessageBubble({
           ↪ Переслано из {forwardInfoLabel}
         </div>
       ) : null}
-      <DoubleTapHeartSurface
-        enabled={Boolean(quickReactEnabled && onQuickHeart)}
-        isMobileViewport={Boolean(isMobileMessenger)}
-        onHeart={() => onQuickHeart?.()}
-        className="dashboard-messenger__message-body"
-      >
-        {renderBody ? (
-          renderBody(message)
-        ) : (
-          <MessengerBubbleBody
-            message={message}
-            onOpenImageLightbox={onOpenImageLightbox}
-            onInlineImageLayout={onInlineImageLayout}
-            onMentionSlug={onMentionSlug}
-          />
-        )}
-      </DoubleTapHeartSurface>
+      <div className="dashboard-messenger__message-bottom-row">
+        <DoubleTapHeartSurface
+          enabled={Boolean(quickReactEnabled && onQuickHeart)}
+          isMobileViewport={Boolean(isMobileMessenger)}
+          onHeart={() => onQuickHeart?.()}
+          className="dashboard-messenger__message-body"
+        >
+          {renderBody ? (
+            renderBody(message)
+          ) : (
+            <MessengerBubbleBody
+              message={message}
+              onOpenImageLightbox={onOpenImageLightbox}
+              onInlineImageLayout={onInlineImageLayout}
+              onMentionSlug={onMentionSlug}
+            />
+          )}
+        </DoubleTapHeartSurface>
+        <button
+          type="button"
+          className={`dashboard-messenger__msg-more dashboard-messenger__msg-more--inline${
+            menuOpen ? ' dashboard-messenger__msg-more--open' : ''
+          }`}
+          aria-label="Действия с сообщением"
+          aria-expanded={menuOpen}
+          aria-haspopup="menu"
+          title={formatDt(message.createdAt)}
+          onClick={onMenuButtonClick}
+        >
+          ⋮
+        </button>
+      </div>
       {reactionCounts.size > 0 ? (
         <div
           className="dashboard-messenger__message-reactions"
@@ -378,6 +366,22 @@ export function ThreadMessageBubble({
             )
           })}
         </div>
+      ) : null}
+      {isOwn && dmOutgoingReceipt ? (
+        <span
+          className={`dashboard-messenger__dm-receipt dashboard-messenger__dm-receipt--${dmOutgoingReceipt} dashboard-messenger__dm-receipt--outside`}
+          aria-label={
+            dmOutgoingReceipt === 'pending'
+              ? 'Отправка'
+              : dmOutgoingReceipt === 'read'
+                ? 'Прочитано'
+                : dmOutgoingReceipt === 'delivered'
+                  ? 'Доставлено'
+                  : 'Отправлено'
+          }
+        >
+          <DmOutgoingReceiptGlyph level={dmOutgoingReceipt} messageId={message.id} />
+        </span>
       ) : null}
     </article>
   )

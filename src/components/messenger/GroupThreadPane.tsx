@@ -34,6 +34,7 @@ import {
   extractClipboardImageFiles,
   MESSENGER_GALLERY_MAX_ATTACH,
   MESSENGER_PHOTO_INPUT_MAX_BYTES,
+  formatMessengerDaySeparatorLabel,
 } from '../../lib/messengerDashboardUtils'
 import { ThreadMessageBubble } from './ThreadMessageBubble'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
@@ -896,66 +897,82 @@ export function GroupThreadPane({
             )
           ) : (
             <>
-              {messages.map((m) => {
-                if (m.kind === 'reaction') return null
-                const reacts = reactionsByTargetId.get(m.id) ?? []
-                const isOwn = Boolean(user?.id && m.senderUserId === user.id)
-                const { preview: replyPreview, scrollTargetId: replyScrollTargetId } = buildQuotePreview({
-                  quotedMessageId: m.quoteToMessageId?.trim() || m.replyToMessageId?.trim() || null,
-                  messageById: (id) => messages.find((x) => x.id === id),
-                  resolveQuotedAvatarUrl: () => null,
-                })
-                return (
-                  <ThreadMessageBubble
-                    key={m.id}
-                    message={m}
-                    isOwn={isOwn}
-                    reactions={reacts}
-                    formatDt={formatGroupBubbleTime}
-                    replyPreview={replyPreview}
-                    replyScrollTargetId={replyScrollTargetId}
-                    onReplyQuoteNavigate={scrollToQuotedMessage}
-                    bindMessageAnchor={(id, el) => {
-                      if (el) messageAnchorRef.current.set(id, el)
-                      else messageAnchorRef.current.delete(id)
-                    }}
-                    currentUserId={user?.id ?? null}
-                    onReactionChipTap={(targetId, emoji) => {
-                      if (!isAllowedReactionEmoji(emoji)) return
-                      void onReactionChipTap(targetId, emoji)
-                    }}
-                    quickReactEnabled={Boolean(
-                      isGroupMember &&
-                        user?.id &&
-                        (m.kind === 'text' || m.kind === 'image' || m.kind === 'audio') &&
-                        !m.id.startsWith('local-'),
-                    )}
-                    onQuickHeart={() => void toggleReaction(m.id, QUICK_REACTION_EMOJI)}
-                    swipeReplyEnabled={isMobileMessenger && isGroupMember}
-                    onSwipeReply={() => setReplyTo(m)}
-                    menuOpen={messageMenu?.message.id === m.id}
-                    onMenuButtonClick={(e) => {
-                      e.stopPropagation()
-                      if (!isGroupMember || m.id.startsWith('local-')) return
-                      const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
-                      setMessageMenu((cur) => {
-                        if (cur?.message.id === m.id) return null
-                        return { message: m, anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } }
-                      })
-                    }}
-                    onBubbleContextMenu={(e) => {
-                      e.preventDefault()
-                      if (!isGroupMember || m.id.startsWith('local-')) return
-                      setMessageMenu((cur) => {
-                        if (cur?.message.id === m.id) return null
-                        return { message: m, anchor: { left: e.clientX, top: e.clientY, right: e.clientX, bottom: e.clientY } }
-                      })
-                    }}
-                    onMentionSlug={onMentionSlug}
-                    onOpenImageLightbox={(ctx) => setGroupImageLightbox({ urls: ctx.urls, index: ctx.initialIndex })}
-                  />
-                )
-              })}
+              {(() => {
+                const nodes: React.ReactNode[] = []
+                let prevDayKey: string | null = null
+                for (const m of messages) {
+                  if (m.kind === 'reaction') continue
+                  const dt = new Date(m.createdAt)
+                  const dayKey = Number.isNaN(dt.getTime()) ? null : `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`
+                  if (prevDayKey && dayKey && dayKey !== prevDayKey) {
+                    nodes.push(
+                      <div key={`${m.id}-day`} className="dashboard-messenger__dm-deleted-plain" aria-hidden>
+                        {formatMessengerDaySeparatorLabel(m.createdAt)}
+                      </div>,
+                    )
+                  }
+                  if (dayKey) prevDayKey = dayKey
+
+                  const reacts = reactionsByTargetId.get(m.id) ?? []
+                  const isOwn = Boolean(user?.id && m.senderUserId === user.id)
+                  const { preview: replyPreview, scrollTargetId: replyScrollTargetId } = buildQuotePreview({
+                    quotedMessageId: m.quoteToMessageId?.trim() || m.replyToMessageId?.trim() || null,
+                    messageById: (id) => messages.find((x) => x.id === id),
+                    resolveQuotedAvatarUrl: () => null,
+                  })
+                  nodes.push(
+                    <ThreadMessageBubble
+                      key={m.id}
+                      message={m}
+                      isOwn={isOwn}
+                      reactions={reacts}
+                      formatDt={formatGroupBubbleTime}
+                      replyPreview={replyPreview}
+                      replyScrollTargetId={replyScrollTargetId}
+                      onReplyQuoteNavigate={scrollToQuotedMessage}
+                      bindMessageAnchor={(id, el) => {
+                        if (el) messageAnchorRef.current.set(id, el)
+                        else messageAnchorRef.current.delete(id)
+                      }}
+                      currentUserId={user?.id ?? null}
+                      onReactionChipTap={(targetId, emoji) => {
+                        if (!isAllowedReactionEmoji(emoji)) return
+                        void onReactionChipTap(targetId, emoji)
+                      }}
+                      quickReactEnabled={Boolean(
+                        isGroupMember &&
+                          user?.id &&
+                          (m.kind === 'text' || m.kind === 'image' || m.kind === 'audio') &&
+                          !m.id.startsWith('local-'),
+                      )}
+                      onQuickHeart={() => void toggleReaction(m.id, QUICK_REACTION_EMOJI)}
+                      swipeReplyEnabled={isMobileMessenger && isGroupMember}
+                      onSwipeReply={() => setReplyTo(m)}
+                      menuOpen={messageMenu?.message.id === m.id}
+                      onMenuButtonClick={(e) => {
+                        e.stopPropagation()
+                        if (!isGroupMember || m.id.startsWith('local-')) return
+                        const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
+                        setMessageMenu((cur) => {
+                          if (cur?.message.id === m.id) return null
+                          return { message: m, anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } }
+                        })
+                      }}
+                      onBubbleContextMenu={(e) => {
+                        e.preventDefault()
+                        if (!isGroupMember || m.id.startsWith('local-')) return
+                        setMessageMenu((cur) => {
+                          if (cur?.message.id === m.id) return null
+                          return { message: m, anchor: { left: e.clientX, top: e.clientY, right: e.clientX, bottom: e.clientY } }
+                        })
+                      }}
+                      onMentionSlug={onMentionSlug}
+                      onOpenImageLightbox={(ctx) => setGroupImageLightbox({ urls: ctx.urls, index: ctx.initialIndex })}
+                    />,
+                  )
+                }
+                return nodes
+              })()}
               {viewerOnly && publicJoinCta ? (
                 <div className="messenger-viewer-join-after">
                   <button
@@ -1183,6 +1200,7 @@ export function GroupThreadPane({
                       messageMenu.message.kind === 'image' ||
                       messageMenu.message.kind === 'audio'),
                 )}
+                timestampLabel={formatGroupBubbleTime(messageMenu.message.createdAt)}
                 onClose={() => setMessageMenu(null)}
                 onCopy={async () => {
                   const text = previewTextForDirectMessageTail(messageMenu.message)

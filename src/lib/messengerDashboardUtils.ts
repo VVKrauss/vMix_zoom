@@ -52,6 +52,20 @@ export function formatMessengerListRowTime(iso: string): string {
   })
 }
 
+/**
+ * Разделитель дня в ленте: Сегодня / Вчера / 21 апреля (локальное время пользователя).
+ * Вставляется только перед сообщением, когда день отличается от предыдущего сообщения.
+ */
+export function formatMessengerDaySeparatorLabel(iso: string): string {
+  const dt = new Date(iso)
+  if (Number.isNaN(dt.getTime())) return '—'
+  const now = new Date()
+  const daysAgo = calendarDaysAgo(dt, now)
+  if (daysAgo === 0) return 'Сегодня'
+  if (daysAgo === 1) return 'Вчера'
+  return dt.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+}
+
 export function conversationInitial(title: string): string {
   return (title.trim().charAt(0) || 'С').toUpperCase()
 }

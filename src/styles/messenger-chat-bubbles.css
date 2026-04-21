@@ -20,6 +20,43 @@
   overflow: hidden;
 }
 
+.dashboard-messenger__message:has(.dashboard-messenger__msg-more--inline),
+.dashboard-messenger__message:has(.dashboard-messenger__dm-receipt--outside),
+.dashboard-messenger__message:has(.dashboard-messenger__message-reactions) {
+  overflow: visible;
+}
+
+.dashboard-messenger__message-body {
+  padding-right: 0;
+}
+
+.dashboard-messenger__message-bottom-row {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.dashboard-messenger__message-bottom-row > .dashboard-messenger__message-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dashboard-messenger__msg-more--inline {
+  flex-shrink: 0;
+  align-self: flex-end;
+  margin-left: auto;
+}
+
+.dashboard-messenger__dm-receipt--outside {
+  position: absolute;
+  left: -15px;
+  bottom: 0;
+  z-index: 25;
+}
+
 .dashboard-messenger__message--image {
   padding: 5px 6px 7px;
 }
@@ -66,6 +103,34 @@
 .dashboard-messenger__message .dashboard-messenger__message-reactions {
   align-self: stretch;
 }
+
+.dashboard-messenger__message:has(.dashboard-messenger__message-reactions) {
+  /* Реакции должны уместиться в одну строку — расширяем бабл, а не растягиваем вниз. */
+  margin-bottom: 30px;
+}
+
+.dashboard-messenger__message-reactions {
+  position: absolute;
+  left: 10px;
+  bottom: 0;
+  transform: translateY(100%);
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 5px 7px;
+  width: max-content;
+  max-width: calc(100% - 20px);
+  padding: 6px 10px;
+  border-radius: 0 0 14px 14px;
+  background: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-top: 0;
+  z-index: 20;
+}
+
+.dashboard-messenger__message--own:has(.dashboard-messenger__message-reactions) .dashboard-messenger__message-reactions {
+  border-color: rgba(122, 198, 255, 0.16);
+}
+
 
 .dashboard-messenger__message--highlight {
   outline: 2px solid rgba(159, 214, 255, 0.55);
@@ -315,13 +380,6 @@
 
 .dashboard-messenger__message--swipe-reply {
   touch-action: pan-y;
-}
-
-.dashboard-messenger__message-reactions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px 7px;
-  margin-top: 6px;
 }
 
 .dashboard-messenger__reaction-chip {

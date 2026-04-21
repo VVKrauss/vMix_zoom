@@ -6,7 +6,7 @@ import { useToast } from '../context/ToastContext'
 import { ensureDirectConversationWithUser } from '../lib/messenger'
 import { getMyConversationNotificationMutes, setConversationNotificationsMuted } from '../lib/conversationNotifications'
 import { fetchPublicUserProfile, type PublicUserProfileRow } from '../lib/userPublicProfile'
-import { getContactStatuses, setContactPin, type ContactStatus } from '../lib/socialGraph'
+import { getContactStatuses, listMyContactAliases, setContactPin, setMyContactAlias, type ContactStatus } from '../lib/socialGraph'
 import type { UserPeekTarget } from '../types/userPeek'
 
 function formatLastActive(iso: string | null): string {
@@ -38,6 +38,10 @@ export function UserProfilePeekModal({
   const [dmConversationId, setDmConversationId] = useState<string | null>(null)
   const [notifMuted, setNotifMuted] = useState(false)
   const [notifBusy, setNotifBusy] = useState(false)
+  const [alias, setAlias] = useState<string | null>(null)
+  const [aliasEditing, setAliasEditing] = useState(false)
+  const [aliasDraft, setAliasDraft] = useState('')
+  const [aliasBusy, setAliasBusy] = useState(false)
 
   const uid = target?.userId?.trim() ?? ''
   const isSelf = Boolean(user?.id && uid && user.id === uid)
@@ -51,6 +55,10 @@ export function UserProfilePeekModal({
       setDmConversationId(null)
       setNotifMuted(false)
       setNotifBusy(false)
+      setAlias(null)
+      setAliasEditing(false)
+      setAliasDraft('')
+      setAliasBusy(false)
       return
     }
 
@@ -77,6 +85,15 @@ export function UserProfilePeekModal({
         setStatus(stRes.data[uid]!)
       } else {
         setStatus(null)
+      }
+
+      if (other) {
+        const aRes = await listMyContactAliases([uid])
+        if (!cancelled) {
+          const a = aRes.data?.[uid]?.trim() ?? ''
+          setAlias(a || null)
+          setAliasDraft(a || '')
+        }
       }
     })()
 
@@ -114,7 +131,8 @@ export function UserProfilePeekModal({
 
   if (!open || !target) return null
 
-  const displayName = profile?.displayName ?? (target.displayName?.trim() || 'Пользователь')
+  const profileName = profile?.displayName ?? (target.displayName?.trim() || 'Пользователь')
+  const displayName = (alias?.trim() || profileName).trim()
   const avatarUrl = profile?.avatarUrl ?? target.avatarUrl ?? null
   const slug = profile?.profileSlug
   const lastLine = formatLastActive(profile?.lastActivityAt ?? null)
@@ -195,10 +213,69 @@ export function UserProfilePeekModal({
             <span className="user-peek-modal__avatar-fallback">{initials}</span>
           )}
         </div>
-        <p className="user-peek-modal__name">{displayName}</p>
+        <p className="user-peek-modal__name">
+          {displayName}{' '}
+          {!isSelf ? (
+            <button
+              type="button"
+              className="user-peek-modal__alias-edit"
+              aria-label="Изменить отображаемое имя"
+              title="Изменить отображаемое имя"
+              onClick={() => setAliasEditing((v) => !v)}
+            >
+              ✎
+            </button>
+          ) : null}
+        </p>
+        {!isSelf && profileName.trim() && profileName.trim() !== displayName.trim() ? (
+          <p className="user-peek-modal__profile-name">В профиле: {profileName}</p>
+        ) : null}
+        {!isSelf && aliasEditing ? (
+          <div className="user-peek-modal__alias-row">
+            <input
+              className="dashboard-messenger__input user-peek-modal__alias-input"
+              value={aliasDraft}
+              disabled={aliasBusy}
+              placeholder="Как отображать у вас"
+              onChange={(e) => setAliasDraft(e.target.value)}
+            />
+            <button
+              type="button"
+              className="dashboard-topbar__action dashboard-topbar__action--primary"
+              disabled={aliasBusy}
+              onClick={() => {
+                if (!uid || aliasBusy) return
+                setAliasBusy(true)
+                void (async () => {
+                  const res = await setMyContactAlias(uid, aliasDraft)
+                  setAliasBusy(false)
+                  if (res.error) {
+                    toast.push({ tone: 'error', message: res.error, ms: 2600 })
+                    return
+                  }
+                  setAlias(res.data)
+                  setAliasEditing(false)
+                })()
+              }}
+            >
+              {aliasBusy ? '…' : 'Сохранить'}
+            </button>
+            <button
+              type="button"
+              className="dashboard-topbar__action"
+              disabled={aliasBusy}
+              onClick={() => {
+                setAliasDraft(alias?.trim() ?? '')
+                setAliasEditing(false)
+              }}
+            >
+              Отмена
+            </button>
+          </div>
+        ) : null}
         {slug ? <p className="user-peek-modal__slug">@{slug}</p> : null}
         <p className="user-peek-modal__active">
-          Последняя активность: {lastLine}
+          Был(а): {lastLine}
           {profile?.isOnline ? ' · в сети' : ''}
         </p>
         {loadErr ? <p className="join-error user-peek-modal__err">{loadErr}</p> : null}

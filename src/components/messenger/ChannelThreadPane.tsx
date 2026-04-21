@@ -68,6 +68,7 @@ import { MessengerImageLightbox } from './MessengerImageLightbox'
 import { loadCachedChannelFeed, saveCachedChannelFeed } from '../../lib/channelFeedCache'
 import { resolveMediaUrlsForStoragePaths } from '../../lib/mediaCache'
 import { MentionAutocomplete } from './MentionAutocomplete'
+import { formatMessengerDaySeparatorLabel } from '../../lib/messengerDashboardUtils'
 
 function extractStoragePathsFromMarkdown(md: string): string[] {
   const out: string[] = []
@@ -1731,7 +1732,6 @@ export function ChannelThreadPane({
           <div className="dashboard-messenger__message-meta">
             <div className="dashboard-messenger__message-meta-main">
               <span className="dashboard-messenger__message-author">{m.senderNameSnapshot}</span>
-              <time dateTime={m.createdAt}>{formatChannelBubbleTime(m.createdAt)}</time>
               {m.editedAt ? <span className="dashboard-messenger__edited">изм.</span> : null}
             </div>
           </div>
@@ -1963,12 +1963,12 @@ export function ChannelThreadPane({
   const selectedPostMeta = useMemo(() => {
     const p = selectedCommentsPost
     if (!p) return ''
-    const dt = formatChannelBubbleTime(p.createdAt)
-    const edited = p.editedAt ? ' · изм.' : ''
+    const edited = p.editedAt ? 'изм.' : ''
     const n = commentCountByPostId[p.id] ?? 0
     const capped = commentCountHasMoreByPostId[p.id] ?? false
     const count = capped ? `${n}+` : String(n)
-    return `${dt}${edited} · ${count} комм.`
+    const parts = [edited, `${count} комм.`].filter(Boolean)
+    return parts.join(' · ')
   }, [commentCountByPostId, commentCountHasMoreByPostId, selectedCommentsPost])
 
   const renderChannelPostsView = () => (
@@ -2032,9 +2032,25 @@ export function ChannelThreadPane({
               </div>
             ) : null}
             <div ref={postsFeedContentRef} className="dashboard-messenger__channel-feed">
-              {posts
-                .filter((m) => m.kind !== 'reaction')
-                .map((p) => renderChannelPostCard(p))}
+              {(() => {
+                const nodes: React.ReactNode[] = []
+                let prevDayKey: string | null = null
+                for (const p of posts) {
+                  if (p.kind === 'reaction') continue
+                  const dt = new Date(p.createdAt)
+                  const dayKey = Number.isNaN(dt.getTime()) ? null : `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`
+                  if (prevDayKey && dayKey && dayKey !== prevDayKey) {
+                    nodes.push(
+                      <div key={`${p.id}-day`} className="dashboard-messenger__dm-deleted-plain" aria-hidden>
+                        {formatMessengerDaySeparatorLabel(p.createdAt)}
+                      </div>,
+                    )
+                  }
+                  if (dayKey) prevDayKey = dayKey
+                  nodes.push(renderChannelPostCard(p))
+                }
+                return nodes
+              })()}
               <div ref={channelFeedEndRef} className="dashboard-messenger__channel-feed-end" aria-hidden />
             </div>
             {viewerOnly && publicJoinCta ? (
@@ -2327,7 +2343,26 @@ export function ChannelThreadPane({
             onScroll={updateCommentsPinned}
           >
             <div className="dashboard-messenger__messages dashboard-messenger__messages--channel-comments-modal">
-              {list.map((c) => renderChannelComment(c))}
+              {(() => {
+                const nodes: React.ReactNode[] = []
+                let prevDayKey: string | null = null
+                for (const c of list) {
+                  if (c.kind === 'reaction') continue
+                  const dt = new Date(c.createdAt)
+                  const dayKey = Number.isNaN(dt.getTime()) ? null : `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`
+                  if (prevDayKey && dayKey && dayKey !== prevDayKey) {
+                    nodes.push(
+                      <div key={`${c.id}-day`} className="dashboard-messenger__dm-deleted-plain" aria-hidden>
+                        {formatMessengerDaySeparatorLabel(c.createdAt)}
+                      </div>,
+                    )
+                  }
+                  if (dayKey) prevDayKey = dayKey
+                  const node = renderChannelComment(c)
+                  if (node) nodes.push(node)
+                }
+                return nodes
+              })()}
               {list.length === 0 ? <div className="dashboard-chats-empty" style={{ padding: 8 }}>Пока нет комментариев.</div> : null}
             </div>
           </div>
@@ -2448,6 +2483,7 @@ export function ChannelThreadPane({
                       postMenu.post.kind === 'audio' ||
                       postMenu.post.kind === 'system'),
                 )}
+                timestampLabel={formatChannelBubbleTime(postMenu.post.createdAt)}
                 onClose={() => setPostMenu(null)}
                 onCopy={async () => {
                   const text = previewTextForDirectMessageTail(postMenu.post)
@@ -2509,6 +2545,7 @@ export function ChannelThreadPane({
                       commentMenu.message.kind === 'audio'),
                 )}
                 canDelete={canDeleteChannelComment(commentMenu.message)}
+                timestampLabel={formatChannelBubbleTime(commentMenu.message.createdAt)}
                 onClose={() => setCommentMenu(null)}
                 onCopy={async () => {
                   const text = previewTextForDirectMessageTail(commentMenu.message)
