@@ -141,7 +141,6 @@ import {
   leaveGroupOrChannelClient,
 } from '../lib/messengerConversationLifecycle'
 import { supabase } from '../lib/supabase'
-import { isPeerPresenceOnlineFromMirror, peerPresenceMirrorFromRow } from '../lib/messengerPeerPresence'
 import { fetchPublicUserProfile } from '../lib/userPublicProfile'
 import { writeMessengerThreadTailCache } from '../lib/messengerThreadTailCache'
 import { newRoomId } from '../utils/roomId'
@@ -280,10 +279,7 @@ export function DashboardMessengerPage() {
   /** Курсор прочтения собеседника в открытом ЛС + приватность квитанций (индикаторы исходящих). */
   const [directPeerLastReadAt, setDirectPeerLastReadAt] = useState<string | null>(null)
   const [directPeerReceiptsPrivate, setDirectPeerReceiptsPrivate] = useState(false)
-  const [directPeerPresence, setDirectPeerPresence] = useState<{
-    lastActivityAt: string | null
-    isOnline: boolean
-  } | null>(null)
+  const [directPeerLastActivityAt, setDirectPeerLastActivityAt] = useState<string | null>(null)
 
   const [conversationInfoOpen, setConversationInfoOpen] = useState(false)
   const [conversationInfoId, setConversationInfoId] = useState<string | null>(null)
@@ -698,6 +694,43 @@ export function DashboardMessengerPage() {
       void supabase.removeChannel(channel)
     }
   }, [activeConversationId, activeOpenThreadKind, user?.id])
+
+  /**
+   * Синхронизация прочтения между устройствами:
+   * когда на другом девайсе обновился last_read_at в chat_conversation_members,
+   * нужно сбросить unreadCount в дереве чатов (и пересчитать бейджи вкладок).
+   */
+  useEffect(() => {
+    const uid = user?.id?.trim() ?? ''
+    if (!uid) return
+    const channel = supabase
+      .channel(`messenger-my-reads:${uid}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chat_conversation_members',
+          filter: `user_id=eq.${uid}`,
+        },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>
+          const cidRaw = row?.conversation_id
+          const cid =
+            typeof cidRaw === 'string' ? cidRaw.trim() : cidRaw != null ? String(cidRaw).trim() : ''
+          if (!cid) return
+          // Если last_read_at не менялся/пустой — не трогаем
+          if (row.last_read_at == null) return
+          setItems((prev) => prev.map((i) => (i.id === cid ? { ...i, unreadCount: 0 } : i)))
+          setActiveConversation((prev) => (prev && prev.id === cid ? { ...prev, unreadCount: 0 } : prev))
+          requestMessengerUnreadRefresh()
+        },
+      )
+      .subscribe()
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [user?.id])
 
   useMessengerActiveThreadMembership({
     activeConversationId,
@@ -1304,120 +1337,25 @@ export function DashboardMessengerPage() {
     return row.otherUserId?.trim() ?? ''
   }, [activeConversationId, sortedItems, activeConversation])
 
-  const directOtherUserIdRef = useRef(directOtherUserId)
-  directOtherUserIdRef.current = directOtherUserId
-
-  const refreshDirectPeerPresence = useCallback(() => {
-    const oid = directOtherUserIdRef.current.trim()
-    if (!oid || !user?.id || oid === user.id) return
-    const requestedOid = oid
-    void (async () => {
-      const [peek, mirror] = await Promise.all([
-        fetchPublicUserProfile(requestedOid),
-        supabase
-          .from('user_presence_public')
-          .select('last_active_at,presence_last_background_at,profile_show_online')
-          .eq('user_id', requestedOid)
-          .maybeSingle(),
-      ])
-      if (requestedOid !== directOtherUserIdRef.current.trim()) return
-      if (!peek.data || peek.error) return
-      const row = mirror.data as Record<string, unknown> | null
-      const mirrorInput = row ? peerPresenceMirrorFromRow(row) : null
-      const mirrorSaysHide = mirrorInput?.profileShowOnline === false
-      const mirrorSaysOnline = mirrorInput ? isPeerPresenceOnlineFromMirror(mirrorInput) : false
-      const isOnline = mirrorSaysHide ? false : mirrorSaysOnline || peek.data.isOnline
-      setDirectPeerPresence({
-        lastActivityAt: peek.data.lastActivityAt,
-        isOnline,
-      })
-    })()
-  }, [directOtherUserId, user?.id])
-
+  // lastActivityAt нужен только для текста «последняя активность», онлайн берём из presence mirror
   useEffect(() => {
-    setDirectPeerPresence(null)
+    setDirectPeerLastActivityAt(null)
     const oid = directOtherUserId.trim()
     if (!oid || !user?.id || oid === user.id) return
     let cancelled = false
-    void (async () => {
-      const [peek, mirror] = await Promise.all([
-        fetchPublicUserProfile(oid),
-        supabase
-          .from('user_presence_public')
-          .select('last_active_at,presence_last_background_at,profile_show_online')
-          .eq('user_id', oid)
-          .maybeSingle(),
-      ])
+    void fetchPublicUserProfile(oid).then((peek) => {
       if (cancelled) return
       if (!peek.data || peek.error) return
-      const row = mirror.data as Record<string, unknown> | null
-      const mirrorInput = row ? peerPresenceMirrorFromRow(row) : null
-      const mirrorSaysHide = mirrorInput?.profileShowOnline === false
-      const mirrorSaysOnline = mirrorInput ? isPeerPresenceOnlineFromMirror(mirrorInput) : false
-      const isOnline = mirrorSaysHide ? false : mirrorSaysOnline || peek.data.isOnline
-      setDirectPeerPresence({
-        lastActivityAt: peek.data.lastActivityAt,
-        isOnline,
-      })
-    })()
+      setDirectPeerLastActivityAt(peek.data.lastActivityAt)
+    })
     return () => {
       cancelled = true
     }
   }, [directOtherUserId, user?.id])
 
-  useEffect(() => {
-    const oid = directOtherUserId.trim()
-    if (!oid || !user?.id || oid === user.id) return
-    const t = window.setInterval(() => {
-      refreshDirectPeerPresence()
-    }, 60_000)
-    return () => window.clearInterval(t)
-  }, [directOtherUserId, user?.id, refreshDirectPeerPresence])
-
-  useEffect(() => {
-    const oid = directOtherUserId.trim()
-    if (!oid || !user?.id || oid === user.id) return
-    const onVis = () => {
-      if (document.visibilityState !== 'visible') return
-      refreshDirectPeerPresence()
-    }
-    document.addEventListener('visibilitychange', onVis)
-    return () => document.removeEventListener('visibilitychange', onVis)
-  }, [directOtherUserId, user?.id, refreshDirectPeerPresence])
-
-  /** Собеседник обновил строку users (пульс / фон) — сразу перечитываем peek, без опроса. */
-  useEffect(() => {
-    const oid = directOtherUserId.trim()
-    if (!oid || !user?.id || oid === user.id) return
-    const channel = supabase
-      .channel(`dm-peer-presence:${oid}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'user_presence_public',
-          filter: `user_id=eq.${oid}`,
-        },
-        (payload) => {
-          const row = payload.new as Record<string, unknown> | undefined
-          if (row && typeof row === 'object') {
-            const mirrorInput = peerPresenceMirrorFromRow(row)
-            const mirrorSaysHide = mirrorInput.profileShowOnline === false
-            const mirrorSaysOnline = isPeerPresenceOnlineFromMirror(mirrorInput)
-            setDirectPeerPresence((prev) => ({
-              lastActivityAt: prev?.lastActivityAt ?? null,
-              isOnline: mirrorSaysHide ? false : mirrorSaysOnline || (prev?.isOnline ?? false),
-            }))
-          }
-          refreshDirectPeerPresence()
-        },
-      )
-      .subscribe()
-    return () => {
-      void supabase.removeChannel(channel)
-    }
-  }, [directOtherUserId, user?.id, refreshDirectPeerPresence])
+  // Онлайн-состояние собеседников в дереве — единый источник (user_presence_public).
+  // Для шапки ЛС берём тот же флаг, чтобы поведение совпадало 1:1.
+  const directPeerIsOnline = Boolean(directOtherUserId && directPeersOnline[directOtherUserId] === true)
 
   /** Шаринг: `?msg=` / `post=` → скролл к посту/комментарию; параметры убираем из адреса после применения. */
   useEffect(() => {
@@ -3083,8 +3021,8 @@ export function DashboardMessengerPage() {
                       directPeerLastReadAt={directPeerLastReadAt}
                       viewerDmReceiptsPrivate={profile?.profile_dm_receipts_private === true}
                       peerDmReceiptsPrivate={directPeerReceiptsPrivate}
-                      directPeerIsOnline={directPeerPresence?.isOnline ?? false}
-                      directPeerLastActivityAt={directPeerPresence?.lastActivityAt ?? null}
+                      directPeerIsOnline={directPeerIsOnline}
+                      directPeerLastActivityAt={directPeerLastActivityAt}
                       threadHeadConversation={threadHeadConversation as MessengerDirectThreadHeadConversation}
                       openUserPeek={openUserPeek}
                       user={user}

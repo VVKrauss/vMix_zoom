@@ -165,12 +165,17 @@ function MessengerDirectThreadBodyImpl(props: {
                 }
               }}
             >
-              <span className="dashboard-messenger__thread-head-center-avatar" aria-hidden>
-                {activeAvatarUrl ? (
-                  <img src={activeAvatarUrl ?? undefined} alt="" />
-                ) : (
-                  <span>{conversationInitial(threadHeadConversation.title)}</span>
-                )}
+              <span
+                className={`dashboard-messenger__avatar-ring-wrap${directPeerIsOnline ? ' dashboard-messenger__avatar-ring-wrap--online' : ''}`}
+                aria-hidden
+              >
+                <span className="dashboard-messenger__thread-head-center-avatar">
+                  {activeAvatarUrl ? (
+                    <img src={activeAvatarUrl ?? undefined} alt="" />
+                  ) : (
+                    <span>{conversationInitial(threadHeadConversation.title)}</span>
+                  )}
+                </span>
               </span>
               <div className="dashboard-messenger__thread-head-center-text">
                 <div
@@ -181,7 +186,6 @@ function MessengerDirectThreadBodyImpl(props: {
                   <span className="dashboard-messenger__thread-head-center-title-text">
                     {threadHeadConversation.title}
                   </span>
-                  {directPeerIsOnline ? <span className="dashboard-messenger__presence-dot" aria-hidden /> : null}
                 </div>
                 <div className="dashboard-messenger__thread-head-center-meta">
                   {formatMessengerListRowTime(threadHeadConversation.lastMessageAt ?? threadHeadConversation.createdAt)}
@@ -233,12 +237,17 @@ function MessengerDirectThreadBodyImpl(props: {
                 }
               }}
             >
-              <span className="dashboard-messenger__thread-avatar" aria-hidden>
-                {activeAvatarUrl ? (
-                  <img src={activeAvatarUrl ?? undefined} alt="" />
-                ) : (
-                  <span>{conversationInitial(threadHeadConversation.title)}</span>
-                )}
+              <span
+                className={`dashboard-messenger__avatar-ring-wrap dashboard-messenger__avatar-ring-wrap--thread${directPeerIsOnline ? ' dashboard-messenger__avatar-ring-wrap--online' : ''}`}
+                aria-hidden
+              >
+                <span className="dashboard-messenger__thread-avatar">
+                  {activeAvatarUrl ? (
+                    <img src={activeAvatarUrl ?? undefined} alt="" />
+                  ) : (
+                    <span>{conversationInitial(threadHeadConversation.title)}</span>
+                  )}
+                </span>
               </span>
               <div>
                 <div className="dashboard-messenger__thread-titleline">
@@ -246,7 +255,6 @@ function MessengerDirectThreadBodyImpl(props: {
                     <div className="dashboard-section__subtitle" role="heading" aria-level={3}>
                       {threadHeadConversation.title}
                     </div>
-                    {directPeerIsOnline ? <span className="dashboard-messenger__presence-dot" aria-hidden /> : null}
                   </div>
                   {isMemberOfActiveConversation &&
                   !threadHeadConversation.joinRequestPending &&

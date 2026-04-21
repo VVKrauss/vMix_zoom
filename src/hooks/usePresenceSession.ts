@@ -13,6 +13,7 @@ export function usePresenceSession() {
     if (!user?.id) return
 
     let pulseRpc: 'presence_foreground_pulse' | 'touch_my_presence' = 'presence_foreground_pulse'
+    const PULSE_MS = 10_000
 
     const callPulse = async () => {
       const { error } = await supabase.rpc(pulseRpc)
@@ -47,14 +48,18 @@ export function usePresenceSession() {
     }
 
     pulseForeground()
-    const intervalId = window.setInterval(pulseForeground, 45_000)
+    const intervalId = window.setInterval(pulseForeground, PULSE_MS)
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('pagehide', markBackground)
+    window.addEventListener('freeze', markBackground as any)
+    window.addEventListener('beforeunload', markBackground)
 
     return () => {
       window.clearInterval(intervalId)
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('pagehide', markBackground)
+      window.removeEventListener('freeze', markBackground as any)
+      window.removeEventListener('beforeunload', markBackground)
     }
   }, [user?.id])
 }

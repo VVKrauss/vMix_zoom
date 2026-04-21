@@ -6718,6 +6718,26 @@ html[data-theme='light'] .dashboard-messenger__presence-dot {
   background: hsl(142 70% 32%);
 }
 
+/* Кольцо «онлайн» вокруг аватарки (как в дереве чатов).
+   Важно: рисуем на wrapper без overflow, иначе box-shadow может «съедаться». */
+.dashboard-messenger__avatar-ring-wrap {
+  display: inline-flex;
+  border-radius: 50%;
+}
+.dashboard-messenger__avatar-ring-wrap--thread {
+  flex-shrink: 0;
+}
+.dashboard-messenger__avatar-ring-wrap--online {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--surface, #121212) 92%, transparent),
+    0 0 0 4px #15803d;
+}
+html[data-theme='light'] .dashboard-messenger__avatar-ring-wrap--online {
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 4px #15803d;
+}
+
 .dashboard-messenger__thread-avatar {
   width: 38px;
   height: 38px;

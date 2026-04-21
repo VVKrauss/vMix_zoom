@@ -2,7 +2,10 @@
  * Логика «в сети» по полям зеркала user_presence_public — должна совпадать с
  * get_user_profile_for_peek (интервал 3 мин, сравнение с presence_last_background_at).
  */
-const ONLINE_WINDOW_MS = 3 * 60 * 1000
+// Должно быть >= частоты heartbeat у клиентов. Иначе пользователь будет «оффлайн»
+// почти всё время на старых версиях фронта.
+// Быстрое “гашение” при фоне обеспечивает presence_last_background_at.
+const ONLINE_WINDOW_MS = 60 * 1000
 
 export type PeerPresenceMirrorInput = {
   lastActiveAt: string | null | undefined

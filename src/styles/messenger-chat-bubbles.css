@@ -57,8 +57,9 @@
 }
 
 .dashboard-messenger__message--image .dashboard-messenger__message-body {
-  max-width: none;
-  width: max-content;
+  /* Раньше max-content ломал перенос подписи (caption) у фото: строка становилась «бесконечной». */
+  max-width: 100%;
+  width: 100%;
 }
 
 .dashboard-messenger__message .dashboard-messenger__reply-quote,
