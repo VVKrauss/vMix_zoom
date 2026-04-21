@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../hooks/useProfile'
 import { useToast } from '../context/ToastContext'
-import { ensureDirectConversationWithUser } from '../lib/messenger'
+import { ensureDirectConversationWithUser, requestMessengerContactAliasRefresh } from '../lib/messenger'
 import { getMyConversationNotificationMutes, setConversationNotificationsMuted } from '../lib/conversationNotifications'
 import { fetchPublicUserProfile, type PublicUserProfileRow } from '../lib/userPublicProfile'
 import { getContactStatuses, listMyContactAliases, setContactPin, setMyContactAlias, type ContactStatus } from '../lib/socialGraph'
@@ -255,6 +255,7 @@ export function UserProfilePeekModal({
                   }
                   setAlias(res.data)
                   setAliasEditing(false)
+                  requestMessengerContactAliasRefresh()
                 })()
               }}
             >
@@ -318,6 +319,9 @@ export function UserProfilePeekModal({
           ) : (
             <>
               <p className="user-peek-modal__hint">Это ваш профиль.</p>
+              <button type="button" className="dashboard-topbar__action" onClick={() => void shareProfile()}>
+                Поделиться
+              </button>
               <button
                 type="button"
                 className="dashboard-topbar__action dashboard-topbar__action--primary"

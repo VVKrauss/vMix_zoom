@@ -7,9 +7,17 @@ import { supabase } from './supabase'
 /** Событие для мгновенного пересчёта бейджа непрочитанных (см. useMessengerUnreadCount). */
 export const MESSENGER_UNREAD_REFRESH_EVENT = 'vmix:messenger-unread-refresh'
 
+/** Список чатов должен подтянуть локальные имена контактов (алиасы). */
+export const MESSENGER_CONTACT_ALIAS_CHANGED_EVENT = 'vmix:messenger-contact-alias-changed'
+
 export function requestMessengerUnreadRefresh(): void {
   if (typeof window === 'undefined') return
   window.dispatchEvent(new CustomEvent(MESSENGER_UNREAD_REFRESH_EVENT))
+}
+
+export function requestMessengerContactAliasRefresh(): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(MESSENGER_CONTACT_ALIAS_CHANGED_EVENT))
 }
 
 export type DirectConversationSummary = {

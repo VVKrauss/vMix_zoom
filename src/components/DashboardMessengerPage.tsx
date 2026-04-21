@@ -58,6 +58,7 @@ import {
   mergePeerLastReadAt,
   previewTextForDirectMessageTail,
   requestMessengerUnreadRefresh,
+  MESSENGER_CONTACT_ALIAS_CHANGED_EVENT,
   toggleDirectMessageReaction,
   uploadMessengerImage,
   uploadMessengerAudio,
@@ -65,7 +66,7 @@ import {
 } from '../lib/messenger'
 import {
   buildJoinRequestPendingSidebarStub,
-  listMessengerConversations,
+  listMessengerConversationsWithContactAliases,
   type MessengerConversationKind,
   type MessengerConversationSummary,
   type OpenPublicConversationSearchHit,
@@ -79,6 +80,7 @@ import {
   MESSENGER_GALLERY_MAX_ATTACH,
   buildMessengerUrl,
   conversationInitial,
+  isMessengerClosedGroupOrChannel,
   copyTextToClipboard,
   extractClipboardImageFiles,
   formatDateTime,
@@ -124,7 +126,7 @@ import {
   type ConversationJoinRequest,
 } from '../lib/chatRequests'
 import { setPendingHostClaim, stashSpaceRoomCreateOptions } from '../lib/spaceRoom'
-import { listMyContactAliases, setContactPin, type RegisteredUserSearchHit } from '../lib/socialGraph'
+import { setContactPin, type RegisteredUserSearchHit } from '../lib/socialGraph'
 import {
   getMyConversationNotificationMutes,
   setConversationNotificationsMuted,
@@ -159,6 +161,7 @@ import { MessengerImageLightbox } from './messenger/MessengerImageLightbox'
 import { MessengerJoinRequestsModal } from './messenger/MessengerJoinRequestsModal'
 import { MessengerSettingsModal } from './messenger/MessengerSettingsModal'
 import { MessengerChatListAside } from './messenger/MessengerChatListAside'
+import { MessengerClosedGcLockBadge } from './messenger/MessengerClosedGcLockBadge'
 import { MessengerNetStrip } from './messenger/MessengerNetStrip'
 import { MessengerQuickNavMenu } from './messenger/MessengerQuickNavMenu'
 import { MessengerDeleteChatDialog } from './messenger/MessengerDeleteChatDialog'
@@ -436,7 +439,7 @@ export function DashboardMessengerPage() {
         navigate(`/dashboard/messenger/${encodeURIComponent(res.data.conversationId)}`, { replace: true })
         return
       }
-      const listRes = await listMessengerConversations()
+      const listRes = await listMessengerConversationsWithContactAliases()
       if (!listRes.error && listRes.data) setItems(listRes.data)
       navigate(`/dashboard/messenger/${encodeURIComponent(res.data.conversationId)}`, { replace: true })
     } finally {
@@ -477,31 +480,13 @@ export function DashboardMessengerPage() {
     setChatListRefreshing(true)
     setError(null)
     try {
-      const listRes = await listMessengerConversations()
+      const listRes = await listMessengerConversationsWithContactAliases()
       if (listRes.error) {
         setError(listRes.error)
         return
       }
       if (listRes.data) {
-        const list = listRes.data
-        const directPeerIds = Array.from(
-          new Set(
-            list
-              .filter((x) => x.kind === 'direct')
-              .map((x) => (typeof x.otherUserId === 'string' ? x.otherUserId.trim() : ''))
-              .filter(Boolean),
-          ),
-        )
-        const aliasRes = await listMyContactAliases(directPeerIds)
-        const aliases = aliasRes.data ?? {}
-        const mapped = list.map((x) => {
-          if (x.kind !== 'direct') return x
-          const pid = typeof x.otherUserId === 'string' ? x.otherUserId.trim() : ''
-          const a = pid ? (aliases[pid]?.trim() ?? '') : ''
-          if (!a) return x
-          return { ...x, title: a }
-        })
-        setItems(mapped)
+        setItems(listRes.data)
         setChatListAvatarPullEpoch((e) => e + 1)
       }
     } finally {
@@ -509,6 +494,14 @@ export function DashboardMessengerPage() {
       setChatListRefreshing(false)
     }
   }, [user?.id])
+
+  useEffect(() => {
+    const onAlias = () => {
+      void refreshChatList()
+    }
+    window.addEventListener(MESSENGER_CONTACT_ALIAS_CHANGED_EVENT, onAlias)
+    return () => window.removeEventListener(MESSENGER_CONTACT_ALIAS_CHANGED_EVENT, onAlias)
+  }, [refreshChatList])
 
   const updateMessengerScrollPinned = useCallback(() => {
     const el = messagesScrollRef.current
@@ -1369,17 +1362,27 @@ export function DashboardMessengerPage() {
     return { direct, group, channel, all: direct + group + channel }
   }, [sortedItems])
 
-  /** Шапка треда: сразу из списка по URL, пока грузится полная карточка с сервера */
+  /** id открытого треда из URL/VM (на мобилке sidebar id пустой — шапка всё равно по этому id). */
+  const resolvedThreadConversationId = useMemo(
+    () => (conversationId || activeConversation?.id || '').trim(),
+    [conversationId, activeConversation?.id],
+  )
+
+  /** Шапка треда: из списка; иначе карточка из VM. */
   const threadHeadConversation =
-    sortedItems.find((i) => i.id === sidebarActiveConversationId) ?? activeConversation
+    sortedItems.find((i) => i.id === resolvedThreadConversationId) ?? activeConversation
+
+  const threadHeadGcClosed = useMemo(
+    () => isMessengerClosedGroupOrChannel(threadHeadConversation ?? null),
+    [threadHeadConversation],
+  )
 
   const directOtherUserId = useMemo(() => {
-    const id = activeConversationId.trim()
-    if (!id) return ''
-    const row = sortedItems.find((i) => i.id === id) ?? activeConversation
+    if (!resolvedThreadConversationId) return ''
+    const row = sortedItems.find((i) => i.id === resolvedThreadConversationId) ?? activeConversation
     if (!row || row.kind !== 'direct') return ''
     return row.otherUserId?.trim() ?? ''
-  }, [activeConversationId, sortedItems, activeConversation])
+  }, [resolvedThreadConversationId, sortedItems, activeConversation])
 
   // lastActivityAt нужен только для текста «последняя активность», онлайн берём из presence mirror
   useEffect(() => {
@@ -1516,7 +1519,7 @@ export function DashboardMessengerPage() {
             return
           }
         }
-        const listRes = await listMessengerConversations()
+        const listRes = await listMessengerConversationsWithContactAliases()
         if (!listRes.error && listRes.data) setItems(listRes.data)
       } finally {
         setInviteJoinBusy(false)
@@ -1533,7 +1536,7 @@ export function DashboardMessengerPage() {
         return
       }
       if (res.data?.already_member) {
-        const listRes = await listMessengerConversations()
+        const listRes = await listMessengerConversationsWithContactAliases()
         if (!listRes.error && listRes.data) setItems(listRes.data)
         return
       }
@@ -2349,7 +2352,7 @@ export function DashboardMessengerPage() {
           toast.push({ tone: 'error', message: err, ms: 3800 })
           return
         }
-        const listRes = await listMessengerConversations()
+        const listRes = await listMessengerConversationsWithContactAliases()
         if (!listRes.error && listRes.data) setItems(listRes.data)
         setMessages([])
         setActiveConversation(null)
@@ -2534,7 +2537,7 @@ export function DashboardMessengerPage() {
       setCreateModalOpen(false)
       setCreateLogoFile(null)
 
-      const listRes = await listMessengerConversations()
+      const listRes = await listMessengerConversationsWithContactAliases()
       if (!listRes.error && listRes.data) setItems(listRes.data)
 
       navigate(`/dashboard/messenger/${encodeURIComponent(conversationId)}`)
@@ -2641,7 +2644,7 @@ export function DashboardMessengerPage() {
         setLeaveError(res.error)
         return
       }
-      const listRes = await listMessengerConversations()
+      const listRes = await listMessengerConversationsWithContactAliases()
       if (!listRes.error && listRes.data) setItems(listRes.data)
       setLeaveConfirmOpen(false)
       closeConversationInfo()
@@ -2832,7 +2835,7 @@ export function DashboardMessengerPage() {
         }
       }
 
-      const listRes = await listMessengerConversations()
+      const listRes = await listMessengerConversationsWithContactAliases()
       if (!listRes.error && listRes.data) setItems(listRes.data)
       setConversationInfoEdit(false)
       setConversationInfoLogoFile(null)
@@ -2981,12 +2984,15 @@ export function DashboardMessengerPage() {
                         ) : (
                           <div className="messenger-join-gate">
                             <div className="messenger-join-gate__card">
-                              <div className="messenger-join-gate__avatar" aria-hidden>
-                                {invitePreview && conversationAvatarUrlById[invitePreview.id] ? (
-                                  <img src={conversationAvatarUrlById[invitePreview.id] ?? undefined} alt="" />
-                                ) : (
-                                  <span>{conversationInitial(threadHeadConversation.title)}</span>
-                                )}
+                              <div className="dashboard-messenger__gc-avatar-lock-wrap dashboard-messenger__gc-avatar-lock-wrap--join">
+                                <div className="messenger-join-gate__avatar" aria-hidden>
+                                  {invitePreview && conversationAvatarUrlById[invitePreview.id] ? (
+                                    <img src={conversationAvatarUrlById[invitePreview.id] ?? undefined} alt="" />
+                                  ) : (
+                                    <span>{conversationInitial(threadHeadConversation.title)}</span>
+                                  )}
+                                </div>
+                                {threadHeadGcClosed ? <MessengerClosedGcLockBadge size="join" /> : null}
                               </div>
                               <p className="messenger-join-gate__eyebrow">
                                 {threadHeadConversation.kind === 'channel' ? 'Канал' : 'Группа'}
@@ -3032,13 +3038,16 @@ export function DashboardMessengerPage() {
                                 aria-label="Информация о чате"
                                 onClick={() => void openConversationInfo(activeConversationId)}
                               >
-                                <span className="dashboard-messenger__thread-head-center-avatar" aria-hidden>
-                                  {conversationAvatarUrlById[activeConversationId] ? (
-                                    <img src={conversationAvatarUrlById[activeConversationId] ?? undefined} alt="" />
-                                  ) : (
-                                    <span>{conversationInitial(threadHeadConversation.title)}</span>
-                                  )}
-                                </span>
+                                <div className="dashboard-messenger__gc-avatar-lock-wrap dashboard-messenger__gc-avatar-lock-wrap--thread">
+                                  <span className="dashboard-messenger__thread-head-center-avatar" aria-hidden>
+                                    {conversationAvatarUrlById[activeConversationId] ? (
+                                      <img src={conversationAvatarUrlById[activeConversationId] ?? undefined} alt="" />
+                                    ) : (
+                                      <span>{conversationInitial(threadHeadConversation.title)}</span>
+                                    )}
+                                  </span>
+                                  {threadHeadGcClosed ? <MessengerClosedGcLockBadge size="thread" /> : null}
+                                </div>
                                 <div className="dashboard-messenger__thread-head-center-text">
                                   <div className="dashboard-messenger__thread-head-center-title">
                                     {threadHeadConversation.title}
@@ -3076,13 +3085,16 @@ export function DashboardMessengerPage() {
                                 aria-label="Информация о чате"
                                 onClick={() => void openConversationInfo(activeConversationId)}
                               >
-                                <span className="dashboard-messenger__thread-head-center-avatar" aria-hidden>
-                                  {conversationAvatarUrlById[activeConversationId] ? (
-                                    <img src={conversationAvatarUrlById[activeConversationId] ?? undefined} alt="" />
-                                  ) : (
-                                    <span>{conversationInitial(threadHeadConversation.title)}</span>
-                                  )}
-                                </span>
+                                <div className="dashboard-messenger__gc-avatar-lock-wrap dashboard-messenger__gc-avatar-lock-wrap--thread">
+                                  <span className="dashboard-messenger__thread-head-center-avatar" aria-hidden>
+                                    {conversationAvatarUrlById[activeConversationId] ? (
+                                      <img src={conversationAvatarUrlById[activeConversationId] ?? undefined} alt="" />
+                                    ) : (
+                                      <span>{conversationInitial(threadHeadConversation.title)}</span>
+                                    )}
+                                  </span>
+                                  {threadHeadGcClosed ? <MessengerClosedGcLockBadge size="thread" /> : null}
+                                </div>
                                 <div className="dashboard-messenger__thread-head-center-text">
                                   <div className="dashboard-messenger__thread-head-center-title">
                                     {threadHeadConversation.title}
@@ -3118,12 +3130,15 @@ export function DashboardMessengerPage() {
                         {canRequestJoin && !inviteJoinMode && !viewerOnly && pendingJoinRequest !== true ? (
                           <div className="messenger-join-gate messenger-join-gate--embed">
                             <div className="messenger-join-gate__card">
-                              <div className="messenger-join-gate__avatar" aria-hidden>
-                                {conversationAvatarUrlById[activeConversationId] ? (
-                                  <img src={conversationAvatarUrlById[activeConversationId] ?? undefined} alt="" />
-                                ) : (
-                                  <span>{conversationInitial(threadHeadConversation.title)}</span>
-                                )}
+                              <div className="dashboard-messenger__gc-avatar-lock-wrap dashboard-messenger__gc-avatar-lock-wrap--join">
+                                <div className="messenger-join-gate__avatar" aria-hidden>
+                                  {conversationAvatarUrlById[activeConversationId] ? (
+                                    <img src={conversationAvatarUrlById[activeConversationId] ?? undefined} alt="" />
+                                  ) : (
+                                    <span>{conversationInitial(threadHeadConversation.title)}</span>
+                                  )}
+                                </div>
+                                {threadHeadGcClosed ? <MessengerClosedGcLockBadge size="join" /> : null}
                               </div>
                               <p className="messenger-join-gate__eyebrow">
                                 {threadHeadConversation.kind === 'channel' ? 'Канал' : 'Группа'}

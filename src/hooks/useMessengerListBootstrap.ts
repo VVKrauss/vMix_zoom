@@ -5,7 +5,10 @@ import {
   ensureSelfDirectConversation,
   type DirectMessage,
 } from '../lib/messenger'
-import { listMessengerConversations, type MessengerConversationSummary } from '../lib/messengerConversations'
+import {
+  listMessengerConversationsWithContactAliases,
+  type MessengerConversationSummary,
+} from '../lib/messengerConversations'
 import { buildMessengerUrl, pickDefaultConversationId } from '../lib/messengerDashboardUtils'
 
 /**
@@ -122,7 +125,7 @@ export function useMessengerListBootstrap(opts: {
         return
       }
 
-      const listRes = await listMessengerConversations()
+      const listRes = await listMessengerConversationsWithContactAliases()
       if (!active) return
       if (listRes.error) {
         setError(listRes.error)

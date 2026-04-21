@@ -1,6 +1,7 @@
 import { listMyChannels, type ChannelSummary } from './channels'
 import { listMyGroupChats, type GroupChatSummary } from './groups'
 import { listDirectConversationsForUser, type DirectConversationSummary } from './messenger'
+import { listMyContactAliases } from './socialGraph'
 import { supabase } from './supabase'
 
 export type MessengerConversationKind = 'direct' | 'group' | 'channel'
@@ -155,6 +156,43 @@ export async function listMessengerConversations(): Promise<{
   for (const x of c.data ?? []) items.push(mapChannel(x))
   items.sort(sortByActivityDesc)
   return { data: items, error: null }
+}
+
+/** Подставляет в `title` для ЛС локальные имена из `contact_aliases` текущего пользователя. */
+function applyMyContactAliasesToMessengerSummaries(
+  items: MessengerConversationSummary[],
+  aliases: Record<string, string> | null | undefined,
+): MessengerConversationSummary[] {
+  const map = aliases ?? {}
+  if (!items.length || !Object.keys(map).length) return items
+  return items.map((x) => {
+    if (x.kind !== 'direct') return x
+    const pid = typeof x.otherUserId === 'string' ? x.otherUserId.trim() : ''
+    const a = pid ? (map[pid]?.trim() ?? '') : ''
+    if (!a) return x
+    return { ...x, title: a }
+  })
+}
+
+/** Список бесед как в `listMessengerConversations`, с учётом локальных имён для ЛС. */
+export async function listMessengerConversationsWithContactAliases(): Promise<{
+  data: MessengerConversationSummary[] | null
+  error: string | null
+}> {
+  const base = await listMessengerConversations()
+  if (base.error || !base.data) return base
+  const directPeerIds = Array.from(
+    new Set(
+      base.data
+        .filter((x) => x.kind === 'direct')
+        .map((x) => (typeof x.otherUserId === 'string' ? x.otherUserId.trim() : ''))
+        .filter(Boolean),
+    ),
+  )
+  if (!directPeerIds.length) return base
+  const aliasRes = await listMyContactAliases(directPeerIds)
+  if (aliasRes.error || !aliasRes.data) return { data: base.data, error: null }
+  return { data: applyMyContactAliasesToMessengerSummaries(base.data, aliasRes.data), error: null }
 }
 
 function mapOpenPublicSearchRow(row: Record<string, unknown>): OpenPublicConversationSearchHit | null {

@@ -35,6 +35,7 @@ import {
   MESSENGER_GALLERY_MAX_ATTACH,
   MESSENGER_PHOTO_INPUT_MAX_BYTES,
   formatMessengerDaySeparatorLabel,
+  messengerPeerDisplayTitle,
 } from '../../lib/messengerDashboardUtils'
 import { ThreadMessageBubble } from './ThreadMessageBubble'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
@@ -42,6 +43,7 @@ import { useLinkPreviewFromText } from '../../hooks/useLinkPreviewFromText'
 import { buildLinkMetaForMessageBody, ensureLinkPreviewForBody } from '../../lib/linkPreview'
 import { attachMessengerTailCatchupAfterContentPaint } from '../../hooks/messengerTailCatchup'
 import { useMessengerJumpToBottom } from '../../hooks/useMessengerJumpToBottom'
+import { useMessengerPeerAliasesForMessages } from '../../hooks/useMessengerPeerAliasesForMessages'
 import { useMessengerPerConversationDraft } from '../../hooks/useMessengerPerConversationDraft'
 import { useMobileMessengerComposerHeight } from '../../hooks/useMobileMessengerComposerHeight'
 import { MessengerJumpToBottomFab } from '../MessengerJumpToBottomFab'
@@ -183,6 +185,8 @@ export function GroupThreadPane({
 
   const isGroupMember = myGroupMemberRole !== null || isMemberHint === true
   const canView = viewerOnly || isGroupMember
+
+  const peerAliasByUserId = useMessengerPeerAliasesForMessages(user?.id, messages, canView)
 
   const groupLastSignificantMessageId = useMemo(() => {
     const sig = messages.filter((m) => m.kind !== 'reaction')
@@ -919,6 +923,8 @@ export function GroupThreadPane({
                     quotedMessageId: m.quoteToMessageId?.trim() || m.replyToMessageId?.trim() || null,
                     messageById: (id) => messages.find((x) => x.id === id),
                     resolveQuotedAvatarUrl: () => null,
+                    viewerUserId: user?.id ?? null,
+                    peerAliasByUserId,
                   })
                   nodes.push(
                     <ThreadMessageBubble
@@ -968,6 +974,7 @@ export function GroupThreadPane({
                       }}
                       onMentionSlug={onMentionSlug}
                       onOpenImageLightbox={(ctx) => setGroupImageLightbox({ urls: ctx.urls, index: ctx.initialIndex })}
+                      peerAliasByUserId={peerAliasByUserId}
                     />,
                   )
                 }
@@ -999,7 +1006,14 @@ export function GroupThreadPane({
             <div className="dashboard-messenger__composer-reply">
               <div className="dashboard-messenger__composer-reply-text">
                 <span className="dashboard-messenger__composer-reply-label">Ответ</span>{' '}
-                <strong>{replyTo.senderNameSnapshot}</strong>
+                <strong>
+                  {messengerPeerDisplayTitle(
+                    replyTo.senderUserId,
+                    replyTo.senderNameSnapshot,
+                    peerAliasByUserId,
+                    user?.id ?? null,
+                  )}
+                </strong>
                 <span className="dashboard-messenger__composer-reply-snippet">
                   <span>
                     {replyTo.kind === 'audio'

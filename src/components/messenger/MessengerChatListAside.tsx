@@ -17,6 +17,7 @@ import {
   buildMessengerUrl,
   conversationInitial,
   formatMessengerListRowTime,
+  isMessengerClosedGroupOrChannel,
 } from '../../lib/messengerDashboardUtils'
 import { shouldShowVoiceMessageListIcon, voiceMessageListPreviewLabel } from '../../lib/messenger'
 import type {
@@ -25,6 +26,7 @@ import type {
   OpenPublicConversationSearchHit,
 } from '../../lib/messengerConversations'
 import type { RegisteredUserSearchHit } from '../../lib/socialGraph'
+import { MessengerClosedGcLockBadge } from './MessengerClosedGcLockBadge'
 
 type KindFilter = 'all' | MessengerConversationKind
 
@@ -323,6 +325,7 @@ function MessengerChatListAsideImpl(props: {
                   : ''
               const peerOnline =
                 item.kind === 'direct' && rowPeekUserId ? Boolean(directPeersOnline[rowPeekUserId]) : false
+              const gcLock = isMessengerClosedGroupOrChannel(item)
               return (
                 <div className="dashboard-messenger__row-shell" key={item.id}>
                   <Link
@@ -343,13 +346,26 @@ function MessengerChatListAsideImpl(props: {
                         }`}
                         aria-hidden
                       >
-                        <div className="dashboard-messenger__row-avatar">
-                          {avatarUrl ? (
-                            <img src={avatarUrl ?? undefined} alt="" />
-                          ) : (
-                            <span>{conversationInitial(item.title)}</span>
-                          )}
-                        </div>
+                        {item.kind === 'direct' ? (
+                          <div className="dashboard-messenger__row-avatar">
+                            {avatarUrl ? (
+                              <img src={avatarUrl ?? undefined} alt="" />
+                            ) : (
+                              <span>{conversationInitial(item.title)}</span>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="dashboard-messenger__gc-avatar-lock-wrap">
+                            <div className="dashboard-messenger__row-avatar">
+                              {avatarUrl ? (
+                                <img src={avatarUrl ?? undefined} alt="" />
+                              ) : (
+                                <span>{conversationInitial(item.title)}</span>
+                              )}
+                            </div>
+                            {gcLock ? <MessengerClosedGcLockBadge size="list" /> : null}
+                          </div>
+                        )}
                       </div>
                       <div className="dashboard-messenger__row-content">
                         <div className="dashboard-messenger__row-titleline">

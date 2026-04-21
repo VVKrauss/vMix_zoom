@@ -70,6 +70,49 @@ export function conversationInitial(title: string): string {
   return (title.trim().charAt(0) || 'С').toUpperCase()
 }
 
+/** Закрытая группа или канал (не в открытом каталоге) — для бейджа-замка на аватарке. */
+export function isMessengerClosedGroupOrChannel(
+  row: { kind: 'direct' | 'group' | 'channel'; isPublic?: boolean } | null | undefined,
+): boolean {
+  if (!row) return false
+  return (row.kind === 'group' || row.kind === 'channel') && row.isPublic === false
+}
+
+/**
+ * Имя для UI: локальный алиас текущего пользователя, иначе имя из профиля.
+ * `profileName` — подпись «как в профиле», если алиас задан и отличается.
+ */
+export function messengerContactDisplayName(
+  contactUserId: string,
+  profileDisplayName: string,
+  aliasByUserId: Record<string, string>,
+): { title: string; profileName: string | null } {
+  const uid = contactUserId.trim()
+  const profile = (profileDisplayName || 'Пользователь').trim() || 'Пользователь'
+  const alias = (aliasByUserId[uid] ?? '').trim()
+  if (alias) {
+    return { title: alias, profileName: alias === profile ? null : profile }
+  }
+  return { title: profile, profileName: null }
+}
+
+/**
+ * Имя отправителя в ленте для текущего зрителя: локальный алиас контакта, иначе снимок из сообщения.
+ * Для своих сообщений возвращается снимок (например «Вы»).
+ */
+export function messengerPeerDisplayTitle(
+  senderUserId: string | null | undefined,
+  senderNameSnapshot: string,
+  aliasByUserId: Record<string, string> | null | undefined,
+  viewerUserId: string | null | undefined,
+): string {
+  const snap = (senderNameSnapshot || '').trim() || 'Пользователь'
+  const sid = (senderUserId ?? '').trim()
+  const vid = (viewerUserId ?? '').trim()
+  if (!sid || (vid && sid === vid)) return snap
+  return messengerContactDisplayName(sid, snap, aliasByUserId ?? {}).title
+}
+
 export const MESSENGER_LAST_OPEN_KEY = 'vmix.messenger.lastOpenConversation'
 export const DM_PAGE_SIZE = 50
 /** Макс. исходный файл до сжатия в uploadMessengerImage (совпадает с лимитом в messenger.ts). */

@@ -1,9 +1,16 @@
 import { createPortal } from 'react-dom'
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { PillToggle } from '../PillToggle'
 import type { MessengerConversationSummary } from '../../lib/messengerConversations'
 import type { ConversationStaffMember, ConversationStaffRole } from '../../lib/conversationStaff'
-import { conversationInitial, messengerStaffRoleShortLabel } from '../../lib/messengerDashboardUtils'
+import {
+  conversationInitial,
+  isMessengerClosedGroupOrChannel,
+  messengerContactDisplayName,
+  messengerStaffRoleShortLabel,
+} from '../../lib/messengerDashboardUtils'
+import { useMessengerContactAliasesMap } from '../../hooks/useMessengerContactAliasesMap'
+import { MessengerClosedGcLockBadge } from './MessengerClosedGcLockBadge'
 
 export type MessengerConversationInfoModalProps = {
   open: boolean
@@ -100,6 +107,12 @@ export function MessengerConversationInfoModal({
     return () => window.removeEventListener('keydown', onKey)
   }, [open, leaveConfirmOpen, leaveBusy, onClose, setLeaveConfirmOpen])
 
+  const staffUserIds = useMemo(
+    () => conversationStaffRows.map((r) => r.user_id.trim()).filter(Boolean),
+    [conversationStaffRows],
+  )
+  const staffAliasByUserId = useMessengerContactAliasesMap(Boolean(open && conversation), staffUserIds)
+
   if (!open || !conversation) return null
 
   const c = conversation
@@ -116,9 +129,12 @@ export function MessengerConversationInfoModal({
 
         <div className="messenger-settings-modal__section">
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <button type="button" className="dashboard-messenger__thread-head-center-avatar" aria-label="Логотип">
-              {avatarUrl ? <img src={avatarUrl} alt="" /> : <span>{conversationInitial(c.title)}</span>}
-            </button>
+            <div className="dashboard-messenger__gc-avatar-lock-wrap dashboard-messenger__gc-avatar-lock-wrap--modal">
+              <button type="button" className="dashboard-messenger__thread-head-center-avatar" aria-label="Логотип">
+                {avatarUrl ? <img src={avatarUrl} alt="" /> : <span>{conversationInitial(c.title)}</span>}
+              </button>
+              {isMessengerClosedGroupOrChannel(c) ? <MessengerClosedGcLockBadge size="modal" /> : null}
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <strong>{c.title}</strong>
               <span className="messenger-settings-modal__hint">
@@ -310,14 +326,19 @@ export function MessengerConversationInfoModal({
                       aria-label="Участник"
                     >
                       <option value="">— Выберите участника —</option>
-                      {conversationStaffRows.map((r) => (
-                        <option key={r.user_id} value={r.user_id}>
-                          {r.display_name}
-                          {r.member_role && r.member_role !== 'member'
+                      {conversationStaffRows.map((r) => {
+                        const disp = messengerContactDisplayName(r.user_id, r.display_name, staffAliasByUserId)
+                        const roleBit =
+                          r.member_role && r.member_role !== 'member'
                             ? ` (${messengerStaffRoleShortLabel(r.member_role)})`
-                            : ''}
-                        </option>
-                      ))}
+                            : ''
+                        const optLabel = disp.profileName ? `${disp.title} · ${disp.profileName}${roleBit}` : `${disp.title}${roleBit}`
+                        return (
+                          <option key={r.user_id} value={r.user_id}>
+                            {optLabel}
+                          </option>
+                        )
+                      })}
                     </select>
                     <select
                       className="dashboard-messenger__list-search-input"

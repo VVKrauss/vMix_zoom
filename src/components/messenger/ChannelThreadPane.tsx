@@ -5,6 +5,7 @@ import { shouldClosePopoverOnOutsidePointer } from '../../utils/popoverOutsideCl
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
+import { useMessengerPeerAliasesForMessages } from '../../hooks/useMessengerPeerAliasesForMessages'
 import { supabase } from '../../lib/supabase'
 import {
   mapDirectMessageFromRow,
@@ -38,8 +39,10 @@ import {
   buildMessengerUrl,
   copyTextToClipboard,
   extractClipboardImageFiles,
+  formatMessengerDaySeparatorLabel,
   MESSENGER_GALLERY_MAX_ATTACH,
   MESSENGER_PHOTO_INPUT_MAX_BYTES,
+  messengerPeerDisplayTitle,
 } from '../../lib/messengerDashboardUtils'
 import { collectStoragePathsFromDraft } from '../../lib/postEditor/draftUtils'
 import type { ReactionEmoji } from '../../types/roomComms'
@@ -68,8 +71,6 @@ import { MessengerImageLightbox } from './MessengerImageLightbox'
 import { loadCachedChannelFeed, saveCachedChannelFeed } from '../../lib/channelFeedCache'
 import { resolveMediaUrlsForStoragePaths } from '../../lib/mediaCache'
 import { MentionAutocomplete } from './MentionAutocomplete'
-import { formatMessengerDaySeparatorLabel } from '../../lib/messengerDashboardUtils'
-
 function extractStoragePathsFromMarkdown(md: string): string[] {
   const out: string[] = []
   const re = /\bms:\/\/([^\s)]+)\b/g
@@ -258,6 +259,21 @@ export function ChannelThreadPane({
 
   const isChannelMember = myChannelMemberRole !== null || isMemberHint === true
   const canView = viewerOnly || isChannelMember
+
+  const aliasScanMessages = useMemo(() => {
+    const out: DirectMessage[] = [...posts]
+    for (const arr of Object.values(commentsByPostId)) {
+      for (const c of arr) out.push(c)
+    }
+    if (quoteToComment) out.push(quoteToComment)
+    return out
+  }, [posts, commentsByPostId, quoteToComment])
+
+  const peerAliasByUserId = useMessengerPeerAliasesForMessages(
+    user?.id,
+    aliasScanMessages,
+    Boolean(user?.id && aliasScanMessages.length > 0),
+  )
 
   const channelLastSignificantPostId = useMemo(() => {
     const sig = posts.filter((p) => p.kind !== 'reaction')
@@ -1731,7 +1747,9 @@ export function ChannelThreadPane({
         >
           <div className="dashboard-messenger__message-meta">
             <div className="dashboard-messenger__message-meta-main">
-              <span className="dashboard-messenger__message-author">{m.senderNameSnapshot}</span>
+              <span className="dashboard-messenger__message-author">
+                {messengerPeerDisplayTitle(m.senderUserId, m.senderNameSnapshot, peerAliasByUserId, user?.id ?? null)}
+              </span>
               {m.editedAt ? <span className="dashboard-messenger__edited">изм.</span> : null}
             </div>
           </div>
@@ -1779,6 +1797,8 @@ export function ChannelThreadPane({
         return cur.find((x) => x.id === id) ?? posts.find((p) => p.id === id)
       },
       resolveQuotedAvatarUrl: () => null,
+      viewerUserId: user?.id ?? null,
+      peerAliasByUserId,
     })
 
     return (
@@ -1826,6 +1846,7 @@ export function ChannelThreadPane({
           })
         }}
         renderBody={(msg) => renderMarkdownAndPreview(msg)}
+        peerAliasByUserId={peerAliasByUserId}
       />
     )
   }
@@ -2375,7 +2396,14 @@ export function ChannelThreadPane({
               <div className="dashboard-messenger__composer-reply">
                 <div className="dashboard-messenger__composer-reply-text">
                   <span className="dashboard-messenger__composer-reply-label">Ответ</span>{' '}
-                  <strong>{quoteToComment.senderNameSnapshot}</strong>
+                  <strong>
+                    {messengerPeerDisplayTitle(
+                      quoteToComment.senderUserId,
+                      quoteToComment.senderNameSnapshot,
+                      peerAliasByUserId,
+                      user?.id ?? null,
+                    )}
+                  </strong>
                   <span className="dashboard-messenger__composer-reply-snippet">
                     <span>{quoteToComment.body?.trim() ? quoteToComment.body : '…'}</span>
                   </span>

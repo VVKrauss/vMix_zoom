@@ -6,6 +6,7 @@ import { DmOutgoingReceiptGlyph } from './DmOutgoingReceiptGlyph'
 import { DoubleTapHeartSurface } from './DoubleTapHeartSurface'
 import { MessengerBubbleBody, type MessengerImageLightboxOpen } from '../MessengerBubbleBody'
 import { MessengerReplyMiniThumb } from '../MessengerReplyMiniThumb'
+import { messengerPeerDisplayTitle } from '../../lib/messengerDashboardUtils'
 
 export type ThreadReplyPreview =
   | { snippet: string; kind: 'text'; quotedAvatarUrl: string | null; quotedName?: string }
@@ -49,6 +50,8 @@ export type ThreadMessageBubbleProps = {
   onQuickHeart?: () => void
   /** Лёгкая анимация появления (только для новых входящих). */
   enterAnim?: boolean
+  /** Группа/канал: локальные имена отправителей для текущего пользователя. */
+  peerAliasByUserId?: Record<string, string>
 }
 
 export function ThreadMessageBubble({
@@ -78,6 +81,7 @@ export function ThreadMessageBubble({
   isMobileMessenger,
   onQuickHeart,
   enterAnim = false,
+  peerAliasByUserId,
 }: ThreadMessageBubbleProps) {
   const [swipeTx, setSwipeTx] = useState(0)
   const swipeRef = useRef<{
@@ -186,10 +190,13 @@ export function ThreadMessageBubble({
   const showAuthorInMeta = !dmMutePeerLabels
 
   if (isDmSoftDeletedStub(message)) {
-    const who =
+    const whoRaw =
       typeof message.senderNameSnapshot === 'string' && message.senderNameSnapshot.trim()
         ? message.senderNameSnapshot.trim()
         : 'Кто-то'
+    const who = peerAliasByUserId
+      ? messengerPeerDisplayTitle(message.senderUserId, whoRaw, peerAliasByUserId, currentUserId).trim() || 'Кто-то'
+      : whoRaw
     return (
       <div
         ref={(el) => {
@@ -263,7 +270,16 @@ export function ThreadMessageBubble({
       <div className="dashboard-messenger__message-meta">
         <div className="dashboard-messenger__message-meta-main">
           {showAuthorInMeta ? (
-            <span className="dashboard-messenger__message-author">{message.senderNameSnapshot}</span>
+            <span className="dashboard-messenger__message-author">
+              {peerAliasByUserId
+                ? messengerPeerDisplayTitle(
+                    message.senderUserId,
+                    typeof message.senderNameSnapshot === 'string' ? message.senderNameSnapshot : '',
+                    peerAliasByUserId,
+                    currentUserId,
+                  )
+                : message.senderNameSnapshot}
+            </span>
           ) : null}
           {message.editedAt ? <span className="dashboard-messenger__edited">изм.</span> : null}
         </div>

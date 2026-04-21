@@ -1,8 +1,10 @@
 import { createPortal } from 'react-dom'
+import { useMemo } from 'react'
 import { XCloseIcon } from '../icons'
 import type { ConversationJoinRequest } from '../../lib/chatRequests'
 import type { ConversationMemberRow } from '../../lib/conversationMembers'
-import { memberKickAllowed } from '../../lib/messengerDashboardUtils'
+import { memberKickAllowed, messengerContactDisplayName } from '../../lib/messengerDashboardUtils'
+import { useMessengerContactAliasesMap } from '../../hooks/useMessengerContactAliasesMap'
 
 export type MessengerJoinRequestsModalProps = {
   open: boolean
@@ -35,6 +37,21 @@ export function MessengerJoinRequestsModal({
   onDenyRequest,
   onKickMember,
 }: MessengerJoinRequestsModalProps) {
+  const joinModalUserIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const r of conversationJoinRequests) {
+      const id = r.userId?.trim()
+      if (id) s.add(id)
+    }
+    for (const m of conversationMembers) {
+      const id = m.userId?.trim()
+      if (id) s.add(id)
+    }
+    return Array.from(s)
+  }, [conversationJoinRequests, conversationMembers])
+
+  const aliasByUserId = useMessengerContactAliasesMap(open, joinModalUserIds)
+
   if (!open) return null
 
   return createPortal(
@@ -63,10 +80,17 @@ export function MessengerJoinRequestsModal({
               <p className="dashboard-messenger-join-requests-dialog__empty">Нет новых запросов на вступление.</p>
             ) : (
               <ul className="dashboard-messenger-join-requests-dialog__list">
-                {conversationJoinRequests.map((request) => (
+                {conversationJoinRequests.map((request) => {
+                  const disp = messengerContactDisplayName(request.userId, request.displayName, aliasByUserId)
+                  return (
                   <li key={request.requestId} className="dashboard-messenger-join-requests-dialog__item">
                     <div className="dashboard-messenger-join-requests-dialog__item-main">
-                      <div className="dashboard-messenger-join-requests-dialog__name">{request.displayName}</div>
+                      <div className="dashboard-messenger-join-requests-dialog__name">{disp.title}</div>
+                      {disp.profileName ? (
+                        <div className="dashboard-messenger-join-requests-dialog__profile-sub">
+                          В профиле: {disp.profileName}
+                        </div>
+                      ) : null}
                       <div className="dashboard-messenger-join-requests-dialog__meta">
                         {new Date(request.createdAt).toLocaleString('ru-RU', {
                           dateStyle: 'medium',
@@ -93,7 +117,8 @@ export function MessengerJoinRequestsModal({
                       </button>
                     </div>
                   </li>
-                ))}
+                  )
+                })}
               </ul>
             )}
           </div>
@@ -108,10 +133,17 @@ export function MessengerJoinRequestsModal({
               <p className="dashboard-messenger-join-requests-dialog__empty">Список участников пуст.</p>
             ) : (
               <ul className="dashboard-messenger-join-requests-dialog__list">
-                {conversationMembers.map((m) => (
+                {conversationMembers.map((m) => {
+                  const disp = messengerContactDisplayName(m.userId, m.displayName, aliasByUserId)
+                  return (
                   <li key={m.userId} className="dashboard-messenger-join-requests-dialog__item">
                     <div className="dashboard-messenger-join-requests-dialog__item-main">
-                      <div className="dashboard-messenger-join-requests-dialog__name">{m.displayName}</div>
+                      <div className="dashboard-messenger-join-requests-dialog__name">{disp.title}</div>
+                      {disp.profileName ? (
+                        <div className="dashboard-messenger-join-requests-dialog__profile-sub">
+                          В профиле: {disp.profileName}
+                        </div>
+                      ) : null}
                       <div className="dashboard-messenger-join-requests-dialog__meta">
                         {m.role === 'owner'
                           ? 'Владелец'
@@ -135,7 +167,8 @@ export function MessengerJoinRequestsModal({
                       </div>
                     ) : null}
                   </li>
-                ))}
+                  )
+                })}
               </ul>
             )}
           </div>

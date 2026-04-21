@@ -4,7 +4,7 @@ import {
   type MessengerBgMessageDetail,
 } from '../lib/messengerUnreadRealtime'
 import {
-  listMessengerConversations,
+  listMessengerConversationsWithContactAliases,
   type MessengerConversationSummary,
 } from '../lib/messengerConversations'
 import { playMessageSound } from '../lib/messengerSound'
@@ -36,7 +36,7 @@ export function useMessengerBackgroundMessageSidebar(opts: {
         const idx = prev.findIndex((item) => item.id === cid)
         if (idx === -1) {
           queueMicrotask(() => {
-            void listMessengerConversations().then((r) => {
+            void listMessengerConversationsWithContactAliases().then((r) => {
               if (!r.error && r.data) setItems(r.data)
             })
           })
