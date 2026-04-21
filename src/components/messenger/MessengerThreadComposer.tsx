@@ -9,6 +9,7 @@ import { MessengerVoiceRecordBtn } from './MessengerVoiceRecordBtn'
 import { MessengerReplyMiniThumb } from '../MessengerReplyMiniThumb'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
 import { DraftLinkPreviewBar } from './DraftLinkPreviewBar'
+import { MentionAutocomplete } from './MentionAutocomplete'
 
 export type PendingMessengerPhoto = { id: string; file: File; previewUrl: string }
 
@@ -42,6 +43,7 @@ export function MessengerThreadComposer(props: {
   onCancelEdit: () => void
   voiceUploading?: boolean
   onVoiceRecorded?: (blob: Blob, durationSec: number) => void | Promise<void>
+  conversationId?: string
 }) {
   const {
     replyTo,
@@ -73,6 +75,7 @@ export function MessengerThreadComposer(props: {
     onCancelEdit,
     voiceUploading = false,
     onVoiceRecorded,
+    conversationId = '',
   } = props
 
   const [voiceRecording, setVoiceRecording] = useState(false)
@@ -205,6 +208,15 @@ export function MessengerThreadComposer(props: {
           <AttachmentIcon />
         </button>
         <div className="dashboard-messenger__composer-input-wrap">
+          {conversationId.trim() ? (
+            <MentionAutocomplete
+              conversationId={conversationId}
+              textareaRef={composerTextareaRef}
+              value={draft}
+              onChange={onDraftChange}
+              disabled={threadLoading || photoUploading || voiceUploading}
+            />
+          ) : null}
           <textarea
             ref={composerTextareaRef}
             className="dashboard-messenger__input"

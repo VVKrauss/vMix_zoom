@@ -92,6 +92,7 @@ import { useLinkPreviewFromText } from '../hooks/useLinkPreviewFromText'
 import { buildLinkMetaForMessageBody, ensureLinkPreviewForBody } from '../lib/linkPreview'
 import { MESSENGER_MAX_PINNED_CHATS, sortMessengerListWithPins } from '../lib/messengerPins'
 import { markMessengerConversationRead } from '../lib/messengerMarkRead'
+import { resolveMediaUrlForStoragePath } from '../lib/mediaCache'
 import {
   listConversationStaffMembers,
   setConversationMemberStaffRole,
@@ -122,12 +123,6 @@ import {
   requestConversationJoin,
   type ConversationJoinRequest,
 } from '../lib/chatRequests'
-import {
-  buildForwardMetaFromChannelOrGroup,
-  buildForwardMetaFromDirectMessage,
-  forwardMetaToQuotedStrip,
-} from '../lib/messengerForward'
-import type { MessengerForwardMeta } from '../lib/messenger'
 import { setPendingHostClaim, stashSpaceRoomCreateOptions } from '../lib/spaceRoom'
 import { setContactPin, type RegisteredUserSearchHit } from '../lib/socialGraph'
 import {
@@ -172,6 +167,7 @@ import { MessengerDmMessageMenuPortal } from './messenger/MessengerDmMessageMenu
 import { MessengerDirectThreadBody, type MessengerDirectThreadHeadConversation } from './messenger/MessengerDirectThreadBody'
 import { devMark, useDevRenderTrace } from '../lib/devTrace'
 import { useMessengerSidebarDirectPeersOnline } from '../hooks/useMessengerSidebarDirectPeersOnline'
+import { markMyMentionsRead } from '../lib/messengerMentions'
 
 export function DashboardMessengerPage() {
   useDevRenderTrace('DashboardMessengerPage')
@@ -322,9 +318,15 @@ export function DashboardMessengerPage() {
     anchorX: number
     anchorY: number
   } | null>(null)
-  const [forwardDmModal, setForwardDmModal] = useState<{ forward: MessengerForwardMeta; sendBody: string } | null>(null)
+  const [forwardDmModal, setForwardDmModal] = useState<{
+    sourceMessage: DirectMessage
+    sourceLabel: string
+    excludeConversationId: string
+  } | null>(null)
   const [forwardDmComment, setForwardDmComment] = useState('')
   const [forwardDmSending, setForwardDmSending] = useState(false)
+  const [forwardDmShowSource, setForwardDmShowSource] = useState(true)
+  const [mentionUnreadByConversationId, setMentionUnreadByConversationId] = useState<Record<string, number>>({})
   const [pendingJump, setPendingJump] = useState<{
     conversationId: string
     messageId: string
@@ -377,6 +379,7 @@ export function DashboardMessengerPage() {
   const [conversationJoinRequests, setConversationJoinRequests] = useState<ConversationJoinRequest[]>([])
   const [joinRequestsLoading, setJoinRequestsLoading] = useState(false)
   const [joinRequestsOpen, setJoinRequestsOpen] = useState(false)
+
   const [conversationMembers, setConversationMembers] = useState<ConversationMemberRow[]>([])
   const [membersLoading, setMembersLoading] = useState(false)
   const [joinRequestInFlight, setJoinRequestInFlight] = useState(false)
@@ -522,25 +525,6 @@ export function DashboardMessengerPage() {
     })
   }, [])
 
-  const navigateToForwardSource = useCallback(
-    (forward: MessengerForwardMeta) => {
-      const scid = forward.source_conversation_id?.trim() ?? ''
-      const smid = forward.source_message_id?.trim() ?? ''
-      const spid = forward.source_parent_message_id?.trim() ?? ''
-      if (!scid || !smid) return
-      setPendingJump({
-        conversationId: scid,
-        messageId: smid,
-        parentMessageId: spid || null,
-        conversationKind: forward.from === 'channel' || forward.from === 'group' ? forward.from : undefined,
-        sourceTitle: forward.source_title?.trim() || undefined,
-        sourceAvatarUrl: forward.source_avatar_url?.trim() || null,
-      })
-      navigate(buildMessengerUrl(scid))
-    },
-    [navigate],
-  )
-
   const selectConversation = (nextConversationId: string) => {
     navigate(buildMessengerUrl(nextConversationId), { replace: false })
   }
@@ -571,6 +555,48 @@ export function DashboardMessengerPage() {
   const sidebarActiveConversationId = listOnlyMobile ? '' : conversationId || activeConversation?.id || ''
   /** Для эффектов/догонов хвоста/secondary side-effects: отключаем пока VM в loading/error. */
   const activeConversationId = listOnlyMobile || threadVM.phase !== 'ready' ? '' : sidebarActiveConversationId
+
+  // Mentions: in-app уведомления + бейджи (override mute делается на push-слое).
+  useEffect(() => {
+    const uid = user?.id?.trim() ?? ''
+    if (!uid) return
+    const channel = supabase
+      .channel(`mentions-${uid}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_message_mentions',
+          filter: `user_id=eq.${uid}`,
+        },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>
+          const cid = typeof row.conversation_id === 'string' ? row.conversation_id.trim() : ''
+          if (!cid) return
+          setMentionUnreadByConversationId((prev) => ({ ...prev, [cid]: (prev[cid] ?? 0) + 1 }))
+          const title = itemsRef.current.find((it) => it.id === cid)?.title?.trim() || 'чат'
+          toast.push({ tone: 'info', message: `Вас упомянули в: ${title}`, ms: 3200 })
+        },
+      )
+      .subscribe()
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [toast, user?.id])
+
+  useEffect(() => {
+    const cid = activeConversationId.trim()
+    if (!cid || !user?.id) return
+    if (!mentionUnreadByConversationId[cid]) return
+    setMentionUnreadByConversationId((prev) => {
+      if (!prev[cid]) return prev
+      const next = { ...prev }
+      delete next[cid]
+      return next
+    })
+    void markMyMentionsRead(cid)
+  }, [activeConversationId, mentionUnreadByConversationId, user?.id])
   const inviteJoinMode = Boolean(
     inviteToken.trim() &&
       invitePreview?.id &&
@@ -1949,81 +1975,229 @@ export function DashboardMessengerPage() {
     (m: DirectMessage) => {
       if (!threadHeadConversation || threadHeadConversation.kind !== 'direct') return
       const conv = threadHeadConversation
-      const built = buildForwardMetaFromDirectMessage(m, {
-        currentUserId: user?.id,
-        profileAvatar: profile?.avatar_url ?? null,
-        sourceConversationId: activeConversationId,
-        directConv: {
-          otherUserId: conv.otherUserId ?? null,
-          avatarUrl: conv.avatarUrl ?? null,
-        },
-      })
       setForwardDmComment('')
-      setForwardDmModal(built)
+      setForwardDmShowSource(true)
+      setForwardDmModal({
+        sourceMessage: m,
+        sourceLabel: conv.otherUserId ? conv.title?.trim() || 'Личный чат' : 'Сохранённое',
+        excludeConversationId: activeConversationId,
+      })
       closeMessageActionMenu()
     },
-    [activeConversationId, closeMessageActionMenu, profile?.avatar_url, threadHeadConversation, user?.id],
+    [activeConversationId, closeMessageActionMenu, threadHeadConversation],
   )
 
   const handleForwardFromChannelMessage = useCallback(
     (message: DirectMessage) => {
       if (!threadHeadConversation || threadHeadConversation.kind !== 'channel') return
       const title = threadHeadConversation.title?.trim() || 'Канал'
-      const avatar = conversationAvatarUrlById[activeConversationId] ?? null
-      const built = buildForwardMetaFromChannelOrGroup(message, 'channel', {
-        sourceTitle: title,
-        sourceAvatarUrl: avatar,
-        sourceConversationId: activeConversationId,
-      })
       setForwardDmComment('')
-      setForwardDmModal(built)
+      setForwardDmShowSource(true)
+      setForwardDmModal({
+        sourceMessage: message,
+        sourceLabel: title,
+        excludeConversationId: activeConversationId,
+      })
     },
-    [activeConversationId, conversationAvatarUrlById, threadHeadConversation],
+    [activeConversationId, threadHeadConversation],
   )
 
   const handleForwardFromGroupMessage = useCallback(
     (message: DirectMessage) => {
       if (!threadHeadConversation || threadHeadConversation.kind !== 'group') return
       const title = threadHeadConversation.title?.trim() || 'Группа'
-      const avatar = conversationAvatarUrlById[activeConversationId] ?? null
-      const built = buildForwardMetaFromChannelOrGroup(message, 'group', {
-        sourceTitle: title,
-        sourceAvatarUrl: avatar,
-        sourceConversationId: activeConversationId,
-      })
       setForwardDmComment('')
-      setForwardDmModal(built)
+      setForwardDmShowSource(true)
+      setForwardDmModal({
+        sourceMessage: message,
+        sourceLabel: title,
+        excludeConversationId: activeConversationId,
+      })
     },
-    [activeConversationId, conversationAvatarUrlById, threadHeadConversation],
+    [activeConversationId, threadHeadConversation],
   )
 
-  const finishForwardToDm = useCallback(
-    async (targetConvId: string) => {
+  const finishForwardToDms = useCallback(
+    async (targetConvIds: string[]) => {
       if (!forwardDmModal || forwardDmSending) return
-      const tid = targetConvId.trim()
-      if (!tid) return
+      const tids = (Array.isArray(targetConvIds) ? targetConvIds : [])
+        .map((x) => x.trim())
+        .filter((x) => x.length > 0)
+      if (tids.length === 0) return
       const comment = forwardDmComment.trim()
-      const base = forwardDmModal.sendBody.trim() || '…'
-      const body = comment ? `${comment}\n\n${base}` : base
       setForwardDmSending(true)
       try {
-        const res = await appendDirectMessage(tid, body, {
-          meta: { forward: forwardDmModal.forward as unknown as Record<string, unknown> },
-        })
-        if (res.error) {
-          toast.push({ tone: 'error', message: res.error, ms: 3200 })
-          return
+        const src = forwardDmModal.sourceMessage
+        const forwardInfo =
+          forwardDmShowSource && forwardDmModal.sourceLabel.trim()
+            ? { forward_info: { label: forwardDmModal.sourceLabel.trim(), hidden: false } }
+            : { forward_info: { label: forwardDmModal.sourceLabel.trim() || 'Источник', hidden: true } }
+
+        const sendComment = async (tid: string) => {
+          if (!comment) return { ok: true as const }
+          const cRes = await appendDirectMessage(tid, comment, { kind: 'text' })
+          if (cRes.error) return { ok: false as const, error: cRes.error }
+          return { ok: true as const }
         }
-        requestMessengerUnreadRefresh()
-        toast.push({ tone: 'success', message: 'Сообщение переслано.', ms: 2200 })
+
+        if (src.kind === 'image') {
+          const one = src.meta?.image?.path?.trim()
+          const multi = Array.isArray(src.meta?.images) ? src.meta!.images : null
+          const attach = multi && multi.length > 0 ? multi : one ? [src.meta!.image!] : []
+          if (attach.length === 0) {
+            toast.push({ tone: 'error', message: 'Не удалось переслать: нет изображения', ms: 3200 })
+            return
+          }
+
+          const blobs: Blob[] = []
+          for (const a of attach) {
+            const srcPath = a.path?.trim()
+            if (!srcPath) continue
+            const url = await resolveMediaUrlForStoragePath(srcPath, { expiresSec: 3600 })
+            if (!url) {
+              toast.push({ tone: 'error', message: 'Не удалось переслать: изображение недоступно', ms: 3200 })
+              return
+            }
+            const resp = await fetch(url)
+            if (!resp.ok) {
+              toast.push({ tone: 'error', message: 'Не удалось переслать: ошибка загрузки изображения', ms: 3200 })
+              return
+            }
+            blobs.push(await resp.blob())
+          }
+          if (blobs.length === 0) {
+            toast.push({ tone: 'error', message: 'Не удалось переслать: нет изображения', ms: 3200 })
+            return
+          }
+
+          let okCount = 0
+          for (const tid of tids) {
+            const c = await sendComment(tid)
+            if (!c.ok) {
+              toast.push({ tone: 'error', message: c.error, ms: 3200 })
+              return
+            }
+
+            const uploaded: Array<{ path: string; thumbPath?: string }> = []
+            for (const blob of blobs) {
+              const file = new File([blob], 'forward.jpg', { type: blob.type || 'image/jpeg' })
+              const up = await uploadMessengerImage(tid, file)
+              if (up.error || !up.path) {
+                toast.push({ tone: 'error', message: up.error || 'Не удалось загрузить изображение', ms: 3200 })
+                return
+              }
+              uploaded.push({ path: up.path, ...(up.thumbPath ? { thumbPath: up.thumbPath } : {}) })
+            }
+
+            const meta: Record<string, unknown> = {
+              ...forwardInfo,
+              ...(uploaded.length > 1 ? { images: uploaded } : { image: uploaded[0]! }),
+            }
+            const res = await appendDirectMessage(tid, src.body ?? '', { kind: 'image', meta })
+            if (res.error) {
+              toast.push({ tone: 'error', message: res.error, ms: 3200 })
+              return
+            }
+            okCount++
+          }
+          requestMessengerUnreadRefresh()
+          toast.push({
+            tone: 'success',
+            message: okCount === 1 ? 'Сообщение переслано.' : `Сообщение переслано (${okCount}).`,
+            ms: 2400,
+          })
+        } else if (src.kind === 'audio') {
+          const srcPath = src.meta?.audio?.path?.trim() ?? ''
+          if (!srcPath) {
+            toast.push({ tone: 'error', message: 'Не удалось переслать: нет аудио', ms: 3200 })
+            return
+          }
+          const url = await resolveMediaUrlForStoragePath(srcPath, { expiresSec: 3600 })
+          if (!url) {
+            toast.push({ tone: 'error', message: 'Не удалось переслать: аудио недоступно', ms: 3200 })
+            return
+          }
+          const resp = await fetch(url)
+          if (!resp.ok) {
+            toast.push({ tone: 'error', message: 'Не удалось переслать: ошибка загрузки аудио', ms: 3200 })
+            return
+          }
+          const blob = await resp.blob()
+          const durationSec = src.meta?.audio?.durationSec
+
+          let okCount = 0
+          for (const tid of tids) {
+            const c = await sendComment(tid)
+            if (!c.ok) {
+              toast.push({ tone: 'error', message: c.error, ms: 3200 })
+              return
+            }
+            const up = await uploadMessengerAudio(tid, blob)
+            if (up.error || !up.path) {
+              toast.push({ tone: 'error', message: up.error || 'Не удалось загрузить аудио', ms: 3200 })
+              return
+            }
+            const meta: Record<string, unknown> = {
+              ...forwardInfo,
+              audio: {
+                path: up.path,
+                ...(typeof durationSec === 'number' && Number.isFinite(durationSec) ? { durationSec } : {}),
+              },
+            }
+            const res = await appendDirectMessage(tid, src.body ?? '', { kind: 'audio', meta })
+            if (res.error) {
+              toast.push({ tone: 'error', message: res.error, ms: 3200 })
+              return
+            }
+            okCount++
+          }
+          requestMessengerUnreadRefresh()
+          toast.push({
+            tone: 'success',
+            message: okCount === 1 ? 'Сообщение переслано.' : `Сообщение переслано (${okCount}).`,
+            ms: 2400,
+          })
+        } else {
+          let okCount = 0
+          for (const tid of tids) {
+            const c = await sendComment(tid)
+            if (!c.ok) {
+              toast.push({ tone: 'error', message: c.error, ms: 3200 })
+              return
+            }
+            const meta: Record<string, unknown> = { ...forwardInfo }
+            const base = (src.body ?? '').trim() || '…'
+            const res = await appendDirectMessage(tid, base, { kind: 'text', meta })
+            if (res.error) {
+              toast.push({ tone: 'error', message: res.error, ms: 3200 })
+              return
+            }
+            okCount++
+          }
+          requestMessengerUnreadRefresh()
+          toast.push({
+            tone: 'success',
+            message: okCount === 1 ? 'Сообщение переслано.' : `Сообщение переслано (${okCount}).`,
+            ms: 2400,
+          })
+        }
         setForwardDmModal(null)
         setForwardDmComment('')
-        navigate(buildMessengerUrl(tid))
+        setForwardDmShowSource(true)
       } finally {
         setForwardDmSending(false)
       }
     },
-    [appendDirectMessage, forwardDmComment, forwardDmModal, forwardDmSending, navigate, toast],
+    [
+      appendDirectMessage,
+      forwardDmComment,
+      forwardDmModal,
+      forwardDmSending,
+      forwardDmShowSource,
+      toast,
+      uploadMessengerAudio,
+      uploadMessengerImage,
+    ],
   )
 
   const deleteMessageFromMenu = useCallback(async () => {
@@ -2723,6 +2897,7 @@ export function DashboardMessengerPage() {
                 userId={user?.id}
                 conversationAvatarUrlById={conversationAvatarUrlById}
                 activeConversationId={sidebarActiveConversationId}
+                mentionUnreadByConversationId={mentionUnreadByConversationId}
                 selectConversation={selectConversation}
                 navigate={navigate}
                 directPeersOnline={directPeersOnline}
@@ -3042,7 +3217,6 @@ export function DashboardMessengerPage() {
                       userId={user?.id}
                       onMentionSlugOpenProfile={onMentionSlugOpenProfile}
                       scrollToQuotedMessage={scrollToQuotedMessage}
-                      navigateToForwardSource={navigateToForwardSource}
                       bindMessageAnchor={bindMessageAnchor}
                       messageMenu={messageMenu}
                       setMessageMenu={setMessageMenu}
@@ -3088,6 +3262,7 @@ export function DashboardMessengerPage() {
                           }}
                           voiceUploading={voiceUploading}
                           onVoiceRecorded={onVoiceRecorded}
+                          conversationId={activeConversationId}
                         />
                       }
                       messageActionMenu={
@@ -3253,13 +3428,16 @@ export function DashboardMessengerPage() {
           if (!forwardDmSending) {
             setForwardDmModal(null)
             setForwardDmComment('')
+            setForwardDmShowSource(true)
           }
         }}
         items={forwardDmPickItems}
-        excludeConversationId={threadHeadConversation?.kind === 'direct' ? activeConversationId : null}
+        excludeConversationId={forwardDmModal?.excludeConversationId ?? null}
         comment={forwardDmComment}
         onCommentChange={setForwardDmComment}
-        onSend={(id) => void finishForwardToDm(id)}
+        showSourceLine={forwardDmShowSource}
+        onShowSourceLineChange={setForwardDmShowSource}
+        onSend={(ids) => void finishForwardToDms(ids)}
         sending={forwardDmSending}
       />
 

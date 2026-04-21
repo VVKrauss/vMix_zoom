@@ -67,6 +67,7 @@ import { DraftLinkPreviewBar } from './DraftLinkPreviewBar'
 import { MessengerImageLightbox } from './MessengerImageLightbox'
 import { loadCachedChannelFeed, saveCachedChannelFeed } from '../../lib/channelFeedCache'
 import { resolveMediaUrlsForStoragePaths } from '../../lib/mediaCache'
+import { MentionAutocomplete } from './MentionAutocomplete'
 
 function extractStoragePathsFromMarkdown(md: string): string[] {
   const out: string[] = []
@@ -211,6 +212,7 @@ export function ChannelThreadPane({
   const [commentDeleteBusy, setCommentDeleteBusy] = useState(false)
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
   const [draftEditComment, setDraftEditComment] = useState('')
+  const commentsComposerRef = useRef<HTMLTextAreaElement | null>(null)
   const [editCommentBusy, setEditCommentBusy] = useState(false)
   const postMenuWrapRef = useRef<HTMLDivElement | null>(null)
   const commentMenuWrapRef = useRef<HTMLDivElement | null>(null)
@@ -2117,6 +2119,13 @@ export function ChannelThreadPane({
                 <AttachmentIcon />
               </button>
               <div className="dashboard-messenger__composer-input-wrap">
+                <MentionAutocomplete
+                  conversationId={conversationId}
+                  textareaRef={feedComposerTextareaRef}
+                  value={feedDraft}
+                  onChange={setFeedDraft}
+                  disabled={threadLoading || feedPhotoUploading || feedVoiceUploading}
+                />
                 <textarea
                   ref={feedComposerTextareaRef}
                   className="dashboard-messenger__input"
@@ -2347,19 +2356,31 @@ export function ChannelThreadPane({
               </div>
             ) : null}
             <div className="dashboard-messenger__composer-main">
-              <textarea
-                className="dashboard-messenger__input"
-                rows={isMobileMessenger ? 1 : 2}
-                value={draft}
-                placeholder="Комментарий…"
-                onChange={(e) => setDraftCommentByPostId((prev) => ({ ...prev, [commentsModalPostId]: e.target.value }))}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey && (e.ctrlKey || e.metaKey)) {
-                    e.preventDefault()
-                    void sendComment(commentsModalPostId)
+              <div className="dashboard-messenger__composer-input-wrap">
+                <MentionAutocomplete
+                  conversationId={conversationId}
+                  textareaRef={commentsComposerRef}
+                  value={draft}
+                  onChange={(next) => setDraftCommentByPostId((prev) => ({ ...prev, [commentsModalPostId]: next }))}
+                  disabled={sendingCommentPostId === commentsModalPostId}
+                />
+                <textarea
+                  ref={commentsComposerRef}
+                  className="dashboard-messenger__input"
+                  rows={isMobileMessenger ? 1 : 2}
+                  value={draft}
+                  placeholder="Комментарий…"
+                  onChange={(e) =>
+                    setDraftCommentByPostId((prev) => ({ ...prev, [commentsModalPostId]: e.target.value }))
                   }
-                }}
-              />
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey && (e.ctrlKey || e.metaKey)) {
+                      e.preventDefault()
+                      void sendComment(commentsModalPostId)
+                    }
+                  }}
+                />
+              </div>
               <div className="dashboard-messenger__composer-side">
                 {draft.trim() || sending ? (
                   <button

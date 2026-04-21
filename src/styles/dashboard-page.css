@@ -510,9 +510,11 @@
 .messenger-forward-modal {
   position: relative;
   z-index: 1;
-  width: min(420px, 100%);
-  max-height: min(80vh, 560px);
-  overflow: auto;
+  width: min(520px, 100%);
+  max-height: min(86vh, 640px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   padding: 18px 18px 14px;
   border-radius: 14px;
   border: 1px solid var(--border);
@@ -525,8 +527,30 @@
   flex-direction: column;
   gap: 6px;
   margin-top: 12px;
-  max-height: min(42vh, 320px);
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--red) 42%, var(--surface2)) transparent;
+}
+
+.messenger-forward-modal__list::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.messenger-forward-modal__list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.messenger-forward-modal__list::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--red) 38%, var(--surface2));
+  border-radius: 10px;
+}
+
+.messenger-forward-modal__list::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--red) 58%, var(--surface2));
 }
 
 .messenger-forward-modal__row {
@@ -546,14 +570,22 @@
   transition: background 0.15s, border-color 0.15s;
 }
 
-.messenger-forward-modal__row:hover:not(:disabled) {
+.messenger-forward-modal__row:hover {
   border-color: rgba(159, 214, 255, 0.35);
   background: rgba(255, 255, 255, 0.06);
 }
 
-.messenger-forward-modal__row:disabled {
+.messenger-forward-modal__row[aria-disabled='true'] {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.messenger-forward-modal__pick {
+  flex-shrink: 0;
+}
+
+.messenger-forward-modal__search {
+  margin-top: 12px;
 }
 
 .messenger-forward-modal__avatar {
@@ -581,6 +613,31 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.messenger-forward-modal__bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.messenger-forward-modal__toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.messenger-forward-modal__toggle-label {
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.messenger-forward-modal__comment {
+  min-height: 64px;
+  resize: vertical;
 }
 
 .dashboard-topbar__circle-action {

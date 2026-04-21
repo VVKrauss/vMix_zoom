@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { listSiteNews, type SiteNewsItem } from '../lib/siteNews'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import { ChevronLeftIcon } from './icons'
@@ -66,7 +68,20 @@ export function NewsPage() {
                     <img src={item.image_url} alt="" className="news-page__item-img" loading="lazy" />
                   </div>
                 ) : null}
-                <p className="news-page__item-body">{item.body}</p>
+                <div className="news-page__item-body news-page__item-body--md">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      a: ({ href, children, ...props }) => (
+                        <a {...props} href={href} target="_blank" rel="noopener noreferrer">
+                          {children}
+                        </a>
+                      ),
+                    }}
+                  >
+                    {item.body ?? ''}
+                  </ReactMarkdown>
+                </div>
               </li>
             ))}
           </ul>

@@ -82,6 +82,19 @@ function readWebPushError(e: unknown): { statusCode: number; message: string } {
   return { statusCode: 0, message: e instanceof Error ? e.message : 'send_failed' }
 }
 
+function parseMentionSlugs(text: string): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  const re = /@([A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?)/g
+  for (const m of text.matchAll(re)) {
+    const raw = (m[1] ?? '').trim().toLowerCase()
+    if (!raw || seen.has(raw)) continue
+    seen.add(raw)
+    out.push(raw)
+  }
+  return out
+}
+
 async function signedMessengerMediaUrl(
   admin: ReturnType<typeof createClient>,
   path: string | null | undefined,
@@ -127,6 +140,7 @@ Deno.serve(async (req) => {
 
   const conversationId = typeof record.conversation_id === 'string' ? record.conversation_id.trim() : ''
   const senderId = typeof record.sender_user_id === 'string' ? record.sender_user_id.trim() : ''
+  const messageId = typeof record.id === 'string' ? record.id.trim() : ''
   if (!conversationId || !senderId) return json({ ok: true, skipped: 'missing_ids' })
 
   const { data: conv, error: convErr } = await admin
@@ -173,6 +187,36 @@ Deno.serve(async (req) => {
     .filter(Boolean)
   if (recipientIds.length === 0) return json({ ok: true, skipped: 'empty_recipients' })
 
+  // Mentions: отдельный push, игнорируя mute. Источник — таблица chat_message_mentions (пишется триггером).
+  let mentionRecipientIds: string[] = []
+  if (messageId) {
+    const { data: mentionRows } = await admin
+      .from('chat_message_mentions')
+      .select('user_id')
+      .eq('message_id', messageId)
+    const ids = (Array.isArray(mentionRows) ? mentionRows : [])
+      .map((r: { user_id?: string }) => (typeof r.user_id === 'string' ? r.user_id : ''))
+      .filter(Boolean)
+    if (ids.length > 0) {
+      const s = new Set(ids)
+      mentionRecipientIds = [...s].filter((id) => id !== senderId)
+    }
+  } else {
+    const body = typeof record.body === 'string' ? record.body : ''
+    const slugs = parseMentionSlugs(body)
+    if (slugs.length > 0) {
+      const { data: usersBySlug } = await admin
+        .from('users')
+        .select('id, profile_slug')
+        .in('profile_slug', slugs)
+      const ids = (Array.isArray(usersBySlug) ? usersBySlug : [])
+        .map((u: { id?: string }) => (typeof u.id === 'string' ? u.id : ''))
+        .filter(Boolean)
+      const memSet = new Set(recipientIds)
+      mentionRecipientIds = ids.filter((id) => memSet.has(id) && id !== senderId)
+    }
+  }
+
   const { data: mutedRows } = await admin
     .from('chat_conversation_notification_mutes')
     .select('user_id')
@@ -186,7 +230,9 @@ Deno.serve(async (req) => {
       .filter(Boolean),
   )
 
-  const finalRecipientIds = mutedSet.size > 0 ? recipientIds.filter((id) => !mutedSet.has(id)) : recipientIds
+  const mentionSet = new Set(mentionRecipientIds)
+  const nonMentionRecipients = recipientIds.filter((id) => !mentionSet.has(id))
+  const finalRecipientIds = mutedSet.size > 0 ? nonMentionRecipients.filter((id) => !mutedSet.has(id)) : nonMentionRecipients
   if (finalRecipientIds.length === 0) return json({ ok: true, skipped: 'all_muted' })
 
   const { data: subs, error: subErr } = await admin
@@ -236,6 +282,64 @@ Deno.serve(async (req) => {
     }
   }
 
-  return json({ ok: true, sent, removed_invalid: removed, skipped_bad_subscription: skippedBadSubscription, failed })
+  // Mentions push (override mute): отдельный payload "Вас упомянули".
+  let mentionSent = 0
+  let mentionRemoved = 0
+  let mentionSkippedBadSubscription = 0
+  let mentionFailed = 0
+  if (mentionRecipientIds.length > 0) {
+    const { data: mentionSubs, error: mentionSubErr } = await admin
+      .from('push_subscriptions')
+      .select('id, user_id, subscription')
+      .in('user_id', mentionRecipientIds)
+    if (!mentionSubErr && mentionSubs?.length) {
+      const mentionPayload = JSON.stringify({
+        title: truncate('Вас упомянули', 60),
+        body: truncate(`${senderName}: ${bodyText}`, 140),
+        url: `${appBase}${openPath}`,
+        tag: `mention-${conversationId}`,
+        conversationId,
+        conversationKind: 'channel',
+        icon: displayIconUrl || defaultIcon,
+        badge: defaultBadge,
+      })
+      for (const row of mentionSubs as { id: string; subscription: unknown }[]) {
+        const subObj = toWebPushSubscription(row.subscription)
+        if (!subObj) {
+          mentionSkippedBadSubscription += 1
+          continue
+        }
+        try {
+          await webPush.sendNotification(subObj, mentionPayload, { TTL: 86_400, urgency: 'high' })
+          mentionSent += 1
+        } catch (e: unknown) {
+          const { statusCode } = readWebPushError(e)
+          if (statusCode === 404 || statusCode === 410) {
+            await admin.from('push_subscriptions').delete().eq('id', row.id)
+            mentionRemoved += 1
+          } else {
+            mentionFailed += 1
+          }
+        }
+      }
+    }
+  }
+
+  return json({
+    ok: true,
+    sent,
+    removed_invalid: removed,
+    skipped_bad_subscription: skippedBadSubscription,
+    failed,
+    ...(mentionRecipientIds.length
+      ? {
+          mention_sent: mentionSent,
+          mention_removed_invalid: mentionRemoved,
+          mention_skipped_bad_subscription: mentionSkippedBadSubscription,
+          mention_failed: mentionFailed,
+          mention_recipients: mentionRecipientIds.length,
+        }
+      : {}),
+  })
 })
 

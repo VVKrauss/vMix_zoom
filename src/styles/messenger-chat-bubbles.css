@@ -241,6 +241,28 @@
   overflow-x: auto;
 }
 
+.messenger-message-md ul,
+.messenger-message-md ol {
+  margin: 6px 0;
+  padding-left: 0;
+  list-style-position: inside;
+}
+
+.messenger-message-md li {
+  margin: 2px 0;
+  padding-left: 14px;
+  text-indent: -14px;
+}
+
+.messenger-message-md ul ul,
+.messenger-message-md ol ol,
+.messenger-message-md ul ol,
+.messenger-message-md ol ul {
+  margin-top: 4px;
+  margin-bottom: 0;
+  padding-left: 18px;
+}
+
 .dashboard-messenger__message-body .messenger-message-link {
   color: var(--red);
   text-decoration: none;
@@ -358,6 +380,14 @@
   font-size: inherit;
   color: var(--text-dim);
   text-align: left;
+}
+
+.dashboard-messenger__forward-line {
+  margin: 0 0 6px;
+  padding: 0 2px;
+  font-size: calc(var(--dm-msg-font, 13px) - 3px);
+  line-height: 1.25;
+  color: var(--text-dim);
 }
 
 button.dashboard-messenger__reply-quote--action {

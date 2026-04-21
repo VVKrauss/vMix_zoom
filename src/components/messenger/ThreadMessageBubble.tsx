@@ -1,8 +1,7 @@
 import type { ReactNode } from 'react'
 import { useCallback, useRef, useState } from 'react'
-import type { DirectMessage, DmOutgoingReceiptLevel, MessengerForwardMeta } from '../../lib/messenger'
+import type { DirectMessage, DmOutgoingReceiptLevel } from '../../lib/messenger'
 import { isDmSoftDeletedStub } from '../../lib/messenger'
-import { forwardMetaToQuotedStrip } from '../../lib/messengerForward'
 import { DmOutgoingReceiptGlyph } from './DmOutgoingReceiptGlyph'
 import { DoubleTapHeartSurface } from './DoubleTapHeartSurface'
 import { MessengerBubbleBody, type MessengerImageLightboxOpen } from '../MessengerBubbleBody'
@@ -29,7 +28,6 @@ export type ThreadMessageBubbleProps = {
   /** Если цитируемое сообщение есть в ленте — прокрутка к нему по клику. */
   replyScrollTargetId: string | null
   onReplyQuoteNavigate?: (messageId: string) => void
-  onForwardQuoteNavigate?: (forward: MessengerForwardMeta) => void
   bindMessageAnchor: (messageId: string, el: HTMLElement | null) => void
   currentUserId: string | null
   onReactionChipTap?: (targetMessageId: string, emoji: string) => void
@@ -63,7 +61,6 @@ export function ThreadMessageBubble({
   replyPreview,
   replyScrollTargetId,
   onReplyQuoteNavigate,
-  onForwardQuoteNavigate,
   bindMessageAnchor,
   currentUserId,
   onReactionChipTap,
@@ -107,15 +104,11 @@ export function ThreadMessageBubble({
     reactionCounts.set(key, (reactionCounts.get(key) ?? 0) + 1)
   }
 
-  const forwardStrip = forwardMetaToQuotedStrip(message.meta?.forward)
+  const forwardInfoLabel =
+    typeof message.meta?.forward_info?.label === 'string' ? message.meta?.forward_info?.label.trim() : ''
+  const showForwardInfoLine = Boolean(forwardInfoLabel && message.meta?.forward_info?.hidden !== true)
 
-  const forwardNavOk = Boolean(
-    forwardStrip &&
-      message.meta?.forward?.source_conversation_id?.trim() &&
-      message.meta?.forward?.source_message_id?.trim() &&
-      onForwardQuoteNavigate,
-  )
-  const replyNavOk = Boolean(!forwardStrip && replyScrollTargetId && onReplyQuoteNavigate)
+  const replyNavOk = Boolean(replyScrollTargetId && onReplyQuoteNavigate)
 
   const canSwipeReply =
     Boolean(swipeReplyEnabled && onSwipeReply) &&
@@ -157,24 +150,9 @@ export function ThreadMessageBubble({
     [message, onSwipeReply],
   )
 
-  const quotePreview: ThreadReplyPreview | null = forwardStrip
-    ? forwardStrip.kind === 'image'
-      ? {
-          snippet: forwardStrip.snippet,
-          kind: 'image',
-          quotedAvatarUrl: forwardStrip.quotedAvatarUrl,
-          quotedName: forwardStrip.quotedName,
-          ...(forwardStrip.thumbPath ? { thumbPath: forwardStrip.thumbPath } : {}),
-        }
-      : {
-          snippet: forwardStrip.snippet,
-          kind: 'text',
-          quotedAvatarUrl: forwardStrip.quotedAvatarUrl,
-          quotedName: forwardStrip.quotedName,
-        }
-    : replyPreview
+  const quotePreview: ThreadReplyPreview | null = replyPreview
 
-  const showPeerInReplyQuote = !dmMutePeerLabels || forwardStrip != null
+  const showPeerInReplyQuote = !dmMutePeerLabels
 
   const replyQuoteInner =
     quotePreview ? (
@@ -200,9 +178,8 @@ export function ThreadMessageBubble({
       </span>
     ) : null
 
-  const replyQuoteAria = forwardStrip
-    ? 'Пересланное сообщение'
-    : dmMutePeerLabels || !quotePreview?.quotedName?.trim()
+  const replyQuoteAria =
+    dmMutePeerLabels || !quotePreview?.quotedName?.trim()
       ? 'К цитируемому сообщению'
       : `К цитируемому сообщению: ${quotePreview.quotedName.trim()}`
 
@@ -319,19 +296,7 @@ export function ThreadMessageBubble({
         </button>
       </div>
       {quotePreview ? (
-        forwardNavOk ? (
-          <div className="dashboard-messenger__reply-quote" role="note">
-            {replyQuoteInner}
-            <button
-              type="button"
-              className="dashboard-messenger__reply-quote-button"
-              aria-label={replyQuoteAria}
-              onClick={() => onForwardQuoteNavigate?.(message.meta!.forward!)}
-            >
-              Прочитать
-            </button>
-          </div>
-        ) : replyNavOk ? (
+        replyNavOk ? (
           <button
             type="button"
             className="dashboard-messenger__reply-quote dashboard-messenger__reply-quote--action"
@@ -345,6 +310,11 @@ export function ThreadMessageBubble({
             {replyQuoteInner}
           </div>
         )
+      ) : null}
+      {showForwardInfoLine ? (
+        <div className="dashboard-messenger__forward-line" role="note">
+          ↪ Переслано из {forwardInfoLabel}
+        </div>
       ) : null}
       <DoubleTapHeartSurface
         enabled={Boolean(quickReactEnabled && onQuickHeart)}

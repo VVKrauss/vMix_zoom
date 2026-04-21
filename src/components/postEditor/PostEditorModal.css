@@ -394,6 +394,26 @@ html[data-theme='light'] .post-editor-extras-panel {
   margin-bottom: 0;
 }
 
+.post-draft-read__md ul,
+.post-draft-read__md ol {
+  margin: 0.4em 0 0.6em;
+  padding-left: 0;
+  list-style-position: inside;
+}
+
+.post-draft-read__md li {
+  margin: 0.2em 0;
+  padding-left: 14px;
+  text-indent: -14px;
+}
+
+.post-draft-read__md ul ul,
+.post-draft-read__md ol ol,
+.post-draft-read__md ul ol,
+.post-draft-read__md ol ul {
+  margin: 0.35em 0 0;
+}
+
 .post-draft-read__md strong {
   font-weight: 700;
 }

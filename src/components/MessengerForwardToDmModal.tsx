@@ -1,5 +1,6 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { PillToggle } from './PillToggle'
 
 export type ForwardDmPickItem = {
   id: string
@@ -14,6 +15,8 @@ export function MessengerForwardToDmModal({
   excludeConversationId,
   comment,
   onCommentChange,
+  showSourceLine,
+  onShowSourceLineChange,
   onSend,
   sending,
 }: {
@@ -23,10 +26,39 @@ export function MessengerForwardToDmModal({
   excludeConversationId?: string | null
   comment: string
   onCommentChange: (v: string) => void
-  onSend: (conversationId: string) => void
+  showSourceLine: boolean
+  onShowSourceLineChange: (v: boolean) => void
+  onSend: (conversationIds: string[]) => void
   sending: boolean
 }) {
-  const filtered = items.filter((i) => !excludeConversationId || i.id !== excludeConversationId.trim())
+  const [query, setQuery] = useState('')
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    if (!open) return
+    setQuery('')
+    setSelected(new Set())
+  }, [open])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return items.filter((i) => {
+      if (excludeConversationId && i.id === excludeConversationId.trim()) return false
+      if (!q) return true
+      const t = (i.title ?? '').toLowerCase()
+      return t.includes(q)
+    })
+  }, [excludeConversationId, items, query])
+
+  const selectedIds = useMemo(() => [...selected.values()], [selected])
+  const toggleSelected = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
 
   const onBackdrop = useCallback(
     (e: React.MouseEvent) => {
@@ -42,42 +74,73 @@ export function MessengerForwardToDmModal({
       <button type="button" className="messenger-settings-modal-backdrop" aria-label="Закрыть" onClick={onBackdrop} />
       <div className="messenger-forward-modal">
         <h2 id="messenger-forward-title" className="messenger-settings-modal__title">
-          Переслать в личный чат
+          Переслать
         </h2>
-        <p className="messenger-settings-modal__hint">Выберите диалог. При необходимости добавьте комментарий — он будет выше пересланного текста.</p>
-        <label className="messenger-settings-modal__label" htmlFor="messenger-forward-comment">
-          Комментарий (необязательно)
-        </label>
-        <textarea
-          id="messenger-forward-comment"
-          className="dashboard-messenger__input"
-          rows={2}
-          value={comment}
+        <input
+          className="dashboard-messenger__input messenger-forward-modal__search"
+          value={query}
           disabled={sending}
-          onChange={(e) => onCommentChange(e.target.value)}
+          placeholder="Поиск"
+          onChange={(e) => setQuery(e.target.value)}
+          aria-label="Поиск по чатам"
         />
-        <div className="messenger-forward-modal__list" role="list">
+        <div className="messenger-forward-modal__list" role="list" aria-label="Выбор диалогов">
           {filtered.length === 0 ? (
             <p className="messenger-settings-modal__hint">Нет других личных чатов.</p>
           ) : (
             filtered.map((it) => (
-              <button
+              <label
                 key={it.id}
-                type="button"
                 role="listitem"
                 className="messenger-forward-modal__row"
-                disabled={sending}
-                onClick={() => onSend(it.id)}
+                aria-disabled={sending}
               >
+                <input
+                  type="checkbox"
+                  className="messenger-forward-modal__pick"
+                  checked={selected.has(it.id)}
+                  disabled={sending}
+                  onChange={() => toggleSelected(it.id)}
+                  aria-label={`Выбрать: ${it.title}`}
+                />
                 <span className="messenger-forward-modal__avatar" aria-hidden>
                   {it.avatarUrl ? <img src={it.avatarUrl} alt="" /> : <span>{(it.title || '?').trim().slice(0, 1).toUpperCase()}</span>}
                 </span>
                 <span className="messenger-forward-modal__title">{it.title}</span>
-              </button>
+              </label>
             ))
           )}
         </div>
+        <div className="messenger-forward-modal__bottom">
+          <div className="messenger-forward-modal__toggle-row">
+            <span className="messenger-forward-modal__toggle-label">Добавлять «Переслано из»</span>
+            <PillToggle
+              checked={showSourceLine}
+              onCheckedChange={onShowSourceLineChange}
+              ariaLabel="Добавлять «Переслано из»"
+              compact
+              disabled={sending}
+            />
+          </div>
+          <textarea
+            id="messenger-forward-comment"
+            className="dashboard-messenger__input messenger-forward-modal__comment"
+            rows={2}
+            placeholder="Комментарий (необязательно)"
+            value={comment}
+            disabled={sending}
+            onChange={(e) => onCommentChange(e.target.value)}
+          />
+        </div>
         <div className="messenger-settings-modal__actions">
+          <button
+            type="button"
+            className="dashboard-topbar__action dashboard-topbar__action--primary"
+            disabled={sending || selectedIds.length === 0}
+            onClick={() => onSend(selectedIds)}
+          >
+            Переслать
+          </button>
           <button type="button" className="dashboard-topbar__action" onClick={onClose} disabled={sending}>
             Отмена
           </button>

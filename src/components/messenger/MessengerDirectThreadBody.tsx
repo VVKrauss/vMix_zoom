@@ -7,7 +7,6 @@ import {
   isDirectReactionEmoji,
   type DirectConversationSummary,
   type DirectMessage,
-  type MessengerForwardMeta,
 } from '../../lib/messenger'
 import { buildQuotePreview } from '../../lib/messengerQuotePreview'
 import {
@@ -55,7 +54,6 @@ function MessengerDirectThreadBodyImpl(props: {
   userId: string | undefined
   onMentionSlugOpenProfile: (slug: string) => void | Promise<void>
   scrollToQuotedMessage: (id: string) => void
-  navigateToForwardSource: (forward: MessengerForwardMeta) => void
   bindMessageAnchor: (messageId: string, el: HTMLElement | null) => void
   messageMenu: { message: DirectMessage; mode: 'kebab' | 'context'; anchorX: number; anchorY: number } | null
   setMessageMenu: Dispatch<
@@ -105,7 +103,6 @@ function MessengerDirectThreadBodyImpl(props: {
     userId,
     onMentionSlugOpenProfile,
     scrollToQuotedMessage,
-    navigateToForwardSource,
     bindMessageAnchor,
     messageMenu,
     setMessageMenu,
@@ -336,7 +333,6 @@ function MessengerDirectThreadBodyImpl(props: {
                       replyPreview={replyPreview}
                       replyScrollTargetId={replyScrollTargetId}
                       onReplyQuoteNavigate={scrollToQuotedMessage}
-                      onForwardQuoteNavigate={navigateToForwardSource}
                       bindMessageAnchor={bindMessageAnchor}
                       menuOpen={messageMenu?.message.id === message.id}
                       onOpenImageLightbox={(ctx) => {

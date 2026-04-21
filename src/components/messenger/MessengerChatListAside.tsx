@@ -51,6 +51,7 @@ function MessengerChatListAsideImpl(props: {
   userId: string | undefined
   conversationAvatarUrlById: Record<string, string | null>
   activeConversationId: string
+  mentionUnreadByConversationId?: Record<string, number>
   selectConversation: (id: string) => void
   navigate: NavigateFunction
   /** user_id собеседника в ЛС → в сети (для зелёного кольца у аватарки) */
@@ -88,6 +89,7 @@ function MessengerChatListAsideImpl(props: {
     userId,
     conversationAvatarUrlById,
     activeConversationId,
+    mentionUnreadByConversationId,
     selectConversation,
     navigate,
     directPeersOnline,
@@ -367,6 +369,18 @@ function MessengerChatListAsideImpl(props: {
                             <time className="dashboard-messenger__row-time" dateTime={item.lastMessageAt ?? item.createdAt}>
                               {formatMessengerListRowTime(item.lastMessageAt ?? item.createdAt)}
                             </time>
+                            {(() => {
+                              const n = mentionUnreadByConversationId?.[item.id] ?? 0
+                              return n > 0 ? (
+                                <span
+                                  className="dashboard-messenger__row-badge dashboard-messenger__row-badge--mention"
+                                  title="Упоминания"
+                                  aria-label={`Упоминания: ${n}`}
+                                >
+                                  @{n > 99 ? '99+' : n}
+                                </span>
+                              ) : null
+                            })()}
                             {!item.joinRequestPending && item.unreadCount > 0 ? (
                               <span className="dashboard-messenger__row-badge">
                                 {item.unreadCount > 99 ? '99+' : item.unreadCount}

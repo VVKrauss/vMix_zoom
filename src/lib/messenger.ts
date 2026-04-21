@@ -26,22 +26,11 @@ export type DirectConversationSummary = {
 
 export type DirectMessageKind = 'text' | 'system' | 'reaction' | 'image' | 'audio'
 
-/** Переслано в ЛС: источник и отображение «шапки» как у цитаты. */
-export type MessengerForwardMeta = {
-  from: 'direct' | 'group' | 'channel'
-  author_name?: string
-  author_avatar_url?: string | null
-  source_title?: string
-  source_avatar_url?: string | null
-  /** Идентификатор исходного чата (для клика по пересланной цитате). */
-  source_conversation_id?: string
-  /** Идентификатор исходного сообщения/поста. */
-  source_message_id?: string
-  /** Для комментариев канала: id поста-родителя (reply_to_message_id). */
-  source_parent_message_id?: string
-  snippet: string
-  source_kind: 'text' | 'image' | 'audio' | 'audio'
-  image_thumb_path?: string | null
+/** Пересланное сообщение (копия): некликабельная строка источника. */
+export type MessengerForwardInfo = {
+  label: string
+  /** Если true — строка скрыта, но источник остаётся в meta. */
+  hidden?: boolean
 }
 
 export type DirectMessage = {
@@ -73,7 +62,7 @@ export type DirectMessage = {
     postDraft?: PostDraftV1
     /** Личка: soft-delete заменил сообщение системной заглушкой */
     deleted?: boolean
-    forward?: MessengerForwardMeta
+    forward_info?: MessengerForwardInfo
   } | null
 }
 
@@ -154,57 +143,23 @@ function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
     if (parsed.length > 0) images = parsed
   }
 
-  let forward: MessengerForwardMeta | undefined
-  const rawFwd = o.forward
-  if (rawFwd && typeof rawFwd === 'object') {
-    const f = rawFwd as Record<string, unknown>
-    const from = f.from
-    if (from === 'direct' || from === 'group' || from === 'channel') {
-      const snippet = typeof f.snippet === 'string' ? f.snippet : ''
-      const skRaw = f.source_kind
-      const sk =
-        skRaw === 'image' ? 'image' : skRaw === 'audio' ? 'audio' : 'text'
-      const itp = f.image_thumb_path
-      const scid =
-        typeof f.source_conversation_id === 'string' && f.source_conversation_id.trim()
-          ? f.source_conversation_id.trim()
-          : undefined
-      const smid =
-        typeof f.source_message_id === 'string' && f.source_message_id.trim()
-          ? f.source_message_id.trim()
-          : undefined
-      const spid =
-        typeof f.source_parent_message_id === 'string' && f.source_parent_message_id.trim()
-          ? f.source_parent_message_id.trim()
-          : undefined
-      forward = {
-        from,
-        snippet,
-        source_kind: sk,
-        ...(scid ? { source_conversation_id: scid } : {}),
-        ...(smid ? { source_message_id: smid } : {}),
-        ...(spid ? { source_parent_message_id: spid } : {}),
-        ...(typeof f.author_name === 'string' && f.author_name.trim() ? { author_name: f.author_name.trim() } : {}),
-        ...(typeof f.author_avatar_url === 'string' && f.author_avatar_url.trim()
-          ? { author_avatar_url: f.author_avatar_url.trim() }
-          : f.author_avatar_url === null
-            ? { author_avatar_url: null }
-            : {}),
-        ...(typeof f.source_title === 'string' && f.source_title.trim() ? { source_title: f.source_title.trim() } : {}),
-        ...(typeof f.source_avatar_url === 'string' && f.source_avatar_url.trim()
-          ? { source_avatar_url: f.source_avatar_url.trim() }
-          : f.source_avatar_url === null
-            ? { source_avatar_url: null }
-            : {}),
-        ...(typeof itp === 'string' && itp.trim() ? { image_thumb_path: itp.trim() } : {}),
+  let forwardInfo: MessengerForwardInfo | undefined
+  const rawForwardInfo = o.forward_info ?? o.forwardInfo
+  if (rawForwardInfo && typeof rawForwardInfo === 'object') {
+    const fi = rawForwardInfo as Record<string, unknown>
+    const label = typeof fi.label === 'string' ? fi.label.trim() : ''
+    if (label) {
+      forwardInfo = {
+        label,
+        ...(fi.hidden === true ? { hidden: true } : {}),
       }
     }
   }
 
-  if (!react && !image && !images && !linkMeta && !postDraft && !deleted && !forward && !audio) return null
+  if (!react && !image && !images && !linkMeta && !postDraft && !deleted && !forwardInfo && !audio) return null
   return {
     ...(deleted ? { deleted: true } : {}),
-    ...(forward ? { forward } : {}),
+    ...(forwardInfo ? { forward_info: forwardInfo } : {}),
     ...(react ? { react_to: react } : {}),
     ...(images ? { images } : {}),
     ...(image && !images ? { image } : {}),
@@ -252,8 +207,6 @@ export function getMessengerImageAttachments(
 }
 
 export function previewTextForDirectMessageTail(msg: Pick<DirectMessage, 'kind' | 'body' | 'meta'>): string {
-  const sn = msg.meta?.forward?.snippet?.trim()
-  if (sn) return `↪ ${sn}`
   if (msg.kind === 'audio') {
     const cap = msg.body.replace(/\s+/g, ' ').trim()
     if (cap) return cap

@@ -47,6 +47,7 @@ import { MessengerJumpToBottomFab } from '../MessengerJumpToBottomFab'
 import { DraftLinkPreviewBar } from './DraftLinkPreviewBar'
 import { MessengerImageLightbox } from './MessengerImageLightbox'
 import { MessengerVoiceRecordBtn } from './MessengerVoiceRecordBtn'
+import { MentionAutocomplete } from './MentionAutocomplete'
 
 const QUICK_REACTION_EMOJI: ReactionEmoji = '❤️'
 
@@ -1061,6 +1062,13 @@ export function GroupThreadPane({
               <AttachmentIcon />
             </button>
             <div className="dashboard-messenger__composer-input-wrap">
+              <MentionAutocomplete
+                conversationId={conversationId}
+                textareaRef={composerTextareaRef}
+                value={draft}
+                onChange={setDraft}
+                disabled={threadLoading || photoUploading || voiceUploading}
+              />
               <textarea
                 ref={composerTextareaRef}
                 className="dashboard-messenger__input"
