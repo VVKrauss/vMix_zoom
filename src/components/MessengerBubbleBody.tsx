@@ -219,20 +219,21 @@ export function MessengerBubbleBody({
     }
 
     const n = attachments.length
-    const gridCount = Math.min(n, 9)
+    const gridCount = Math.min(n, 10)
+    const shown = attachments.slice(0, gridCount)
     const mediaClass = `msg-chat-media msg-chat-media--n${gridCount}`
 
     return (
       <div className="messenger-bubble-stack">
         <div className={mediaClass}>
-          {attachments.slice(0, 9).map((_, i) => {
+          {shown.map((_, i) => {
             const previewUrl = thumbUrls[i] ?? fullUrls[i]
             return previewUrl ? (
               <button
                 key={`${message.id}-img-${i}`}
                 type="button"
                 className="msg-chat-media__cell"
-                aria-label={`Фото ${i + 1} из ${attachments.length}`}
+                aria-label={`Фото ${i + 1} из ${n}`}
                 onClick={() => void openLightboxAt(i)}
               >
                 <img

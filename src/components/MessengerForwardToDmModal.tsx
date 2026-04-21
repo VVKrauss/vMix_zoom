@@ -132,7 +132,7 @@ export function MessengerForwardToDmModal({
             onChange={(e) => onCommentChange(e.target.value)}
           />
         </div>
-        <div className="messenger-settings-modal__actions">
+        <div className="messenger-settings-modal__actions messenger-settings-modal__actions--split">
           <button
             type="button"
             className="dashboard-topbar__action dashboard-topbar__action--primary"

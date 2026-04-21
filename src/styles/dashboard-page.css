@@ -586,6 +586,10 @@
 
 .messenger-forward-modal__search {
   margin-top: 12px;
+  height: 38px;
+  line-height: 20px;
+  padding-top: 8px;
+  padding-bottom: 8px;
 }
 
 .messenger-forward-modal__avatar {
