@@ -78,6 +78,7 @@ import { useRoomUiSync } from '../hooks/useRoomUiSync'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useProfile } from '../hooks/useProfile'
 import { useIsDbSpaceRoomHost } from '../hooks/useSpaceRoomHost'
+import { useVideoFrames } from '../hooks/useVideoFrames'
 import { useSpaceRoomSettings, type SpaceRoomAccessMode } from '../hooks/useSpaceRoomSettings'
 import {
   isSessionHostFor,
@@ -2955,7 +2956,9 @@ function LocalTile({
   const mainStream = stream
   const hasLiveCamera =
     Boolean(stream?.getVideoTracks().some((t) => t.kind === 'video' && t.readyState === 'live'))
-  const showMainVideo = !isCamOff && hasLiveCamera
+  const shouldRenderVideo = !isCamOff && hasLiveCamera
+  const hasFrames = useVideoFrames(mainVideoRef, shouldRenderVideo)
+  const showMainVideo = shouldRenderVideo && hasFrames
   const showAvatar = !showMainVideo
 
   useEffect(() => {
@@ -2964,19 +2967,21 @@ function LocalTile({
 
   const videoInner = (
     <>
-      <video
-        ref={mainVideoRef}
-        autoPlay
-        playsInline
-        muted
-        className={showMainVideo ? 'participant-card__main-video' : 'participant-card__main-video hidden'}
-        style={videoStyle}
-      />
-      {showAvatar && (
+      {shouldRenderVideo ? (
+        <video
+          ref={mainVideoRef}
+          autoPlay
+          playsInline
+          muted
+          className="participant-card__main-video"
+          style={videoStyle}
+        />
+      ) : null}
+      {showAvatar ? (
         <div className="cam-off-avatar">
           <ParticipantTileIdle name={name} avatarUrl={avatarUrl} peekUserId={peekUserId ?? undefined} />
         </div>
-      )}
+      ) : null}
       {showMeter && !isMuted && <AudioMeter stream={stream} stereo />}
       {showInfo && (
         <VideoInfoOverlay
