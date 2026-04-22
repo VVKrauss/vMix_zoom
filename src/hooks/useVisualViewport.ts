@@ -45,7 +45,15 @@ export function useVisualViewport(): void {
     vv.addEventListener('resize', update)
     vv.addEventListener('scroll', update)
 
+    const onVis = () => {
+      requestAnimationFrame(() => update())
+    }
+    document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('pageshow', onVis)
+
     return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('pageshow', onVis)
       vv.removeEventListener('resize', update)
       vv.removeEventListener('scroll', update)
       document.documentElement.style.removeProperty('--vvh')

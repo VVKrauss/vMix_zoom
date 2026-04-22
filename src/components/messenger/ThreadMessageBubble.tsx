@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useCallback, useRef, useState } from 'react'
-import type { DirectMessage, DmOutgoingReceiptLevel } from '../../lib/messenger'
+import type { DirectMessage, DmOutgoingReceiptLevel, MessengerForwardNav } from '../../lib/messenger'
 import { isDmSoftDeletedStub } from '../../lib/messenger'
 import { DmOutgoingReceiptGlyph } from './DmOutgoingReceiptGlyph'
 import { DoubleTapHeartSurface } from './DoubleTapHeartSurface'
@@ -52,6 +52,8 @@ export type ThreadMessageBubbleProps = {
   enterAnim?: boolean
   /** Группа/канал: локальные имена отправителей для текущего пользователя. */
   peerAliasByUserId?: Record<string, string>
+  /** Переслано из … — переход по сохранённому `forward_info.nav`. */
+  onForwardSourceNavigate?: (nav: MessengerForwardNav) => void
 }
 
 export function ThreadMessageBubble({
@@ -82,6 +84,7 @@ export function ThreadMessageBubble({
   onQuickHeart,
   enterAnim = false,
   peerAliasByUserId,
+  onForwardSourceNavigate,
 }: ThreadMessageBubbleProps) {
   const [swipeTx, setSwipeTx] = useState(0)
   const swipeRef = useRef<{
@@ -228,7 +231,7 @@ export function ThreadMessageBubble({
         const t = e.target as HTMLElement
         if (
           t.closest(
-            'button, a, .messenger-message-img-trigger, .dashboard-messenger__reaction-chip, .messenger-message-link',
+            'button, a, .messenger-message-img-trigger, .dashboard-messenger__reaction-chip, .messenger-message-link, .dashboard-messenger__forward-line--action',
           )
         ) {
           return
@@ -301,9 +304,23 @@ export function ThreadMessageBubble({
         )
       ) : null}
       {showForwardInfoLine ? (
-        <div className="dashboard-messenger__forward-line" role="note">
-          ↪ Переслано из {forwardInfoLabel}
-        </div>
+        message.meta?.forward_info?.nav && onForwardSourceNavigate ? (
+          <button
+            type="button"
+            className="dashboard-messenger__forward-line dashboard-messenger__forward-line--action"
+            aria-label={`Перейти: переслано из ${forwardInfoLabel}`}
+            onClick={() => {
+              const nav = message.meta?.forward_info?.nav
+              if (nav) onForwardSourceNavigate(nav)
+            }}
+          >
+            ↪ Переслано из {forwardInfoLabel}
+          </button>
+        ) : (
+          <div className="dashboard-messenger__forward-line" role="note">
+            ↪ Переслано из {forwardInfoLabel}
+          </div>
+        )
       ) : null}
       <div className="dashboard-messenger__message-bottom-row">
         <DoubleTapHeartSurface

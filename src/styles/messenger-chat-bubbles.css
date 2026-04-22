@@ -450,6 +450,29 @@
   color: var(--text-dim);
 }
 
+button.dashboard-messenger__forward-line--action {
+  display: block;
+  width: 100%;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  border: none;
+  background: transparent;
+  appearance: none;
+  border-radius: 6px;
+}
+
+button.dashboard-messenger__forward-line--action:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface2) 55%, transparent);
+}
+
+button.dashboard-messenger__forward-line--action:focus-visible {
+  outline: 2px solid rgba(159, 214, 255, 0.45);
+  outline-offset: 1px;
+}
+
 button.dashboard-messenger__reply-quote--action {
   width: 100%;
   cursor: pointer;

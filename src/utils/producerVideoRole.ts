@@ -35,7 +35,34 @@ export function isVmixProducer(p: ProducerDescriptor): boolean {
   return descriptorVideoSource(p) === 'vmix' || isProgramIngestPeerDisplayName(p.name)
 }
 
-/** Куда отнести video producer: экран — второй слот при уже занятой камере. */
+/**
+ * Плитка участника в UI: владелец камеры, либо peerId продюсера (если owner не задан).
+ * Для программного входа (SRT) — всегда виртуальный peerId (одна плитка, не мешается с инициатором).
+ */
+export function videoAnchorPeerId(p: ProducerDescriptor): string {
+  if (isVmixProducer(p)) return p.peerId
+  const owner = ownerPeerFromDescriptor(p)
+  return owner ?? p.peerId
+}
+
+/**
+ * Аудио всегда крепится к `peerId` продюсера (mic / screen-audio / vmix — отдельные продюсеры).
+ * При появлении иной модели (например screen-audio на owner peer) — менять здесь.
+ */
+export function audioAnchorPeerId(p: ProducerDescriptor): string {
+  return p.peerId
+}
+
+/** Экран как отдельный peer относительно owner (эвристика consume без полного appData). */
+export function hasSeparateScreenVideoPeer(producer: ProducerDescriptor): boolean {
+  const owner = ownerPeerFromDescriptor(producer)
+  return Boolean(owner && producer.peerId !== owner)
+}
+
+/**
+ * Роль видео при **produce** (локальный аплинк): только camera vs screen (+ vmix→camera, studio→screen).
+ * @see resolveConsumeVideoRole — роль при **consume** (входящие), там же `studio_program` и эвристика separate screen peer.
+ */
 export function resolveVideoProducerRole(
   producer: ProducerDescriptor,
   hasCameraStream: boolean,
@@ -50,31 +77,8 @@ export function resolveVideoProducerRole(
 }
 
 /**
- * Плитка участника в UI: владелец камеры, либо peerId продюсера (если owner не задан).
- * Для программного входа (SRT) — всегда виртуальный peerId (одна плитка, не мешается с инициатором).
- */
-export function videoAnchorPeerId(p: ProducerDescriptor): string {
-  if (isVmixProducer(p)) return p.peerId
-  const owner = ownerPeerFromDescriptor(p)
-  return owner ?? p.peerId
-}
-
-/** Для audio producer: mic крепим к peerId участника, screen-audio — к источнику экрана (виртуальный peerId если есть). */
-export function audioAnchorPeerId(p: ProducerDescriptor): string {
-  if (p.kind !== 'audio') return p.peerId
-  const src = descriptorAudioSource(p)
-  // SRT / внешний поток: аудио на своём виртуальном peerId (как и видео).
-  if (src === 'vmix') return p.peerId
-  if (src === 'screen') {
-    // Если screen публикуется как отдельный peerId (virtual) — аудио должно следовать за ним.
-    return p.peerId
-  }
-  return p.peerId
-}
-
-/**
- * Роль видео при consume: если бэкенд выдаёт отдельный peerId для экрана и ownerPeerId —
- * без appData это экран; иначе эвристика «второй video = screen».
+ * Роль видео при **consume** (входящие): studio_program, отдельный screen peer, fallback на produce-роль.
+ * @see resolveVideoProducerRole — локальный produce; при смене правил синхронизировать обе.
  */
 export function resolveConsumeVideoRole(
   producer: ProducerDescriptor,
@@ -83,8 +87,7 @@ export function resolveConsumeVideoRole(
   const src = descriptorVideoSource(producer)
   if (src === 'vmix') return 'camera'
   if (src === 'studio_program') return 'studio_program'
-  const owner = ownerPeerFromDescriptor(producer)
-  const separateScreenPeer = Boolean(owner && producer.peerId !== owner)
+  const separateScreenPeer = hasSeparateScreenVideoPeer(producer)
   if (src === 'screen' || separateScreenPeer) return 'screen'
   if (src === 'camera') return 'camera'
   return resolveVideoProducerRole(producer, hasCameraStream)

@@ -7,6 +7,7 @@ import {
   isDirectReactionEmoji,
   type DirectConversationSummary,
   type DirectMessage,
+  type MessengerForwardNav,
 } from '../../lib/messenger'
 import { buildQuotePreview } from '../../lib/messengerQuotePreview'
 import {
@@ -39,7 +40,7 @@ function MessengerDirectThreadBodyImpl(props: {
   directPeerLastActivityAt?: string | null
   /** false — собеседник скрыл время активности; строку «Был(а): …» не показываем. */
   directPeerShowLastActivity?: boolean
-  openUserPeek: (p: { userId: string; displayName: string; avatarUrl: string | null }) => void
+  openUserPeek: (p: { userId: string; displayName?: string | null; avatarUrl?: string | null }) => void
   user: { id: string } | null | undefined
   profile: { display_name?: string | null; avatar_url?: string | null } | null | undefined
   activeAvatarUrl: string | null
@@ -78,6 +79,7 @@ function MessengerDirectThreadBodyImpl(props: {
   jumpDmBottom: () => void
   composer: ReactNode
   messageActionMenu: ReactNode
+  onForwardSourceNavigate?: (nav: MessengerForwardNav) => void
 }) {
   useDevRenderTrace('MessengerDirectThreadBody', {
     isMobileMessenger: props.isMobileMessenger,
@@ -127,6 +129,7 @@ function MessengerDirectThreadBodyImpl(props: {
     jumpDmBottom,
     composer,
     messageActionMenu,
+    onForwardSourceNavigate,
   } = props
 
   const seenMessageIdsRef = useRef<Set<string>>(new Set())
@@ -361,6 +364,7 @@ function MessengerDirectThreadBodyImpl(props: {
                         formatDt={formatDateTime}
                         replyPreview={replyPreview}
                         replyScrollTargetId={replyScrollTargetId}
+                        onForwardSourceNavigate={onForwardSourceNavigate}
                         onReplyQuoteNavigate={scrollToQuotedMessage}
                         bindMessageAnchor={bindMessageAnchor}
                         menuOpen={messageMenu?.message.id === message.id}

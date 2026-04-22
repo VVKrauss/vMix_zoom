@@ -1,7 +1,7 @@
 import { listMyChannels, type ChannelSummary } from './channels'
 import { listMyGroupChats, type GroupChatSummary } from './groups'
 import { listDirectConversationsForUser, type DirectConversationSummary } from './messenger'
-import { listMyContactAliases } from './socialGraph'
+import { listMyContactDisplayOverrides, type MyContactDisplayOverride } from './socialGraph'
 import { supabase } from './supabase'
 
 export type MessengerConversationKind = 'direct' | 'group' | 'channel'
@@ -158,19 +158,25 @@ export async function listMessengerConversations(): Promise<{
   return { data: items, error: null }
 }
 
-/** Подставляет в `title` для ЛС локальные имена из `contact_aliases` текущего пользователя. */
-function applyMyContactAliasesToMessengerSummaries(
+/** Подставляет в ЛС локальные имя и аватар из `contact_aliases` текущего пользователя. */
+function applyMyContactDisplayOverridesToMessengerSummaries(
   items: MessengerConversationSummary[],
-  aliases: Record<string, string> | null | undefined,
+  overrides: Record<string, MyContactDisplayOverride> | null | undefined,
 ): MessengerConversationSummary[] {
-  const map = aliases ?? {}
+  const map = overrides ?? {}
   if (!items.length || !Object.keys(map).length) return items
   return items.map((x) => {
     if (x.kind !== 'direct') return x
     const pid = typeof x.otherUserId === 'string' ? x.otherUserId.trim() : ''
-    const a = pid ? (map[pid]?.trim() ?? '') : ''
-    if (!a) return x
-    return { ...x, title: a }
+    if (!pid) return x
+    const row = map[pid]
+    if (!row) return x
+    const a = row.alias.trim()
+    const av = row.displayAvatarUrl?.trim() ?? ''
+    const nextTitle = a ? a : x.title
+    const nextAvatar = av ? av : x.avatarUrl
+    if (nextTitle === x.title && nextAvatar === x.avatarUrl) return x
+    return { ...x, title: nextTitle, avatarUrl: nextAvatar }
   })
 }
 
@@ -190,9 +196,9 @@ export async function listMessengerConversationsWithContactAliases(): Promise<{
     ),
   )
   if (!directPeerIds.length) return base
-  const aliasRes = await listMyContactAliases(directPeerIds)
-  if (aliasRes.error || !aliasRes.data) return { data: base.data, error: null }
-  return { data: applyMyContactAliasesToMessengerSummaries(base.data, aliasRes.data), error: null }
+  const dispRes = await listMyContactDisplayOverrides(directPeerIds)
+  if (dispRes.error || !dispRes.data) return { data: base.data, error: null }
+  return { data: applyMyContactDisplayOverridesToMessengerSummaries(base.data, dispRes.data), error: null }
 }
 
 function mapOpenPublicSearchRow(row: Record<string, unknown>): OpenPublicConversationSearchHit | null {

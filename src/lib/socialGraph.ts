@@ -25,23 +25,63 @@ export type RegisteredUserSearchHit = {
   avatarUrl: string | null
 }
 
-export async function listMyContactAliases(
+export type MyContactDisplayOverride = {
+  alias: string
+  displayAvatarUrl: string | null
+}
+
+export async function listMyContactDisplayOverrides(
   contactUserIds: string[],
-): Promise<{ data: Record<string, string> | null; error: string | null }> {
+): Promise<{ data: Record<string, MyContactDisplayOverride> | null; error: string | null }> {
   const ids = Array.from(new Set(contactUserIds.map((x) => x.trim()).filter(Boolean)))
   if (ids.length === 0) return { data: {}, error: null }
   const { data, error } = await supabase.rpc('list_my_contact_aliases', {
     p_contact_user_ids: ids,
   })
   if (error) return { data: null, error: error.message }
-  const out: Record<string, string> = {}
+  const out: Record<string, MyContactDisplayOverride> = {}
   for (const row of Array.isArray(data) ? data : []) {
     const r = row as Record<string, unknown>
     const uid = typeof r.contact_user_id === 'string' ? r.contact_user_id.trim() : String(r.contact_user_id ?? '').trim()
-    const alias = typeof r.alias === 'string' ? r.alias.trim() : String(r.alias ?? '').trim()
-    if (uid && alias) out[uid] = alias
+    if (!uid) continue
+    const aliasRaw = r.alias
+    const alias = typeof aliasRaw === 'string' ? aliasRaw.trim() : aliasRaw != null ? String(aliasRaw).trim() : ''
+    const avRaw = r.display_avatar_url ?? r.displayAvatarUrl
+    const displayAvatarUrl =
+      typeof avRaw === 'string' && avRaw.trim() ? avRaw.trim() : null
+    out[uid] = { alias, displayAvatarUrl }
   }
   return { data: out, error: null }
+}
+
+export async function listMyContactAliases(
+  contactUserIds: string[],
+): Promise<{ data: Record<string, string> | null; error: string | null }> {
+  const res = await listMyContactDisplayOverrides(contactUserIds)
+  if (res.error || !res.data) return { data: null, error: res.error }
+  const out: Record<string, string> = {}
+  for (const [uid, row] of Object.entries(res.data)) {
+    const a = row.alias.trim()
+    if (a) out[uid] = a
+  }
+  return { data: out, error: null }
+}
+
+export async function setMyContactDisplayAvatar(
+  contactUserId: string,
+  displayAvatarUrl: string,
+): Promise<{ data: string | null; error: string | null }> {
+  const id = contactUserId.trim()
+  if (!id) return { data: null, error: 'Не выбран пользователь' }
+  const { data, error } = await supabase.rpc('set_my_contact_display_avatar', {
+    p_contact_user_id: id,
+    p_display_avatar_url: displayAvatarUrl,
+  })
+  if (error) return { data: null, error: error.message }
+  const row = data as Record<string, unknown> | null
+  if (!row || row.ok !== true) return { data: null, error: typeof row?.error === 'string' ? row.error : 'request_failed' }
+  const u = typeof row.display_avatar_url === 'string' && row.display_avatar_url.trim() ? row.display_avatar_url.trim() : null
+  return { data: u, error: null }
 }
 
 export async function setMyContactAlias(

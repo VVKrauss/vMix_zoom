@@ -33,7 +33,8 @@ import { screenTileKey } from '../utils/screenTileKey'
 import { studioProgramTileKey } from '../utils/studioProgramTileKey'
 import { readVmixIngressEmitExtras } from '../config/serverSettingsStorage'
 import {
-  applyEma,
+  applyInboundRecvVideoEma,
+  applyLocalUplinkVideoEma,
   buildQuality,
   deltaFromSamples,
   pickInboundVideoRtp,
@@ -58,6 +59,8 @@ import {
 import { formatMediaJoinError, formatStudioProgramError } from '../utils/formatMediaJoinError'
 import { isIosLikeDevice } from '../utils/iosLikeDevice'
 import { buildRoomMicTrackConstraints } from '../utils/roomMicCapture'
+import { sleepMs } from '../utils/sleepMs'
+import { captureJoinLocalMediaStream } from './roomJoin/roomJoinLocalMedia'
 import type { StudioOutputPreset } from '../types/studio'
 
 const SIGNALING_HTTP = signalingHttpBase()
@@ -338,10 +341,6 @@ function buildSimulcastEncodings(
     { rid: 'r1', scaleResolutionDownBy: 2, maxBitrate: Math.max(200_000, Math.round(cap * 0.32)), maxFramerate },
     { rid: 'r2', scaleResolutionDownBy: 1, maxBitrate: cap, maxFramerate },
   ]
-}
-
-function sleepMs(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
 /** Предпочесть AV1, затем VP9/VP8/H264 — как в router rtpCapabilities (сервер). */
@@ -1017,64 +1016,18 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     }
 
     try {
-      // 1. Локальные медиа по выбранным на экране входа тумблерам
-      let stream: MediaStream
-      if (!wantMic && !wantCam) {
-        setIsMuted(true)
-        setIsCamOff(true)
-        stream = new MediaStream()
-      } else {
-        setIsMuted(!wantMic)
-        setIsCamOff(!wantCam)
-        const camPref = readPreferredCameraId()
-        const micPref = readPreferredMicId()
-        const videoPart = wantCam
-          ? {
-              ...(camPref ? { deviceId: { exact: camPref } as const } : {}),
-              width: { ideal: p.width },
-              height: { ideal: p.height },
-              frameRate: { ideal: p.frameRate },
-            }
-          : false
-        const audioPart: boolean | MediaTrackConstraints = wantMic
-          ? buildRoomMicTrackConstraints(!isIosLikeDevice() && micPref ? micPref : null)
-          : false
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            audio: audioPart,
-            video: videoPart,
-          })
-        } catch {
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({
-              audio: wantMic ? buildRoomMicTrackConstraints(!isIosLikeDevice() && micPref ? micPref : null) : false,
-              video: wantCam
-                ? {
-                    width: { ideal: p.width },
-                    height: { ideal: p.height },
-                    frameRate: { ideal: p.frameRate },
-                  }
-                : false,
-            })
-          } catch {
-            stream = await navigator.mediaDevices.getUserMedia({
-              audio: wantMic,
-              video: wantCam
-                ? {
-                    width: { ideal: p.width },
-                    height: { ideal: p.height },
-                    frameRate: { ideal: p.frameRate },
-                  }
-                : false,
-            })
-          }
-        }
-      }
-      if (aborted()) {
-        stopStreamTracks(stream)
-        setStatus('idle')
-        return
-      }
+      // 1. Локальные медиа (вынесено в roomJoinLocalMedia.ts). Дальше по шагам: socket → joinRoom ack → mediasoup → consume → обработчики.
+      const stream = await captureJoinLocalMediaStream({
+        wantMic,
+        wantCam,
+        preset: p,
+        aborted,
+        stopStreamTracks,
+        setIsMuted,
+        setIsCamOff,
+        setStatus,
+      })
+      if (!stream) return
       localStreamRef.current = stream
       setLocalStream(stream)
 
@@ -2511,7 +2464,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         const delta = deltaFromSamples(inbound, prevSample, now)
         inboundRecvPrevRef.current.set(anchorPeerId, snap)
         if (!delta) return null
-        const ema = applyEma(`__in_${anchorPeerId}`, inboundRecvEmaRef.current, delta.bitrateBps, delta.fractionLost)
+        const ema = applyInboundRecvVideoEma(anchorPeerId, inboundRecvEmaRef.current, delta.bitrateBps, delta.fractionLost)
         const q = buildQuality(ema.bitrateBps, ema.fractionLost, delta.jitterMs)
         const meta = findProducerMetaByConsumerId(producerMetaRef.current, consumerId)
         if (
@@ -2563,7 +2516,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       uplinkLocalPrevRef.current = sample
       if (!delta) return null
 
-      const ema = applyEma('__local__', uplinkLocalEmaRef.current, delta.bitrateBps, delta.fractionLost)
+      const ema = applyLocalUplinkVideoEma(uplinkLocalEmaRef.current, delta.bitrateBps, delta.fractionLost)
       const q = buildQuality(ema.bitrateBps, ema.fractionLost, delta.jitterMs)
 
       const sock = socketRef.current

@@ -46,6 +46,7 @@ import {
   editDirectMessage,
   type DirectConversationSummary,
   type DirectMessage,
+  type MessengerForwardNav,
   ensureDirectConversationWithUser,
   ensureSelfDirectConversation,
   getDirectConversationForUser,
@@ -89,6 +90,7 @@ import {
   normalizeMessengerListSearch,
   pickDefaultConversationId,
   sortDirectMessagesChrono,
+  buildMessengerForwardNav,
 } from '../lib/messengerDashboardUtils'
 import { useLinkPreviewFromText } from '../hooks/useLinkPreviewFromText'
 import { buildLinkMetaForMessageBody, ensureLinkPreviewForBody } from '../lib/linkPreview'
@@ -325,6 +327,7 @@ export function DashboardMessengerPage() {
   const [forwardDmModal, setForwardDmModal] = useState<{
     sourceMessage: DirectMessage
     sourceLabel: string
+    sourceNav: MessengerForwardNav | null
     excludeConversationId: string
   } | null>(null)
   const [forwardDmComment, setForwardDmComment] = useState('')
@@ -1784,6 +1787,38 @@ export function DashboardMessengerPage() {
   const messengerListHasRows =
     filteredSortedItems.length > 0 || extraGlobalUsers.length > 0 || extraGlobalOpen.length > 0
 
+  const onMessengerForwardSourceNavigate = useCallback(
+    (nav: MessengerForwardNav) => {
+      if (nav.kind === 'channel_post') {
+        navigate(
+          buildMessengerUrl(nav.conversationId, undefined, undefined, { messageId: nav.postMessageId }),
+        )
+        return
+      }
+      if (nav.kind === 'channel_comment') {
+        navigate(
+          buildMessengerUrl(nav.conversationId, undefined, undefined, {
+            messageId: nav.commentMessageId,
+            parentMessageId: nav.postId,
+          }),
+        )
+        return
+      }
+      if (nav.kind === 'group_message') {
+        navigate(buildMessengerUrl(nav.conversationId, undefined, undefined, { messageId: nav.messageId }))
+        return
+      }
+      if (nav.kind === 'dm_profile') {
+        openUserPeek({
+          userId: nav.authorUserId,
+          displayName: null,
+          avatarUrl: null,
+        })
+      }
+    },
+    [navigate, openUserPeek],
+  )
+
   const onMentionSlugOpenProfile = useCallback(
     async (rawSlug: string) => {
       const slug = normalizeProfileSlug(rawSlug)
@@ -2004,6 +2039,7 @@ export function DashboardMessengerPage() {
       setForwardDmModal({
         sourceMessage: m,
         sourceLabel: conv.otherUserId ? conv.title?.trim() || 'Личный чат' : 'Сохранённое',
+        sourceNav: buildMessengerForwardNav(conv, m),
         excludeConversationId: activeConversationId,
       })
       closeMessageActionMenu()
@@ -2020,6 +2056,7 @@ export function DashboardMessengerPage() {
       setForwardDmModal({
         sourceMessage: message,
         sourceLabel: title,
+        sourceNav: buildMessengerForwardNav(threadHeadConversation, message),
         excludeConversationId: activeConversationId,
       })
     },
@@ -2035,6 +2072,7 @@ export function DashboardMessengerPage() {
       setForwardDmModal({
         sourceMessage: message,
         sourceLabel: title,
+        sourceNav: buildMessengerForwardNav(threadHeadConversation, message),
         excludeConversationId: activeConversationId,
       })
     },
@@ -2052,10 +2090,14 @@ export function DashboardMessengerPage() {
       setForwardDmSending(true)
       try {
         const src = forwardDmModal.sourceMessage
-        const forwardInfo =
-          forwardDmShowSource && forwardDmModal.sourceLabel.trim()
-            ? { forward_info: { label: forwardDmModal.sourceLabel.trim(), hidden: false } }
-            : { forward_info: { label: forwardDmModal.sourceLabel.trim() || 'Источник', hidden: true } }
+        const nav = forwardDmModal.sourceNav ?? undefined
+        const forwardInfo = {
+          forward_info: {
+            label: forwardDmModal.sourceLabel.trim() || 'Источник',
+            hidden: !(forwardDmShowSource && forwardDmModal.sourceLabel.trim()),
+            ...(nav ? { nav } : {}),
+          },
+        }
 
         const sendComment = async (tid: string) => {
           if (!comment) return { ok: true as const }
@@ -3186,6 +3228,7 @@ export function DashboardMessengerPage() {
                               )
                             }}
                             onForwardMessage={handleForwardFromGroupMessage}
+                            onForwardSourceNavigate={onMessengerForwardSourceNavigate}
                             onMentionSlug={onMentionSlugOpenProfile}
                           />
                         ) : (
@@ -3219,6 +3262,7 @@ export function DashboardMessengerPage() {
                               )
                             }}
                             onForwardMessage={handleForwardFromChannelMessage}
+                            onForwardSourceNavigate={onMessengerForwardSourceNavigate}
                           />
                         )}
                       </div>
@@ -3227,6 +3271,7 @@ export function DashboardMessengerPage() {
                   <DirectThreadPane>
                     <MessengerDirectThreadBody
                       isMobileMessenger={isMobileMessenger}
+                      onForwardSourceNavigate={onMessengerForwardSourceNavigate}
                       navigate={navigate}
                       totalOtherUnread={totalOtherUnread}
                       directPeerLastReadAt={directPeerLastReadAt}

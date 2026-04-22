@@ -34,11 +34,19 @@ export type DirectConversationSummary = {
 
 export type DirectMessageKind = 'text' | 'system' | 'reaction' | 'image' | 'audio'
 
-/** Пересланное сообщение (копия): некликабельная строка источника. */
+/** Навигация по клику на «Переслано из …» (сохраняется в meta.forward_info). */
+export type MessengerForwardNav =
+  | { kind: 'channel_post'; conversationId: string; postMessageId: string }
+  | { kind: 'channel_comment'; conversationId: string; postId: string; commentMessageId: string }
+  | { kind: 'group_message'; conversationId: string; messageId: string }
+  | { kind: 'dm_profile'; authorUserId: string }
+
+/** Пересланное сообщение (копия): строка источника + опциональный переход. */
 export type MessengerForwardInfo = {
   label: string
   /** Если true — строка скрыта, но источник остаётся в meta. */
   hidden?: boolean
+  nav?: MessengerForwardNav
 }
 
 export type DirectMessage = {
@@ -72,6 +80,44 @@ export type DirectMessage = {
     deleted?: boolean
     forward_info?: MessengerForwardInfo
   } | null
+}
+
+function readForwardNavFromRecord(n: Record<string, unknown>): MessengerForwardNav | undefined {
+  const kind = typeof n.kind === 'string' ? n.kind.trim() : ''
+  const cid = (typeof n.conversationId === 'string' ? n.conversationId : typeof n.conversation_id === 'string' ? n.conversation_id : '')
+    .trim()
+  if (kind === 'channel_post') {
+    const postMessageId = (
+      typeof n.postMessageId === 'string' ? n.postMessageId : typeof n.post_message_id === 'string' ? n.post_message_id : ''
+    ).trim()
+    if (cid && postMessageId) return { kind: 'channel_post', conversationId: cid, postMessageId }
+    return undefined
+  }
+  if (kind === 'channel_comment') {
+    const postId = (typeof n.postId === 'string' ? n.postId : typeof n.post_id === 'string' ? n.post_id : '').trim()
+    const commentMessageId = (
+      typeof n.commentMessageId === 'string'
+        ? n.commentMessageId
+        : typeof n.comment_message_id === 'string'
+          ? n.comment_message_id
+          : ''
+    ).trim()
+    if (cid && postId && commentMessageId) return { kind: 'channel_comment', conversationId: cid, postId, commentMessageId }
+    return undefined
+  }
+  if (kind === 'group_message') {
+    const messageId = (typeof n.messageId === 'string' ? n.messageId : typeof n.message_id === 'string' ? n.message_id : '').trim()
+    if (cid && messageId) return { kind: 'group_message', conversationId: cid, messageId }
+    return undefined
+  }
+  if (kind === 'dm_profile') {
+    const authorUserId = (
+      typeof n.authorUserId === 'string' ? n.authorUserId : typeof n.author_user_id === 'string' ? n.author_user_id : ''
+    ).trim()
+    if (authorUserId) return { kind: 'dm_profile', authorUserId }
+    return undefined
+  }
+  return undefined
 }
 
 function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
@@ -157,9 +203,12 @@ function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
     const fi = rawForwardInfo as Record<string, unknown>
     const label = typeof fi.label === 'string' ? fi.label.trim() : ''
     if (label) {
+      const navRaw = fi.nav
+      const nav = navRaw && typeof navRaw === 'object' ? readForwardNavFromRecord(navRaw as Record<string, unknown>) : undefined
       forwardInfo = {
         label,
         ...(fi.hidden === true ? { hidden: true } : {}),
+        ...(nav ? { nav } : {}),
       }
     }
   }

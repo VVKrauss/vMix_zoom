@@ -6,7 +6,14 @@ import { useToast } from '../context/ToastContext'
 import { ensureDirectConversationWithUser, requestMessengerContactAliasRefresh } from '../lib/messenger'
 import { getMyConversationNotificationMutes, setConversationNotificationsMuted } from '../lib/conversationNotifications'
 import { fetchPublicUserProfile, type PublicUserProfileRow } from '../lib/userPublicProfile'
-import { getContactStatuses, listMyContactAliases, setContactPin, setMyContactAlias, type ContactStatus } from '../lib/socialGraph'
+import {
+  getContactStatuses,
+  listMyContactDisplayOverrides,
+  setContactPin,
+  setMyContactAlias,
+  setMyContactDisplayAvatar,
+  type ContactStatus,
+} from '../lib/socialGraph'
 import type { UserPeekTarget } from '../types/userPeek'
 
 function formatLastActive(iso: string | null): string {
@@ -42,6 +49,10 @@ export function UserProfilePeekModal({
   const [aliasEditing, setAliasEditing] = useState(false)
   const [aliasDraft, setAliasDraft] = useState('')
   const [aliasBusy, setAliasBusy] = useState(false)
+  const [displayAvatarOverride, setDisplayAvatarOverride] = useState<string | null>(null)
+  const [avatarEditing, setAvatarEditing] = useState(false)
+  const [avatarDraft, setAvatarDraft] = useState('')
+  const [avatarBusy, setAvatarBusy] = useState(false)
 
   const uid = target?.userId?.trim() ?? ''
   const isSelf = Boolean(user?.id && uid && user.id === uid)
@@ -59,6 +70,10 @@ export function UserProfilePeekModal({
       setAliasEditing(false)
       setAliasDraft('')
       setAliasBusy(false)
+      setDisplayAvatarOverride(null)
+      setAvatarEditing(false)
+      setAvatarDraft('')
+      setAvatarBusy(false)
       return
     }
 
@@ -88,11 +103,15 @@ export function UserProfilePeekModal({
       }
 
       if (other) {
-        const aRes = await listMyContactAliases([uid])
-        if (!cancelled) {
-          const a = aRes.data?.[uid]?.trim() ?? ''
+        const aRes = await listMyContactDisplayOverrides([uid])
+        if (!cancelled && aRes.data && !aRes.error) {
+          const row = aRes.data[uid]
+          const a = row?.alias?.trim() ?? ''
           setAlias(a || null)
           setAliasDraft(a || '')
+          const av = row?.displayAvatarUrl?.trim() ?? ''
+          setDisplayAvatarOverride(av || null)
+          setAvatarDraft(av || '')
         }
       }
     })()
@@ -133,7 +152,8 @@ export function UserProfilePeekModal({
 
   const profileName = profile?.displayName ?? (target.displayName?.trim() || 'Пользователь')
   const displayName = (alias?.trim() || profileName).trim()
-  const avatarUrl = profile?.avatarUrl ?? target.avatarUrl ?? null
+  const baseProfileAvatar = profile?.avatarUrl ?? target.avatarUrl ?? null
+  const avatarUrl = (displayAvatarOverride?.trim() || baseProfileAvatar)?.trim() || null
   const slug = profile?.profileSlug
   const showLastActivityLine = profile?.lastActivityVisible !== false
   const lastLine = formatLastActive(profile?.lastActivityAt ?? null)
@@ -207,12 +227,25 @@ export function UserProfilePeekModal({
         <h2 id="user-peek-title" className="confirm-dialog__title user-peek-modal__sr-only">
           Профиль
         </h2>
-        <div className="user-peek-modal__avatar-wrap">
-          {avatarUrl ? (
-            <img src={avatarUrl} alt="" className="user-peek-modal__avatar-img" />
-          ) : (
-            <span className="user-peek-modal__avatar-fallback">{initials}</span>
-          )}
+        <div className="user-peek-modal__avatar-wrap-outer">
+          <div className="user-peek-modal__avatar-wrap">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="" className="user-peek-modal__avatar-img" />
+            ) : (
+              <span className="user-peek-modal__avatar-fallback">{initials}</span>
+            )}
+          </div>
+          {!isSelf ? (
+            <button
+              type="button"
+              className="user-peek-modal__avatar-edit-btn"
+              aria-label="Изменить отображаемое фото"
+              title="Изменить отображаемое фото"
+              onClick={() => setAvatarEditing((v) => !v)}
+            >
+              ✎
+            </button>
+          ) : null}
         </div>
         <p className="user-peek-modal__name">
           {displayName}{' '}
@@ -230,6 +263,53 @@ export function UserProfilePeekModal({
         </p>
         {!isSelf && profileName.trim() && profileName.trim() !== displayName.trim() ? (
           <p className="user-peek-modal__profile-name">В профиле: {profileName}</p>
+        ) : null}
+        {!isSelf && baseProfileAvatar?.trim() && displayAvatarOverride?.trim() && displayAvatarOverride.trim() !== baseProfileAvatar.trim() ? (
+          <p className="user-peek-modal__profile-name">В профиле другое фото</p>
+        ) : null}
+        {!isSelf && avatarEditing ? (
+          <div className="user-peek-modal__alias-row">
+            <input
+              className="dashboard-messenger__input user-peek-modal__alias-input"
+              value={avatarDraft}
+              disabled={avatarBusy}
+              placeholder="URL картинки для отображения у вас"
+              onChange={(e) => setAvatarDraft(e.target.value)}
+            />
+            <button
+              type="button"
+              className="dashboard-topbar__action dashboard-topbar__action--primary"
+              disabled={avatarBusy}
+              onClick={() => {
+                if (!uid || avatarBusy) return
+                setAvatarBusy(true)
+                void (async () => {
+                  const res = await setMyContactDisplayAvatar(uid, avatarDraft)
+                  setAvatarBusy(false)
+                  if (res.error) {
+                    toast.push({ tone: 'error', message: res.error, ms: 2600 })
+                    return
+                  }
+                  setDisplayAvatarOverride(res.data)
+                  setAvatarEditing(false)
+                  requestMessengerContactAliasRefresh()
+                })()
+              }}
+            >
+              {avatarBusy ? '…' : 'Сохранить'}
+            </button>
+            <button
+              type="button"
+              className="dashboard-topbar__action"
+              disabled={avatarBusy}
+              onClick={() => {
+                setAvatarDraft(displayAvatarOverride?.trim() ?? '')
+                setAvatarEditing(false)
+              }}
+            >
+              Отмена
+            </button>
+          </div>
         ) : null}
         {!isSelf && aliasEditing ? (
           <div className="user-peek-modal__alias-row">

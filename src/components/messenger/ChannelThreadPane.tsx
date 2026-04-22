@@ -16,6 +16,7 @@ import {
   uploadMessengerAudio,
   uploadMessengerImage,
   type DirectMessage,
+  type MessengerForwardNav,
 } from '../../lib/messenger'
 import { buildQuotePreview } from '../../lib/messengerQuotePreview'
 import { useDevRenderTrace } from '../../lib/devTrace'
@@ -134,12 +135,14 @@ export function ChannelThreadPane({
   jumpToMessageId,
   jumpToParentMessageId,
   onJumpHandled,
+  onForwardSourceNavigate,
 }: {
   conversationId: string
   messengerOnline?: boolean
   onTouchTail?: (patch: { lastMessageAt: string; lastMessagePreview: string }) => void
   /** Переслать текст/фото в личный чат (открывает модалку на уровне страницы). */
   onForwardMessage?: (message: DirectMessage) => void
+  onForwardSourceNavigate?: (nav: MessengerForwardNav) => void
   /** Клик по @slug в теле поста/комментария (markdown). */
   onMentionSlug?: (slug: string) => void
   /** Хинт из родителя: если диалог уже есть в списке, считаем что участник (убирает рассинхрон после вступления). */
@@ -1854,6 +1857,7 @@ export function ChannelThreadPane({
         }}
         renderBody={(msg) => renderMarkdownAndPreview(msg)}
         peerAliasByUserId={peerAliasByUserId}
+        onForwardSourceNavigate={onForwardSourceNavigate}
       />
     )
   }

@@ -1,4 +1,4 @@
-import { previewTextForDirectMessageTail, type DirectMessage } from './messenger'
+import { previewTextForDirectMessageTail, type DirectMessage, type MessengerForwardNav } from './messenger'
 import type { ConversationMemberRow } from './conversationMembers'
 import type { MessengerConversationSummary } from './messengerConversations'
 import type { ReactionEmoji } from '../types/roomComms'
@@ -111,6 +111,49 @@ export function messengerPeerDisplayTitle(
   const vid = (viewerUserId ?? '').trim()
   if (!sid || (vid && sid === vid)) return snap
   return messengerContactDisplayName(sid, snap, aliasByUserId ?? {}).title
+}
+
+/**
+ * URL аватара отправителя для зрителя: локальный оверрайд контакта, иначе переданный URL профиля/снимка.
+ * Для своих сообщений возвращается переданный URL без подмены.
+ */
+export function messengerPeerDisplayAvatarUrl(
+  senderUserId: string | null | undefined,
+  profileAvatarUrl: string | null | undefined,
+  displayAvatarByUserId: Record<string, string> | null | undefined,
+  viewerUserId: string | null | undefined,
+): string | null {
+  const snap = (profileAvatarUrl ?? '').trim() || null
+  const sid = (senderUserId ?? '').trim()
+  const vid = (viewerUserId ?? '').trim()
+  if (!sid || (vid && sid === vid)) return snap
+  const ov = (displayAvatarByUserId?.[sid] ?? '').trim()
+  if (ov) return ov
+  return snap
+}
+
+/** Meta `forward_info.nav` при пересылке из открытого треда. */
+export function buildMessengerForwardNav(
+  conv: MessengerConversationSummary | null | undefined,
+  msg: DirectMessage,
+): MessengerForwardNav | null {
+  if (!conv) return null
+  if (conv.kind === 'channel') {
+    const parent = msg.replyToMessageId?.trim()
+    if (parent) {
+      return { kind: 'channel_comment', conversationId: conv.id, postId: parent, commentMessageId: msg.id }
+    }
+    return { kind: 'channel_post', conversationId: conv.id, postMessageId: msg.id }
+  }
+  if (conv.kind === 'group') {
+    return { kind: 'group_message', conversationId: conv.id, messageId: msg.id }
+  }
+  if (conv.kind === 'direct') {
+    const author = msg.senderUserId?.trim()
+    if (!author) return null
+    return { kind: 'dm_profile', authorUserId: author }
+  }
+  return null
 }
 
 export const MESSENGER_LAST_OPEN_KEY = 'vmix.messenger.lastOpenConversation'

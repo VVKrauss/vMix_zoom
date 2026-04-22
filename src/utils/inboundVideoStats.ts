@@ -81,6 +81,25 @@ export function applyEma(
   return next
 }
 
+/** Inbound video getStats по участнику: префикс ключа EMA инкапсулирован здесь. */
+export function applyInboundRecvVideoEma(
+  anchorPeerId: string,
+  map: Map<string, { bitrateBps: number; fractionLost: number }>,
+  br: number,
+  lf: number,
+): { bitrateBps: number; fractionLost: number } {
+  return applyEma(`__in_${anchorPeerId}`, map, br, lf)
+}
+
+/** Локальный uplink (камера): фиксированный ключ EMA. */
+export function applyLocalUplinkVideoEma(
+  map: Map<string, { bitrateBps: number; fractionLost: number }>,
+  br: number,
+  lf: number,
+): { bitrateBps: number; fractionLost: number } {
+  return applyEma('__local__', map, br, lf)
+}
+
 /** Уровень 5: > 2 Мбит/с при умеренных потерях; штраф за loss / низкий битрейт. */
 export function bitrateLossToLevel(bitrateBps: number, fractionLost: number): 1 | 2 | 3 | 4 | 5 {
   let base: 1 | 2 | 3 | 4 | 5 = 1

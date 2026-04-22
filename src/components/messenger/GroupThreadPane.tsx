@@ -15,6 +15,7 @@ import {
   messengerConversationListTailPatch,
   previewTextForDirectMessageTail,
   type DirectMessage,
+  type MessengerForwardNav,
 } from '../../lib/messenger'
 import { uploadMessengerAudio, uploadMessengerImage } from '../../lib/messenger'
 import {
@@ -96,12 +97,14 @@ export function GroupThreadPane({
   joinRequestPending,
   jumpToMessageId,
   onJumpHandled,
+  onForwardSourceNavigate,
 }: {
   conversationId: string
   /** Состояние сети с уровня страницы мессенджера (офлайн → кэш хвоста). */
   messengerOnline?: boolean
   onTouchTail?: (patch: { lastMessageAt: string; lastMessagePreview: string }) => void
   onForwardMessage?: (message: DirectMessage) => void
+  onForwardSourceNavigate?: (nav: MessengerForwardNav) => void
   onMentionSlug?: (slug: string) => void
   /** Хинт из родителя: если диалог уже есть в списке, считаем что участник (убирает рассинхрон после вступления). */
   isMemberHint?: boolean
@@ -981,6 +984,7 @@ export function GroupThreadPane({
                       onMentionSlug={onMentionSlug}
                       onOpenImageLightbox={(ctx) => setGroupImageLightbox({ urls: ctx.urls, index: ctx.initialIndex })}
                       peerAliasByUserId={peerAliasByUserId}
+                      onForwardSourceNavigate={onForwardSourceNavigate}
                     />,
                   )
                 }
