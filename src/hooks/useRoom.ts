@@ -399,11 +399,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const [participants, setParticipants] = useState<Map<string, RemoteParticipant>>(new Map())
   const [isMuted, setIsMuted] = useState(false)
   const [isCamOff, setIsCamOff] = useState(false)
-  const [couchModeOpen, setCouchModeOpen] = useState(false)
-  /** Socket id участника, включившего «Диван» (только он может стартовать демонстрацию). */
-  const [couchModeHostPeerId, setCouchModeHostPeerId] = useState<string | null>(null)
-  const couchModeOpenRef = useRef(false)
-  const couchModeHostPeerIdRef = useRef<string | null>(null)
+  // (couch mode removed)
 
   const socketRef = useRef<Socket | null>(null)
   const deviceRef = useRef<Device | null>(null)
@@ -412,13 +408,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const audioProducerRef = useRef<Producer | null>(null)
   const videoProducerRef = useRef<Producer | null>(null)
   const screenProducerRef = useRef<Producer | null>(null)
-  /** Демонстрация экрана: был включён захват audio, и мы подменили outgoing audio track. */
-  const screenShareAudioActiveRef = useRef(false)
-  const screenShareOriginalAudioTrackRef = useRef<MediaStreamTrack | null>(null)
-  const screenShareDisplayStreamRef = useRef<MediaStream | null>(null)
-  const screenShareMixCtxRef = useRef<AudioContext | null>(null)
-  const screenShareMixTrackRef = useRef<MediaStreamTrack | null>(null)
-  const [screenShareAudioActive, setScreenShareAudioActive] = useState(false)
+  // Screen share: only video. We do not mix/replace outgoing audio.
   const studioPreviewVideoProducerRef = useRef<Producer | null>(null)
   const studioProgramAudioProducerRef = useRef<Producer | null>(null)
   const studioStopInFlightRef = useRef<Promise<void> | null>(null)
@@ -1455,17 +1445,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         setChatMessages((prev) => [...prev, reactionLine].slice(-CHAT_MESSAGES_CAP))
       })
 
-      socket.on('couchMode', (raw: unknown) => {
-        if (!raw || typeof raw !== 'object') return
-        const o = raw as Record<string, unknown>
-        const openRaw = o.open ?? o.isOpen ?? o.value
-        const open = openRaw === true || openRaw === 1 || openRaw === 'true'
-        setCouchModeOpen(open)
-        const hostRaw = o.hostPeerId ?? o.host_peer_id
-        const host =
-          typeof hostRaw === 'string' && hostRaw.trim() ? hostRaw.trim() : null
-        setCouchModeHostPeerId(open ? host : null)
-      })
+      // (couch mode removed)
 
       socket.on('studioBroadcastHealth', (raw: unknown) => {
         const o = raw as Record<string, unknown>
@@ -1600,7 +1580,18 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const ensureAudioProducer = useCallback(async () => {
     const sendTransport = sendTransportRef.current
     if (!sendTransport || audioProducerRef.current) return
-    const a = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const micPref = readPreferredMicId()
+    let a: MediaStream
+    try {
+      // Сначала пробуем сохранённый mic deviceId, чтобы при повторном включении
+      // (и после реконнекта) использовался последний выбранный источник.
+      a = await navigator.mediaDevices.getUserMedia({
+        audio: !isIosLikeDevice() && micPref ? { deviceId: { exact: micPref } as const } : true,
+      })
+    } catch {
+      // Fallback на дефолтный микрофон (например если deviceId устарел / permission reset)
+      a = await navigator.mediaDevices.getUserMedia({ audio: true })
+    }
     const track = a.getAudioTracks()[0]
     if (!track) { a.getTracks().forEach((t) => t.stop()); return }
     mergeTrackIntoLocalStream(track)
@@ -1611,13 +1602,26 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     const sendTransport = sendTransportRef.current
     if (!sendTransport || videoProducerRef.current) return
     const preset = presetRef.current
-    const v = await navigator.mediaDevices.getUserMedia({
-      video: {
-        width: { ideal: preset.width },
-        height: { ideal: preset.height },
-        frameRate: { ideal: preset.frameRate },
-      },
-    })
+    const camPref = readPreferredCameraId()
+    let v: MediaStream
+    try {
+      v = await navigator.mediaDevices.getUserMedia({
+        video: {
+          ...(camPref ? { deviceId: { exact: camPref } as const } : {}),
+          width: { ideal: preset.width },
+          height: { ideal: preset.height },
+          frameRate: { ideal: preset.frameRate },
+        },
+      })
+    } catch {
+      v = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: preset.width },
+          height: { ideal: preset.height },
+          frameRate: { ideal: preset.frameRate },
+        },
+      })
+    }
     const track = v.getVideoTracks()[0]
     if (!track) { v.getTracks().forEach((t) => t.stop()); return }
     mergeTrackIntoLocalStream(track)
@@ -1882,36 +1886,16 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     setIsScreenSharing(false)
     if (sid) stripScreenChatForPeer(sid)
 
-    // Если шаринг запускался с audio=true — восстанавливаем исходный аудиотрек.
-    if (screenShareAudioActiveRef.current) {
-      const audioProducer = audioProducerRef.current
-      const orig = screenShareOriginalAudioTrackRef.current
-      screenShareAudioActiveRef.current = false
-      screenShareOriginalAudioTrackRef.current = null
-      setScreenShareAudioActive(false)
-      screenShareDisplayStreamRef.current?.getTracks().forEach((t) => t.stop())
-      screenShareDisplayStreamRef.current = null
-      screenShareMixTrackRef.current?.stop()
-      screenShareMixTrackRef.current = null
-      try {
-        screenShareMixCtxRef.current?.close()
-      } catch {
-        /* noop */
-      }
-      screenShareMixCtxRef.current = null
-      if (audioProducer && orig && orig.readyState === 'live') {
-        void Promise.resolve(audioProducer.replaceTrack({ track: orig })).catch(() => {})
-      }
-    }
+    // Screen share never touches outgoing audio.
   }, [stripScreenChatForPeer])
 
   /** Подсказка диалогу getDisplayMedia: весь экран / окно / вкладка (где поддерживается). */
   const startScreenShare = useCallback(
     async (
       surface?: 'monitor' | 'window' | 'browser',
-      options?: { withAudio?: boolean; maxBitrateBps?: number },
+      options?: { maxBitrateBps?: number },
     ) => {
-      if (import.meta.env.DEV) console.log('[startScreenShare] request', { surface, withAudio: options?.withAudio === true })
+      if (import.meta.env.DEV) console.log('[startScreenShare] request', { surface })
       if (screenProducerRef.current) {
         if (import.meta.env.DEV) console.log('[startScreenShare] skip: already sharing')
         return
@@ -1927,14 +1911,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         })
         return
       }
-      if (couchModeOpenRef.current) {
-        const host = couchModeHostPeerIdRef.current
-        const sid = socketRef.current?.id
-        if (host && sid && host !== sid) {
-          if (import.meta.env.DEV) console.warn('[startScreenShare] skip: couch host is another peer', { host, sid })
-          return
-        }
-      }
       const sid = socketRef.current?.id?.trim() || ''
       for (const p of participantsRef.current.values()) {
         if (!p.screenStream) continue
@@ -1948,19 +1924,14 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         return
       }
       try {
-        const withAudio = options?.withAudio === true
         const video: Record<string, unknown> = {
           frameRate: { max: 30 },
         }
         if (surface) video.displaySurface = surface
-        // ВАЖНО: обычная демонстрация должна формировать те же опции, что и раньше.
-        // Доп. поля (preferCurrentTab и audio=true) добавляем только для «дивана».
         const displayMediaOpts: DisplayMediaStreamOptions = {
           video: video as unknown as MediaTrackConstraints,
-          audio: withAudio ? true : false,
+          audio: false,
         }
-        // Важно: `preferCurrentTab` в Chrome/Edge может ограничить выбор одной текущей вкладкой.
-        // Для «Дивана» нам нужен полный список вкладок, поэтому этот флаг не используем.
         const stream = await navigator.mediaDevices.getDisplayMedia(displayMediaOpts)
         const videoTrack = stream.getVideoTracks()[0]
         if (!videoTrack) {
@@ -1987,56 +1958,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         })
         screenProducerRef.current = producer
         setIsScreenSharing(true)
-
-        // Если попросили audio — подменяем outgoing audio треком источника (если он реально доступен).
-        if (withAudio) {
-          const displayAudio = stream.getAudioTracks()[0] ?? null
-          const audioProducer = audioProducerRef.current
-          if (displayAudio && audioProducer) {
-            screenShareDisplayStreamRef.current = stream
-            screenShareOriginalAudioTrackRef.current = audioProducer.track ?? null
-            screenShareAudioActiveRef.current = true
-            setScreenShareAudioActive(true)
-            try {
-              // Микрофон должен продолжать работать даже при включённом audio шаринга:
-              // собираем микс (mic + displayAudio) в один трек и подменяем producer на него.
-              const prevCtx = screenShareMixCtxRef.current
-              if (prevCtx) {
-                try { prevCtx.close() } catch { /* noop */ }
-                screenShareMixCtxRef.current = null
-              }
-              screenShareMixTrackRef.current?.stop()
-              screenShareMixTrackRef.current = null
-
-              const ctx = new AudioContext()
-              const dest = ctx.createMediaStreamDestination()
-              const micTrack = screenShareOriginalAudioTrackRef.current
-              if (micTrack) {
-                const micSrc = ctx.createMediaStreamSource(new MediaStream([micTrack]))
-                micSrc.connect(dest)
-              }
-              const displaySrc = ctx.createMediaStreamSource(new MediaStream([displayAudio]))
-              displaySrc.connect(dest)
-              const mixedTrack = dest.stream.getAudioTracks()[0] ?? null
-              if (!mixedTrack) throw new Error('no_mixed_track')
-              screenShareMixCtxRef.current = ctx
-              screenShareMixTrackRef.current = mixedTrack
-              await audioProducer.replaceTrack({ track: mixedTrack })
-            } catch {
-              screenShareAudioActiveRef.current = false
-              screenShareOriginalAudioTrackRef.current = null
-              setScreenShareAudioActive(false)
-            }
-          } else {
-            screenShareAudioActiveRef.current = false
-            screenShareOriginalAudioTrackRef.current = null
-            setScreenShareAudioActive(false)
-          }
-        } else {
-          screenShareAudioActiveRef.current = false
-          screenShareOriginalAudioTrackRef.current = null
-          setScreenShareAudioActive(false)
-        }
       } catch (e) {
         console.error('[startScreenShare] getDisplayMedia failed', e)
         localScreenStreamRef.current?.getTracks().forEach((t) => t.stop())
@@ -2088,27 +2009,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     })
   }, [])
 
-  const setCouchMode = useCallback((open: boolean) => {
-    const socket = socketRef.current
-    const rid = roomIdRef.current?.trim()
-    setCouchModeOpen(open)
-    const sid = socket?.id?.trim() || null
-    if (open && sid) {
-      setCouchModeHostPeerId(sid)
-    } else {
-      setCouchModeHostPeerId(null)
-    }
-    if (!socket?.connected || !rid) return
-    socket.emit('couchMode', { roomId: rid, open, hostPeerId: open ? sid : null })
-  }, [])
-
-  useEffect(() => {
-    couchModeOpenRef.current = couchModeOpen
-  }, [couchModeOpen])
-
-  useEffect(() => {
-    couchModeHostPeerIdRef.current = couchModeHostPeerId
-  }, [couchModeHostPeerId])
+  // (couch mode removed)
 
   const [vmixIngressLoading, setVmixIngressLoading] = useState(false)
 
@@ -2790,7 +2691,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     isScreenSharing,
     toggleScreenShare,
     startScreenShare,
-    screenShareAudioActive,
     participants,
     isMuted,
     isCamOff,
@@ -2817,8 +2717,5 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     studioBroadcastHealth,
     studioBroadcastHealthDetail,
     studioServerLogLines,
-    couchModeOpen,
-    couchModeHostPeerId,
-    setCouchMode,
   }
 }

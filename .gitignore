@@ -3,6 +3,9 @@ node_modules/
 dist/
 supabase/.temp/
 
+# Backend copy from server (local only)
+backend/
+
 # Локальные артефакты агента / архивы — не коммитить
 agent-tools-deploy-payload.json
 vMix replacer.zip

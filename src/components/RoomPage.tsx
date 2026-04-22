@@ -127,10 +127,7 @@ const StudioModeWorkspace = lazy(async () => {
   return { default: mod.StudioModeWorkspace }
 })
 
-const CouchModeWorkspace = lazy(async () => {
-  const mod = await import('./CouchModeWorkspace')
-  return { default: mod.CouchModeWorkspace }
-})
+// couch mode removed
 
 function LayoutCycleFabButton({
   className = '',
@@ -305,9 +302,8 @@ interface Props {
   onToggleScreenShare: () => void
   onStartScreenShare: (
     surface?: 'monitor' | 'window' | 'browser',
-    opts?: { withAudio?: boolean; maxBitrateBps?: number },
+    opts?: { maxBitrateBps?: number },
   ) => void
-  screenShareAudioActive?: boolean
   chatMessages: RoomChatMessage[]
   onSendChatMessage: (text: string) => void
   onSendReaction: (emoji: string) => void
@@ -352,10 +348,6 @@ interface Props {
   studioServerLogLines?: readonly string[]
   connectionState?: 'connected' | 'reconnecting'
   reconnectAttempt?: number | null
-  couchModeOpen?: boolean
-  /** Socket id того, кто включил «Диван» (с сервера / сигналинга). */
-  couchModeHostPeerId?: string | null
-  onSetCouchMode?: (open: boolean) => void
 }
 
 export function RoomPage({
@@ -367,7 +359,6 @@ export function RoomPage({
   onSwitchCamera, onSwitchMic,
   activePreset, onChangePreset,
   localScreenStream, localScreenPeerId, isScreenSharing, onToggleScreenShare, onStartScreenShare,
-  screenShareAudioActive = false,
   chatMessages, onSendChatMessage, onSendReaction, reactionBursts,
   chatOpen, setChatOpen, chatUnreadCount, chatIncomingPreview,
   onDismissChatIncomingPreview,
@@ -392,9 +383,6 @@ export function RoomPage({
   studioServerLogLines = [],
   connectionState = 'connected',
   reconnectAttempt = null,
-  couchModeOpen = false,
-  couchModeHostPeerId = null,
-  onSetCouchMode,
 }: Props) {
   const readScreenShareMaxBitrateBps = () => {
     try {
@@ -556,10 +544,10 @@ export function RoomPage({
 
   const { audioOutputs, refreshAudioOutputs } = useAudioOutputs()
   const [playoutVolume, setPlayoutVolume] = useLocalStorageNumber('vmix_playout_volume', 1, 0, 1)
-  /** Громкость только потока программы vMix/SRT (у каждого гостя своя, localStorage). При подключении потока сбрасывается в 0 + mute. */
-  const [vmixProgramVolume, setVmixProgramVolume] = useLocalStorageNumber('vmix_program_volume', 0, 0, 1)
-  const [couchCaptureVolume, setCouchCaptureVolume] = useLocalStorageNumber('vmix_couch_capture_volume', 1, 0, 1)
-  const [vmixProgramMuted, setVmixProgramMuted] = useLocalStorageBool('vmix_program_muted', true)
+  /** Громкость только потока программы vMix/SRT (у каждого гостя своя, localStorage). */
+  const [vmixProgramVolume, setVmixProgramVolume] = useLocalStorageNumber('vmix_program_volume', 1, 0, 1)
+  // couch mode removed
+  const [vmixProgramMuted, setVmixProgramMuted] = useLocalStorageBool('vmix_program_muted', false)
   const [playoutSinkId, setPlayoutSinkId] = useLocalStorageString('vmix_playout_sink', '')
   const [showControlButtonLabels, setShowControlButtonLabels] = useLocalStorageBool('vmix_control_button_labels', false)
   const [chatEmbed, setChatEmbed] = useLocalStorageBool('vmix_chat_embed', true)
@@ -868,7 +856,7 @@ export function RoomPage({
 
   const [streamerMode, setStreamerMode] = useLocalStorageBool('vmix_streamer_mode', false)
   const [studioOpen, setStudioOpen] = useState(false)
-  const couchOpen = couchModeOpen
+  const couchOpen = false
   /** Только локальное превью; отправляемый поток без отражения. */
   const [mirrorLocalCamera, setMirrorLocalCamera] = useLocalStorageBool('vmix_local_camera_mirror', true)
 
@@ -876,13 +864,7 @@ export function RoomPage({
     if (!streamerMode) setStudioOpen(false)
   }, [streamerMode])
 
-  useEffect(() => {
-    if (streamerMode && couchOpen) onSetCouchMode?.(false)
-  }, [streamerMode])
-
-  useEffect(() => {
-    if (couchOpen) setStudioOpen(false)
-  }, [couchOpen])
+  // couch mode removed
 
   const blockImmersiveChromeHide = useMemo(
     () =>
@@ -891,7 +873,6 @@ export function RoomPage({
       screenStopDialogOpen ||
       vmixStopDialogOpen ||
       studioOpen ||
-      couchOpen ||
       roomMobileChromeMenuOpen ||
       (chatOpen && !chatEmbed),
     [
@@ -900,7 +881,6 @@ export function RoomPage({
       screenStopDialogOpen,
       vmixStopDialogOpen,
       studioOpen,
-      couchOpen,
       roomMobileChromeMenuOpen,
       chatOpen,
       chatEmbed,
@@ -1156,8 +1136,7 @@ export function RoomPage({
   useEffect(() => {
     const prev = prevVmixPhaseForProgramAudioRef.current
     if (vmixPhase === 'live' && prev !== 'live') {
-      setVmixProgramVolume(0)
-      setVmixProgramMuted(true)
+      // SRT/vMix appearance must not change audio settings automatically.
     }
     prevVmixPhaseForProgramAudioRef.current = vmixPhase
   }, [vmixPhase, setVmixProgramVolume, setVmixProgramMuted])
@@ -1179,58 +1158,7 @@ export function RoomPage({
     [remoteList],
   )
   const canStartScreenShare = !remoteScreenActive && !remoteScreenSharePending
-
-  const couchStageScreenStream = useMemo(() => {
-    if (!couchOpen) return null
-    const hid = couchModeHostPeerId ?? null
-    if (!hid) {
-      if (isScreenSharing) return localScreenStream
-      return remoteList.find((p) => p.screenStream)?.screenStream ?? null
-    }
-    if (hid === localPeerId) return localScreenStream ?? null
-    return participants.get(hid)?.screenStream ?? null
-  }, [
-    couchOpen,
-    couchModeHostPeerId,
-    localPeerId,
-    localScreenStream,
-    participants,
-    remoteList,
-    isScreenSharing,
-  ])
-
-  const couchStageScreenAudioStream = useMemo(() => {
-    if (!couchOpen) return null
-    const hid = couchModeHostPeerId ?? null
-    // Локальный предпросмотр звука — нет (эхо). Для хоста дивана звук идёт через реальный room playout.
-    if (hid === localPeerId) return null
-    if (!hid) {
-      const p = remoteList.find((x) => x.screenStream)
-      return p?.screenAudioStream ?? null
-    }
-    return participants.get(hid)?.screenAudioStream ?? null
-  }, [couchOpen, couchModeHostPeerId, localPeerId, participants, remoteList])
-
-  const canStartCouchShare = useMemo(() => {
-    if (!couchOpen) return canStartScreenShare
-    const hid = couchModeHostPeerId ?? null
-    if (hid && localPeerId && hid !== localPeerId) return false
-    return canStartScreenShare
-  }, [couchOpen, couchModeHostPeerId, localPeerId, canStartScreenShare])
-
-  const canCloseCouchWorkspace = useMemo(() => {
-    if (!couchOpen) return false
-    const hid = couchModeHostPeerId ?? null
-    if (!hid) return isPlatformAdminish
-    return localPeerId === hid
-  }, [couchOpen, couchModeHostPeerId, localPeerId, isPlatformAdminish])
-
-  const couchStageHasAudio = useMemo(() => Boolean(couchStageScreenAudioStream), [couchStageScreenAudioStream])
-
-  const handleCouchBarToggle = useCallback(() => {
-    if (couchOpen && !canCloseCouchWorkspace) return
-    onSetCouchMode?.(!couchOpen)
-  }, [couchOpen, canCloseCouchWorkspace, onSetCouchMode])
+  // couch mode removed
 
   const hasAnyScreenShare =
     isScreenSharing ||
@@ -1872,7 +1800,7 @@ export function RoomPage({
       }${isViewportMobile ? ' room-page--viewport-mobile' : ''}${
         chatOpen && canSeeRoomChat ? ' room-page--chat-open' : ''
       }${leaveDialog !== null ? ' room-page--leave-dialog' : ''}${
-        couchOpen ? ' room-page--couch-mode' : ''
+        ''
       }`}
     >
       <ConfirmDialog
@@ -2635,8 +2563,7 @@ export function RoomPage({
         />
       ) : null}
 
-      {!couchOpen ? (
-        <ControlsBar
+      <ControlsBar
         isMuted={isMuted}
         isCamOff={isCamOff}
         cameras={cameras}
@@ -2658,9 +2585,9 @@ export function RoomPage({
         onToggleInfo={() => setShowInfo(v => !v)}
         onResetView={resetView}
         isScreenSharing={isScreenSharing}
-        canStartScreenShare={canStartCouchShare}
+        canStartScreenShare={canStartScreenShare}
         onToggleScreenShare={requestStopScreenSharing}
-        onStartScreenShare={(surface) =>
+        onStartScreenShare={(surface?: 'monitor' | 'window' | 'browser') =>
           Promise.resolve(onStartScreenShare(surface)).catch((e: unknown) => {
             console.error('[room] onStartScreenShare failed', e)
           })
@@ -2719,12 +2646,7 @@ export function RoomPage({
         showStudioEntry={streamerMode && canUseElevatedRoomTools}
         studioOpen={studioOpen}
         onStudioToggle={() => setStudioOpen((v) => !v)}
-        showCouchEntry={!streamerMode && isPlatformAdminish}
-        couchOpen={false}
-        couchToggleDisabled={false}
-        onCouchToggle={handleCouchBarToggle}
       />
-      ) : null}
       </div>
 
       {chatOpen && !chatEmbed && (
@@ -2774,72 +2696,7 @@ export function RoomPage({
         </Suspense>
       ) : null}
 
-      {couchOpen ? (
-        <Suspense fallback={<div className="join-screen"><div className="auth-loading" aria-label="Загрузка…" /></div>}>
-          <CouchModeWorkspace
-            open={couchOpen}
-            onClose={() => {
-              if (!canCloseCouchWorkspace) return
-              onSetCouchMode?.(false)
-              requestStopScreenSharing()
-            }}
-            couchDemoLive={Boolean(couchStageScreenStream)}
-            stageScreenStream={couchStageScreenStream}
-            stageScreenAudioStream={couchStageScreenAudioStream}
-            stagePlayoutVolume={couchCaptureVolume}
-            onStagePlayoutVolumeChange={setCouchCaptureVolume}
-            stageVideoMuted={
-              !!(
-                couchStageScreenStream &&
-                localScreenStream &&
-                couchStageScreenStream === localScreenStream
-              )
-            }
-            canPickCouchSource={canStartCouchShare}
-            canStopCouchShare={
-              isScreenSharing &&
-              (couchModeHostPeerId == null || couchModeHostPeerId === localPeerId)
-            }
-            hideCouchClose={!canCloseCouchWorkspace}
-            localStream={localStream}
-            pipPeers={[
-              ...(localStream && !isCamOff && localStream.getVideoTracks().length
-                ? [{ id: localPeerId || 'local', stream: new MediaStream([localStream.getVideoTracks()[0]!]), isLocal: true }]
-                : []),
-              ...remoteList
-                .filter((p) => p.videoStream && p.peerId && p.peerId !== localPeerId)
-                .map((p) => ({ id: p.peerId, stream: p.videoStream!, isLocal: false })),
-            ]}
-            onPickSource={(surface) =>
-              Promise.resolve(
-                onStartScreenShare(surface, { withAudio: true, maxBitrateBps: readScreenShareMaxBitrateBps() }),
-              ).catch((e: unknown) => {
-                console.error('[couch] onStartScreenShare failed', e)
-              })
-            }
-            onStopShare={requestStopScreenSharing}
-            couchDemoAudioActive={couchStageHasAudio}
-            isMuted={isMuted}
-            isCamOff={isCamOff}
-            onToggleMute={onToggleMute}
-            onToggleCam={onToggleCam}
-            chat={{
-              messages: chatMessages,
-              localPeerId,
-              localUserId: user?.id ?? null,
-              avatarByPeerId: chatAvatarByPeerId,
-              avatarByUserId: chatAvatarByUserId,
-              contactStatuses: chatContactStatuses,
-              onToggleContactPin: (targetUserId, nextFavorite) => {
-                void toggleFavoriteFromChat(targetUserId, nextFavorite)
-              },
-              onSend: sendChatGuarded,
-              composerLocked: chatComposerLocked,
-              composerLockedHint: chatComposerHint,
-            }}
-          />
-        </Suspense>
-      ) : null}
+      {/* couch mode removed */}
 
       {/* Тост: новый запрос на вход */}
       {isDbSpaceRoomHost && joinRequestToast ? (

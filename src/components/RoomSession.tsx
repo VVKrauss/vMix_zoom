@@ -164,7 +164,6 @@ export function RoomSession({ roomId }: Props) {
     isMuted, isCamOff,
     roomId: connectedRoomId, localPeerId, srtByPeer,
     localScreenStream, localScreenPeerId, isScreenSharing, toggleScreenShare, startScreenShare,
-    screenShareAudioActive,
     chatMessages, sendChatMessage, sendReaction, reactionBursts,
     remoteScreenConsumePending,
     remoteStudioProgramConsumePending,
@@ -183,9 +182,6 @@ export function RoomSession({ roomId }: Props) {
     studioBroadcastHealthDetail,
     studioServerLogLines,
     roomClosedReason,
-    couchModeOpen,
-    couchModeHostPeerId,
-    setCouchMode,
   } = useRoom(roomActivityNotifyRef)
 
   useEffect(() => {
@@ -434,7 +430,6 @@ export function RoomSession({ roomId }: Props) {
         isScreenSharing={isScreenSharing}
         onToggleScreenShare={toggleScreenShare}
         onStartScreenShare={startScreenShare}
-        screenShareAudioActive={screenShareAudioActive}
         chatMessages={chatMessages}
         onSendChatMessage={sendChatMessage}
         onSendReaction={sendReaction}
@@ -466,9 +461,6 @@ export function RoomSession({ roomId }: Props) {
         studioServerLogLines={studioServerLogLines}
         connectionState={connectionState}
         reconnectAttempt={reconnectAttempt}
-        couchModeOpen={couchModeOpen}
-        couchModeHostPeerId={couchModeHostPeerId}
-        onSetCouchMode={setCouchMode}
         leaveEndsRoomForAll={isSessionHostFor((connectedRoomId ?? roomId).trim()) || canAccessAdminPanel}
       />
     )

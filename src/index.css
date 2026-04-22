@@ -220,7 +220,7 @@ html[data-theme="light"] .ctrl-chevron:disabled:hover {
   color: var(--text-dim);
 }
 
-html[data-theme="light"] .controls-bar .ctrl-btn:hover:not(:disabled):not(.ctrl-btn--leave):not(.ctrl-btn--screen):not(.ctrl-btn--off):not(.ctrl-btn--source-ingest):not(.ctrl-btn--studio):not(.ctrl-btn--couch) {
+html[data-theme="light"] .controls-bar .ctrl-btn:hover:not(:disabled):not(.ctrl-btn--leave):not(.ctrl-btn--screen):not(.ctrl-btn--off):not(.ctrl-btn--source-ingest):not(.ctrl-btn--studio) {
   background: color-mix(in srgb, var(--surface2) 55%, var(--border));
 }
 
@@ -281,25 +281,6 @@ html[data-theme="light"] .ctrl-btn.ctrl-btn--studio:hover:not(:disabled) {
 }
 
 html[data-theme="light"] .ctrl-btn.ctrl-btn--studio.ctrl-btn--studio--open {
-  color: #000;
-  border-color: var(--border);
-  background: color-mix(in srgb, var(--text) 7%, var(--surface2));
-  box-shadow: none;
-}
-
-html[data-theme="light"] .ctrl-btn.ctrl-btn--couch {
-  color: #000;
-  border-color: var(--border);
-  background: var(--surface2);
-}
-
-html[data-theme="light"] .ctrl-btn.ctrl-btn--couch:hover:not(:disabled) {
-  color: #000;
-  border-color: var(--border);
-  background: color-mix(in srgb, var(--surface2) 55%, var(--border));
-}
-
-html[data-theme="light"] .ctrl-btn.ctrl-btn--couch.ctrl-btn--couch--open {
   color: #000;
   border-color: var(--border);
   background: color-mix(in srgb, var(--text) 7%, var(--surface2));

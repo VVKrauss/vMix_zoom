@@ -105,8 +105,6 @@ interface Props {
   onVmixProgramVolumeChange: (v: number) => void
   vmixProgramMuted: boolean
   onToggleVmixProgramMuted: () => void
-  /** Режим «Диван» открыт другим организатором — нельзя закрыть сессию этой кнопкой. */
-  couchToggleDisabled?: boolean
   /** Мобильный viewport: панель скрыта, меню только из FAB справа снизу. */
   forceMobileFabMenu: boolean
   viewportMobile: boolean
@@ -145,10 +143,6 @@ interface Props {
   showStudioEntry?: boolean
   studioOpen?: boolean
   onStudioToggle?: () => void
-  /** Кнопка «Диван» на том же месте, что студия, но в обычной раскладке (!streamerMode). */
-  showCouchEntry?: boolean
-  couchOpen?: boolean
-  onCouchToggle?: () => void
   /** Личные «Настройки»: скрыть тумблер «Инфо» (перенесён в шапку «Комната»). */
   hidePersonalVideoInfoToggle?: boolean
   /** Меню «Чат»: скрыть политику комнаты (она в шапке). */
@@ -269,7 +263,6 @@ export function ControlsBar({
   onVmixProgramVolumeChange,
   vmixProgramMuted,
   onToggleVmixProgramMuted,
-  couchToggleDisabled = false,
   forceMobileFabMenu,
   viewportMobile,
   immersiveAutoHide,
@@ -291,9 +284,6 @@ export function ControlsBar({
   showStudioEntry = false,
   studioOpen = false,
   onStudioToggle,
-  showCouchEntry = false,
-  couchOpen = false,
-  onCouchToggle,
   hidePersonalVideoInfoToggle = false,
   hideHostRoomPoliciesInChat = false,
 }: Props) {
@@ -687,38 +677,19 @@ export function ControlsBar({
           <FiRrIcon name="clapperboard" className="ctrl-btn__studio-fi" aria-hidden />
         </button>
       ) : null
-    const couchBtn =
-      !streamerMode && showCouchEntry && onCouchToggle ? (
-        <button
-          type="button"
-          className={`ctrl-btn ctrl-btn--source-ingest ctrl-btn--couch${couchOpen ? ' ctrl-btn--couch--open' : ''}`}
-          onClick={onCouchToggle}
-          disabled={couchToggleDisabled}
-          title={
-            couchToggleDisabled
-              ? 'Режим «Диван» активен у другого организатора'
-              : couchOpen
-                ? 'Закрыть режим «Диван»'
-                : 'Режим «Диван»'
-          }
-        >
-          <FiRrIcon name="sofa" className="ctrl-btn__couch-fi" aria-hidden />
-        </button>
-      ) : null
-    if (!ndi && !vmixStrip && !studioBtn && !couchBtn) return null
+    if (!ndi && !vmixStrip && !studioBtn) return null
     return (
       <div className={`controls-bar__sources${sheet ? ' controls-bar__sources--in-sheet' : ''}`} aria-label="Внешние источники">
         {ndi}
         {vmixStrip}
         {studioBtn}
-        {couchBtn}
       </div>
     )
   }
 
   return (
     <div
-      className={`controls-bar${showButtonLabels ? '' : ' controls-bar--icons-only'}${streamerMode ? ' controls-bar--streamer-mode' : ''}${forceMobileFabMenu ? ' controls-bar--fab-dock' : ''}${couchOpen ? ' controls-bar--couch-open' : ''}`}
+      className={`controls-bar${showButtonLabels ? '' : ' controls-bar--icons-only'}${streamerMode ? ' controls-bar--streamer-mode' : ''}${forceMobileFabMenu ? ' controls-bar--fab-dock' : ''}`}
     >
       {showMainBar ? (
       <div className="controls-bar__main">
@@ -885,24 +856,6 @@ export function ControlsBar({
                   aria-label={studioOpen ? 'Закрыть студию' : 'Открыть режим «Студия»'}
                 >
                   <FiRrIcon name="clapperboard" className="ctrl-mobile-studio-fi" />
-                </button>
-              ) : null}
-              {!streamerMode && showCouchEntry && onCouchToggle ? (
-                <button
-                  type="button"
-                  className={`ctrl-mobile-bottom-bar__btn ctrl-mobile-bottom-bar__btn--compact${couchOpen ? ' ctrl-mobile-bottom-bar__btn--couch-on' : ''}`}
-                  onClick={onCouchToggle}
-                  disabled={couchToggleDisabled}
-                  title={
-                    couchToggleDisabled
-                      ? 'Режим «Диван» активен у другого организатора'
-                      : couchOpen
-                        ? 'Закрыть режим «Диван»'
-                        : 'Режим «Диван»'
-                  }
-                  aria-label={couchOpen ? 'Закрыть режим «Диван»' : 'Открыть режим «Диван»'}
-                >
-                  <FiRrIcon name="sofa" className="ctrl-mobile-couch-fi" />
                 </button>
               ) : null}
               {showMobileLayoutCycle ? (
