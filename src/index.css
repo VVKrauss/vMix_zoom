@@ -7318,6 +7318,14 @@ html[data-theme="light"] .messenger-msg-menu-wrap.messenger-channel-reaction-pic
   word-break: break-word;
 }
 
+/* iOS/iPadOS: prevent automatic viewport zoom on textarea focus. */
+@media (hover: none) and (pointer: coarse) {
+  .dashboard-messenger__input {
+    font-size: max(16px, var(--dm-msg-font, 13px));
+    line-height: 1.35;
+  }
+}
+
 .dashboard-messenger__input:focus {
   outline: 2px solid rgba(159,214,255,.35);
   outline-offset: 1px;

@@ -103,6 +103,7 @@ function MessengerChatListAsideImpl(props: {
 
   const listScrollRef = useRef<HTMLDivElement | null>(null)
   const ptrInnerRef = useRef<HTMLDivElement | null>(null)
+  const searchRef = useRef<HTMLInputElement | null>(null)
   const ptrStartY = useRef(0)
   const ptrPullPx = useRef(0)
   useEffect(() => {
@@ -159,6 +160,17 @@ function MessengerChatListAsideImpl(props: {
     }
   }, [isMobileMessenger, onRefreshChatList, chatListRefreshing])
 
+  // IMPORTANT: do not auto-focus search on mobile when the chat list opens.
+  // Some mobile/tablet browsers may reserve keyboard space without showing it,
+  // resulting in a large empty overlay panel.
+  useEffect(() => {
+    if (!isMobileMessenger) return
+    const el = searchRef.current
+    if (!el) return
+    // If browser restored focus, actively drop it.
+    if (document.activeElement === el) el.blur()
+  }, [isMobileMessenger])
+
   return (
     <aside className="dashboard-messenger__list" aria-label="Список диалогов">
       <div className="dashboard-messenger__list-toolbar">
@@ -186,6 +198,7 @@ function MessengerChatListAsideImpl(props: {
             type="search"
             enterKeyHint="search"
             className="dashboard-messenger__list-head-search"
+            ref={searchRef}
             value={chatListSearch}
             onChange={(e) => onChatListSearchChange(e.target.value)}
             placeholder="Имя, @ник, чат или сообщение…"

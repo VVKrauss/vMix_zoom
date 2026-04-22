@@ -4,7 +4,7 @@ import { useMessengerThreadReadCoordinator } from '../../hooks/useMessengerThrea
 import { shouldClosePopoverOnOutsidePointer } from '../../utils/popoverOutsideClick'
 import { useAuth } from '../../context/AuthContext'
 import { useProfile } from '../../hooks/useProfile'
-import { useMediaQuery } from '../../hooks/useMediaQuery'
+import { useStableMobileMessenger } from '../../hooks/useStableMobileMessenger'
 import { useToast } from '../../context/ToastContext'
 import { supabase } from '../../lib/supabase'
 import { truncateMessengerReplySnippet } from '../../lib/messengerUi'
@@ -38,6 +38,7 @@ import {
   messengerPeerDisplayTitle,
 } from '../../lib/messengerDashboardUtils'
 import { ThreadMessageBubble } from './ThreadMessageBubble'
+import { useDevRenderTrace } from '../../lib/devTrace'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
 import { useLinkPreviewFromText } from '../../hooks/useLinkPreviewFromText'
 import { buildLinkMetaForMessageBody, ensureLinkPreviewForBody } from '../../lib/linkPreview'
@@ -114,7 +115,12 @@ export function GroupThreadPane({
   const { user } = useAuth()
   const { profile } = useProfile()
   const toast = useToast()
-  const isMobileMessenger = useMediaQuery('(max-width: 900px)')
+  const isMobileMessenger = useStableMobileMessenger(900)
+  useDevRenderTrace('GroupThreadPane', {
+    conversationId,
+    isMobileMessenger,
+    jumpToMessageId: jumpToMessageId ?? null,
+  })
 
   const [threadLoading, setThreadLoading] = useState(false)
   const [backgroundRefreshing, setBackgroundRefreshing] = useState(false)

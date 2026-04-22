@@ -20,6 +20,7 @@ import { resolveQuotedAvatarForDm } from '../../lib/messengerUi'
 import type { MessengerConversationSummary } from '../../lib/messengerConversations'
 import type { ReactionEmoji } from '../../types/roomComms'
 import { ThreadMessageBubble } from './ThreadMessageBubble'
+import { useDevRenderTrace } from '../../lib/devTrace'
 
 export type MessengerDirectThreadHeadConversation = MessengerConversationSummary & { kind: 'direct' }
 
@@ -78,6 +79,12 @@ function MessengerDirectThreadBodyImpl(props: {
   composer: ReactNode
   messageActionMenu: ReactNode
 }) {
+  useDevRenderTrace('MessengerDirectThreadBody', {
+    isMobileMessenger: props.isMobileMessenger,
+    activeConversationId: props.threadHeadConversation?.id ?? '',
+    threadLoading: props.threadLoading,
+    messagesLen: props.messages?.length ?? 0,
+  })
   const {
     isMobileMessenger,
     navigate,

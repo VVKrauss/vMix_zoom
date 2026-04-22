@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useUserPeek } from '../context/UserPeekContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { isMessengerSoundEnabled, playMessageSound, setMessengerSoundEnabled } from '../lib/messengerSound'
-import { useMediaQuery } from '../hooks/useMediaQuery'
+import { useStableMobileMessenger } from '../hooks/useStableMobileMessenger'
 import { useEphemeralErrorToast } from '../hooks/useEphemeralErrorToast'
 import { useMessengerPinnedChatsSync } from '../hooks/useMessengerPinnedChatsSync'
 import { useMessengerWebPushState } from '../hooks/useMessengerWebPushState'
@@ -205,7 +205,7 @@ export function DashboardMessengerPage() {
   const { profile } = useProfile()
   const { pinnedChatIds, setPinnedChatIds } = useMessengerPinnedChatsSync(user?.id, profile, toast)
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
-  const isMobileMessenger = useMediaQuery('(max-width: 900px)')
+  const isMobileMessenger = useStableMobileMessenger(900)
   const { isOnline, netBanner } = useNavigatorOnline()
   const [soundEnabled, setSoundEnabled] = useState(() => isMessengerSoundEnabled())
   const [messengerFontPreset, setMessengerFontPresetState] = useState<MessengerFontPreset>(() =>

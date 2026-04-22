@@ -4,7 +4,7 @@ import { messengerBodyForMarkdown } from '../../lib/messengerMarkdownBody'
 import { shouldClosePopoverOnOutsidePointer } from '../../utils/popoverOutsideClick'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
-import { useMediaQuery } from '../../hooks/useMediaQuery'
+import { useStableMobileMessenger } from '../../hooks/useStableMobileMessenger'
 import { useMessengerPeerAliasesForMessages } from '../../hooks/useMessengerPeerAliasesForMessages'
 import { supabase } from '../../lib/supabase'
 import {
@@ -18,6 +18,7 @@ import {
   type DirectMessage,
 } from '../../lib/messenger'
 import { buildQuotePreview } from '../../lib/messengerQuotePreview'
+import { useDevRenderTrace } from '../../lib/devTrace'
 import {
   appendChannelComment,
   appendChannelFeedMessage,
@@ -155,7 +156,13 @@ export function ChannelThreadPane({
   const { user } = useAuth()
   const { profile } = useProfile()
   const toast = useToast()
-  const isMobileMessenger = useMediaQuery('(max-width: 900px)')
+  const isMobileMessenger = useStableMobileMessenger(900)
+  useDevRenderTrace('ChannelThreadPane', {
+    conversationId,
+    isMobileMessenger,
+    jumpToMessageId: jumpToMessageId ?? null,
+    jumpToParentMessageId: jumpToParentMessageId ?? null,
+  })
 
   const [error, setError] = useState<string | null>(null)
   const [threadLoading, setThreadLoading] = useState(false)
