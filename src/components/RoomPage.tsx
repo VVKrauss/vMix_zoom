@@ -78,6 +78,7 @@ import { useRoomUiSync } from '../hooks/useRoomUiSync'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useProfile } from '../hooks/useProfile'
 import { useIsDbSpaceRoomHost } from '../hooks/useSpaceRoomHost'
+import { useVideoFrames } from '../hooks/useVideoFrames'
 import { useSpaceRoomSettings, type SpaceRoomAccessMode } from '../hooks/useSpaceRoomSettings'
 import {
   isSessionHostFor,
@@ -555,10 +556,10 @@ export function RoomPage({
 
   const { audioOutputs, refreshAudioOutputs } = useAudioOutputs()
   const [playoutVolume, setPlayoutVolume] = useLocalStorageNumber('vmix_playout_volume', 1, 0, 1)
-  /** Громкость только потока программы vMix (у каждого гостя своя, localStorage). */
-  const [vmixProgramVolume, setVmixProgramVolume] = useLocalStorageNumber('vmix_program_volume', 1, 0, 1)
+  /** Громкость только потока программы vMix/SRT (у каждого гостя своя, localStorage). При подключении потока сбрасывается в 0 + mute. */
+  const [vmixProgramVolume, setVmixProgramVolume] = useLocalStorageNumber('vmix_program_volume', 0, 0, 1)
   const [couchCaptureVolume, setCouchCaptureVolume] = useLocalStorageNumber('vmix_couch_capture_volume', 1, 0, 1)
-  const [vmixProgramMuted, setVmixProgramMuted] = useLocalStorageBool('vmix_program_muted', false)
+  const [vmixProgramMuted, setVmixProgramMuted] = useLocalStorageBool('vmix_program_muted', true)
   const [playoutSinkId, setPlayoutSinkId] = useLocalStorageString('vmix_playout_sink', '')
   const [showControlButtonLabels, setShowControlButtonLabels] = useLocalStorageBool('vmix_control_button_labels', false)
   const [chatEmbed, setChatEmbed] = useLocalStorageBool('vmix_chat_embed', true)
@@ -571,8 +572,6 @@ export function RoomPage({
   const modChannelRef = useRef<RealtimeChannel | null>(null)
   /** Запросы на вход (access_mode=approval) */
   const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([])
-  /** Открыта ли модалка запросов */
-  const [joinRequestsOpen, setJoinRequestsOpen] = useState(false)
   const [roomManageModalOpen, setRoomManageModalOpen] = useState(false)
   /** Тост о новом запросе на вход */
   const [joinRequestToast, setJoinRequestToast] = useState<string | null>(null)
@@ -1152,6 +1151,16 @@ export function RoomPage({
     if (vmixPeer?.videoStream) return 'live'
     return 'waiting'
   }, [vmixIngressInfo, vmixPeer])
+
+  const prevVmixPhaseForProgramAudioRef = useRef<VmixIngressPhase | undefined>(undefined)
+  useEffect(() => {
+    const prev = prevVmixPhaseForProgramAudioRef.current
+    if (vmixPhase === 'live' && prev !== 'live') {
+      setVmixProgramVolume(0)
+      setVmixProgramMuted(true)
+    }
+    prevVmixPhaseForProgramAudioRef.current = vmixPhase
+  }, [vmixPhase, setVmixProgramVolume, setVmixProgramMuted])
 
   const activeSpeakerPeerId = useActiveSpeaker(
     layout === 'speaker',
@@ -2048,7 +2057,7 @@ export function RoomPage({
                     setRoomManageModalOpen(true)
                   }}
                 >
-                  Управление участниками
+                  Управление комнатой
                 </button>
               ) : null}
               <div className="room-mobile-chrome-menu__row room-mobile-chrome-menu__row--muted" role="status">
@@ -2087,20 +2096,6 @@ export function RoomPage({
                   }}
                 >
                   Пригласить из контактов
-                </button>
-              ) : null}
-              {isDbSpaceRoomHost ? (
-                <button
-                  type="button"
-                  className="room-mobile-chrome-menu__btn"
-                  onClick={() => {
-                    setRoomMobileChromeMenuOpen(false)
-                    setJoinRequestsOpen(true)
-                    setJoinRequestToast(null)
-                  }}
-                >
-                  Запросы на вход
-                  {joinRequests.length > 0 ? ` (${joinRequests.length})` : ''}
                 </button>
               ) : null}
               {canUseElevatedRoomTools ? (
@@ -2214,19 +2209,27 @@ export function RoomPage({
                     <div className="room-header-room-space__pair">
                       <button
                         type="button"
-                        className={`room-header-room-space__main${roomSpaceSettingsOpen ? ' room-header-room-space__main--open' : ''}`}
-                        onClick={() => setRoomSpaceSettingsOpen((v) => !v)}
-                        title="Настройки комнаты"
-                        aria-expanded={roomSpaceSettingsOpen}
-                        aria-haspopup="dialog"
+                        className={`room-header-room-space__main${roomManageModalOpen ? ' room-header-room-space__main--open' : ''}`}
+                        onClick={() => {
+                          setRoomSpaceSettingsOpen(false)
+                          setRoomManageModalOpen(true)
+                          setJoinRequestToast(null)
+                        }}
+                        title="Управление комнатой"
+                        aria-label="Управление комнатой"
                       >
-                        <FiRrIcon name="settings-sliders" className="room-header-room-space__fi" />
+                        <FiRrIcon name="member-list" className="room-header-room-space__fi" />
+                        {isDbSpaceRoomHost && joinRequests.length > 0 ? (
+                          <span className="room-requests-badge">{joinRequests.length}</span>
+                        ) : null}
                       </button>
                       <button
                         type="button"
                         className={`room-header-room-space__chev${roomSpaceSettingsOpen ? ' room-header-room-space__chev--open' : ''}`}
                         onClick={() => setRoomSpaceSettingsOpen((v) => !v)}
                         title="Настройки комнаты"
+                        aria-expanded={roomSpaceSettingsOpen}
+                        aria-haspopup="dialog"
                         aria-label="Открыть настройки комнаты"
                       >
                         <RoomHeaderChevronGlyph open={roomSpaceSettingsOpen} />
@@ -2248,17 +2251,6 @@ export function RoomPage({
                       </div>
                     ) : null}
                   </div>
-                ) : null}
-                {canManageRoomSpace ? (
-                  <button
-                    type="button"
-                    className="room-invite-btn room-header-manage-icon-btn"
-                    onClick={() => setRoomManageModalOpen(true)}
-                    title="Управление комнатой"
-                    aria-label="Управление комнатой"
-                  >
-                    <FiRrIcon name="member-list" />
-                  </button>
                 ) : null}
                 <div
                   className="room-header-participant-count"
@@ -2301,22 +2293,6 @@ export function RoomPage({
                   )}
                 </div>
 
-                {isDbSpaceRoomHost && (
-                  <div className="room-join-requests-btn-wrap">
-                    <button
-                      type="button"
-                      className={`room-invite-btn${joinRequestsOpen ? ' room-invite-btn--open' : ''}`}
-                      onClick={() => { setJoinRequestsOpen((v) => !v); setJoinRequestToast(null) }}
-                      title="Запросы на вход"
-                      aria-label="Запросы на вход"
-                    >
-                      <JoinRequestsIcon />
-                    </button>
-                    {joinRequests.length > 0 && (
-                      <span className="room-requests-badge">{joinRequests.length}</span>
-                    )}
-                  </div>
-                )}
               </div>
             </div>
 
@@ -2643,6 +2619,19 @@ export function RoomPage({
           onAssignRoomAdmin={(uid) => void handleAssignRoomAdmin(uid)}
           onRemoveRoomAdmin={(uid) => void handleRemoveRoomAdmin(uid)}
           onRemoveFromRoom={(peerId, opts) => void handleRemoveFromRoom(peerId, opts)}
+          hostJoinRequests={
+            isDbSpaceRoomHost
+              ? joinRequests.map((r) => ({ requestId: r.requestId, displayName: r.displayName }))
+              : null
+          }
+          onApproveHostJoinRequest={(req) => {
+            const full = joinRequests.find((r) => r.requestId === req.requestId)
+            if (full) void handleApproveJoinRequest(full)
+          }}
+          onDenyHostJoinRequest={(req) => {
+            const full = joinRequests.find((r) => r.requestId === req.requestId)
+            if (full) void handleDenyJoinRequest(full)
+          }}
         />
       ) : null}
 
@@ -2857,7 +2846,11 @@ export function RoomPage({
         <div
           className="room-join-request-toast"
           role="status"
-          onClick={() => { setJoinRequestsOpen(true); setJoinRequestToast(null) }}
+          onClick={() => {
+            setRoomSpaceSettingsOpen(false)
+            setRoomManageModalOpen(true)
+            setJoinRequestToast(null)
+          }}
         >
           <span className="room-join-request-toast__icon"><JoinRequestsIcon /></span>
           <span className="room-join-request-toast__text">
@@ -2866,7 +2859,12 @@ export function RoomPage({
           <button
             type="button"
             className="room-join-request-toast__action"
-            onClick={(e) => { e.stopPropagation(); setJoinRequestsOpen(true); setJoinRequestToast(null) }}
+            onClick={(e) => {
+              e.stopPropagation()
+              setRoomSpaceSettingsOpen(false)
+              setRoomManageModalOpen(true)
+              setJoinRequestToast(null)
+            }}
           >
             Посмотреть
           </button>
@@ -2878,61 +2876,6 @@ export function RoomPage({
           >
             ✕
           </button>
-        </div>
-      ) : null}
-
-      {/* Модалка запросов на вход */}
-      {isDbSpaceRoomHost && joinRequestsOpen ? (
-        <div
-          className="room-join-requests-backdrop"
-          onClick={() => setJoinRequestsOpen(false)}
-        >
-          <div
-            className="room-join-requests"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="room-join-requests__header">
-              <span>Запросы на вход</span>
-              {joinRequests.length > 0 && (
-                <span className="room-join-requests__count">{joinRequests.length}</span>
-              )}
-              <button
-                type="button"
-                className="room-join-requests__close"
-                aria-label="Закрыть"
-                onClick={() => setJoinRequestsOpen(false)}
-              >
-                ✕
-              </button>
-            </div>
-            {joinRequests.length === 0 ? (
-              <p className="room-join-requests__empty">Нет активных запросов</p>
-            ) : (
-              joinRequests.map((req) => (
-                <div key={req.requestId} className="room-join-requests__item">
-                  <span className="room-join-requests__name">{req.displayName}</span>
-                  <div className="room-join-requests__actions">
-                    <button
-                      type="button"
-                      className="room-join-requests__approve"
-                      onClick={() => void handleApproveJoinRequest(req)}
-                      title="Одобрить вход"
-                    >
-                      ✓ Впустить
-                    </button>
-                    <button
-                      type="button"
-                      className="room-join-requests__deny"
-                      onClick={() => void handleDenyJoinRequest(req)}
-                      title="Отклонить запрос"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
         </div>
       ) : null}
 
@@ -3013,7 +2956,9 @@ function LocalTile({
   const mainStream = stream
   const hasLiveCamera =
     Boolean(stream?.getVideoTracks().some((t) => t.kind === 'video' && t.readyState === 'live'))
-  const showMainVideo = !isCamOff && hasLiveCamera
+  const shouldRenderVideo = !isCamOff && hasLiveCamera
+  const hasFrames = useVideoFrames(mainVideoRef, shouldRenderVideo)
+  const showMainVideo = shouldRenderVideo && hasFrames
   const showAvatar = !showMainVideo
 
   useEffect(() => {
@@ -3022,19 +2967,21 @@ function LocalTile({
 
   const videoInner = (
     <>
-      <video
-        ref={mainVideoRef}
-        autoPlay
-        playsInline
-        muted
-        className={showMainVideo ? 'participant-card__main-video' : 'participant-card__main-video hidden'}
-        style={videoStyle}
-      />
-      {showAvatar && (
+      {shouldRenderVideo ? (
+        <video
+          ref={mainVideoRef}
+          autoPlay
+          playsInline
+          muted
+          className="participant-card__main-video"
+          style={videoStyle}
+        />
+      ) : null}
+      {showAvatar ? (
         <div className="cam-off-avatar">
           <ParticipantTileIdle name={name} avatarUrl={avatarUrl} peekUserId={peekUserId ?? undefined} />
         </div>
-      )}
+      ) : null}
       {showMeter && !isMuted && <AudioMeter stream={stream} stereo />}
       {showInfo && (
         <VideoInfoOverlay

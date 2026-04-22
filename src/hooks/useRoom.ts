@@ -26,7 +26,11 @@ import { readVmixIngressEmitExtras } from '../config/serverSettingsStorage'
 import {
   applyEma,
   buildQuality,
+  deltaFromSamples,
+  pickInboundVideoRtp,
+  snapshotInboundRtp,
   type InboundVideoQuality,
+  type InboundVideoStatsSample,
 } from '../utils/inboundVideoStats'
 import {
   deltaUplinkFromSamples,
@@ -250,9 +254,20 @@ function mergeIncomingChatMessage(prev: RoomChatMessage[], msg: RoomChatMessage)
   return [...prev, msg].slice(-CHAT_MESSAGES_CAP)
 }
 
-function parseVideoUplinkBroadcast(raw: unknown): InboundVideoQuality | null {
+/** Развернуть типичные обёртки Socket.IO / бэка (`{ data: { ... } }`). */
+function unwrapVideoUplinkPayload(raw: unknown): Record<string, unknown> | null {
   if (!raw || typeof raw !== 'object') return null
-  const o = raw as Record<string, unknown>
+  const top = raw as Record<string, unknown>
+  const inner = top.data
+  if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+    return { ...top, ...(inner as Record<string, unknown>) }
+  }
+  return top
+}
+
+function parseVideoUplinkBroadcast(raw: unknown): InboundVideoQuality | null {
+  const o = unwrapVideoUplinkPayload(raw)
+  if (!o) return null
   const bitrateBps = Number(o.bitrateBps ?? o.bitrate_bps)
   const fractionLost = Number(o.fractionLost ?? o.fraction_lost)
   if (!Number.isFinite(bitrateBps) || !Number.isFinite(fractionLost)) return null
@@ -421,6 +436,10 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const lastVideoUplinkEmitAtRef = useRef(0)
   /** Чужие uplink-метрики с сигналинга (broadcast после reportVideoUplink). */
   const peerUplinkVideoQualityRef = useRef<Record<string, InboundVideoQuality>>({})
+  /** Камера/vmix: consumer входящего видео по anchorPeerId — fallback getStats, если broadcast нет. */
+  const peerCameraVideoConsumerIdRef = useRef<Map<string, string>>(new Map())
+  const inboundRecvPrevRef = useRef<Map<string, InboundVideoStatsSample>>(new Map())
+  const inboundRecvEmaRef = useRef<Map<string, { bitrateBps: number; fractionLost: number }>>(new Map())
   const [peerUplinkBroadcastTick, setPeerUplinkBroadcastTick] = useState(0)
   const roomIdRef = useRef<string>(DEFAULT_ROOM)
   const lastJoinRequestRef = useRef<{
@@ -531,6 +550,12 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         if (m.consumerId === meta.consumerId) {
           producerMetaRef.current.delete(k)
         }
+      }
+
+      if (meta.kind === 'video' && meta.videoSource === 'camera') {
+        peerCameraVideoConsumerIdRef.current.delete(meta.anchorPeerId)
+        inboundRecvPrevRef.current.delete(meta.anchorPeerId)
+        inboundRecvEmaRef.current.delete(`__in_${meta.anchorPeerId}`)
       }
 
       setParticipants((prev) => {
@@ -752,6 +777,10 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           }
           registerProducerMeta(producerMetaRef.current, producer.producerId, consumer.producerId, videoMeta)
 
+          if (resolved === 'camera') {
+            peerCameraVideoConsumerIdRef.current.set(anchorId, consumer.id)
+          }
+
           if (resolved === 'screen') {
             const distinct = producer.peerId !== anchorId ? producer.peerId : undefined
             next.set(anchorId, {
@@ -912,6 +941,31 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       }
 
       setSessionMeta({ roomId: roomIdRef.current, localPeerId: socket.id ?? '' })
+
+      /* Сразу после connect: до долгого mediasoup join, иначе ранние videoUplink от других участников теряются. */
+      socket.on('videoUplink', (raw: unknown) => {
+        const sid = socket.id
+        if (!sid) return
+        const o = unwrapVideoUplinkPayload(raw)
+        if (!o) return
+        const curRoom = (roomIdRef.current ?? '').trim()
+        const incomingRoomRaw = o.roomId ?? o.room_id
+        if (typeof incomingRoomRaw === 'string' && incomingRoomRaw.trim() !== curRoom) {
+          return
+        }
+        const peerRaw = o.peerId ?? o.peer_id
+        const peerId = typeof peerRaw === 'string' ? peerRaw.trim() : ''
+        if (!peerId || peerId === sid) return
+        const q = parseVideoUplinkBroadcast(o)
+        if (!q) {
+          if (import.meta.env.DEV) {
+            console.warn('[videoUplink] metrics parse failed', { peerId, payload: o })
+          }
+          return
+        }
+        peerUplinkVideoQualityRef.current = { ...peerUplinkVideoQualityRef.current, [peerId]: q }
+        setPeerUplinkBroadcastTick((t) => t + 1)
+      })
 
       const connectedPayload = {
         roomId: roomIdRef.current,
@@ -1221,6 +1275,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           return next
         })
         delete peerUplinkVideoQualityRef.current[peerId]
+        peerCameraVideoConsumerIdRef.current.delete(peerId)
+        inboundRecvPrevRef.current.delete(peerId)
+        inboundRecvEmaRef.current.delete(`__in_${peerId}`)
         setPeerUplinkBroadcastTick((t) => t + 1)
         setSrtByPeer((prev) => {
           const n = { ...prev }
@@ -1410,23 +1467,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         setCouchModeHostPeerId(open ? host : null)
       })
 
-      /**
-       * Uplink видео участника → SFU (broadcast с signaling после `reportVideoUplink`).
-       * Свой же пакет не применяем — локальная метрика считается через getStats.
-       */
-      socket.on('videoUplink', (raw: unknown) => {
-        const sid = socket.id
-        if (!sid) return
-        const o = raw as Record<string, unknown>
-        if (typeof o.roomId === 'string' && o.roomId !== roomIdRef.current) return
-        const peerId = typeof o.peerId === 'string' ? o.peerId.trim() : ''
-        if (!peerId || peerId === sid) return
-        const q = parseVideoUplinkBroadcast(raw)
-        if (!q) return
-        peerUplinkVideoQualityRef.current = { ...peerUplinkVideoQualityRef.current, [peerId]: q }
-        setPeerUplinkBroadcastTick((t) => t + 1)
-      })
-
       socket.on('studioBroadcastHealth', (raw: unknown) => {
         const o = raw as Record<string, unknown>
         if (typeof o.roomId === 'string' && o.roomId !== roomIdRef.current) return
@@ -1528,6 +1568,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       setStudioBroadcastHealthDetail(null)
       setStudioServerLogLines([])
       peerUplinkVideoQualityRef.current = {}
+      peerCameraVideoConsumerIdRef.current.clear()
+      inboundRecvPrevRef.current.clear()
+      inboundRecvEmaRef.current.clear()
       setPeerUplinkBroadcastTick(0)
       uplinkLocalPrevRef.current = undefined
       uplinkLocalEmaRef.current.clear()
@@ -2306,8 +2349,31 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const getPeerUplinkVideoQuality = useCallback(
     async (anchorPeerId: string): Promise<InboundVideoQuality | null> => {
       const localId = sessionMeta?.localPeerId
+
       if (!localId || anchorPeerId !== localId) {
-        return peerUplinkVideoQualityRef.current[anchorPeerId] ?? null
+        const fromSig = peerUplinkVideoQualityRef.current[anchorPeerId]
+        if (fromSig != null) return fromSig
+
+        const consumerId = peerCameraVideoConsumerIdRef.current.get(anchorPeerId)
+        if (!consumerId) return null
+        const consumer = consumersRef.current.get(consumerId)
+        if (!consumer || consumer.closed || consumer.kind !== 'video') return null
+        let report: RTCStatsReport
+        try {
+          report = await consumer.getStats()
+        } catch {
+          return null
+        }
+        const inbound = pickInboundVideoRtp(report)
+        if (!inbound) return null
+        const now = performance.now()
+        const prevSample = inboundRecvPrevRef.current.get(anchorPeerId)
+        const snap = snapshotInboundRtp(inbound, now)
+        const delta = deltaFromSamples(inbound, prevSample, now)
+        inboundRecvPrevRef.current.set(anchorPeerId, snap)
+        if (!delta) return null
+        const ema = applyEma(`__in_${anchorPeerId}`, inboundRecvEmaRef.current, delta.bitrateBps, delta.fractionLost)
+        return buildQuality(ema.bitrateBps, ema.fractionLost, delta.jitterMs)
       }
 
       const producer = videoProducerRef.current
@@ -2657,6 +2723,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     uplinkLocalEmaRef.current.clear()
     lastVideoUplinkEmitAtRef.current = 0
     peerUplinkVideoQualityRef.current = {}
+    peerCameraVideoConsumerIdRef.current.clear()
+    inboundRecvPrevRef.current.clear()
+    inboundRecvEmaRef.current.clear()
     setPeerUplinkBroadcastTick(0)
     sendTransportRef.current?.close()
     recvTransportRef.current?.close()

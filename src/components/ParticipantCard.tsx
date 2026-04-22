@@ -11,6 +11,7 @@ import { SrtCopySurface, type SrtCopyMenuExtraItem } from './SrtCopyMenu'
 import { VideoInfoOverlay } from './VideoInfoOverlay'
 import { StarIcon } from './icons'
 import { RemoteVideoSignalBars, useInboundVideoQualityPoll } from './RemoteVideoSignalBars'
+import { useVideoFrames } from '../hooks/useVideoFrames'
 
 interface Props {
   participant: RemoteParticipant
@@ -71,6 +72,7 @@ export function ParticipantCard({
   /** Только камера; демонстрация — отдельная плитка `peerId::screen`. */
   const mainStream = participant.videoStream ?? null
   const hasVideo = !!mainStream
+  const hasFrames = useVideoFrames(mainVideoRef, hasVideo)
   /** Индикатор качества и getStats только когда реально идёт входящее видео (камера/vmix включены). */
   const hasIncomingPicture = Boolean(
     mainStream?.getVideoTracks().some((t) => t.readyState === 'live'),
@@ -150,14 +152,16 @@ export function ParticipantCard({
           extraMenuItems={extraMenuItems}
           showTileOverflowButton
         >
-          <video
-            ref={mainVideoRef}
-            autoPlay
-            playsInline
-            className={hasVideo ? 'participant-card__main-video' : 'participant-card__main-video hidden'}
-            style={videoStyle}
-          />
-          {!hasVideo && (
+          {hasVideo ? (
+            <video
+              ref={mainVideoRef}
+              autoPlay
+              playsInline
+              className="participant-card__main-video"
+              style={videoStyle}
+            />
+          ) : null}
+          {!hasVideo || !hasFrames ? (
             <div className="cam-off-avatar">
               <ParticipantTileIdle
                 name={participant.name}
@@ -165,7 +169,7 @@ export function ParticipantCard({
                 peekUserId={participant.authUserId?.trim() || undefined}
               />
             </div>
-          )}
+          ) : null}
           <audio ref={audioRef} autoPlay playsInline />
 
           {getPeerUplinkVideoQuality && hasIncomingPicture ? (

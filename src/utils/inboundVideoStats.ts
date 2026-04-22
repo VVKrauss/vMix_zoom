@@ -24,6 +24,15 @@ export function pickInboundVideoRtp(report: RTCStatsReport): RTCInboundRtpStream
   return null
 }
 
+export function snapshotInboundRtp(cur: RTCInboundRtpStreamStats, now: number): InboundVideoStatsSample {
+  return {
+    t: now,
+    bytesReceived: Number(cur.bytesReceived ?? 0),
+    packetsReceived: Number(cur.packetsReceived ?? 0),
+    packetsLost: Number(cur.packetsLost ?? 0),
+  }
+}
+
 export function deltaFromSamples(
   cur: RTCInboundRtpStreamStats,
   prev: InboundVideoStatsSample | undefined,
