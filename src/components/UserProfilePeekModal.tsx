@@ -1,9 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../hooks/useProfile'
 import { useToast } from '../context/ToastContext'
-import { ensureDirectConversationWithUser, requestMessengerContactAliasRefresh } from '../lib/messenger'
+import {
+  ensureDirectConversationWithUser,
+  requestMessengerContactAliasRefresh,
+  uploadMessengerImage,
+} from '../lib/messenger'
 import { getMyConversationNotificationMutes, setConversationNotificationsMuted } from '../lib/conversationNotifications'
 import { fetchPublicUserProfile, type PublicUserProfileRow } from '../lib/userPublicProfile'
 import {
@@ -15,6 +19,7 @@ import {
   type ContactStatus,
 } from '../lib/socialGraph'
 import type { UserPeekTarget } from '../types/userPeek'
+import { StorageOrHttpAvatarImg } from './messenger/StorageOrHttpAvatarImg'
 
 function formatLastActive(iso: string | null): string {
   if (!iso) return 'Нет данных'
@@ -51,8 +56,8 @@ export function UserProfilePeekModal({
   const [aliasBusy, setAliasBusy] = useState(false)
   const [displayAvatarOverride, setDisplayAvatarOverride] = useState<string | null>(null)
   const [avatarEditing, setAvatarEditing] = useState(false)
-  const [avatarDraft, setAvatarDraft] = useState('')
   const [avatarBusy, setAvatarBusy] = useState(false)
+  const avatarFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const uid = target?.userId?.trim() ?? ''
   const isSelf = Boolean(user?.id && uid && user.id === uid)
@@ -72,7 +77,6 @@ export function UserProfilePeekModal({
       setAliasBusy(false)
       setDisplayAvatarOverride(null)
       setAvatarEditing(false)
-      setAvatarDraft('')
       setAvatarBusy(false)
       return
     }
@@ -111,7 +115,6 @@ export function UserProfilePeekModal({
           setAliasDraft(a || '')
           const av = row?.displayAvatarUrl?.trim() ?? ''
           setDisplayAvatarOverride(av || null)
-          setAvatarDraft(av || '')
         }
       }
     })()
@@ -153,7 +156,6 @@ export function UserProfilePeekModal({
   const profileName = profile?.displayName ?? (target.displayName?.trim() || 'Пользователь')
   const displayName = (alias?.trim() || profileName).trim()
   const baseProfileAvatar = profile?.avatarUrl ?? target.avatarUrl ?? null
-  const avatarUrl = (displayAvatarOverride?.trim() || baseProfileAvatar)?.trim() || null
   const slug = profile?.profileSlug
   const showLastActivityLine = profile?.lastActivityVisible !== false
   const lastLine = formatLastActive(profile?.lastActivityAt ?? null)
@@ -190,6 +192,70 @@ export function UserProfilePeekModal({
     if (!res.ok) return
     setNotifMuted(nextMuted)
   }
+
+  const clearDisplayAvatarOverride = useCallback(async () => {
+    if (!uid || avatarBusy || isSelf) return
+    setAvatarBusy(true)
+    try {
+      const res = await setMyContactDisplayAvatar(uid, '')
+      if (res.error) {
+        toast.push({ tone: 'error', message: res.error, ms: 2600 })
+        return
+      }
+      setDisplayAvatarOverride(null)
+      setAvatarEditing(false)
+      requestMessengerContactAliasRefresh()
+    } finally {
+      setAvatarBusy(false)
+    }
+  }, [uid, avatarBusy, isSelf, toast])
+
+  const onAvatarFileInputChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const f = e.target.files?.[0]
+      e.target.value = ''
+      if (!f || !uid || avatarBusy || isSelf) return
+      if (!f.type.startsWith('image/')) {
+        toast.push({ tone: 'warning', message: 'Выберите файл изображения.', ms: 2400 })
+        return
+      }
+      setAvatarBusy(true)
+      try {
+        let cid = dmConversationId?.trim() ?? ''
+        if (!cid) {
+          const peekName = (target?.displayName?.trim() || profile?.displayName || 'Пользователь').trim()
+          const ens = await ensureDirectConversationWithUser(uid, peekName)
+          if (!ens.data || ens.error) {
+            toast.push({
+              tone: 'error',
+              message: ens.error || 'Не удалось подготовить чат для загрузки.',
+              ms: 2800,
+            })
+            return
+          }
+          cid = ens.data
+          setDmConversationId(cid)
+        }
+        const up = await uploadMessengerImage(cid, f)
+        if (up.error || !up.path) {
+          toast.push({ tone: 'error', message: up.error || 'Не удалось загрузить файл.', ms: 2800 })
+          return
+        }
+        const storePath = (up.thumbPath?.trim() || up.path.trim()).trim()
+        const res = await setMyContactDisplayAvatar(uid, storePath)
+        if (res.error) {
+          toast.push({ tone: 'error', message: res.error, ms: 2600 })
+          return
+        }
+        setDisplayAvatarOverride(res.data ?? storePath)
+        setAvatarEditing(false)
+        requestMessengerContactAliasRefresh()
+      } finally {
+        setAvatarBusy(false)
+      }
+    },
+    [uid, avatarBusy, isSelf, dmConversationId, target?.displayName, profile?.displayName, toast],
+  )
 
   const shareProfile = async () => {
     if (!slug?.trim()) {
@@ -229,8 +295,20 @@ export function UserProfilePeekModal({
         </h2>
         <div className="user-peek-modal__avatar-wrap-outer">
           <div className="user-peek-modal__avatar-wrap">
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="" className="user-peek-modal__avatar-img" />
+            {displayAvatarOverride?.trim() ? (
+              <StorageOrHttpAvatarImg
+                src={displayAvatarOverride.trim()}
+                alt=""
+                className="user-peek-modal__avatar-img"
+                fallback={<span className="user-peek-modal__avatar-fallback">{initials}</span>}
+              />
+            ) : baseProfileAvatar?.trim() ? (
+              <StorageOrHttpAvatarImg
+                src={baseProfileAvatar.trim()}
+                alt=""
+                className="user-peek-modal__avatar-img"
+                fallback={<span className="user-peek-modal__avatar-fallback">{initials}</span>}
+              />
             ) : (
               <span className="user-peek-modal__avatar-fallback">{initials}</span>
             )}
@@ -264,50 +342,40 @@ export function UserProfilePeekModal({
         {!isSelf && profileName.trim() && profileName.trim() !== displayName.trim() ? (
           <p className="user-peek-modal__profile-name">В профиле: {profileName}</p>
         ) : null}
-        {!isSelf && baseProfileAvatar?.trim() && displayAvatarOverride?.trim() && displayAvatarOverride.trim() !== baseProfileAvatar.trim() ? (
-          <p className="user-peek-modal__profile-name">В профиле другое фото</p>
+        {!isSelf && displayAvatarOverride?.trim() ? (
+          <p className="user-peek-modal__profile-name">У вас своё фото для этого контакта</p>
         ) : null}
         {!isSelf && avatarEditing ? (
           <div className="user-peek-modal__alias-row">
             <input
-              className="dashboard-messenger__input user-peek-modal__alias-input"
-              value={avatarDraft}
+              ref={avatarFileInputRef}
+              type="file"
+              accept="image/*"
+              className="user-peek-modal__avatar-file-input"
+              aria-label="Выбрать изображение для отображения у вас"
               disabled={avatarBusy}
-              placeholder="URL картинки для отображения у вас"
-              onChange={(e) => setAvatarDraft(e.target.value)}
+              onChange={onAvatarFileInputChange}
             />
             <button
               type="button"
               className="dashboard-topbar__action dashboard-topbar__action--primary"
               disabled={avatarBusy}
-              onClick={() => {
-                if (!uid || avatarBusy) return
-                setAvatarBusy(true)
-                void (async () => {
-                  const res = await setMyContactDisplayAvatar(uid, avatarDraft)
-                  setAvatarBusy(false)
-                  if (res.error) {
-                    toast.push({ tone: 'error', message: res.error, ms: 2600 })
-                    return
-                  }
-                  setDisplayAvatarOverride(res.data)
-                  setAvatarEditing(false)
-                  requestMessengerContactAliasRefresh()
-                })()
-              }}
+              onClick={() => avatarFileInputRef.current?.click()}
             >
-              {avatarBusy ? '…' : 'Сохранить'}
+              {avatarBusy ? '…' : 'Выбрать изображение'}
             </button>
-            <button
-              type="button"
-              className="dashboard-topbar__action"
-              disabled={avatarBusy}
-              onClick={() => {
-                setAvatarDraft(displayAvatarOverride?.trim() ?? '')
-                setAvatarEditing(false)
-              }}
-            >
-              Отмена
+            {displayAvatarOverride?.trim() ? (
+              <button
+                type="button"
+                className="dashboard-topbar__action"
+                disabled={avatarBusy}
+                onClick={() => void clearDisplayAvatarOverride()}
+              >
+                Убрать своё фото
+              </button>
+            ) : null}
+            <button type="button" className="dashboard-topbar__action" disabled={avatarBusy} onClick={() => setAvatarEditing(false)}>
+              Закрыть
             </button>
           </div>
         ) : null}

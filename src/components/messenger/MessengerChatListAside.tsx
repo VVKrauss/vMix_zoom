@@ -27,6 +27,7 @@ import type {
 } from '../../lib/messengerConversations'
 import type { RegisteredUserSearchHit } from '../../lib/socialGraph'
 import { MessengerClosedGcLockBadge } from './MessengerClosedGcLockBadge'
+import { StorageOrHttpAvatarImg } from './StorageOrHttpAvatarImg'
 
 type KindFilter = 'all' | MessengerConversationKind
 
@@ -362,7 +363,11 @@ function MessengerChatListAsideImpl(props: {
                         {item.kind === 'direct' ? (
                           <div className="dashboard-messenger__row-avatar">
                             {avatarUrl ? (
-                              <img src={avatarUrl ?? undefined} alt="" />
+                              <StorageOrHttpAvatarImg
+                                src={avatarUrl}
+                                alt=""
+                                fallback={<span>{conversationInitial(item.title)}</span>}
+                              />
                             ) : (
                               <span>{conversationInitial(item.title)}</span>
                             )}
@@ -371,7 +376,11 @@ function MessengerChatListAsideImpl(props: {
                           <div className="dashboard-messenger__gc-avatar-lock-wrap">
                             <div className="dashboard-messenger__row-avatar">
                               {avatarUrl ? (
-                                <img src={avatarUrl ?? undefined} alt="" />
+                                <StorageOrHttpAvatarImg
+                                  src={avatarUrl}
+                                  alt=""
+                                  fallback={<span>{conversationInitial(item.title)}</span>}
+                                />
                               ) : (
                                 <span>{conversationInitial(item.title)}</span>
                               )}
@@ -491,7 +500,11 @@ function MessengerChatListAsideImpl(props: {
                       >
                         <div className="dashboard-messenger__row-avatar">
                           {hit.avatarUrl ? (
-                            <img src={hit.avatarUrl} alt="" />
+                            <StorageOrHttpAvatarImg
+                              src={hit.avatarUrl}
+                              alt=""
+                              fallback={<span>{conversationInitial(hit.displayName)}</span>}
+                            />
                           ) : (
                             <span>{conversationInitial(hit.displayName)}</span>
                           )}
@@ -532,7 +545,11 @@ function MessengerChatListAsideImpl(props: {
                       <div className="dashboard-messenger__row-avatar-wrap" aria-hidden>
                         <div className="dashboard-messenger__row-avatar">
                           {avatarUrl ? (
-                            <img src={avatarUrl} alt="" />
+                            <StorageOrHttpAvatarImg
+                              src={avatarUrl}
+                              alt=""
+                              fallback={<span>{conversationInitial(hit.title)}</span>}
+                            />
                           ) : (
                             <span>{conversationInitial(hit.title)}</span>
                           )}

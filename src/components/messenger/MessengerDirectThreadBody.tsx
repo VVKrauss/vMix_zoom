@@ -21,6 +21,7 @@ import { resolveQuotedAvatarForDm } from '../../lib/messengerUi'
 import type { MessengerConversationSummary } from '../../lib/messengerConversations'
 import type { ReactionEmoji } from '../../types/roomComms'
 import { ThreadMessageBubble } from './ThreadMessageBubble'
+import { StorageOrHttpAvatarImg } from './StorageOrHttpAvatarImg'
 import { useDevRenderTrace } from '../../lib/devTrace'
 
 export type MessengerDirectThreadHeadConversation = MessengerConversationSummary & { kind: 'direct' }
@@ -182,7 +183,11 @@ function MessengerDirectThreadBodyImpl(props: {
               >
                 <span className="dashboard-messenger__thread-head-center-avatar">
                   {activeAvatarUrl ? (
-                    <img src={activeAvatarUrl ?? undefined} alt="" />
+                    <StorageOrHttpAvatarImg
+                      src={activeAvatarUrl}
+                      alt=""
+                      fallback={<span>{conversationInitial(threadHeadConversation.title)}</span>}
+                    />
                   ) : (
                     <span>{conversationInitial(threadHeadConversation.title)}</span>
                   )}
@@ -254,7 +259,11 @@ function MessengerDirectThreadBodyImpl(props: {
               >
                 <span className="dashboard-messenger__thread-avatar">
                   {activeAvatarUrl ? (
-                    <img src={activeAvatarUrl ?? undefined} alt="" />
+                    <StorageOrHttpAvatarImg
+                      src={activeAvatarUrl}
+                      alt=""
+                      fallback={<span>{conversationInitial(threadHeadConversation.title)}</span>}
+                    />
                   ) : (
                     <span>{conversationInitial(threadHeadConversation.title)}</span>
                   )}
