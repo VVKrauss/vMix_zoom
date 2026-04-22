@@ -279,6 +279,7 @@ export function DashboardMessengerPage() {
   const [directPeerLastReadAt, setDirectPeerLastReadAt] = useState<string | null>(null)
   const [directPeerReceiptsPrivate, setDirectPeerReceiptsPrivate] = useState(false)
   const [directPeerLastActivityAt, setDirectPeerLastActivityAt] = useState<string | null>(null)
+  const [directPeerShowLastActivity, setDirectPeerShowLastActivity] = useState(true)
 
   const [conversationInfoOpen, setConversationInfoOpen] = useState(false)
   const [conversationInfoId, setConversationInfoId] = useState<string | null>(null)
@@ -1387,6 +1388,7 @@ export function DashboardMessengerPage() {
   // lastActivityAt нужен только для текста «последняя активность», онлайн берём из presence mirror
   useEffect(() => {
     setDirectPeerLastActivityAt(null)
+    setDirectPeerShowLastActivity(true)
     const oid = directOtherUserId.trim()
     if (!oid || !user?.id || oid === user.id) return
     let cancelled = false
@@ -1394,6 +1396,7 @@ export function DashboardMessengerPage() {
       if (cancelled) return
       if (!peek.data || peek.error) return
       setDirectPeerLastActivityAt(peek.data.lastActivityAt)
+      setDirectPeerShowLastActivity(peek.data.lastActivityVisible !== false)
     })
     return () => {
       cancelled = true
@@ -3231,6 +3234,7 @@ export function DashboardMessengerPage() {
                       peerDmReceiptsPrivate={directPeerReceiptsPrivate}
                       directPeerIsOnline={directPeerIsOnline}
                       directPeerLastActivityAt={directPeerLastActivityAt}
+                      directPeerShowLastActivity={directPeerShowLastActivity}
                       threadHeadConversation={threadHeadConversation as MessengerDirectThreadHeadConversation}
                       openUserPeek={openUserPeek}
                       user={user}

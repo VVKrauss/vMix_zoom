@@ -12,6 +12,11 @@ export type RoomManageParticipantRow = {
   isRoomAdmin: boolean
 }
 
+export type RoomManageHostJoinRequest = {
+  requestId: string
+  displayName: string
+}
+
 export function RoomManageModal({
   open,
   onClose,
@@ -25,6 +30,9 @@ export function RoomManageModal({
   onAssignRoomAdmin,
   onRemoveRoomAdmin,
   onRemoveFromRoom,
+  hostJoinRequests,
+  onApproveHostJoinRequest,
+  onDenyHostJoinRequest,
 }: {
   open: boolean
   onClose: () => void
@@ -38,6 +46,10 @@ export function RoomManageModal({
   onAssignRoomAdmin: (userId: string) => void
   onRemoveRoomAdmin: (userId: string) => void
   onRemoveFromRoom: (peerId: string, options: { alsoBan: boolean; authUserId: string | null }) => void
+  /** `null` — блок не показываем (не хост БД); иначе список ожидающих запросов на вход. */
+  hostJoinRequests?: RoomManageHostJoinRequest[] | null
+  onApproveHostJoinRequest?: (req: RoomManageHostJoinRequest) => void
+  onDenyHostJoinRequest?: (req: RoomManageHostJoinRequest) => void
 }) {
   const [removeDraft, setRemoveDraft] = useState<{
     peerId: string
@@ -74,6 +86,44 @@ export function RoomManageModal({
               ×
             </button>
           </div>
+          {hostJoinRequests != null ? (
+            <div className="room-manage-modal__join">
+              <div className="room-manage-modal__join-head">
+                <span className="room-manage-modal__join-title">Запросы на вход</span>
+                {hostJoinRequests.length > 0 ? (
+                  <span className="room-manage-modal__join-count">{hostJoinRequests.length}</span>
+                ) : null}
+              </div>
+              {hostJoinRequests.length === 0 ? (
+                <p className="room-manage-modal__join-empty">Нет активных запросов</p>
+              ) : (
+                <ul className="room-manage-modal__join-list">
+                  {hostJoinRequests.map((req) => (
+                    <li key={req.requestId} className="room-manage-modal__join-item">
+                      <span className="room-manage-modal__join-name">{req.displayName}</span>
+                      <div className="room-manage-modal__join-actions">
+                        <button
+                          type="button"
+                          className="room-manage-modal__join-approve"
+                          onClick={() => onApproveHostJoinRequest?.(req)}
+                        >
+                          ✓ Впустить
+                        </button>
+                        <button
+                          type="button"
+                          className="room-manage-modal__join-deny"
+                          onClick={() => onDenyHostJoinRequest?.(req)}
+                          aria-label="Отклонить"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : null}
           <div className="room-manage-modal__stats">
             <span>Участников: {participantCount}</span>
             <span>Сообщений в чате: {chatMessageCount}</span>

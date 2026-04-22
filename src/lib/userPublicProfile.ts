@@ -22,6 +22,8 @@ export type PublicUserProfileRow = {
   profileSlug: string | null
   /** Сведённая «последняя активность» (heartbeat и/или вход). */
   lastActivityAt: string | null
+  /** Можно ли показывать строку «Был(а): …» (если false — время скрыто настройкой приватности). */
+  lastActivityVisible: boolean
   /** Статус «в сети» с учётом приватности `profile_show_online`. */
   isOnline: boolean
   /** Профиль скрыт настройками владельца (только для чужих). */
@@ -55,6 +57,8 @@ export async function fetchPublicUserProfile(
     parseRpcTimestamp(row.last_login_at) ??
     null
 
+  const lastActivityVisible = row.last_activity_visible !== false
+
   return {
     data: {
       id: String(row.id ?? ''),
@@ -67,6 +71,7 @@ export async function fetchPublicUserProfile(
       profileSlug:
         typeof row.profile_slug === 'string' && row.profile_slug.trim() ? row.profile_slug.trim() : null,
       lastActivityAt: rawActivity,
+      lastActivityVisible,
       isOnline: row.is_online === true,
       restricted: row.restricted === true,
     },

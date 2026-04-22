@@ -26,8 +26,8 @@ export function RemoteVideoSignalBars({ quality }: Props) {
       role="img"
       aria-label={
         level != null
-          ? `Качество видео до сервера: ${level} из 5`
-          : 'Качество видео до сервера: измерение…'
+          ? `Качество видеопотока: ${level} из 5`
+          : 'Качество видеопотока: измерение…'
       }
     >
       {BAR_HEIGHTS_PX.map((h, i) => {

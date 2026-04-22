@@ -1,4 +1,994 @@
 /* Room: раскладка комнаты, плитки, чат фазы B — вынесено из index.css */
+/* ── Комната: экраны входа, ожидание, запросы, тосты ───────────────── */
+.room-closed-loader-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 4px;
+}
+
+.room-closed-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.room-closed-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--text-dim);
+  max-width: 32ch;
+}
+
+.room-closed-id {
+  display: block;
+  margin-top: 10px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+  word-break: break-all;
+}
+
+/* ── Host Claim Modal ─────────────────────────────────────────────────────── */
+
+.room-host-claim-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.room-host-claim-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 36px 32px;
+  max-width: 400px;
+  width: 100%;
+  text-align: center;
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.room-host-claim-modal__icon {
+  font-size: 40px;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.room-host-claim-modal__title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.room-host-claim-modal__body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.room-host-claim-modal__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.room-host-claim-modal__btn-primary {
+  background: var(--red);
+  color: #fff;
+  border-color: transparent;
+}
+
+.room-host-claim-modal__btn-primary:hover {
+  background: var(--red-hover, color-mix(in srgb, var(--red) 80%, #000));
+}
+
+.room-host-claim-modal__hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  opacity: 0.6;
+}
+
+.room-host-claim-modal__room-id {
+  font-family: ui-monospace, monospace;
+}
+
+/* ── Join Approval Waiting ────────────────────────────────────────────────── */
+
+.room-approval-waiting {
+  text-align: center;
+  align-items: center;
+  gap: 16px;
+}
+
+.room-approval-waiting__loader {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 4px;
+}
+
+.room-approval-waiting__title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.room-approval-waiting__body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  max-width: 30ch;
+}
+
+.room-approval-waiting__hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  opacity: 0.6;
+  font-family: ui-monospace, monospace;
+}
+
+.room-approval-waiting__back {
+  margin-top: 4px;
+}
+
+/* ── Join Requests panel (host, inside room) ──────────────────────────────── */
+
+/* ── Кнопка запросов на вход (в шапке комнаты) ───────────────────────────── */
+
+.room-join-requests-btn-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.room-requests-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* ── Модалка запросов на вход ─────────────────────────────────────────────── */
+
+.room-join-requests-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 800;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.room-join-requests {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 0;
+  width: 100%;
+  max-width: 360px;
+  max-height: 70vh;
+  overflow-y: auto;
+  z-index: 801;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+}
+
+.room-join-requests__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  border-radius: 16px 16px 0 0;
+}
+
+.room-join-requests__header > span:first-child {
+  flex: 1;
+}
+
+.room-join-requests__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.room-join-requests__close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  line-height: 1;
+  border-radius: 6px;
+  transition: color 0.15s;
+  margin-left: 4px;
+}
+.room-join-requests__close:hover {
+  color: var(--text);
+}
+
+.room-join-requests__empty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.room-join-requests__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.room-join-requests__item:last-child {
+  border-bottom: none;
+}
+
+.room-join-requests__name {
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.room-join-requests__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.room-join-requests__approve {
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.room-join-requests__approve:hover {
+  background: rgba(34, 197, 94, 0.28);
+}
+
+.room-join-requests__deny {
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.room-join-requests__deny:hover {
+  background: var(--surface2);
+}
+
+/* ── Тост: новый запрос на вход ───────────────────────────────────────────── */
+
+.room-join-request-toast {
+  position: fixed;
+  top: max(env(safe-area-inset-top, 0px), 20px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid #22c55e;
+  border-radius: 14px;
+  padding: 14px 16px 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 15px;
+  line-height: 1.35;
+  color: var(--text);
+  z-index: 600;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  width: min(calc(100vw - 32px), 440px);
+  animation: room-join-request-toast-in 0.28s ease;
+}
+
+@keyframes room-join-request-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.room-join-request-toast__icon {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  color: #22c55e;
+}
+.room-join-request-toast__icon svg {
+  width: 26px;
+  height: 26px;
+}
+.room-join-request-toast__icon i.fi {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.room-join-request-toast__text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+}
+
+.room-join-request-toast__action {
+  flex-shrink: 0;
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: #22c55e;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.room-join-request-toast__action:hover {
+  background: rgba(34, 197, 94, 0.28);
+}
+
+.room-join-request-toast__close {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  line-height: 1;
+  border-radius: 6px;
+  transition: color 0.15s;
+}
+.room-join-request-toast__close:hover {
+  color: var(--text);
+}
+
+/* ── Host Transfer Toast ──────────────────────────────────────────────────── */
+
+.room-host-transfer-toast {
+  position: fixed;
+  bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 16px 10px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text);
+  z-index: 600;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+  border-left: 3px solid var(--red);
+}
+
+.room-host-transfer-toast__close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.room-closed-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+/* ── Шапка комнаты: кабинет и меню пользователя ───────────────────────── */
+/* ─── Dashboard button (room header) ─────────────────────────────────────── */
+.header-dashboard-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  overflow: hidden;
+  color: var(--text-dim);
+  text-decoration: none;
+  flex-shrink: 0;
+  transition: background .15s, color .15s;
+}
+
+.header-dashboard-btn svg {
+  width: 18px;
+  height: 18px;
+}
+.header-dashboard-btn i.fi {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.header-dashboard-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  cursor: pointer;
+}
+
+.header-dashboard-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.header-dashboard-btn:hover,
+.header-dashboard-btn--open {
+  background: rgba(255,255,255,.08);
+  color: var(--text);
+}
+
+/* ─── User menu dropdown в шапке комнаты ─────────────────────────────────── */
+.header-user-menu {
+  position: relative;
+}
+
+.header-user-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 200px;
+  background: #1e1e1e;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0,0,0,.7);
+  z-index: 200;
+  overflow: hidden;
+  padding: 4px 0;
+}
+
+.header-user-dropdown__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-family: var(--font);
+  color: var(--text);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background .12s;
+  white-space: nowrap;
+}
+
+.header-user-dropdown__item:hover {
+  background: rgba(255,255,255,.07);
+}
+
+.header-user-dropdown__separator {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+.header-user-dropdown__item--danger {
+  color: #ef9a9a;
+}
+
+.header-user-dropdown__item--danger:hover {
+  background: rgba(180,0,0,.15);
+}
+
+/* ── Архив чата комнаты (модалка) ─────────────────────────────────────── */
+.room-chat-archive-modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 26000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px))
+    max(16px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+  box-sizing: border-box;
+}
+
+.room-chat-archive-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.room-chat-archive-modal {
+  position: relative;
+  z-index: 1;
+  width: min(560px, 100%);
+  max-height: min(88dvh, 720px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.room-chat-archive-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+
+.room-chat-archive-modal__titles {
+  min-width: 0;
+}
+
+.room-chat-archive-modal__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.room-chat-archive-modal__meta {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.room-chat-archive-modal__close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.room-chat-archive-modal__close svg {
+  width: 20px;
+  height: 20px;
+}
+
+.room-chat-archive-modal__body {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px 16px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.room-chat-archive-modal__error {
+  margin: 8px 0 0;
+}
+
+.room-chat-archive-modal__thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Сетка: room-main относительно tile-grid ─────────────────────────── */
+.room-main > .tile-grid.tile-grid--gallery:not(.tile-grid--mobile-solo) {
+  align-content: center;
+}
+
+/* Grid mode: заполняет room-main, скролл при переполнении */
+.room-main > .tile-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.room-main > .pip-container {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Управление комнатой (модалка), настройки space-room в попапе ──── */
+/* ─── Управление комнатой (модалка) ───────────────────────────────────────── */
+.room-manage-modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 20980;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.room-manage-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.room-manage-modal {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 520px;
+  max-height: min(88vh, 720px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.room-manage-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.room-manage-modal__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.room-manage-modal__close {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.room-manage-modal__join {
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(34, 197, 94, 0.06);
+}
+
+.room-manage-modal__join-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.room-manage-modal__join-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+.room-manage-modal__join-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.room-manage-modal__join-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.room-manage-modal__join-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.room-manage-modal__join-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+}
+
+.room-manage-modal__join-name {
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-manage-modal__join-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.room-manage-modal__join-approve {
+  border: 1px solid rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.14);
+  color: #86efac;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.room-manage-modal__join-approve:hover {
+  background: rgba(34, 197, 94, 0.24);
+}
+
+.room-manage-modal__join-deny {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.room-manage-modal__join-deny:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.room-manage-modal__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.room-manage-modal__list {
+  list-style: none;
+  margin: 0;
+  padding: 8px 12px 14px;
+  overflow-y: auto;
+}
+
+.room-manage-modal__row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.room-manage-modal__who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.room-manage-modal__avatar {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+
+.room-manage-modal__avatar-fallback {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border);
+}
+
+.room-manage-modal__meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.room-manage-modal__name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.room-manage-modal__msgs {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.room-manage-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.room-manage-modal__btn {
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.room-manage-modal__btn--secondary {
+  background: rgba(159, 214, 255, 0.12);
+  border-color: rgba(159, 214, 255, 0.28);
+}
+
+.room-manage-modal__btn--danger {
+  background: rgba(220, 80, 80, 0.15);
+  border-color: rgba(220, 80, 80, 0.35);
+  color: #ffb4b4;
+}
+
+.room-manage-remove-confirm p {
+  margin: 0 0 10px;
+}
+
+.room-manage-remove-confirm__ban {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.room-manage-remove-confirm__ban input {
+  margin-top: 3px;
+}
+
+.room-manage-remove-confirm__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.room-space-settings-popover {
+  min-width: 280px;
+}
+
 /* ─── Room ───────────────────────────────────────────────────────────────── */
 .room-layout-cycle-fab {
   flex-shrink: 0;

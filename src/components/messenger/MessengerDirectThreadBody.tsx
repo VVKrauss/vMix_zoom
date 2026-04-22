@@ -36,6 +36,8 @@ function MessengerDirectThreadBodyImpl(props: {
   directPeerIsOnline?: boolean
   /** Последняя активность собеседника (ISO), если разрешено профилем. */
   directPeerLastActivityAt?: string | null
+  /** false — собеседник скрыл время активности; строку «Был(а): …» не показываем. */
+  directPeerShowLastActivity?: boolean
   openUserPeek: (p: { userId: string; displayName: string; avatarUrl: string | null }) => void
   user: { id: string } | null | undefined
   profile: { display_name?: string | null; avatar_url?: string | null } | null | undefined
@@ -86,6 +88,7 @@ function MessengerDirectThreadBodyImpl(props: {
     threadHeadConversation,
     directPeerIsOnline = false,
     directPeerLastActivityAt = null,
+    directPeerShowLastActivity = true,
     openUserPeek,
     user,
     profile,
@@ -264,9 +267,12 @@ function MessengerDirectThreadBodyImpl(props: {
                 </div>
                 <div className="dashboard-messenger__thread-meta">
                   <span>{threadHeadConversation.messageCount} сообщ.</span>
-                  <span>
-                    Был{'\u00A0'}(а): {directPeerLastActivityAt ? formatDateTime(directPeerLastActivityAt) : 'Нет данных'}
-                  </span>
+                  {directPeerShowLastActivity ? (
+                    <span>
+                      Был{'\u00A0'}(а):{' '}
+                      {directPeerLastActivityAt ? formatDateTime(directPeerLastActivityAt) : 'Нет данных'}
+                    </span>
+                  ) : null}
                 </div>
               </div>
             </button>
