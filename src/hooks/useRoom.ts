@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react'
 import { Device } from 'mediasoup-client'
-import type { Transport, Producer, Consumer, RtpCapabilities, TransportOptions, ConsumerOptions } from 'mediasoup-client/lib/types'
+import type {
+  Transport,
+  Producer,
+  Consumer,
+  RtpCapabilities,
+  RtpCodecCapability,
+  TransportOptions,
+  ConsumerOptions,
+} from 'mediasoup-client/lib/types'
 import { io, Socket } from 'socket.io-client'
 import type {
   FrontendRoomDetail, ProducerDescriptor, RemoteParticipant,
@@ -210,6 +218,22 @@ type ProducerMeta = {
   kind: 'audio' | 'video'
   audioSource?: 'mic' | 'screen' | 'vmix'
   videoSource?: 'camera' | 'screen' | 'vmix' | 'studio_program'
+  /** Из ack `consume` (сервер): нужен для `setConsumerPreferredLayers`. */
+  consumerType?: 'simple' | 'simulcast' | 'svc'
+  producerPaused?: boolean
+}
+
+function findProducerMetaByConsumerId(map: Map<string, ProducerMeta>, consumerId: string): ProducerMeta | null {
+  const cid = consumerId.trim()
+  if (!cid) return null
+  const seen = new Set<ProducerMeta>()
+  for (const m of map.values()) {
+    if (m.consumerId === cid && !seen.has(m)) {
+      seen.add(m)
+      return m
+    }
+  }
+  return null
 }
 
 function isStudioPreviewDescriptor(p: ProducerDescriptor): boolean {
@@ -316,25 +340,58 @@ function buildSimulcastEncodings(
   ]
 }
 
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+/** Предпочесть AV1, затем VP9/VP8/H264 — как в router rtpCapabilities (сервер). */
+function pickPreferredVideoSendCodec(device: Device): RtpCodecCapability | undefined {
+  const codecs = device.rtpCapabilities?.codecs ?? []
+  const video = codecs.filter((c) => c.kind === 'video')
+  const order = ['video/av1', 'video/VP9', 'video/VP8', 'video/H264', 'video/H265']
+  for (const mime of order) {
+    const found = video.find((c) => c.mimeType.toLowerCase() === mime.toLowerCase())
+    if (found) return found
+  }
+  return video[0]
+}
+
+function parseConsumeAckFields(data: Record<string, unknown>): {
+  producerPaused: boolean
+  consumerType: 'simple' | 'simulcast' | 'svc' | undefined
+} {
+  const producerPaused = Boolean(data.producerPaused ?? data.producer_paused)
+  const raw = data.type ?? data.consumer_type ?? data.consumerType
+  const t = typeof raw === 'string' ? raw.toLowerCase().trim() : ''
+  const consumerType =
+    t === 'simulcast' || t === 'svc' || t === 'simple' ? (t as 'simple' | 'simulcast' | 'svc') : undefined
+  return { producerPaused, consumerType }
+}
+
 async function produceVideoFromTrack(
+  device: Device,
   sendTransport: Transport,
   track: MediaStreamTrack,
   preset: VideoPreset,
 ): Promise<Producer> {
   const fpsCap = capVideoFramerate(preset.frameRate, track)
   const codecOptions = { videoGoogleStartBitrate: preset.startBitrate }
+  const preferredCodec = pickPreferredVideoSendCodec(device)
+  const base = {
+    track,
+    encodings: buildSimulcastEncodings(preset, fpsCap),
+    codecOptions,
+    ...(preferredCodec ? { codec: preferredCodec } : {}),
+  }
   try {
-    return await sendTransport.produce({
-      track,
-      encodings: buildSimulcastEncodings(preset, fpsCap),
-      codecOptions,
-    })
+    return await sendTransport.produce(base)
   } catch (err) {
     console.warn('[produce] simulcast failed, fallback single encoding', err)
     return sendTransport.produce({
       track,
       encodings: [{ maxBitrate: preset.maxBitrate, maxFramerate: fpsCap }],
       codecOptions,
+      ...(preferredCodec ? { codec: preferredCodec } : {}),
     })
   }
 }
@@ -436,6 +493,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const peerUplinkVideoQualityRef = useRef<Record<string, InboundVideoQuality>>({})
   /** Камера/vmix: consumer входящего видео по anchorPeerId — fallback getStats, если broadcast нет. */
   const peerCameraVideoConsumerIdRef = useRef<Map<string, string>>(new Map())
+  /** Последний запрошенный spatial layer для consumer (throttle + дедуп). */
+  const consumerInboundLayerPolicyRef = useRef<Map<string, { spatialLayer: number; lastEmitMs: number }>>(new Map())
   const inboundRecvPrevRef = useRef<Map<string, InboundVideoStatsSample>>(new Map())
   const inboundRecvEmaRef = useRef<Map<string, { bitrateBps: number; fractionLost: number }>>(new Map())
   const [peerUplinkBroadcastTick, setPeerUplinkBroadcastTick] = useState(0)
@@ -557,6 +616,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         inboundRecvPrevRef.current.delete(meta.anchorPeerId)
         inboundRecvEmaRef.current.delete(`__in_${meta.anchorPeerId}`)
       }
+      consumerInboundLayerPolicyRef.current.delete(meta.consumerId)
 
       setParticipants((prev) => {
         const next = new Map(prev)
@@ -654,8 +714,17 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           return
         }
 
+        const { producerPaused, consumerType } = parseConsumeAckFields(data)
+
         const consumer = await recvTransport.consume(data as ConsumerOptions)
         consumersRef.current.set(consumer.id, consumer)
+        if (producerPaused) {
+          try {
+            consumer.pause()
+          } catch {
+            /* mediasoup-client */
+          }
+        }
 
         if (import.meta.env.DEV) {
           console.log('[consumeProducer] IDs:',
@@ -712,6 +781,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
               producerPeerId: producer.peerId,
               kind: 'audio' as const,
               audioSource: src,
+              consumerType,
+              producerPaused,
             }
             registerProducerMeta(producerMetaRef.current, producer.producerId, consumer.producerId, audioMeta)
             next.set(anchorId, {
@@ -767,6 +838,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
               producerPeerId: producerVirtualPeerId,
               kind: 'video' as const,
               videoSource: resolved,
+              consumerType,
+              producerPaused,
             }
             registerProducerMeta(producerMetaRef.current, producer.producerId, consumer.producerId, videoMeta)
 
@@ -793,6 +866,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
             producerPeerId: producer.peerId,
             kind: 'video' as const,
             videoSource: resolved,
+            consumerType,
+            producerPaused,
           }
           registerProducerMeta(producerMetaRef.current, producer.producerId, consumer.producerId, videoMeta)
 
@@ -1154,30 +1229,46 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         }
       })
 
-      // 3. Join room
-      const joinData = await new Promise<{
-        rtpCapabilities: object
+      // 3. Join room (повтор при коллизии resume / отсутствии сессии на сервере)
+      type JoinRoomAck = {
+        rtpCapabilities?: object
         existingProducers?: ProducerDescriptor[]
         chatHistory?: RoomChatMessage[]
         peers?: unknown[]
         participantSessionId?: string
         roomRuntimeState?: 'active' | 'grace' | 'ended'
         error?: string
-      }>((res) => {
-        const resumeParticipantSessionId = readStoredParticipantSessionId(roomId)
-        socket.emit('joinRoom', {
-          roomId,
-          name: displayNameRef.current,
-          avatarUrl: media?.avatarUrl ?? null,
-          authUserId: media?.authUserId ?? null,
-          canManageRoom: media?.canManageRoom === true,
-          resumeParticipantSessionId,
-        }, res)
-      })
-
-      storeParticipantSessionId(roomId, joinData?.participantSessionId)
-      if (joinData?.participantSessionId) {
-        clearResumeReloadMark(roomId)
+      }
+      const joinTransientErrors = new Set(['resume_in_progress', 'session_not_found'])
+      let joinData: JoinRoomAck | undefined
+      for (let attempt = 0; attempt < 12; attempt++) {
+        if (aborted()) {
+          stopStreamTracks(stream)
+          disposeSignalingSocket(socket)
+          if (socketRef.current === socket) socketRef.current = null
+          localStreamRef.current = null
+          setLocalStream(null)
+          setStatus('idle')
+          return
+        }
+        joinData = await new Promise<JoinRoomAck>((res) => {
+          const resumeParticipantSessionId = readStoredParticipantSessionId(roomId)
+          socket.emit('joinRoom', {
+            roomId,
+            name: displayNameRef.current,
+            avatarUrl: media?.avatarUrl ?? null,
+            authUserId: media?.authUserId ?? null,
+            canManageRoom: media?.canManageRoom === true,
+            resumeParticipantSessionId,
+          }, res)
+        })
+        const err = joinData?.error
+        if (err && joinTransientErrors.has(err)) {
+          if (import.meta.env.DEV) console.warn('[joinRoom] transient ack:', err, 'attempt', attempt + 1)
+          await sleepMs(1500)
+          continue
+        }
+        break
       }
 
       if (
@@ -1203,6 +1294,28 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         setLocalStream(null)
         setStatus('idle')
         return
+      }
+
+      if (!joinData?.rtpCapabilities) {
+        stopStreamTracks(stream)
+        disposeSignalingSocket(socket)
+        if (socketRef.current === socket) socketRef.current = null
+        localStreamRef.current = null
+        setLocalStream(null)
+        const msg =
+          joinData?.error === 'resume_in_progress' || joinData?.error === 'session_not_found'
+            ? 'Сервер занят восстановлением сессии. Повторите вход.'
+            : joinData?.error
+              ? String(joinData.error)
+              : 'joinRoom: сервер не вернул rtpCapabilities'
+        setError(msg)
+        setStatus('error')
+        return
+      }
+
+      storeParticipantSessionId(roomId, joinData.participantSessionId)
+      if (joinData.participantSessionId) {
+        clearResumeReloadMark(roomId)
       }
 
       const joinSelfId = socket.id
@@ -1310,7 +1423,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       // 6. Produce tracks (без треков — только приём чужих потоков)
       for (const track of stream.getTracks()) {
         if (track.kind === 'video') {
-          videoProducerRef.current = await produceVideoFromTrack(sendTransport, track, p)
+          videoProducerRef.current = await produceVideoFromTrack(device, sendTransport, track, p)
         } else {
           const producer = await sendTransport.produce({ track })
           audioProducerRef.current = producer
@@ -1663,6 +1776,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       setStudioServerLogLines([])
       peerUplinkVideoQualityRef.current = {}
       peerCameraVideoConsumerIdRef.current.clear()
+      consumerInboundLayerPolicyRef.current.clear()
       inboundRecvPrevRef.current.clear()
       inboundRecvEmaRef.current.clear()
       setPeerUplinkBroadcastTick(0)
@@ -1719,8 +1833,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   }, [])
 
   const ensureVideoProducer = useCallback(async () => {
+    const device = deviceRef.current
     const sendTransport = sendTransportRef.current
-    if (!sendTransport || videoProducerRef.current) return
+    if (!device || !sendTransport || videoProducerRef.current) return
     const preset = presetRef.current
     const camPref = readPreferredCameraId()
     let v: MediaStream
@@ -1745,7 +1860,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     const track = v.getVideoTracks()[0]
     if (!track) { v.getTracks().forEach((t) => t.stop()); return }
     mergeTrackIntoLocalStream(track)
-    videoProducerRef.current = await produceVideoFromTrack(sendTransport, track, preset)
+    videoProducerRef.current = await produceVideoFromTrack(device, sendTransport, track, preset)
     uplinkLocalPrevRef.current = undefined
     uplinkLocalEmaRef.current.delete('__local__')
     lastVideoUplinkEmitAtRef.current = 0
@@ -2397,7 +2512,34 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         inboundRecvPrevRef.current.set(anchorPeerId, snap)
         if (!delta) return null
         const ema = applyEma(`__in_${anchorPeerId}`, inboundRecvEmaRef.current, delta.bitrateBps, delta.fractionLost)
-        return buildQuality(ema.bitrateBps, ema.fractionLost, delta.jitterMs)
+        const q = buildQuality(ema.bitrateBps, ema.fractionLost, delta.jitterMs)
+        const meta = findProducerMetaByConsumerId(producerMetaRef.current, consumerId)
+        if (
+          meta?.kind === 'video' &&
+          meta.videoSource === 'camera' &&
+          (meta.consumerType === 'simulcast' || meta.consumerType === 'svc')
+        ) {
+          const sock = socketRef.current
+          const rid = roomIdRef.current?.trim()
+          // Уровни 1–2 → низкий spatial; 4–5 → высокий. Уровень 3 — намеренно «нейтральная зона» (гистерезис):
+          // не вызываем setConsumerPreferredLayers, остаётся последний запрошенный слой — без дребезга на границе.
+          const spatialLayerTarget: 0 | 2 | null =
+            q.level <= 2 ? 0 : q.level >= 4 ? 2 : null
+          if (sock?.connected && rid && spatialLayerTarget != null) {
+            const pol = consumerInboundLayerPolicyRef.current
+            const prevPol = pol.get(consumerId)
+            if (!prevPol || prevPol.spatialLayer !== spatialLayerTarget) {
+              sock.emit('setConsumerPreferredLayers', {
+                roomId: rid,
+                consumerId,
+                spatialLayer: spatialLayerTarget,
+                temporalLayer: 2,
+              })
+              pol.set(consumerId, { spatialLayer: spatialLayerTarget, lastEmitMs: Date.now() })
+            }
+          }
+        }
+        return q
       }
 
       const producer = videoProducerRef.current
@@ -2748,6 +2890,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     lastVideoUplinkEmitAtRef.current = 0
     peerUplinkVideoQualityRef.current = {}
     peerCameraVideoConsumerIdRef.current.clear()
+    consumerInboundLayerPolicyRef.current.clear()
     inboundRecvPrevRef.current.clear()
     inboundRecvEmaRef.current.clear()
     setPeerUplinkBroadcastTick(0)
