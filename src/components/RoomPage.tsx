@@ -71,6 +71,7 @@ import { PillToggle } from './PillToggle'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useActiveSpeaker } from '../hooks/useActiveSpeaker'
 import { buildRoomInviteAbsoluteUrl } from '../utils/soloViewerParams'
+import { isProgramIngestPeerDisplayName, PROGRAM_INGEST_DISPLAY_NAME } from '../utils/programIngest'
 import { useTouchDoubleTap } from '../hooks/useTouchDoubleTap'
 import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import { nextLayoutMode } from '../config/layoutModeCycle'
@@ -183,7 +184,7 @@ function guestMuteTargetPeerId(tileId: string, localPeerId: string): string | nu
 
 export type LayoutMode = StoredLayoutMode
 
-/** vMix: ingress запущен, но видео ещё нет — оранжевая кнопка; есть видео — красная. */
+/** Внешний поток (SRT): ingress запущен, но видео ещё нет — оранжевая кнопка; есть видео — красная. */
 export type VmixIngressPhase = 'idle' | 'waiting' | 'live'
 
 const SPEAKER_PIN_LONG_PRESS_MS = 550
@@ -324,6 +325,10 @@ interface Props {
   vmixIngressLoading: boolean
   onStartVmixIngress: () => Promise<{ ok: true; info: VmixIngressInfo } | { ok: false; error: string }>
   onStopVmixIngress: () => Promise<{ ok: boolean; error?: string }>
+  /** Глобальный mute программы внешнего потока (SRT) от хоста (для всех). */
+  vmixProgramHostMuted?: boolean
+  /** Поставить глобальный mute программы внешнего потока (SRT) (только для хоста/админа). */
+  onSetVmixProgramMutedForAll?: (muted: boolean) => Promise<{ ok: boolean; error?: string }>
   /** Входящее camera/vmix видео по участнику (не локальная плитка, не экран). */
   getPeerUplinkVideoQuality?: (peerId: string) => Promise<InboundVideoQuality | null>
   /** Удалённое выключение микрофона гостя (сигналинг). */
@@ -370,6 +375,8 @@ export function RoomPage({
   vmixIngressLoading,
   onStartVmixIngress,
   onStopVmixIngress,
+  vmixProgramHostMuted = false,
+  onSetVmixProgramMutedForAll,
   getPeerUplinkVideoQuality,
   requestPeerMicMute,
   requestKickPeer,
@@ -544,10 +551,8 @@ export function RoomPage({
 
   const { audioOutputs, refreshAudioOutputs } = useAudioOutputs()
   const [playoutVolume, setPlayoutVolume] = useLocalStorageNumber('vmix_playout_volume', 1, 0, 1)
-  /** Громкость только потока программы vMix/SRT (у каждого гостя своя, localStorage). */
-  const [vmixProgramVolume, setVmixProgramVolume] = useLocalStorageNumber('vmix_program_volume', 1, 0, 1)
   // couch mode removed
-  const [vmixProgramMuted, setVmixProgramMuted] = useLocalStorageBool('vmix_program_muted', false)
+  // Local per-user volume for SRT program audio; global mute comes from host via signaling.
   const [playoutSinkId, setPlayoutSinkId] = useLocalStorageString('vmix_playout_sink', '')
   const [showControlButtonLabels, setShowControlButtonLabels] = useLocalStorageBool('vmix_control_button_labels', false)
   const [chatEmbed, setChatEmbed] = useLocalStorageBool('vmix_chat_embed', true)
@@ -1025,9 +1030,9 @@ export function RoomPage({
     [user?.id, chatContactStatuses, openDirectChat, toggleFavoriteFromChat],
   )
 
-  /** Участники-люди в счётчике шапки (без виртуального vMix/SRT). */
+  /** Участники-люди в счётчике шапки (без виртуального SRT/внешнего потока). */
   const remoteHumanPeers = useMemo(
-    () => remoteList.filter((p) => p.name !== 'vMix' && p.virtualSourceType !== 'studio_program'),
+    () => remoteList.filter((p) => !isProgramIngestPeerDisplayName(p.name) && p.virtualSourceType !== 'studio_program'),
     [remoteList],
   )
 
@@ -1121,11 +1126,11 @@ export function RoomPage({
   }, [])
 
   const vmixPeer = useMemo(
-    () => remoteList.find((p) => p.name === 'vMix'),
+    () => remoteList.find((p) => isProgramIngestPeerDisplayName(p.name)),
     [remoteList],
   )
 
-  /** У гостя нет vmixIngressInfo, но участник vMix в комнате есть — фаза по peer, не только по ack старта. */
+  /** У гостя нет vmixIngressInfo, но виртуальный участник внешнего потока (SRT) в комнате есть — фаза по peer, не только по ack старта. */
   const vmixPhase: VmixIngressPhase = useMemo(() => {
     if (!vmixIngressInfo && !vmixPeer) return 'idle'
     if (vmixPeer?.videoStream) return 'live'
@@ -1136,10 +1141,10 @@ export function RoomPage({
   useEffect(() => {
     const prev = prevVmixPhaseForProgramAudioRef.current
     if (vmixPhase === 'live' && prev !== 'live') {
-      // SRT/vMix appearance must not change audio settings automatically.
+      // Появление внешнего потока (SRT) не должно менять настройки аудио автоматически.
     }
     prevVmixPhaseForProgramAudioRef.current = vmixPhase
-  }, [vmixPhase, setVmixProgramVolume, setVmixProgramMuted])
+  }, [vmixPhase])
 
   const activeSpeakerPeerId = useActiveSpeaker(
     layout === 'speaker',
@@ -1203,7 +1208,7 @@ export function RoomPage({
     () => remoteList.filter((p) => p.studioProgramStream || (p.virtualSourceType === 'studio_program' && p.videoStream)).length,
     [remoteList],
   )
-  /** Только люди: вы + удалённые гости; без vMix/SRT и без плиток демонстрации экрана. */
+  /** Только люди: вы + удалённые гости; без внешнего потока (SRT) и без плиток демонстрации экрана. */
   const rosterCount = remoteHumanPeers.length + 1
 
   const mobileSoloTiles =
@@ -1442,7 +1447,7 @@ export function RoomPage({
     setVmixModalOpen(true)
   }, [])
 
-  const vmixPlayoutGain = vmixProgramMuted ? 0 : vmixProgramVolume
+  const vmixPlayoutGain = vmixProgramHostMuted ? 0 : 1
 
   const cardPlayout = useMemo(() => ({
     playoutVolume,
@@ -1659,7 +1664,7 @@ export function RoomPage({
         />
       )
     }
-    const isVmixTile = p.name === 'vMix'
+    const isProgramIngestTile = isProgramIngestPeerDisplayName(p.name)
     return (
       <ParticipantCard
         participant={p}
@@ -1669,19 +1674,19 @@ export function RoomPage({
         roomId={roomId}
         srtConnectUrl={srtByPeer[id]?.connectUrlPublic}
         srtListenPort={srtByPeer[id]?.listenPort}
-        badge={isVmixTile ? 'Программа' : null}
-        playoutVolume={isVmixTile ? playoutVolume * vmixPlayoutGain : cardPlayout.playoutVolume}
+        badge={isProgramIngestTile ? PROGRAM_INGEST_DISPLAY_NAME : null}
+        playoutVolume={isProgramIngestTile ? playoutVolume * vmixPlayoutGain : cardPlayout.playoutVolume}
         playoutSinkId={cardPlayout.playoutSinkId}
         reactionBurst={pickLatestBurstForPeer(reactionBursts, p.peerId)}
         getPeerUplinkVideoQuality={getPeerUplinkVideoQuality}
         showSoloViewerCopy={canUseElevatedRoomTools}
         guestMute={
-          !isVmixTile && canRemoteMutePeers
+          !isProgramIngestTile && canRemoteMutePeers
             ? { show: true, onMute: () => { requestPeerMicMute?.(p.peerId) } }
             : undefined
         }
         guestKick={
-          !isVmixTile && canModerateParticipants && (p.authUserId !== user?.id || !p.authUserId)
+          !isProgramIngestTile && canModerateParticipants && (p.authUserId !== user?.id || !p.authUserId)
             ? {
                 show: true,
                 onKick: () => requestKickPeer?.(p.peerId),
@@ -1772,7 +1777,7 @@ export function RoomPage({
     const pipGuestMute =
       muteTarget &&
       canRemoteMutePeers &&
-      participants.get(muteTarget)?.name !== 'vMix'
+      !isProgramIngestPeerDisplayName(participants.get(muteTarget)?.name)
         ? { show: true as const, onMute: () => { requestPeerMicMute?.(muteTarget) } }
         : undefined
     return { ...core, showSoloViewerCopy: canUseElevatedRoomTools, guestMute: pipGuestMute }
@@ -2616,10 +2621,12 @@ export function RoomPage({
         onOpenVmixSettings={openVmixSettingsReference}
         mirrorLocalCamera={mirrorLocalCamera}
         onToggleMirrorLocalCamera={() => setMirrorLocalCamera((v) => !v)}
-        vmixProgramVolume={vmixProgramVolume}
-        onVmixProgramVolumeChange={setVmixProgramVolume}
-        vmixProgramMuted={vmixProgramMuted}
-        onToggleVmixProgramMuted={() => setVmixProgramMuted((v) => !v)}
+        vmixProgramMuted={vmixProgramHostMuted}
+        onToggleVmixProgramMuted={
+          canUseElevatedRoomTools && onSetVmixProgramMutedForAll
+            ? () => { void onSetVmixProgramMutedForAll(!vmixProgramHostMuted) }
+            : () => {}
+        }
         forceMobileFabMenu={isViewportMobile}
         viewportMobile={isViewportMobile}
         immersiveAutoHide={immersiveAutoHide}

@@ -100,11 +100,9 @@ interface Props {
   /** Горизонтальное зеркало только локального превью камеры (не влияет на исходящий поток). */
   mirrorLocalCamera: boolean
   onToggleMirrorLocalCamera: () => void
-  /** Громкость потока программы vMix (0…1), localStorage у каждого участника. */
-  vmixProgramVolume: number
-  onVmixProgramVolumeChange: (v: number) => void
+  /** Громкость аудио внешнего потока (SRT) (0…1), localStorage у каждого участника. */
   vmixProgramMuted: boolean
-  onToggleVmixProgramMuted: () => void
+  onToggleVmixProgramMuted?: () => void
   /** Мобильный viewport: панель скрыта, меню только из FAB справа снизу. */
   forceMobileFabMenu: boolean
   viewportMobile: boolean
@@ -133,7 +131,7 @@ interface Props {
   hideVideoLetterboxing: boolean
   onHideVideoLetterboxingChange: (value: boolean) => void
   /**
-   * Остановить приём программы vMix/SRT и открыть параметры подключения (шеврон).
+   * Остановить приём внешнего потока (SRT) и открыть параметры подключения (шеврон).
    * Только хост комнаты / админы (не гости без прав).
    */
   canManageVmixProgramIngress?: boolean
@@ -259,8 +257,6 @@ export function ControlsBar({
   onOpenVmixSettings,
   mirrorLocalCamera,
   onToggleMirrorLocalCamera,
-  vmixProgramVolume,
-  onVmixProgramVolumeChange,
   vmixProgramMuted,
   onToggleVmixProgramMuted,
   forceMobileFabMenu,
@@ -526,29 +522,27 @@ export function ControlsBar({
     <div
       className={`ctrl-vmix-audio ctrl-vmix-audio--${vmixPhase === 'live' ? 'live' : 'waiting'}`}
       role="group"
-      aria-label="Звук программы SRT"
+      aria-label="Звук внешнего потока (SRT)"
     >
-      <button
-        type="button"
-        className={`ctrl-vmix-audio__mute${vmixProgramMuted ? ' ctrl-vmix-audio__mute--off' : ''}`}
-        title={vmixProgramMuted ? 'Включить звук программы SRT' : 'Отключить звук программы SRT'}
-        aria-pressed={vmixProgramMuted}
-        disabled={vmixIngressLoading}
-        onClick={onToggleVmixProgramMuted}
-      >
-        {vmixProgramMuted ? <ProgramSpeakerMutedIcon /> : <ProgramSpeakerIcon />}
-      </button>
-      <input
-        type="range"
-        className="ctrl-vmix-audio__slider"
-        min={0}
-        max={100}
-        value={Math.round(vmixProgramVolume * 100)}
-        onChange={(e) => onVmixProgramVolumeChange(Number(e.target.value) / 100)}
-        disabled={vmixIngressLoading}
-        title="Громкость программы SRT"
-        aria-label="Громкость программы SRT"
-      />
+      {canManageVmixProgramIngress ? (
+        <button
+          type="button"
+          className={`ctrl-vmix-audio__mute${vmixProgramMuted ? ' ctrl-vmix-audio__mute--off' : ''}`}
+          title={
+            vmixProgramMuted
+              ? 'Включить звук внешнего потока (SRT) для всех'
+              : 'Отключить звук внешнего потока (SRT) для всех'
+          }
+          aria-pressed={vmixProgramMuted}
+          disabled={vmixIngressLoading}
+          onClick={onToggleVmixProgramMuted ?? controlsBarNoop}
+        >
+          {vmixProgramMuted ? <ProgramSpeakerMutedIcon /> : <ProgramSpeakerIcon />}
+          <span className="ctrl-vmix-audio__label">
+            {vmixProgramMuted ? 'Внешний поток: звук выкл (всем)' : 'Внешний поток: звук вкл (всем)'}
+          </span>
+        </button>
+      ) : null}
     </div>
   )
 
@@ -588,8 +582,8 @@ export function ControlsBar({
       vmixPhase === 'live' ? 'ctrl-chevron--vmix-live' : 'ctrl-chevron--vmix-waiting'
     const mainTitle =
       vmixPhase === 'live'
-        ? 'Поток SRT активен. Нажмите, чтобы остановить'
-        : 'Ожидание подключения SRT. Нажмите, чтобы остановить'
+        ? 'Внешний поток (SRT) активен. Нажмите, чтобы остановить'
+        : 'Ожидание внешнего потока (SRT). Нажмите, чтобы остановить'
     if (!canManageVmixProgramIngress) {
       return <div className={shClass}>{vmixProgramAudioControls()}</div>
     }

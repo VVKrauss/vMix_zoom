@@ -1066,7 +1066,7 @@ html[data-theme="light"] .card-bar-fav--on {
   flex: 0 0 auto;
 }
 
-/* Заглушки NDI / vMix — те же отступы и мин. ширина, что у кнопок в .ctrl-group */
+/* Заглушки NDI / SRT — те же отступы и мин. ширина, что у кнопок в .ctrl-group */
 .ctrl-btn.ctrl-btn--source-ingest {
   flex-direction: row;
   flex-wrap: nowrap;
@@ -1120,7 +1120,7 @@ html[data-theme="light"] .card-bar-fav--on {
   letter-spacing: 0.08em;
 }
 
-/* vMix: ожидание Caller — оранжевый; поток есть — красный */
+/* SRT: ожидание Caller — оранжевый; поток есть — красный */
 .ctrl-btn.ctrl-btn--source-ingest--vmix-waiting {
   color: #ffcc80;
   border-color: rgba(255, 152, 0, 0.7);
@@ -1172,7 +1172,7 @@ html[data-theme="light"] .card-bar-fav--on {
   align-items: stretch;
 }
 
-/* Полоса звука vMix — те же цвета, что у кнопки ingest (оранжевый waiting / красный live) */
+/* Полоса звука SRT — те же цвета, что у кнопки ingest (оранжевый waiting / красный live) */
 .controls-bar__sources .ctrl-vmix-audio {
   flex: 0 1 auto;
   box-sizing: border-box;
@@ -1203,16 +1203,24 @@ html[data-theme="light"] .card-bar-fav--on {
 
 .controls-bar__sources .ctrl-vmix-audio__mute {
   flex: 0 0 auto;
-  width: 30px;
   height: 30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
+  padding: 0 10px;
   border: none;
   border-radius: var(--radius);
   background: transparent;
   color: inherit;
   cursor: pointer;
+}
+
+.controls-bar__sources .ctrl-vmix-audio__label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .controls-bar__sources .ctrl-vmix-audio--waiting .ctrl-vmix-audio__mute:hover:not(:disabled) {
@@ -1466,7 +1474,7 @@ html[data-theme="light"] .card-bar-fav--on {
   box-sizing: border-box;
 }
 
-/* NDI и vMix (idle): вне .ctrl-group — те же 48×48, что у остальных в режиме «только иконки» */
+/* NDI и SRT (idle): вне .ctrl-group — те же 48×48, что у остальных в режиме «только иконки» */
 .controls-bar.controls-bar--icons-only .controls-bar__sources > .ctrl-btn.ctrl-btn--source-ingest {
   width: 48px;
   min-width: 48px;
@@ -2746,7 +2754,7 @@ html[data-theme="light"] .room-chat-msg--own .room-chat-msg__name {
   color: var(--red-dk);
 }
 
-/* ── vMix Ingress Modal ──────────────────────────────────────────────────── */
+/* ── SRT ingress modal ──────────────────────────────────────────────────── */
 
 .vmix-modal {
   max-width: 480px;
@@ -2808,7 +2816,7 @@ html[data-theme="light"] .room-chat-msg--own .room-chat-msg__name {
   border-color: rgba(255, 255, 255, 0.35);
 }
 
-/* ── Card badge (vMix / Программа) ───────────────────────────────────────── */
+/* ── Card badge (SRT) ───────────────────────────────────────── */
 
 .card-badge {
   margin-left: auto;
@@ -2823,7 +2831,7 @@ html[data-theme="light"] .room-chat-msg--own .room-chat-msg__name {
   white-space: nowrap;
 }
 
-/* ── vMix error toast ────────────────────────────────────────────────────── */
+/* ── SRT ingress error toast ────────────────────────────────────────────────────── */
 
 .room-invite-toast--error {
   background: rgba(220, 50, 50, 0.92);

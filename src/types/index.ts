@@ -15,7 +15,7 @@ export const VIDEO_PRESETS: VideoPreset[] = [
   { label: '1080p · 10 Mbps', width: 1920, height: 1080, frameRate: 30, maxBitrate: 10_000_000, startBitrate: 3000 },
 ]
 
-/** Умеренный дефолт для SRT/vMix; максимальные пресеты — в настройках комнаты. */
+/** Умеренный дефолт для внешнего потока (SRT); максимальные пресеты — в настройках комнаты. */
 export const DEFAULT_VIDEO_PRESET = VIDEO_PRESETS[VIDEO_PRESETS.length - 1]
 
 export type ProducerDescriptor = {
@@ -30,11 +30,13 @@ export type ProducerDescriptor = {
   /** Явный источник видео (из producer.appData на бэке). */
   videoSource?: 'camera' | 'screen' | 'vmix' | 'studio_program'
   /** Явный источник аудио (из producer.appData на бэке). */
-  audioSource?: 'mic' | 'screen'
+  audioSource?: 'mic' | 'screen' | 'vmix'
   /** Если peerId у видео экрана — отдельный, здесь peerId «хозяина» (камера/имя в комнате). */
   ownerPeerId?: string
   /** Сырой appData с бэка; часто `{ source: 'screen', ownerPeerId }`. */
   appData?: Record<string, unknown>
+  /** Хост/админ заглушил этот producer для всех (server-side consumer pause). */
+  hostMuted?: boolean
 }
 
 /** Ack `startVmixIngress` при `res.ok`. */

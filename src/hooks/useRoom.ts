@@ -16,6 +16,7 @@ import {
 } from '../types/roomComms'
 import {
   descriptorAudioSource,
+  isVmixProducer,
   ownerPeerFromDescriptor,
   resolveConsumeVideoRole,
   videoAnchorPeerId,
@@ -44,9 +45,11 @@ import {
   persistVideoPreset,
   readPreferredCameraId,
   readPreferredMicId,
+  writePreferredMicId,
 } from '../config/roomUiStorage'
 import { formatMediaJoinError, formatStudioProgramError } from '../utils/formatMediaJoinError'
 import { isIosLikeDevice } from '../utils/iosLikeDevice'
+import { buildRoomMicTrackConstraints } from '../utils/roomMicCapture'
 import type { StudioOutputPreset } from '../types/studio'
 
 const SIGNALING_HTTP = signalingHttpBase()
@@ -205,7 +208,7 @@ type ProducerMeta = {
   anchorPeerId: string
   producerPeerId: string
   kind: 'audio' | 'video'
-  audioSource?: 'mic' | 'screen'
+  audioSource?: 'mic' | 'screen' | 'vmix'
   videoSource?: 'camera' | 'screen' | 'vmix' | 'studio_program'
 }
 
@@ -398,8 +401,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [participants, setParticipants] = useState<Map<string, RemoteParticipant>>(new Map())
   const [isMuted, setIsMuted] = useState(false)
+  const isMutedRef = useRef(false)
   const [isCamOff, setIsCamOff] = useState(false)
   // (couch mode removed)
+
+  useEffect(() => {
+    isMutedRef.current = isMuted
+  }, [isMuted])
 
   const socketRef = useRef<Socket | null>(null)
   const deviceRef = useRef<Device | null>(null)
@@ -442,6 +450,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const localStreamRef = useRef<MediaStream | null>(null)
   const [sessionMeta, setSessionMeta] = useState<{ roomId: string; localPeerId: string } | null>(null)
   const [srtByPeer, setSrtByPeer] = useState<Record<string, SrtSessionInfo>>({})
+  const [vmixProgramHostMuted, setVmixProgramHostMuted] = useState(false)
+  const vmixProgramAudioProducerIdRef = useRef<string | null>(null)
   const initialPreset = getStoredVideoPreset()
   const presetRef = useRef<VideoPreset>(initialPreset)
   const [activePreset, setActivePreset] = useState<VideoPreset>(initialPreset)
@@ -572,7 +582,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           meta.kind === 'audio'
             ? meta.audioSource === 'screen'
               ? { screenAudioStream: undefined }
-              : { audioStream: undefined, micAudioStream: undefined }
+              : meta.audioSource === 'vmix'
+                ? { audioStream: undefined }
+                : { audioStream: undefined, micAudioStream: undefined }
             : meta.videoSource === 'screen'
               ? { screenStream: undefined, screenPeerId: undefined }
               : meta.videoSource === 'studio_program'
@@ -657,6 +669,14 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
         const stream = new MediaStream([consumer.track])
 
+        const vmixAudio =
+          consumer.kind === 'audio' &&
+          (descriptorAudioSource(producer) === 'vmix' || isVmixProducer(producer))
+        if (vmixAudio) {
+          vmixProgramAudioProducerIdRef.current = producer.producerId
+          setVmixProgramHostMuted(Boolean(producer.hostMuted))
+        }
+
         const signalingProducerId = producer.producerId
         const onConsumerDead = () => {
           dropProducerById(signalingProducerId)
@@ -671,9 +691,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           const next = new Map(prev)
 
           if (consumer.kind === 'audio') {
-            const src = descriptorAudioSource(producer) ?? 'mic'
-            const owner = ownerPeerFromDescriptor(producer) ?? null
-            const anchorId = owner ?? producer.peerId
+            // SRT / внешний поток: аудио остаётся на своей виртуальной плитке, не на ownerPeerId,
+            // otherwise it duplicates "me" and may override local audio streams.
+            const audioSrc = descriptorAudioSource(producer)
+            const isVmixAudio = audioSrc === 'vmix' || isVmixProducer(producer)
+            const src = audioSrc ?? 'mic'
+            const owner = !isVmixAudio ? (ownerPeerFromDescriptor(producer) ?? null) : null
+            const anchorId = isVmixAudio ? producer.peerId : (owner ?? producer.peerId)
             const existing: RemoteParticipant = next.get(anchorId) ?? {
               peerId: anchorId,
               name: producer.name,
@@ -698,10 +722,15 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
                 ? {
                     screenAudioStream: stream,
                   }
-                : {
-                    micAudioStream: stream,
-                    audioStream: stream, // legacy: если UI ещё слушает audioStream
-                  }),
+                : src === 'vmix'
+                  ? {
+                      // Аудио программы SRT: отдельно от дорожек микрофона участников.
+                      audioStream: stream,
+                    }
+                  : {
+                      micAudioStream: stream,
+                      audioStream: stream, // legacy: если UI ещё слушает audioStream
+                    }),
             })
             return next
           }
@@ -803,6 +832,79 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     [dropProducerById],
   )
 
+  // Track SRT program-audio producerId and its global host-mute flag.
+  useEffect(() => {
+    const sock = socketRef.current
+    if (!sock) return
+    const onHostMutedChanged = (raw: unknown) => {
+      const p = raw as { producerId?: string; producer_id?: string; muted?: boolean } | null
+      const producerId =
+        (typeof p?.producerId === 'string' && p.producerId.trim()) ||
+        (typeof p?.producer_id === 'string' && String(p.producer_id).trim()) ||
+        ''
+      if (!producerId) return
+      const tracked = vmixProgramAudioProducerIdRef.current
+      if (!tracked || producerId !== tracked) return
+      setVmixProgramHostMuted(Boolean(p?.muted))
+    }
+    sock.on('producerHostMutedChanged', onHostMutedChanged)
+    return () => {
+      try { sock.off('producerHostMutedChanged', onHostMutedChanged) } catch { /* ignore */ }
+    }
+  }, [])
+
+  const setVmixProgramMutedForAll = useCallback(async (muted: boolean): Promise<{ ok: boolean; error?: string }> => {
+    const sock = socketRef.current
+    const roomId = roomIdRef.current?.trim()
+    const producerId = vmixProgramAudioProducerIdRef.current?.trim()
+    if (!sock?.connected || !roomId || !producerId) return { ok: false, error: 'SRT аудио не найдено' }
+    return await new Promise((res) => {
+      sock.emit('hostSetProducerMuted', { roomId, producerId, muted }, (ack: { ok?: boolean; error?: string; muted?: boolean } | undefined) => {
+        if (!ack?.ok) return res({ ok: false, error: ack?.error || 'server_error' })
+        setVmixProgramHostMuted(Boolean(ack.muted))
+        res({ ok: true })
+      })
+    })
+  }, [])
+
+  /**
+   * Полностью снимает захват микрофона: закрывает audio producer на сервере и останавливает трек(и).
+   * Нужно, чтобы ОС/драйвер отпускали «голосовой» режим, когда мик выключен (не только pause + enabled=false).
+   */
+  const releaseLocalMicCapture = useCallback(() => {
+    const sock = socketRef.current
+    const producer = audioProducerRef.current
+    if (producer) {
+      if (sock?.connected && roomIdRef.current) {
+        try {
+          sock.emit('closeProducer', { roomId: roomIdRef.current, producerId: producer.id })
+        } catch {
+          /* noop */
+        }
+      }
+      try {
+        producer.close()
+      } catch {
+        /* mediasoup-client */
+      }
+      audioProducerRef.current = null
+    }
+    const stream = localStreamRef.current
+    if (stream) {
+      for (const t of [...stream.getAudioTracks()]) {
+        try {
+          t.stop()
+        } catch {
+          /* noop */
+        }
+        stream.removeTrack(t)
+      }
+      const next = new MediaStream([...stream.getTracks()])
+      localStreamRef.current = next
+      setLocalStream(next)
+    }
+  }, [])
+
   // ─── Join ────────────────────────────────────────────────────────────────
 
   const join = useCallback(async (
@@ -859,28 +961,38 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
               frameRate: { ideal: p.frameRate },
             }
           : false
-        const audioPart =
-          wantMic && !isIosLikeDevice() && micPref
-            ? { deviceId: { exact: micPref } as const }
-            : wantMic
-              ? true
-              : false
+        const audioPart: boolean | MediaTrackConstraints = wantMic
+          ? buildRoomMicTrackConstraints(!isIosLikeDevice() && micPref ? micPref : null)
+          : false
         try {
           stream = await navigator.mediaDevices.getUserMedia({
             audio: audioPart,
             video: videoPart,
           })
         } catch {
-          stream = await navigator.mediaDevices.getUserMedia({
-            audio: wantMic,
-            video: wantCam
-              ? {
-                  width: { ideal: p.width },
-                  height: { ideal: p.height },
-                  frameRate: { ideal: p.frameRate },
-                }
-              : false,
-          })
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              audio: wantMic ? buildRoomMicTrackConstraints(!isIosLikeDevice() && micPref ? micPref : null) : false,
+              video: wantCam
+                ? {
+                    width: { ideal: p.width },
+                    height: { ideal: p.height },
+                    frameRate: { ideal: p.frameRate },
+                  }
+                : false,
+            })
+          } catch {
+            stream = await navigator.mediaDevices.getUserMedia({
+              audio: wantMic,
+              video: wantCam
+                ? {
+                    width: { ideal: p.width },
+                    height: { ideal: p.height },
+                    frameRate: { ideal: p.frameRate },
+                  }
+                : false,
+            })
+          }
         }
       }
       if (aborted()) {
@@ -1231,6 +1343,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
       socket.on('newProducer', async (producer: ProducerDescriptor) => {
         if (import.meta.env.DEV) console.log('[newProducer]', producer)
+        if (
+          producer?.kind === 'audio' &&
+          (descriptorAudioSource(producer) === 'vmix' || isVmixProducer(producer))
+        ) {
+          vmixProgramAudioProducerIdRef.current = producer.producerId
+          setVmixProgramHostMuted(Boolean(producer.hostMuted))
+        }
         await consumeProducer(producer)
       })
 
@@ -1245,6 +1364,11 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         }
         if (id) dropProducerById(id)
         else if (import.meta.env.DEV) console.warn('[producerClosed] could not extract id from payload')
+
+        if (id && vmixProgramAudioProducerIdRef.current === id) {
+          vmixProgramAudioProducerIdRef.current = null
+          setVmixProgramHostMuted(false)
+        }
       })
 
       socket.on('peerLeft', (raw: unknown) => {
@@ -1387,17 +1511,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
        * Без обработчика на сигналинге событие не придёт — см. `requestPeerMicMute`.
        */
       socket.on('forceMicMute', () => {
-        const producer = audioProducerRef.current
-        const stream = localStreamRef.current
-        const track = stream?.getAudioTracks()[0]
-        if (producer) {
-          try {
-            producer.pause()
-          } catch {
-            /* mediasoup client */
-          }
-        }
-        if (track) track.enabled = false
+        releaseLocalMicCapture()
         setIsMuted(true)
       })
 
@@ -1559,7 +1673,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       socketRef.current = null
       if (s) disposeSignalingSocket(s)
     }
-  }, [consumeProducer, dropProducerById])
+  }, [consumeProducer, dropProducerById, releaseLocalMicCapture])
 
   const mergeTrackIntoLocalStream = (track: MediaStreamTrack) => {
     const prev = localStreamRef.current
@@ -1586,11 +1700,17 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       // Сначала пробуем сохранённый mic deviceId, чтобы при повторном включении
       // (и после реконнекта) использовался последний выбранный источник.
       a = await navigator.mediaDevices.getUserMedia({
-        audio: !isIosLikeDevice() && micPref ? { deviceId: { exact: micPref } as const } : true,
+        audio: buildRoomMicTrackConstraints(!isIosLikeDevice() && micPref ? micPref : null),
       })
     } catch {
-      // Fallback на дефолтный микрофон (например если deviceId устарел / permission reset)
-      a = await navigator.mediaDevices.getUserMedia({ audio: true })
+      try {
+        // Fallback: дефолтный микрофон без exact deviceId (устаревший deviceId и т.п.)
+        a = await navigator.mediaDevices.getUserMedia({
+          audio: buildRoomMicTrackConstraints(null),
+        })
+      } catch {
+        a = await navigator.mediaDevices.getUserMedia({ audio: true })
+      }
     }
     const track = a.getAudioTracks()[0]
     if (!track) { a.getTracks().forEach((t) => t.stop()); return }
@@ -1718,21 +1838,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       const stream = localStreamRef.current
       const track = stream?.getAudioTracks()[0]
       if (producer && track) {
-        producer.resume()
-        track.enabled = true
         setIsMuted(false)
       }
     } else {
-      const producer = audioProducerRef.current
-      const stream = localStreamRef.current
-      const track = stream?.getAudioTracks()[0]
-      if (producer && track) {
-        producer.pause()
-        track.enabled = false
-      }
+      releaseLocalMicCapture()
       setIsMuted(true)
     }
-  }, [isMuted, ensureAudioProducer])
+  }, [isMuted, ensureAudioProducer, releaseLocalMicCapture])
 
   const toggleCam = useCallback(async () => {
     if (isCamOff) {
@@ -1802,20 +1914,31 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   }, [])
 
   const switchMic = useCallback(async (deviceId: string) => {
+    const trimmed = deviceId.trim()
+    if (!trimmed) return
+
+    // While mic is muted, switching device must NOT open a new capture stream.
+    // Otherwise OS/driver DSP may affect unrelated playback (e.g. SRT monitoring),
+    // and we still replaceTrack even if the outgoing track is "disabled".
+    if (isMutedRef.current) {
+      writePreferredMicId(trimmed)
+      return
+    }
+
     const stream = localStreamRef.current
     const producer = audioProducerRef.current
     if (!stream) return
 
     const newStream = await navigator.mediaDevices.getUserMedia({
-      audio: { deviceId: { exact: deviceId } },
+      audio: buildRoomMicTrackConstraints(trimmed),
     })
     const newTrack = newStream.getAudioTracks()[0]
     if (!newTrack) return
 
     swapTrack(stream, 'audio', newTrack, setLocalStream)
     if (producer) await producer.replaceTrack({ track: newTrack })
-    if (isMuted) newTrack.enabled = false
-  }, [isMuted])
+    writePreferredMicId(trimmed)
+  }, [])
 
   /** Смена пресета на лету — перезапрос камеры + обновление encodings */
   const changePreset = useCallback(async (preset: VideoPreset) => {
@@ -2708,6 +2831,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     stopVmixIngress,
     vmixIngressInfo,
     vmixIngressLoading,
+    vmixProgramHostMuted,
+    setVmixProgramMutedForAll,
     getPeerUplinkVideoQuality,
     startStudioPreview,
     stopStudioPreview,

@@ -1,4 +1,5 @@
 import type { ProducerDescriptor } from '../types'
+import { isProgramIngestPeerDisplayName } from './programIngest'
 
 /** Для видео экрана с отдельным peerId — id участника-камеры (хозяин плитки в UI). */
 export function ownerPeerFromDescriptor(p: ProducerDescriptor): string | undefined {
@@ -17,19 +18,21 @@ export function descriptorVideoSource(
   return undefined
 }
 
-export function descriptorAudioSource(p: ProducerDescriptor): 'mic' | 'screen' | undefined {
+export function descriptorAudioSource(p: ProducerDescriptor): 'mic' | 'screen' | 'vmix' | undefined {
   if (p.kind !== 'audio') return undefined
-  if (p.audioSource === 'mic' || p.audioSource === 'screen') return p.audioSource
+  if (p.audioSource === 'mic' || p.audioSource === 'screen' || p.audioSource === 'vmix') return p.audioSource
   const src = p.appData?.source
   if (src === 'screen_audio') return 'screen'
   if (src === 'mic') return 'mic'
+  if (src === 'vmix') return 'vmix'
   // совместимость: некоторые бэки помечают аудио экрана как source='screen' при kind='audio'
   if (src === 'screen') return 'screen'
   return undefined
 }
 
 export function isVmixProducer(p: ProducerDescriptor): boolean {
-  return descriptorVideoSource(p) === 'vmix' || p.name === 'vMix'
+  // Keep function name for compatibility; semantics = "program ingest" (SRT), not vendor-specific.
+  return descriptorVideoSource(p) === 'vmix' || isProgramIngestPeerDisplayName(p.name)
 }
 
 /** Куда отнести video producer: экран — второй слот при уже занятой камере. */
@@ -48,7 +51,7 @@ export function resolveVideoProducerRole(
 
 /**
  * Плитка участника в UI: владелец камеры, либо peerId продюсера (если owner не задан).
- * Для vMix — всегда виртуальный peerId (одна плитка на vMix, не мешается с инициатором).
+ * Для программного входа (SRT) — всегда виртуальный peerId (одна плитка, не мешается с инициатором).
  */
 export function videoAnchorPeerId(p: ProducerDescriptor): string {
   if (isVmixProducer(p)) return p.peerId
@@ -60,8 +63,12 @@ export function videoAnchorPeerId(p: ProducerDescriptor): string {
 export function audioAnchorPeerId(p: ProducerDescriptor): string {
   if (p.kind !== 'audio') return p.peerId
   const src = descriptorAudioSource(p)
-  if (src !== 'screen') return p.peerId
-  // Если screen публикуется как отдельный peerId (virtual) — аудио должно следовать за ним.
+  // SRT / внешний поток: аудио на своём виртуальном peerId (как и видео).
+  if (src === 'vmix') return p.peerId
+  if (src === 'screen') {
+    // Если screen публикуется как отдельный peerId (virtual) — аудио должно следовать за ним.
+    return p.peerId
+  }
   return p.peerId
 }
 

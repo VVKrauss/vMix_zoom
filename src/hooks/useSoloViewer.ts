@@ -3,8 +3,12 @@ import { Device } from 'mediasoup-client'
 import type { Transport, Consumer } from 'mediasoup-client/lib/types'
 import { io, Socket } from 'socket.io-client'
 import type { ProducerDescriptor } from '../types'
-import { resolveVideoProducerRole } from '../utils/producerVideoRole'
-import { descriptorAudioSource, ownerPeerFromDescriptor } from '../utils/producerVideoRole'
+import {
+  descriptorAudioSource,
+  isVmixProducer,
+  ownerPeerFromDescriptor,
+  resolveVideoProducerRole,
+} from '../utils/producerVideoRole'
 
 import { signalingSocketUrl } from '../utils/signalingBase'
 
@@ -115,6 +119,12 @@ export function useSoloViewer(roomId: string, watchPeerId: string) {
           const matchesOwner = owner != null && owner === watchPeerId
           if ((!matchesWatch && !matchesOwner) || cancelled) return
 
+          const isVmixAudio =
+            producer.kind === 'audio' &&
+            (descriptorAudioSource(producer) === 'vmix' || isVmixProducer(producer))
+          // Solo "watch myself" must not accidentally attach SRT program audio as "mic".
+          if (isVmixAudio && matchesOwner && !matchesWatch) return
+
           const data = await new Promise<Record<string, unknown>>((res) => {
             socket!.emit(
               'consume',
@@ -152,7 +162,10 @@ export function useSoloViewer(roomId: string, watchPeerId: string) {
             producerMeta.set(producer.producerId, { consumerId: consumer.id, kind: 'audio' })
             const src = descriptorAudioSource(producer) ?? 'mic'
             if (src === 'screen') setScreenAudioStream(stream)
-            else setMicAudioStream(stream)
+            else if (src === 'vmix') {
+              // Not mixed into mic slot; SoloViewerPage currently doesn't play this separately.
+              // (If we want SRT audio in solo, wire a dedicated element later.)
+            } else setMicAudioStream(stream)
           }
 
           socket!.emit('resumeConsumer', { roomId, consumerId: consumer.id }, () => {})

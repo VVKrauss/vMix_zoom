@@ -169,6 +169,8 @@ export function RoomSession({ roomId }: Props) {
     remoteStudioProgramConsumePending,
     remoteStudioRtmpByPeer,
     startVmixIngress, stopVmixIngress, vmixIngressInfo, vmixIngressLoading,
+    vmixProgramHostMuted,
+    setVmixProgramMutedForAll,
     getPeerUplinkVideoQuality,
     requestPeerMicMute,
     requestKickPeer,
@@ -362,8 +364,8 @@ export function RoomSession({ roomId }: Props) {
     const stored = readRoomAutoResume(roomId)
     if (!stored) return
     autoResumeTriedRef.current = true
-    // При авто-восстановлении тоже стартуем с выключенными микрофоном/камерой.
-    void handleJoin(stored.name, stored.roomId, stored.preset, { ...stored.media, enableMic: false, enableCam: false })
+    // Авто-восстановление должно сохранять выбор пользователя (включая мик/камеру).
+    void handleJoin(stored.name, stored.roomId, stored.preset, stored.media)
   }, [error, handleJoin, roomClosedReason, roomId, status])
 
   useEffect(() => {
@@ -448,6 +450,8 @@ export function RoomSession({ roomId }: Props) {
         vmixIngressLoading={vmixIngressLoading}
         onStartVmixIngress={startVmixIngress}
         onStopVmixIngress={stopVmixIngress}
+        vmixProgramHostMuted={vmixProgramHostMuted}
+        onSetVmixProgramMutedForAll={setVmixProgramMutedForAll}
         getPeerUplinkVideoQuality={getPeerUplinkVideoQuality}
         requestPeerMicMute={requestPeerMicMute}
         requestKickPeer={requestKickPeer}
