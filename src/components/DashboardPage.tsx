@@ -182,6 +182,8 @@ export function DashboardPage() {
     const proxy = getSupabaseProxyOrigin()
     if (!direct || !proxy) return
 
+    const PROBE_MS = 12_000
+
     async function probeDbRest(origin: string, signal: AbortSignal): Promise<'yes' | 'no'> {
       try {
         const r = await fetch(`${origin}/rest/v1/`, {
@@ -196,21 +198,27 @@ export function DashboardPage() {
     }
 
     let cancelled = false
-    const ac = new AbortController()
+    const acDirect = new AbortController()
+    const acProxy = new AbortController()
+    const tDirect = window.setTimeout(() => acDirect.abort(), PROBE_MS)
+    const tProxy = window.setTimeout(() => acProxy.abort(), PROBE_MS)
+
     setDbDirectReachable('unknown')
     setDbViaProxyReachable('unknown')
-    void (async () => {
-      const [d, p] = await Promise.all([
-        probeDbRest(direct, ac.signal),
-        probeDbRest(proxy, ac.signal),
-      ])
-      if (cancelled) return
-      setDbDirectReachable(d)
-      setDbViaProxyReachable(p)
-    })()
+
+    void probeDbRest(direct, acDirect.signal).then((v) => {
+      if (!cancelled) setDbDirectReachable(v)
+    })
+    void probeDbRest(proxy, acProxy.signal).then((v) => {
+      if (!cancelled) setDbViaProxyReachable(v)
+    })
+
     return () => {
       cancelled = true
-      ac.abort()
+      acDirect.abort()
+      acProxy.abort()
+      window.clearTimeout(tDirect)
+      window.clearTimeout(tProxy)
     }
   }, [])
 

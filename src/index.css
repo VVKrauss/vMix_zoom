@@ -9587,7 +9587,7 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
 
 .dashboard-supabase-db-probe__label {
   font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--text-dim);
 }
 
 .dashboard-supabase-proxy-status-text {
@@ -9607,7 +9607,7 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
 }
 
 .dashboard-supabase-proxy-status-text--pending {
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-dim);
 }
 
 .dashboard-supabase-proxy-dot {
@@ -9627,7 +9627,28 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
 }
 
 .dashboard-supabase-proxy-dot--pending {
-  background: rgba(255, 255, 255, 0.18);
+  background: color-mix(in srgb, var(--text) 28%, transparent);
+}
+
+html[data-theme="light"] .dashboard-supabase-proxy-status-text--ok {
+  color: #0d6845;
+}
+
+html[data-theme="light"] .dashboard-supabase-proxy-status-text--bad {
+  color: #b71c1c;
+}
+
+html[data-theme="light"] .dashboard-supabase-proxy-dot--ok {
+  background: #1b9e5e;
+  box-shadow: 0 0 0 2px rgba(27, 158, 94, 0.3);
+}
+
+html[data-theme="light"] .dashboard-supabase-proxy-dot--bad {
+  background: #c62828;
+}
+
+html[data-theme="light"] .dashboard-supabase-proxy-dot--pending {
+  background: color-mix(in srgb, var(--text) 22%, var(--border) 78%);
 }
 
 @media (max-width: 480px) {
