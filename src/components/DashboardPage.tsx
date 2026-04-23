@@ -17,7 +17,13 @@ import { listMessengerPeersByMessageCount } from '../lib/messenger'
 import type { ContactCard } from '../lib/socialGraph'
 import { listMyContacts } from '../lib/socialGraph'
 import { fetchPersistentSpaceRoomsForUser, type PersistentSpaceRoomRow } from '../lib/spaceRoom'
-import { supabase } from '../lib/supabase'
+import {
+  getSupabaseProxyOrigin,
+  getSupabaseUseProxy,
+  isSupabaseProxyOriginConfigured,
+  setSupabaseUseProxy,
+  supabase,
+} from '../lib/supabase'
 import type { StoredLayoutMode } from '../config/roomUiStorage'
 import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
 import { DashboardContactsIncomingModal } from './DashboardContactsIncomingModal'
@@ -153,6 +159,10 @@ export function DashboardPage() {
   const [deleteRoomFromListTarget, setDeleteRoomFromListTarget] = useState<RoomChatConversationSummary | null>(null)
   const [deleteRoomFromListBusy, setDeleteRoomFromListBusy] = useState(false)
   const [roomArchiveActionErr, setRoomArchiveActionErr] = useState<string | null>(null)
+  const [supabaseUseProxy] = useState(() => getSupabaseUseProxy())
+  const [exitIpLine, setExitIpLine] = useState<string | null>(null)
+  const [exitIpLoading, setExitIpLoading] = useState(false)
+  const [proxyReachable, setProxyReachable] = useState<'unknown' | 'yes' | 'no'>('unknown')
 
   const refreshHiddenIncoming = useCallback(() => {
     if (!user?.id) {
@@ -165,6 +175,61 @@ export function DashboardPage() {
   useEffect(() => {
     refreshHiddenIncoming()
   }, [refreshHiddenIncoming, contactsTick])
+
+  useEffect(() => {
+    if (!isSupabaseProxyOriginConfigured()) return
+    let cancelled = false
+    const ac = new AbortController()
+    setExitIpLoading(true)
+    void (async () => {
+      try {
+        const r = await fetch('https://get.geojs.io/v1/ip/geo.json', { signal: ac.signal })
+        if (!r.ok) throw new Error('geo')
+        const j = (await r.json()) as { ip?: string; country?: string }
+        if (cancelled) return
+        const ip = typeof j.ip === 'string' ? j.ip.trim() : ''
+        const country = typeof j.country === 'string' ? j.country.trim() : ''
+        if (ip && country) setExitIpLine(`${ip} · ${country}`)
+        else if (ip) setExitIpLine(ip)
+        else setExitIpLine(null)
+      } catch {
+        if (!cancelled) setExitIpLine(null)
+      } finally {
+        if (!cancelled) setExitIpLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+      ac.abort()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isSupabaseProxyOriginConfigured()) return
+    const origin = getSupabaseProxyOrigin()
+    if (!origin) return
+    let cancelled = false
+    const ac = new AbortController()
+    setProxyReachable('unknown')
+    void (async () => {
+      try {
+        const r = await fetch(`${origin}/rest/v1/`, {
+          method: 'GET',
+          signal: ac.signal,
+          headers: { Accept: 'application/json' },
+        })
+        if (cancelled) return
+        // 401 без ключа — нормальный ответ PostgREST; 5xx — прокси или upstream недоступны.
+        setProxyReachable(r.status >= 500 ? 'no' : 'yes')
+      } catch {
+        if (!cancelled) setProxyReachable('no')
+      }
+    })()
+    return () => {
+      cancelled = true
+      ac.abort()
+    }
+  }, [])
 
   useEffect(() => {
     if (!profile) return
@@ -549,6 +614,64 @@ export function DashboardPage() {
           </div>
           <div className="dashboard-tile__flex-fill" aria-hidden />
         </section>
+
+        {isSupabaseProxyOriginConfigured() ? (
+          <section className="dashboard-tile dashboard-tile--supabase-proxy">
+            <h2 className="dashboard-tile__title">База данных</h2>
+            <div className="dashboard-form dashboard-form--compact">
+              <p className="dashboard-field__hint" style={{ marginTop: 0 }}>
+                Если прямой доступ к Supabase нестабилен, запросы к базе, авторизации и realtime можно направить на
+                прокси, заданный при сборке. Сигналинг, комнаты и прочие сервисы приложения идут как обычно.
+              </p>
+              <div className="dashboard-field">
+                <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-supabase-proxy-toggle-row">
+                  <div className="dashboard-supabase-proxy-toggle-row__left">
+                    <span className="dashboard-supabase-proxy-exit" title="Ваш внешний IP (как видит интернет)">
+                      {exitIpLoading ? 'Определение IP…' : exitIpLine ?? 'Не удалось определить IP'}
+                    </span>
+                    <span
+                      className={
+                        proxyReachable === 'yes'
+                          ? 'dashboard-supabase-proxy-dot dashboard-supabase-proxy-dot--ok'
+                          : proxyReachable === 'no'
+                            ? 'dashboard-supabase-proxy-dot dashboard-supabase-proxy-dot--bad'
+                            : 'dashboard-supabase-proxy-dot dashboard-supabase-proxy-dot--pending'
+                      }
+                      title={
+                        proxyReachable === 'yes'
+                          ? 'Прокси для базы отвечает'
+                          : proxyReachable === 'no'
+                            ? 'Прокси для базы недоступен'
+                            : 'Проверка прокси…'
+                      }
+                      aria-label={
+                        proxyReachable === 'yes'
+                          ? 'Прокси доступен'
+                          : proxyReachable === 'no'
+                            ? 'Прокси недоступен'
+                            : 'Проверка прокси'
+                      }
+                    />
+                  </div>
+                  <span className="dashboard-field__label">Прокси для базы</span>
+                  <PillToggle
+                    checked={supabaseUseProxy}
+                    onCheckedChange={(next) => {
+                      if (next === supabaseUseProxy) return
+                      setSupabaseUseProxy(next)
+                      window.location.reload()
+                    }}
+                    ariaLabel="Использовать прокси только для Supabase"
+                  />
+                </div>
+              </div>
+              <p className="dashboard-field__note">
+                После переключения страница перезагрузится. На стороне прокси должны проксироваться пути Supabase
+                (включая WebSocket для realtime).
+              </p>
+            </div>
+          </section>
+        ) : null}
 
         <section className="dashboard-tile dashboard-tile--contact-privacy">
           <h2 className="dashboard-tile__title">Приватность</h2>
