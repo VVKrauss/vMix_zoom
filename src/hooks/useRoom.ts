@@ -32,6 +32,7 @@ import {
 import { screenTileKey } from '../utils/screenTileKey'
 import { studioProgramTileKey } from '../utils/studioProgramTileKey'
 import { readVmixIngressEmitExtras } from '../config/serverSettingsStorage'
+import { isDevTraceEnabled } from '../lib/devTrace'
 import {
   applyInboundRecvVideoEma,
   applyLocalUplinkVideoEma,
@@ -415,7 +416,9 @@ async function produceVideoFromTrack(
         /* fall through to single encoding */
       }
     }
-    console.warn('[produce] simulcast failed, fallback single encoding', err1)
+    if (isDevTraceEnabled()) {
+      console.warn('[produce] simulcast failed, fallback single encoding', err1)
+    }
   }
 
   // 2) Single encoding fallback, same codec strategy.
@@ -556,13 +559,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     const id = ++cameraOpSeqRef.current
     const prev = cameraOpChainRef.current
     const run = prev.then(async () => {
-      if (import.meta.env.DEV) console.log('[cam-op]', id, 'start', label)
+      if (isDevTraceEnabled()) console.log('[cam-op]', id, 'start', label)
       try {
         const res = await fn()
-        if (import.meta.env.DEV) console.log('[cam-op]', id, 'ok', label)
+        if (isDevTraceEnabled()) console.log('[cam-op]', id, 'ok', label)
         return res
       } catch (e) {
-        if (import.meta.env.DEV) console.warn('[cam-op]', id, 'fail', label, e)
+        if (isDevTraceEnabled()) console.warn('[cam-op]', id, 'fail', label, e)
         throw e
       }
     })
@@ -633,7 +636,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       const producerId = String(rawProducerId ?? '').trim()
       if (!producerId) return
 
-      if (import.meta.env.DEV) {
+      if (isDevTraceEnabled()) {
         console.log('[dropProducerById] looking for', producerId,
           '| meta keys:', [...producerMetaRef.current.keys()],
           '| consumers:', [...consumersRef.current.entries()].map(([cid, c]) => ({ cid, cProducerId: c.producerId, closed: c.closed })),
@@ -651,10 +654,10 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         }
       }
       if (!meta) {
-        if (import.meta.env.DEV) console.warn('[dropProducerById] NO META FOUND for', producerId)
+        if (isDevTraceEnabled()) console.warn('[dropProducerById] NO META FOUND for', producerId)
         return
       }
-      if (import.meta.env.DEV) console.log('[dropProducerById] found meta', { ...meta })
+      if (isDevTraceEnabled()) console.log('[dropProducerById] found meta', { ...meta })
 
       const c = consumersRef.current.get(meta.consumerId)
       try {
@@ -785,7 +788,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           }
         }
 
-        if (import.meta.env.DEV) {
+        if (isDevTraceEnabled()) {
           console.log('[consumeProducer] IDs:',
             'signaling=', producer.producerId,
             'consumer.producerId=', consumer.producerId,
@@ -1148,7 +1151,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         if (!peerId || peerId === sid) return
         const q = parseVideoUplinkBroadcast(o)
         if (!q) {
-          if (import.meta.env.DEV) {
+          if (isDevTraceEnabled()) {
             console.warn('[videoUplink] metrics parse failed', { peerId, payload: o })
           }
           return
@@ -1157,55 +1160,23 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         setPeerUplinkBroadcastTick((t) => t + 1)
       })
 
-      const connectedPayload = {
-        roomId: roomIdRef.current,
-        socketId: socket.id ?? null,
-        status: 'post-connect',
-      }
-      console.log('[room-client] socket connected', connectedPayload)
       setConnectionState('connected')
       setReconnectAttempt(null)
       unexpectedDisconnectRef.current = false
       socket.on('disconnect', (reason: string) => {
-        const payload = {
-          roomId: roomIdRef.current,
-          socketId: socket.id ?? null,
-          reason,
-          status: status,
-        }
-        console.log('[room-client] socket disconnect', payload)
         setConnectionState('reconnecting')
         if (reason !== 'io client disconnect') {
           unexpectedDisconnectRef.current = true
         }
       })
       socket.on('connect', () => {
-        const payload = {
-          roomId: roomIdRef.current,
-          socketId: socket.id ?? null,
-          status,
-        }
-        console.log('[room-client] socket reconnect/connect', payload)
         setConnectionState('connected')
       })
       socket.io.on('reconnect_attempt', (attempt: number) => {
-        const payload = {
-          roomId: roomIdRef.current,
-          socketId: socket.id ?? null,
-          attempt,
-        }
-        console.log('[room-client] reconnect_attempt', payload)
         setConnectionState('reconnecting')
         setReconnectAttempt(attempt)
       })
       socket.io.on('reconnect', (attempt: number) => {
-        const payload = {
-          roomId: roomIdRef.current,
-          socketId: socket.id ?? null,
-          attempt,
-          status,
-        }
-        console.log('[room-client] reconnect_success', payload)
         setConnectionState('connected')
         setReconnectAttempt(attempt)
         if (
@@ -1277,7 +1248,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         })
         const err = joinData?.error
         if (err && joinTransientErrors.has(err)) {
-          if (import.meta.env.DEV) console.warn('[joinRoom] transient ack:', err, 'attempt', attempt + 1)
+          if (isDevTraceEnabled()) console.warn('[joinRoom] transient ack:', err, 'attempt', attempt + 1)
           await sleepMs(1500)
           continue
         }
@@ -1343,7 +1314,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         })
       }
 
-      if (import.meta.env.DEV) console.log('[join] existingProducers:', joinData.existingProducers)
+      if (isDevTraceEnabled()) console.log('[join] existingProducers:', joinData.existingProducers)
 
       if (Array.isArray(joinData.chatHistory)) {
         const h = joinData.chatHistory
@@ -1441,7 +1412,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
             setIsCamOff(false)
           } catch (e) {
             // Не блокируем вход из-за проблем с камерой/кодеком: заходим без видео.
-            console.warn('[join] video produce failed; join without camera', e)
+            if (isDevTraceEnabled()) {
+              console.warn('[join] video produce failed; join without camera', e)
+            }
             try { track.stop() } catch { /* noop */ }
             try { stream.removeTrack(track) } catch { /* noop */ }
             const next = new MediaStream(stream.getTracks())
@@ -1471,16 +1444,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       }
 
       // 9. Socket events
-      if (import.meta.env.DEV) {
-        socket.onAny((event: string, ...args: unknown[]) => {
-          if (['newProducer', 'producerClosed', 'peerLeft'].includes(event)) {
-            console.log(`[socket.onAny] ${event}`, JSON.stringify(args))
-          }
-        })
-      }
-
       socket.on('newProducer', async (producer: ProducerDescriptor) => {
-        if (import.meta.env.DEV) console.log('[newProducer]', producer)
+        if (isDevTraceEnabled()) console.log('[newProducer]', producer)
         if (
           producer?.kind === 'audio' &&
           (descriptorAudioSource(producer) === 'vmix' || isVmixProducer(producer))
@@ -1492,7 +1457,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       })
 
       socket.on('producerClosed', (payload: unknown) => {
-        if (import.meta.env.DEV) console.log('[producerClosed] raw payload:', JSON.stringify(payload))
+        if (isDevTraceEnabled()) console.log('[producerClosed] raw payload:', JSON.stringify(payload))
         const id = producerIdFromClosedPayload(payload)
         if (id && studioProgramAudioProducerRef.current?.id === id) {
           studioProgramAudioProducerRef.current = null
@@ -1501,7 +1466,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           return
         }
         if (id) dropProducerById(id)
-        else if (import.meta.env.DEV) console.warn('[producerClosed] could not extract id from payload')
+        else if (isDevTraceEnabled()) console.warn('[producerClosed] could not extract id from payload')
 
         if (id && vmixProgramAudioProducerIdRef.current === id) {
           vmixProgramAudioProducerIdRef.current = null
@@ -1510,7 +1475,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       })
 
       socket.on('peerLeft', (raw: unknown) => {
-        if (import.meta.env.DEV) console.log('[peerLeft] raw payload:', JSON.stringify(raw))
+        if (isDevTraceEnabled()) console.log('[peerLeft] raw payload:', JSON.stringify(raw))
         const peerId = peerIdFromLeftPayload(raw)
         if (!peerId) return
 
@@ -1539,7 +1504,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       })
 
       socket.on('studioProgramRoomNotify', (raw: unknown) => {
-        if (import.meta.env.DEV) console.log('[studioProgramRoomNotify] raw payload:', JSON.stringify(raw))
+        if (isDevTraceEnabled()) console.log('[studioProgramRoomNotify] raw payload:', JSON.stringify(raw))
         const payload = raw as {
           open?: boolean
           broadcasterPeerId?: string
@@ -2223,7 +2188,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     if (producer && socket) {
       const pid = producer.id
       socket.emit('closeProducer', { roomId: roomIdRef.current, producerId: pid })
-      if (import.meta.env.DEV) console.log('[stopScreenShare] emit closeProducer', pid, 'room', roomIdRef.current)
+      if (isDevTraceEnabled()) console.log('[stopScreenShare] emit closeProducer', pid, 'room', roomIdRef.current)
     }
     producer?.close()
     screenProducerRef.current = null
@@ -2243,18 +2208,18 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       surface?: 'monitor' | 'window' | 'browser',
       options?: { maxBitrateBps?: number },
     ) => {
-      if (import.meta.env.DEV) console.log('[startScreenShare] request', { surface })
+      if (isDevTraceEnabled()) console.log('[startScreenShare] request', { surface })
       if (screenProducerRef.current) {
-        if (import.meta.env.DEV) console.log('[startScreenShare] skip: already sharing')
+        if (isDevTraceEnabled()) console.log('[startScreenShare] skip: already sharing')
         return
       }
       const sendTransport = sendTransportRef.current
       if (!sendTransport) {
-        if (import.meta.env.DEV) console.warn('[startScreenShare] skip: no sendTransport')
+        if (isDevTraceEnabled()) console.warn('[startScreenShare] skip: no sendTransport')
         return
       }
       if (remoteScreenConsumePendingRef.current) {
-        if (import.meta.env.DEV) console.warn('[startScreenShare] skip: remoteScreenConsumePending', {
+        if (isDevTraceEnabled()) console.warn('[startScreenShare] skip: remoteScreenConsumePending', {
           remoteScreenConsumePending: remoteScreenConsumePendingRef.current,
         })
         return
@@ -2265,7 +2230,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         // Не блокируем локальный повторный старт из-за рассинхрона карты участников:
         // если `screenStream` висит на своём peerId, разрешаем старт (producerRef уже проверили выше).
         if (sid && p.peerId === sid) continue
-        if (import.meta.env.DEV) console.warn('[startScreenShare] skip: screen already active in participants', {
+        if (isDevTraceEnabled()) console.warn('[startScreenShare] skip: screen already active in participants', {
           peerId: p.peerId,
           localPeerId: sid || null,
         })
@@ -2794,9 +2759,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         } catch (e) {
           existing.close()
           studioPreviewVideoProducerRef.current = null
-          if (import.meta.env.DEV) {
-            console.warn('[studio] preview replaceTrack failed; recreating producer', e)
-          }
+          if (isDevTraceEnabled()) console.warn('[studio] preview replaceTrack failed; recreating producer', e)
         }
       }
 
@@ -2937,7 +2900,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
             }
           } catch (e) {
             studioProgramAudioProducerRef.current = null
-            if (import.meta.env.DEV) {
+            if (isDevTraceEnabled()) {
               console.warn('[studio] audio produce failed; continuing video-only', e)
             }
             if (isEndedTrackError(e)) {

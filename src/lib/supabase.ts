@@ -64,4 +64,50 @@ function resolveSupabaseUrl(): string {
   return supabaseUrlDirect
 }
 
-export let supabase: SupabaseClient = createClient(resolveSupabaseUrl(), supabaseAnonKey)
+const supabaseResolvedUrl = resolveSupabaseUrl()
+
+const supabaseViaProxy = Boolean(isSupabaseProxyOriginConfigured() && getSupabaseUseProxy())
+
+/** В dev при включённом тумблере: каждый fetch к origin прокси — одна строка в консоль. */
+function createDevProxyFetchLogger(baseUrl: string): typeof fetch {
+  const origin = new URL(baseUrl).origin
+  return (input: RequestInfo | URL, init?: RequestInit) => {
+    try {
+      const method =
+        (init?.method as string | undefined)?.toUpperCase() ??
+        (typeof Request !== 'undefined' && input instanceof Request ? input.method : 'GET')
+      let href = ''
+      if (typeof input === 'string') href = input
+      else if (typeof URL !== 'undefined' && input instanceof URL) href = input.href
+      else if (typeof Request !== 'undefined' && input instanceof Request) href = input.url
+      if (!href) return fetch(input as RequestInfo, init)
+      const abs = /^https?:\/\//i.test(href) ? href : new URL(href.replace(/^\//, ''), `${origin}/`).href
+      const u = new URL(abs)
+      if (u.origin === origin) {
+        console.info('[Supabase·прокси]', method, u.pathname + u.search)
+      }
+    } catch {
+      /* noop */
+    }
+    return fetch(input as RequestInfo, init)
+  }
+}
+
+export let supabase: SupabaseClient = createClient(
+  supabaseResolvedUrl,
+  supabaseAnonKey,
+  import.meta.env.DEV && supabaseViaProxy
+    ? { global: { fetch: createDevProxyFetchLogger(supabaseResolvedUrl) } }
+    : undefined,
+)
+
+if (import.meta.env.DEV) {
+  if (supabaseViaProxy) {
+    console.info('[Supabase] ТУМБЛЕР ПРОКСИ ВКЛ — запросы к БД / auth / realtime →', supabaseResolvedUrl)
+    console.info(
+      '[Supabase] «[Supabase·прокси]» — только HTTP (rest/auth/storage). Realtime (wss) смотрите во вкладке Network → WS.',
+    )
+  } else {
+    console.info('[Supabase] Прокси выкл — клиент напрямую →', supabaseResolvedUrl)
+  }
+}

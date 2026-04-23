@@ -201,11 +201,7 @@ export function RoomSession({ roomId }: Props) {
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      const startPayload = { roomId, userId: user?.id ?? null }
-      console.log('[room-session] joinable check:start', startPayload)
       const { joinable, denial, isDbHost } = await getSpaceRoomJoinStatus(roomId, user?.id ?? null)
-      const resultPayload = { roomId, ok: joinable, denial, isDbHost, userId: user?.id ?? null }
-      console.log('[room-session] joinable check:result', resultPayload)
 
       if (cancelled) return
 
@@ -268,14 +264,12 @@ export function RoomSession({ roomId }: Props) {
       hostCreateOptions?: SpaceRoomCreateOptions | null,
     ) => {
     const trimmedRid = rid.trim()
-    console.log('[room-session] executeJoin:start', { roomId: trimmedRid, userId: user?.id ?? null })
     if (user?.id && matchesPendingHostClaim(trimmedRid)) {
       clearPendingHostClaim()
       const fromSession = takeSpaceRoomCreateOptions(trimmedRid)
       const createOpts: SpaceRoomCreateOptions =
         hostCreateOptions ?? fromSession ?? { lifecycle: 'temporary', chatVisibility: 'everyone' }
       const ok = await registerSpaceRoomAsHost(trimmedRid, user.id, createOpts)
-      console.log('[room-session] registerSpaceRoomAsHost', { roomId: trimmedRid, userId: user.id, ok })
       if (ok) markSessionAsHostFor(trimmedRid)
     }
     setName(n)
@@ -318,15 +312,6 @@ export function RoomSession({ roomId }: Props) {
     if (leaveBusy) return
     const rid = (connectedRoomId ?? roomId).trim()
     const canEndRoomForEveryone = isSessionHostFor(rid) || canAccessAdminPanel
-    const leavePayload = {
-      roomId: rid,
-      userId: user?.id ?? null,
-      isSessionHost: isSessionHostFor(rid),
-      canEndRoomForEveryone,
-      connectedRoomId,
-      routeRoomId: roomId,
-    }
-    console.log('[room-session] handleLeaveRoom', leavePayload)
     setLeaveBusy(true)
     try {
       setChatOpen(false)
@@ -372,33 +357,6 @@ export function RoomSession({ roomId }: Props) {
     if (!roomClosedReason) return
     clearRoomAutoResume(roomId)
   }, [roomClosedReason, roomId])
-
-  useEffect(() => {
-    const onVisibility = () => {
-      const payload = {
-        roomId,
-        hidden: document.hidden,
-        status,
-      }
-      console.log('[room-session] visibilitychange', payload)
-    }
-    const onPageHide = () => {
-      const payload = { roomId, status }
-      console.log('[room-session] pagehide', payload)
-    }
-    const onPageShow = () => {
-      const payload = { roomId, status }
-      console.log('[room-session] pageshow', payload)
-    }
-    document.addEventListener('visibilitychange', onVisibility)
-    window.addEventListener('pagehide', onPageHide)
-    window.addEventListener('pageshow', onPageShow)
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility)
-      window.removeEventListener('pagehide', onPageHide)
-      window.removeEventListener('pageshow', onPageShow)
-    }
-  }, [roomId, status])
 
   if (status === 'connecting') {
     return (

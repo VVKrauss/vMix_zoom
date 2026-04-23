@@ -183,15 +183,36 @@ export function DashboardPage() {
     if (!direct || !proxy) return
 
     const PROBE_MS = 12_000
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+    if (!anonKey?.trim()) return
 
-    async function probeDbRest(origin: string, signal: AbortSignal): Promise<'yes' | 'no'> {
+    /** PostgREST: как у supabase-js (apikey + Bearer anon). */
+    const restProbeHeaders: Record<string, string> = {
+      Accept: 'application/json',
+      apikey: anonKey,
+      Authorization: `Bearer ${anonKey}`,
+    }
+    /** GoTrue /health: только apikey для Kong; Bearer с anon иногда даёт 401 и дублирует шум в консоли. */
+    const healthProbeHeaders: Record<string, string> = {
+      Accept: 'application/json',
+      apikey: anonKey,
+    }
+
+    async function probeSupabaseReach(origin: string, signal: AbortSignal): Promise<'yes' | 'no'> {
       try {
-        const r = await fetch(`${origin}/rest/v1/`, {
+        const health = await fetch(`${origin}/auth/v1/health`, {
           method: 'GET',
           signal,
-          headers: { Accept: 'application/json' },
+          headers: healthProbeHeaders,
         })
-        return r.status >= 500 ? 'no' : 'yes'
+        if (health.ok) return 'yes'
+        if (health.status >= 500) return 'no'
+        const rest = await fetch(`${origin}/rest/v1/`, {
+          method: 'GET',
+          signal,
+          headers: restProbeHeaders,
+        })
+        return rest.status >= 500 ? 'no' : 'yes'
       } catch {
         return 'no'
       }
@@ -206,10 +227,10 @@ export function DashboardPage() {
     setDbDirectReachable('unknown')
     setDbViaProxyReachable('unknown')
 
-    void probeDbRest(direct, acDirect.signal).then((v) => {
+    void probeSupabaseReach(direct, acDirect.signal).then((v) => {
       if (!cancelled) setDbDirectReachable(v)
     })
-    void probeDbRest(proxy, acProxy.signal).then((v) => {
+    void probeSupabaseReach(proxy, acProxy.signal).then((v) => {
       if (!cancelled) setDbViaProxyReachable(v)
     })
 
@@ -617,7 +638,7 @@ export function DashboardPage() {
               >
                 <div
                   className="dashboard-supabase-db-probe"
-                  title={`${getSupabaseDirectOrigin()}/rest/v1/`}
+                  title={`${getSupabaseDirectOrigin()}/auth/v1/health`}
                 >
                   <span
                     className={
@@ -644,7 +665,7 @@ export function DashboardPage() {
                 </div>
                 <div
                   className="dashboard-supabase-db-probe"
-                  title={`${getSupabaseProxyOrigin()}/rest/v1/`}
+                  title={`${getSupabaseProxyOrigin()}/auth/v1/health`}
                 >
                   <span
                     className={
