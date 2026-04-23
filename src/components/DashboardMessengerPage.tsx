@@ -373,6 +373,13 @@ export function DashboardMessengerPage() {
   })
   const { activeConversation, messages, hasMoreOlder } = threadVM
   const threadLoading = threadVM.phase === 'loading'
+  /** Реально открытый тред (URL или загруженный объект) — уведомления и фоновые INSERT. */
+  const foregroundThreadConversationId = useMemo(
+    () => (conversationId || activeConversation?.id || '').trim(),
+    [conversationId, activeConversation?.id],
+  )
+  const foregroundThreadForMentionsRef = useRef('')
+  foregroundThreadForMentionsRef.current = foregroundThreadConversationId
   const dmDraftKey = (conversationId || activeConversation?.id || '').trim()
   const { draft, setDraft, resetDraft } = useMessengerPerConversationDraft(dmDraftKey)
   const {
@@ -589,6 +596,7 @@ export function DashboardMessengerPage() {
           const row = payload.new as Record<string, unknown>
           const cid = typeof row.conversation_id === 'string' ? row.conversation_id.trim() : ''
           if (!cid) return
+          if (cid === foregroundThreadForMentionsRef.current.trim()) return
           setMentionUnreadByConversationId((prev) => ({ ...prev, [cid]: (prev[cid] ?? 0) + 1 }))
           const title = itemsRef.current.find((it) => it.id === cid)?.title?.trim() || 'чат'
           toast.push({ tone: 'info', message: `Вас упомянули в: ${title}`, ms: 3200 })
@@ -601,7 +609,7 @@ export function DashboardMessengerPage() {
   }, [toast, user?.id])
 
   useEffect(() => {
-    const cid = activeConversationId.trim()
+    const cid = foregroundThreadConversationId.trim()
     if (!cid || !user?.id) return
     if (!mentionUnreadByConversationId[cid]) return
     setMentionUnreadByConversationId((prev) => {
@@ -611,7 +619,7 @@ export function DashboardMessengerPage() {
       return next
     })
     void markMyMentionsRead(cid)
-  }, [activeConversationId, mentionUnreadByConversationId, user?.id])
+  }, [foregroundThreadConversationId, mentionUnreadByConversationId, user?.id])
   const inviteJoinMode = Boolean(
     inviteToken.trim() &&
       invitePreview?.id &&
@@ -826,7 +834,7 @@ export function DashboardMessengerPage() {
 
   useMessengerDirectThreadRealtime({
     userId: user?.id,
-    activeConversationId,
+    threadConversationId: conversationId.trim(),
     listOnlyMobile,
     itemsRef,
     setItems,
@@ -840,8 +848,7 @@ export function DashboardMessengerPage() {
 
   useMessengerBackgroundMessageSidebar({
     userId: user?.id,
-    activeConversationId,
-    listOnlyMobile,
+    foregroundThreadConversationId,
     mutedConversationIdsRef,
     setItems,
   })
@@ -1862,13 +1869,13 @@ export function DashboardMessengerPage() {
     [openUserPeek, toast],
   )
 
-  /** Сумма непрочитанных во всех диалогах, кроме активного — для бейджа «Назад к чатам». */
+  /** Сумма непрочитанных во всех диалогах, кроме открытого треда — для бейджа «Назад к чатам». */
   const totalOtherUnread = useMemo(
     () =>
       mergedItems
-        .filter((i) => i.id !== activeConversationId && !i.joinRequestPending)
+        .filter((i) => i.id !== foregroundThreadConversationId && !i.joinRequestPending)
         .reduce((sum, i) => sum + i.unreadCount, 0),
-    [mergedItems, activeConversationId],
+    [mergedItems, foregroundThreadConversationId],
   )
 
   const timelineMessages = useMemo(

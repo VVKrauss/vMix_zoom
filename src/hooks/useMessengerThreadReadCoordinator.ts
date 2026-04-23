@@ -17,7 +17,7 @@ export type MessengerThreadReadCoordinatorOpts = {
 }
 
 /** После того как хвост ленты попал в видимую область скролла — пауза, чтобы не считать «прочитано» при быстром пролистывании. */
-const READ_DWELL_MS = 450
+const READ_DWELL_MS = 280
 
 function isTailVisibleInScrollRoot(tail: HTMLElement, scrollRoot: HTMLElement): boolean {
   const rootRect = scrollRoot.getBoundingClientRect()

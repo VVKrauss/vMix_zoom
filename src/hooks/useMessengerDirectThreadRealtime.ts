@@ -2,11 +2,12 @@ import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } 
 import {
   listDirectMessagesPage,
   mapDirectMessageFromRow,
+  markDirectConversationRead,
   previewTextForDirectMessageTail,
   type DirectMessage,
 } from '../lib/messenger'
 import type { MessengerConversationSummary } from '../lib/messengerConversations'
-import { DM_PAGE_SIZE, sortDirectMessagesChrono } from '../lib/messengerDashboardUtils'
+import { DM_PAGE_SIZE, MARK_DIRECT_READ_DEBOUNCE_MS, sortDirectMessagesChrono } from '../lib/messengerDashboardUtils'
 import { playMessageSound } from '../lib/messengerSound'
 import { supabase } from '../lib/supabase'
 
@@ -15,7 +16,8 @@ import { supabase } from '../lib/supabase'
  */
 export function useMessengerDirectThreadRealtime(opts: {
   userId: string | undefined
-  activeConversationId: string
+  /** id из маршрута (?chat / сегмент): подписка живёт и до готовности VM, не через «active» страницы. */
+  threadConversationId: string
   listOnlyMobile: boolean
   itemsRef: MutableRefObject<MessengerConversationSummary[]>
   setItems: Dispatch<SetStateAction<MessengerConversationSummary[]>>
@@ -28,7 +30,7 @@ export function useMessengerDirectThreadRealtime(opts: {
 }): void {
   const {
     userId,
-    activeConversationId,
+    threadConversationId,
     listOnlyMobile,
     itemsRef,
     setItems,
@@ -42,16 +44,26 @@ export function useMessengerDirectThreadRealtime(opts: {
 
   useEffect(() => {
     const uid = userId
-    const convId = activeConversationId
+    const convId = threadConversationId.trim()
     if (!uid || !convId || listOnlyMobile) return
     const kind = itemsRef.current.find((i) => i.id === convId)?.kind ?? 'direct'
     if (kind !== 'direct') return
 
     let sawSubscribed = false
+    let markReadDebounce: ReturnType<typeof setTimeout> | null = null
+    const scheduleMarkRead = () => {
+      if (markReadDebounce != null) clearTimeout(markReadDebounce)
+      markReadDebounce = setTimeout(() => {
+        markReadDebounce = null
+        void markDirectConversationRead(convId)
+      }, MARK_DIRECT_READ_DEBOUNCE_MS)
+    }
 
     const bumpSidebarForInsert = (msg: DirectMessage) => {
       if (msg.kind === 'reaction') return
       const preview = previewTextForDirectMessageTail(msg)
+      const fromPeer = msg.senderUserId !== uid
+      /** В открытом ЛС входящие уже «увидены» в ленте — не копим unread локально. */
       setItems((prev) =>
         prev.map((item) =>
           item.id === convId
@@ -60,7 +72,7 @@ export function useMessengerDirectThreadRealtime(opts: {
                 lastMessageAt: msg.createdAt,
                 lastMessagePreview: preview,
                 messageCount: item.messageCount + 1,
-                unreadCount: item.unreadCount + 1,
+                unreadCount: fromPeer ? 0 : item.unreadCount,
               }
             : item,
         ),
@@ -72,7 +84,7 @@ export function useMessengerDirectThreadRealtime(opts: {
               lastMessageAt: msg.createdAt,
               lastMessagePreview: preview,
               messageCount: prev.messageCount + 1,
-              unreadCount: prev.unreadCount + 1,
+              unreadCount: fromPeer ? 0 : prev.unreadCount,
             }
           : prev,
       )
@@ -119,7 +131,10 @@ export function useMessengerDirectThreadRealtime(opts: {
 
           queueMicrotask(() => bumpScrollIfPinned())
 
-          if (!skipSidebarBump && msg.kind !== 'reaction') bumpSidebarForInsert(msg)
+          if (!skipSidebarBump && msg.kind !== 'reaction') {
+            bumpSidebarForInsert(msg)
+            if (!isOwn) scheduleMarkRead()
+          }
           if (
             !isOwn &&
             document.hidden &&
@@ -195,7 +210,8 @@ export function useMessengerDirectThreadRealtime(opts: {
       })
 
     return () => {
+      if (markReadDebounce != null) clearTimeout(markReadDebounce)
       void supabase.removeChannel(channel)
     }
-  }, [activeConversationId, listOnlyMobile, userId, bumpScrollIfPinned, mergeLatestPageIntoMessages])
+  }, [threadConversationId, listOnlyMobile, userId, bumpScrollIfPinned, mergeLatestPageIntoMessages])
 }

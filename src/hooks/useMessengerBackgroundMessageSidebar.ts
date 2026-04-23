@@ -11,15 +11,17 @@ import { playMessageSound } from '../lib/messengerSound'
 
 /**
  * Фоновые диалоги: обновление превью в дереве, когда сообщение приходит не в открытый тред.
+ * `foregroundThreadConversationId` — id чата, который пользователь реально смотрит (маршрут + VM),
+ * не путать с `activeConversationId` страницы (он бывает пустым при loading / mobile list).
  */
 export function useMessengerBackgroundMessageSidebar(opts: {
   userId: string | undefined
-  activeConversationId: string
-  listOnlyMobile: boolean
+  /** Открытый тред: не бейдж, не звук, не превью как «непрочитанное». */
+  foregroundThreadConversationId: string
   mutedConversationIdsRef: MutableRefObject<Set<string>>
   setItems: Dispatch<SetStateAction<MessengerConversationSummary[]>>
 }): void {
-  const { userId, activeConversationId, listOnlyMobile, mutedConversationIdsRef, setItems } = opts
+  const { userId, foregroundThreadConversationId, mutedConversationIdsRef, setItems } = opts
 
   useEffect(() => {
     const uid = userId
@@ -29,7 +31,7 @@ export function useMessengerBackgroundMessageSidebar(opts: {
       const detail = (e as CustomEvent<MessengerBgMessageDetail>).detail
       const { conversationId: cid, senderUserId, kind, body, createdAt, replyToMessageId } = detail
 
-      if (cid === activeConversationId && !listOnlyMobile) return
+      if (cid.trim() === foregroundThreadConversationId.trim()) return
       if (kind === 'reaction') return
 
       setItems((prev) => {
@@ -64,5 +66,5 @@ export function useMessengerBackgroundMessageSidebar(opts: {
 
     window.addEventListener(MESSENGER_BG_MESSAGE_EVENT, handler)
     return () => window.removeEventListener(MESSENGER_BG_MESSAGE_EVENT, handler)
-  }, [activeConversationId, listOnlyMobile, userId])
+  }, [foregroundThreadConversationId, userId])
 }

@@ -5364,8 +5364,18 @@ button.dashboard-chat-row__last-author-avatar--btn {
   gap: 8px;
 }
 
-.dashboard-messenger--mobile-chromeless .dashboard-messenger__list-scroll-inner {
-  min-height: 100%;
+/*
+ * Родитель — flex-колонка: без flex-grow у inner остаётся пустая полоса снизу
+ * (фон скролла / --bg), заметно на 720–900px в моб. мессенджере.
+ */
+.dashboard-messenger--fill .dashboard-messenger__list-scroll {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-messenger--fill .dashboard-messenger__list-scroll-inner {
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .dashboard-messenger__list-ptr-banner {
@@ -7430,7 +7440,8 @@ html:has(.dashboard-page.dashboard-page--messenger-chromeless) #root {
   background: var(--surface);
 }
 
-.dashboard-messenger--mobile-chromeless .dashboard-messenger--fill .dashboard-messenger__layout {
+/* Оба модификатора на одной секции — только составной селектор, иначе правило не матчится. */
+.dashboard-messenger--mobile-chromeless.dashboard-messenger--fill .dashboard-messenger__layout {
   max-height: none;
 }
 
