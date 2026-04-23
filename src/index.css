@@ -10126,6 +10126,58 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   flex-wrap: wrap;
 }
 
+/* Редактирование алиаса: поле одной высоты, кнопки строкой ниже. */
+.user-peek-modal__alias-edit-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin: 2px auto 10px;
+  max-width: min(180px, 100%);
+  width: 100%;
+}
+
+.user-peek-modal__alias-row--single-line {
+  margin: 0;
+  width: 100%;
+  flex-wrap: nowrap;
+  gap: 0;
+  justify-content: stretch;
+}
+
+.user-peek-modal__alias-row--single-line .user-peek-modal__alias-input.dashboard-messenger__input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 36px !important;
+  height: 36px;
+  resize: none !important;
+  padding: 6px 10px;
+  line-height: 1.2;
+}
+
+.user-peek-modal__alias-actions-row {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+}
+
+.user-peek-modal__alias-inline-btn {
+  flex-shrink: 0;
+  padding: 6px 12px !important;
+  font-size: 13px !important;
+  line-height: 1.2 !important;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .user-peek-modal__alias-row--single-line .user-peek-modal__alias-input.dashboard-messenger__input {
+    min-height: 40px !important;
+    height: 40px;
+    font-size: max(16px, var(--dm-msg-font, 13px));
+  }
+}
+
 .user-peek-modal__alias-input {
   width: min(320px, 84vw);
 }

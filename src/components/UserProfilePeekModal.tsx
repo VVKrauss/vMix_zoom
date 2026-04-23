@@ -151,48 +151,6 @@ export function UserProfilePeekModal({
     }
   }, [open, uid, isSelf, user?.id, target?.displayName, profile?.displayName])
 
-  if (!open || !target) return null
-
-  const profileName = profile?.displayName ?? (target.displayName?.trim() || 'Пользователь')
-  const displayName = (alias?.trim() || profileName).trim()
-  const baseProfileAvatar = profile?.avatarUrl ?? target.avatarUrl ?? null
-  const slug = profile?.profileSlug
-  const showLastActivityLine = profile?.lastActivityVisible !== false
-  const lastLine = formatLastActive(profile?.lastActivityAt ?? null)
-
-  const initials = (displayName.trim().charAt(0) || '?').toUpperCase()
-
-  const togglePin = async () => {
-    if (!uid || isSelf || pinBusy) return
-    setPinBusy(true)
-    const next = !(status?.pinnedByMe ?? false)
-    const res = await setContactPin(uid, next)
-    setPinBusy(false)
-    if (res.data) setStatus(res.data)
-  }
-
-  const goChat = async () => {
-    if (!uid || isSelf || chatBusy) return
-    setChatBusy(true)
-    const res = await ensureDirectConversationWithUser(uid, displayName)
-    setChatBusy(false)
-    if (res.data) {
-      onClose()
-      navigate(`/dashboard/messenger?chat=${encodeURIComponent(res.data)}`)
-    }
-  }
-
-  const toggleNotifMuted = async () => {
-    const cid = dmConversationId?.trim() ?? ''
-    if (!cid || notifBusy || isSelf) return
-    setNotifBusy(true)
-    const nextMuted = !notifMuted
-    const res = await setConversationNotificationsMuted(cid, nextMuted)
-    setNotifBusy(false)
-    if (!res.ok) return
-    setNotifMuted(nextMuted)
-  }
-
   const clearDisplayAvatarOverride = useCallback(async () => {
     if (!uid || avatarBusy || isSelf) return
     setAvatarBusy(true)
@@ -256,6 +214,48 @@ export function UserProfilePeekModal({
     },
     [uid, avatarBusy, isSelf, dmConversationId, target?.displayName, profile?.displayName, toast],
   )
+
+  if (!open || !target) return null
+
+  const profileName = profile?.displayName ?? (target.displayName?.trim() || 'Пользователь')
+  const displayName = (alias?.trim() || profileName).trim()
+  const baseProfileAvatar = profile?.avatarUrl ?? target.avatarUrl ?? null
+  const slug = profile?.profileSlug
+  const showLastActivityLine = profile?.lastActivityVisible !== false
+  const lastLine = formatLastActive(profile?.lastActivityAt ?? null)
+
+  const initials = (displayName.trim().charAt(0) || '?').toUpperCase()
+
+  const togglePin = async () => {
+    if (!uid || isSelf || pinBusy) return
+    setPinBusy(true)
+    const next = !(status?.pinnedByMe ?? false)
+    const res = await setContactPin(uid, next)
+    setPinBusy(false)
+    if (res.data) setStatus(res.data)
+  }
+
+  const goChat = async () => {
+    if (!uid || isSelf || chatBusy) return
+    setChatBusy(true)
+    const res = await ensureDirectConversationWithUser(uid, displayName)
+    setChatBusy(false)
+    if (res.data) {
+      onClose()
+      navigate(`/dashboard/messenger?chat=${encodeURIComponent(res.data)}`)
+    }
+  }
+
+  const toggleNotifMuted = async () => {
+    const cid = dmConversationId?.trim() ?? ''
+    if (!cid || notifBusy || isSelf) return
+    setNotifBusy(true)
+    const nextMuted = !notifMuted
+    const res = await setConversationNotificationsMuted(cid, nextMuted)
+    setNotifBusy(false)
+    if (!res.ok) return
+    setNotifMuted(nextMuted)
+  }
 
   const shareProfile = async () => {
     if (!slug?.trim()) {
@@ -380,47 +380,55 @@ export function UserProfilePeekModal({
           </div>
         ) : null}
         {!isSelf && aliasEditing ? (
-          <div className="user-peek-modal__alias-row">
-            <input
-              className="dashboard-messenger__input user-peek-modal__alias-input"
-              value={aliasDraft}
-              disabled={aliasBusy}
-              placeholder="Как отображать у вас"
-              onChange={(e) => setAliasDraft(e.target.value)}
-            />
-            <button
-              type="button"
-              className="dashboard-topbar__action dashboard-topbar__action--primary"
-              disabled={aliasBusy}
-              onClick={() => {
-                if (!uid || aliasBusy) return
-                setAliasBusy(true)
-                void (async () => {
-                  const res = await setMyContactAlias(uid, aliasDraft)
-                  setAliasBusy(false)
-                  if (res.error) {
-                    toast.push({ tone: 'error', message: res.error, ms: 2600 })
-                    return
-                  }
-                  setAlias(res.data)
+          <div className="user-peek-modal__alias-edit-stack">
+            <div className="user-peek-modal__alias-row user-peek-modal__alias-row--single-line">
+              <input
+                className="dashboard-messenger__input user-peek-modal__alias-input"
+                value={aliasDraft}
+                disabled={aliasBusy}
+                placeholder="Как отображать у вас"
+                onChange={(e) => setAliasDraft(e.target.value)}
+              />
+            </div>
+            <div className="user-peek-modal__alias-actions-row">
+              <button
+                type="button"
+                className="dashboard-topbar__action dashboard-topbar__action--primary user-peek-modal__alias-inline-btn"
+                aria-label="Сохранить отображаемое имя"
+                title="Сохранить"
+                disabled={aliasBusy}
+                onClick={() => {
+                  if (!uid || aliasBusy) return
+                  setAliasBusy(true)
+                  void (async () => {
+                    const res = await setMyContactAlias(uid, aliasDraft)
+                    setAliasBusy(false)
+                    if (res.error) {
+                      toast.push({ tone: 'error', message: res.error, ms: 2600 })
+                      return
+                    }
+                    setAlias(res.data)
+                    setAliasEditing(false)
+                    requestMessengerContactAliasRefresh()
+                  })()
+                }}
+              >
+                {aliasBusy ? '…' : 'OK'}
+              </button>
+              <button
+                type="button"
+                className="dashboard-topbar__action user-peek-modal__alias-inline-btn"
+                aria-label="Отменить"
+                title="Отмена"
+                disabled={aliasBusy}
+                onClick={() => {
+                  setAliasDraft(alias?.trim() ?? '')
                   setAliasEditing(false)
-                  requestMessengerContactAliasRefresh()
-                })()
-              }}
-            >
-              {aliasBusy ? '…' : 'Сохранить'}
-            </button>
-            <button
-              type="button"
-              className="dashboard-topbar__action"
-              disabled={aliasBusy}
-              onClick={() => {
-                setAliasDraft(alias?.trim() ?? '')
-                setAliasEditing(false)
-              }}
-            >
-              Отмена
-            </button>
+                }}
+              >
+                ✕
+              </button>
+            </div>
           </div>
         ) : null}
         {slug ? <p className="user-peek-modal__slug">@{slug}</p> : null}
