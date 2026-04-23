@@ -25,6 +25,15 @@ export function useMessengerScrollAfterThreadLoad(opts: {
   } = opts
   const prevThreadLoadingRef = useRef(false)
   const cancelTailCatchupRef = useRef<(() => void) | null>(null)
+  /**
+   * На практике `threadLoading` может упасть в `false` до того как сообщения реально появятся в DOM
+   * (разные batched setState / кэш / сетевой ответ). Поэтому держим pending-флаг: прокрутим вниз
+   * при первом удобном моменте, когда `len > 0` и поток не грузится.
+   */
+  const pendingTailScrollRef = useRef(false)
+  const prevActiveConversationIdRef = useRef('')
+  const raf0Ref = useRef<number | null>(null)
+  const raf1Ref = useRef<number | null>(null)
   /** Не кладём `messagesLength` в deps эффекта — иначе на каждое сообщение cleanup срывает tail-catchup по картинкам. */
   const messagesLengthRef = useRef(messagesLength)
   messagesLengthRef.current = messagesLength
@@ -32,19 +41,52 @@ export function useMessengerScrollAfterThreadLoad(opts: {
   useLayoutEffect(() => {
     cancelTailCatchupRef.current?.()
     cancelTailCatchupRef.current = null
+    if (raf0Ref.current) cancelAnimationFrame(raf0Ref.current)
+    if (raf1Ref.current) cancelAnimationFrame(raf1Ref.current)
+    raf0Ref.current = null
+    raf1Ref.current = null
 
     const wasLoading = prevThreadLoadingRef.current
     prevThreadLoadingRef.current = threadLoading
     const len = messagesLengthRef.current
-    if (wasLoading && !threadLoading && !listOnlyMobile && len > 0) {
-      const scrollEl = messagesScrollRef.current
-      const contentEl = messagesContentRef.current
-      if (scrollEl) {
-        scrollEl.scrollTop = scrollEl.scrollHeight
-        messengerPinnedToBottomRef.current = true
+
+    const openedId = activeConversationId.trim()
+    const prevOpenedId = prevActiveConversationIdRef.current
+    prevActiveConversationIdRef.current = openedId
+    if (openedId && openedId !== prevOpenedId) pendingTailScrollRef.current = true
+    if (threadLoading) pendingTailScrollRef.current = true
+
+    if (listOnlyMobile || threadLoading || len <= 0) {
+      return () => {
+        cancelTailCatchupRef.current?.()
+        cancelTailCatchupRef.current = null
+        if (raf0Ref.current) cancelAnimationFrame(raf0Ref.current)
+        if (raf1Ref.current) cancelAnimationFrame(raf1Ref.current)
+        raf0Ref.current = null
+        raf1Ref.current = null
       }
-      if (scrollEl && contentEl) {
-        const openedId = activeConversationId.trim()
+    }
+
+    if (!pendingTailScrollRef.current && !wasLoading) {
+      return () => {
+        cancelTailCatchupRef.current?.()
+        cancelTailCatchupRef.current = null
+        if (raf0Ref.current) cancelAnimationFrame(raf0Ref.current)
+        if (raf1Ref.current) cancelAnimationFrame(raf1Ref.current)
+        raf0Ref.current = null
+        raf1Ref.current = null
+      }
+    }
+
+    const applyTailScroll = () => {
+      const scrollEl = messagesScrollRef.current
+      if (!scrollEl) return false
+      pendingTailScrollRef.current = false
+      scrollEl.scrollTop = scrollEl.scrollHeight
+      messengerPinnedToBottomRef.current = true
+
+      const contentEl = messagesContentRef.current
+      if (contentEl) {
         cancelTailCatchupRef.current = attachMessengerTailCatchupAfterContentPaint({
           scrollEl,
           contentEl,
@@ -52,10 +94,29 @@ export function useMessengerScrollAfterThreadLoad(opts: {
           isActive: () => (conversationIdRef.current ?? '').trim() === openedId,
         })
       }
+      return true
     }
+
+    // Если ref ещё не проставился (редко, но на переходах/мобилке бывает) — попробуем после paint.
+    if (!messagesScrollRef.current) {
+      raf0Ref.current = requestAnimationFrame(() => {
+        raf1Ref.current = requestAnimationFrame(() => {
+          if (!pendingTailScrollRef.current) return
+          if ((activeConversationId ?? '').trim() !== openedId) return
+          if (!applyTailScroll()) pendingTailScrollRef.current = false
+        })
+      })
+    } else {
+      applyTailScroll()
+    }
+
     return () => {
       cancelTailCatchupRef.current?.()
       cancelTailCatchupRef.current = null
+      if (raf0Ref.current) cancelAnimationFrame(raf0Ref.current)
+      if (raf1Ref.current) cancelAnimationFrame(raf1Ref.current)
+      raf0Ref.current = null
+      raf1Ref.current = null
     }
   }, [
     threadLoading,

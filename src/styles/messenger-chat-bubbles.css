@@ -448,27 +448,25 @@
   font-size: calc(var(--dm-msg-font, 13px) - 3px);
   line-height: 1.25;
   color: var(--text-dim);
-}
-
-button.dashboard-messenger__forward-line--action {
+  opacity: 1;
   display: block;
   width: 100%;
   cursor: pointer;
-  font: inherit;
+  font-family: inherit;
+  font-weight: inherit;
   text-align: left;
-  color: inherit;
   border: none;
   background: transparent;
   appearance: none;
   border-radius: 6px;
 }
 
-button.dashboard-messenger__forward-line--action:hover {
+.dashboard-messenger__forward-line:hover {
   color: var(--text);
-  background: color-mix(in srgb, var(--surface2) 55%, transparent);
+  background: transparent;
 }
 
-button.dashboard-messenger__forward-line--action:focus-visible {
+.dashboard-messenger__forward-line:focus-visible {
   outline: 2px solid rgba(159, 214, 255, 0.45);
   outline-offset: 1px;
 }

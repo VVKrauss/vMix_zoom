@@ -145,6 +145,7 @@ export function GroupThreadPane({
   const messagesScrollRef = useRef<HTMLDivElement | null>(null)
   const groupMessagesContentRef = useRef<HTMLDivElement | null>(null)
   const cancelGroupTailCatchupRef = useRef<(() => void) | null>(null)
+  const pendingGroupTailScrollRef = useRef(false)
   const pinnedToBottomRef = useRef(true)
   const composerEmojiWrapRef = useRef<HTMLDivElement | null>(null)
   const [composerEmojiOpen, setComposerEmojiOpen] = useState(false)
@@ -284,32 +285,11 @@ export function GroupThreadPane({
     const cid = conversationId.trim()
     if (!user?.id || !cid || !canView) return
     setThreadLoading(true)
+    pendingGroupTailScrollRef.current = true
     setBackgroundRefreshing(false)
     setError(null)
     // Не чистим сообщения сразу: если есть кэш — показываем мгновенно и обновляем в фоне.
     setReplyTo(null)
-
-    const afterLoadScroll = () => {
-      cancelGroupTailCatchupRef.current?.()
-      cancelGroupTailCatchupRef.current = null
-      pinnedToBottomRef.current = true
-      const scrollEl = messagesScrollRef.current
-      const contentEl = groupMessagesContentRef.current
-      if (scrollEl) {
-        scrollEl.scrollTop = scrollEl.scrollHeight
-      }
-      if (scrollEl && contentEl) {
-        cancelGroupTailCatchupRef.current = attachMessengerTailCatchupAfterContentPaint({
-          scrollEl,
-          contentEl,
-          pinRef: pinnedToBottomRef,
-          isActive: () => cidRef.current.trim() === cid,
-        })
-      }
-      requestAnimationFrame(() => {
-        if (isGroupMember) composerTextareaRef.current?.focus()
-      })
-    }
 
     void (async () => {
       const cachedNow = await readMessengerThreadTailCache('group', cid)
@@ -319,7 +299,6 @@ export function GroupThreadPane({
         setMessages(cachedNow)
         setThreadLoading(false)
         setBackgroundRefreshing(Boolean(messengerOnline))
-        afterLoadScroll()
       } else {
         setMessages([])
       }
@@ -327,6 +306,7 @@ export function GroupThreadPane({
       if (!messengerOnline) {
         setBackgroundRefreshing(false)
         if (cachedNow?.length) return
+        pendingGroupTailScrollRef.current = false
         setError('Нет сети. Сохранённых сообщений для этой группы нет.')
         return
       }
@@ -337,13 +317,13 @@ export function GroupThreadPane({
       setBackgroundRefreshing(false)
       if (res.error) {
         if (cachedNow?.length) return
+        pendingGroupTailScrollRef.current = false
         setError(res.error)
         return
       }
       const list = res.data ?? []
       setMessages(list)
       void writeMessengerThreadTailCache('group', cid, list)
-      afterLoadScroll()
     })()
 
     return () => {
@@ -352,6 +332,65 @@ export function GroupThreadPane({
       cancelGroupTailCatchupRef.current = null
     }
   }, [conversationId, user?.id, canView, viewerOnly, isGroupMember, messengerOnline])
+
+  useLayoutEffect(() => {
+    cancelGroupTailCatchupRef.current?.()
+    cancelGroupTailCatchupRef.current = null
+
+    if (threadLoading || !pendingGroupTailScrollRef.current) return
+    const sigCount = messages.filter((m) => m.kind !== 'reaction').length
+    if (sigCount === 0) {
+      pendingGroupTailScrollRef.current = false
+      return
+    }
+
+    const cid = conversationId.trim()
+    const scrollEl = messagesScrollRef.current
+    const contentEl = groupMessagesContentRef.current
+
+    const applyTailScroll = () => {
+      const el = messagesScrollRef.current
+      const ce = groupMessagesContentRef.current
+      if (!el) return false
+      pendingGroupTailScrollRef.current = false
+      pinnedToBottomRef.current = true
+      el.scrollTop = el.scrollHeight
+      if (ce) {
+        cancelGroupTailCatchupRef.current = attachMessengerTailCatchupAfterContentPaint({
+          scrollEl: el,
+          contentEl: ce,
+          pinRef: pinnedToBottomRef,
+          isActive: () => cidRef.current.trim() === cid,
+        })
+      }
+      return true
+    }
+
+    if (!scrollEl) {
+      let raf0 = 0
+      let raf1 = 0
+      raf0 = requestAnimationFrame(() => {
+        raf1 = requestAnimationFrame(() => {
+          if (!pendingGroupTailScrollRef.current) return
+          if (cidRef.current.trim() !== cid) return
+          if (!applyTailScroll()) pendingGroupTailScrollRef.current = false
+        })
+      })
+      return () => {
+        cancelAnimationFrame(raf0)
+        cancelAnimationFrame(raf1)
+      }
+    }
+
+    applyTailScroll()
+    requestAnimationFrame(() => {
+      if (isGroupMember) composerTextareaRef.current?.focus()
+    })
+    return () => {
+      cancelGroupTailCatchupRef.current?.()
+      cancelGroupTailCatchupRef.current = null
+    }
+  }, [conversationId, threadLoading, messages, isGroupMember])
 
   useEffect(() => {
     const cid = conversationId.trim()

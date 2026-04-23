@@ -113,7 +113,9 @@ export function ThreadMessageBubble({
 
   const forwardInfoLabel =
     typeof message.meta?.forward_info?.label === 'string' ? message.meta?.forward_info?.label.trim() : ''
-  const showForwardInfoLine = Boolean(forwardInfoLabel && message.meta?.forward_info?.hidden !== true)
+  const showForwardInfoLine = Boolean(
+    forwardInfoLabel && message.meta?.forward_info?.hidden !== true && message.meta?.forward_info?.nav,
+  )
 
   const replyNavOk = Boolean(replyScrollTargetId && onReplyQuoteNavigate)
 
@@ -303,24 +305,18 @@ export function ThreadMessageBubble({
           </div>
         )
       ) : null}
-      {showForwardInfoLine ? (
-        message.meta?.forward_info?.nav && onForwardSourceNavigate ? (
-          <button
-            type="button"
-            className="dashboard-messenger__forward-line dashboard-messenger__forward-line--action"
-            aria-label={`Перейти: переслано из ${forwardInfoLabel}`}
-            onClick={() => {
-              const nav = message.meta?.forward_info?.nav
-              if (nav) onForwardSourceNavigate(nav)
-            }}
-          >
-            ↪ Переслано из {forwardInfoLabel}
-          </button>
-        ) : (
-          <div className="dashboard-messenger__forward-line" role="note">
-            ↪ Переслано из {forwardInfoLabel}
-          </div>
-        )
+      {showForwardInfoLine && onForwardSourceNavigate ? (
+        <button
+          type="button"
+          className="dashboard-messenger__forward-line"
+          aria-label={`Перейти: переслано из ${forwardInfoLabel}`}
+          onClick={() => {
+            const nav = message.meta?.forward_info?.nav
+            if (nav) onForwardSourceNavigate(nav)
+          }}
+        >
+          ↪ Переслано из {forwardInfoLabel}
+        </button>
       ) : null}
       <div className="dashboard-messenger__message-bottom-row">
         <DoubleTapHeartSurface
