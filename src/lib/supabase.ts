@@ -3,6 +3,11 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 const supabaseUrlDirect = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim().replace(/\/$/, '') ?? ''
 
+/** Прямой origin Supabase из сборки (без слэша). */
+export function getSupabaseDirectOrigin(): string {
+  return supabaseUrlDirect
+}
+
 const STORAGE_USE_PROXY = 'vmix-supabase-use-proxy'
 
 function trimOrigin(value: string): string {

@@ -9571,21 +9571,43 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   gap: 10px 14px;
 }
 
-.dashboard-supabase-proxy-toggle-row__left {
+.dashboard-supabase-db-probes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px 28px;
+}
+
+.dashboard-supabase-db-probe {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1 1 auto;
   min-width: 0;
 }
 
-.dashboard-supabase-proxy-exit {
-  font-size: 0.85rem;
-  color: var(--text-dim);
+.dashboard-supabase-db-probe__label {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.dashboard-supabase-proxy-status-text {
+  font-size: 0.95rem;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: min(100%, 320px);
+}
+
+.dashboard-supabase-proxy-status-text--ok {
+  color: #69f0ae;
+}
+
+.dashboard-supabase-proxy-status-text--bad {
+  color: #ef9a9a;
+}
+
+.dashboard-supabase-proxy-status-text--pending {
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .dashboard-supabase-proxy-dot {
