@@ -54,6 +54,7 @@ import {
   persistVideoPreset,
   readPreferredCameraId,
   readPreferredMicId,
+  writePreferredCameraId,
   writePreferredMicId,
 } from '../config/roomUiStorage'
 import { formatMediaJoinError, formatStudioProgramError } from '../utils/formatMediaJoinError'
@@ -327,6 +328,14 @@ function isEndedTrackError(err: unknown): boolean {
   return false
 }
 
+async function ensureTrackIsLiveSoon(track: MediaStreamTrack, ms: number): Promise<void> {
+  const rs0 = String(track.readyState)
+  if (rs0 !== 'live') throw new Error('track ended')
+  await new Promise<void>((resolve) => setTimeout(resolve, ms))
+  const rs1 = String(track.readyState)
+  if (rs1 !== 'live') throw new Error('track ended')
+}
+
 /**
  * Simulcast как в типичном Meet: r0 / r1 / r2, scaleResolutionDownBy 4 / 2 / 1,
  * maxBitrate снизу вверх (SFU может выбирать слой под сеть; SRT/egress может брать один слой — см. бэкенд).
@@ -376,22 +385,45 @@ async function produceVideoFromTrack(
   const fpsCap = capVideoFramerate(preset.frameRate, track)
   const codecOptions = { videoGoogleStartBitrate: preset.startBitrate }
   const preferredCodec = pickPreferredVideoSendCodec(device)
-  const base = {
-    track,
-    encodings: buildSimulcastEncodings(preset, fpsCap),
-    codecOptions,
-    ...(preferredCodec ? { codec: preferredCodec } : {}),
-  }
-  try {
-    return await sendTransport.produce(base)
-  } catch (err) {
-    console.warn('[produce] simulcast failed, fallback single encoding', err)
-    return sendTransport.produce({
+  const simulcastEncodings = buildSimulcastEncodings(preset, fpsCap)
+  const singleEncodings = [{ maxBitrate: preset.maxBitrate, maxFramerate: fpsCap }]
+  const preferredMime = (preferredCodec?.mimeType ?? '').toLowerCase()
+  // AV1 часто заявлен в rtpCapabilities, но simulcast с AV1 не поддерживается на части стеков.
+  // Не форсим AV1 при simulcast — пусть mediasoup выберет совместимый кодек.
+  const canForceCodecForSimulcast = Boolean(preferredCodec && preferredMime !== 'video/av1')
+
+  const tryProduce = async (
+    encodings: Array<Record<string, unknown>>,
+    forceCodec: boolean,
+  ): Promise<Producer> => {
+    return await (sendTransport.produce as unknown as (o: Record<string, unknown>) => Promise<Producer>)({
       track,
-      encodings: [{ maxBitrate: preset.maxBitrate, maxFramerate: fpsCap }],
+      encodings,
       codecOptions,
-      ...(preferredCodec ? { codec: preferredCodec } : {}),
+      ...(forceCodec && preferredCodec ? { codec: preferredCodec } : {}),
     })
+  }
+
+  // 1) Prefer simulcast. If forcing codec breaks (router mismatch / browser quirk), retry without forcing codec.
+  try {
+    return await tryProduce(simulcastEncodings, canForceCodecForSimulcast)
+  } catch (err1) {
+    if (preferredCodec) {
+      try {
+        return await tryProduce(simulcastEncodings, false)
+      } catch {
+        /* fall through to single encoding */
+      }
+    }
+    console.warn('[produce] simulcast failed, fallback single encoding', err1)
+  }
+
+  // 2) Single encoding fallback, same codec strategy.
+  try {
+    return await tryProduce(singleEncodings, true)
+  } catch (err2) {
+    if (preferredCodec) return await tryProduce(singleEncodings, false)
+    throw err2
   }
 }
 
@@ -513,6 +545,34 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const initialPreset = getStoredVideoPreset()
   const presetRef = useRef<VideoPreset>(initialPreset)
   const [activePreset, setActivePreset] = useState<VideoPreset>(initialPreset)
+
+  /**
+   * Serialize ALL camera operations (getUserMedia(video), replaceTrack, produce) to avoid parallel captures.
+   * Parallel getUserMedia for the same device commonly causes "track ended"/NotReadableError on Windows drivers.
+   */
+  const cameraOpChainRef = useRef<Promise<void>>(Promise.resolve())
+  const cameraOpSeqRef = useRef(0)
+  const runCameraOpExclusive = useCallback(async <T,>(label: string, fn: () => Promise<T>): Promise<T> => {
+    const id = ++cameraOpSeqRef.current
+    const prev = cameraOpChainRef.current
+    const run = prev.then(async () => {
+      if (import.meta.env.DEV) console.log('[cam-op]', id, 'start', label)
+      try {
+        const res = await fn()
+        if (import.meta.env.DEV) console.log('[cam-op]', id, 'ok', label)
+        return res
+      } catch (e) {
+        if (import.meta.env.DEV) console.warn('[cam-op]', id, 'fail', label, e)
+        throw e
+      }
+    })
+    // Keep the chain alive even if this op fails.
+    cameraOpChainRef.current = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
+  }, [])
 
   const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([])
   const [reactionBursts, setReactionBursts] = useState<RoomReactionBurst[]>([])
@@ -1376,7 +1436,19 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       // 6. Produce tracks (без треков — только приём чужих потоков)
       for (const track of stream.getTracks()) {
         if (track.kind === 'video') {
-          videoProducerRef.current = await produceVideoFromTrack(device, sendTransport, track, p)
+          try {
+            videoProducerRef.current = await produceVideoFromTrack(device, sendTransport, track, p)
+            setIsCamOff(false)
+          } catch (e) {
+            // Не блокируем вход из-за проблем с камерой/кодеком: заходим без видео.
+            console.warn('[join] video produce failed; join without camera', e)
+            try { track.stop() } catch { /* noop */ }
+            try { stream.removeTrack(track) } catch { /* noop */ }
+            const next = new MediaStream(stream.getTracks())
+            localStreamRef.current = next
+            setLocalStream(next)
+            setIsCamOff(true)
+          }
         } else {
           const producer = await sendTransport.produce({ track })
           audioProducerRef.current = producer
@@ -1786,38 +1858,82 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   }, [])
 
   const ensureVideoProducer = useCallback(async () => {
-    const device = deviceRef.current
-    const sendTransport = sendTransportRef.current
-    if (!device || !sendTransport || videoProducerRef.current) return
-    const preset = presetRef.current
-    const camPref = readPreferredCameraId()
-    let v: MediaStream
-    try {
-      v = await navigator.mediaDevices.getUserMedia({
-        video: {
-          ...(camPref ? { deviceId: { exact: camPref } as const } : {}),
-          width: { ideal: preset.width },
-          height: { ideal: preset.height },
-          frameRate: { ideal: preset.frameRate },
-        },
-      })
-    } catch {
-      v = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: preset.width },
-          height: { ideal: preset.height },
-          frameRate: { ideal: preset.frameRate },
-        },
-      })
-    }
-    const track = v.getVideoTracks()[0]
-    if (!track) { v.getTracks().forEach((t) => t.stop()); return }
-    mergeTrackIntoLocalStream(track)
-    videoProducerRef.current = await produceVideoFromTrack(device, sendTransport, track, preset)
-    uplinkLocalPrevRef.current = undefined
-    uplinkLocalEmaRef.current.delete('__local__')
-    lastVideoUplinkEmitAtRef.current = 0
-  }, [])
+    await runCameraOpExclusive('enable_video_producer', async () => {
+      const device = deviceRef.current
+      const sendTransport = sendTransportRef.current
+      if (videoProducerRef.current) return
+      if (!device || !sendTransport) {
+        throw new Error('no_webrtc_transport')
+      }
+      const preset = presetRef.current
+      const camPref = readPreferredCameraId()
+      const requestCamStream = async (mode: 'preferred' | 'no_exact' | 'simple') => {
+        if (mode === 'simple') {
+          return await navigator.mediaDevices.getUserMedia({ video: true })
+        }
+        const preferExact = mode === 'preferred'
+        try {
+          return await navigator.mediaDevices.getUserMedia({
+            video: {
+              ...(preferExact && camPref ? { deviceId: { exact: camPref } as const } : {}),
+              width: { ideal: preset.width },
+              height: { ideal: preset.height },
+              frameRate: { ideal: preset.frameRate },
+            },
+          })
+        } catch (e) {
+          // Fallback: без exact deviceId (устаревший id / системная замена устройства и т.п.)
+          if (preferExact) {
+            return await requestCamStream('no_exact')
+          }
+          throw e
+        }
+      }
+
+      // Некоторые браузеры/драйверы могут вернуть трек, который тут же завершится (ended).
+      // В этом случае — один быстрый retry, затем отдаём ошибку наружу.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        let v: MediaStream | null = null
+        try {
+          const mode: 'preferred' | 'no_exact' | 'simple' =
+            attempt === 0 ? 'preferred' : attempt === 1 ? 'no_exact' : 'simple'
+          v = await requestCamStream(mode)
+          const track = v.getVideoTracks()[0]
+          if (!track) {
+            v.getTracks().forEach((t) => t.stop())
+            return
+          }
+          // Некоторые драйверы возвращают "живой" трек, который завершается через пару тиков.
+          // Считаем это same-as ended и ретраим с более простыми constraints.
+          await ensureTrackIsLiveSoon(track, attempt === 0 ? 140 : 80)
+
+          const producer = await produceVideoFromTrack(device, sendTransport, track, preset)
+          videoProducerRef.current = producer
+          mergeTrackIntoLocalStream(track)
+          break
+        } catch (err) {
+          try {
+            v?.getTracks().forEach((t) => t.stop())
+          } catch {
+            /* noop */
+          }
+          if (isEndedTrackError(err)) {
+            // Retry with a small delay; last attempt uses the simplest constraints ({ video: true }).
+            await sleepMs(attempt === 0 ? 80 : 40)
+            if (attempt < 2) continue
+          }
+          // После всех попыток "track ended" — это почти всегда занятая/сломанная камера или запрет драйвера.
+          if (isEndedTrackError(err)) {
+            throw new DOMException('Camera track ended immediately', 'NotReadableError')
+          }
+          throw err
+        }
+      }
+      uplinkLocalPrevRef.current = undefined
+      uplinkLocalEmaRef.current.delete('__local__')
+      lastVideoUplinkEmitAtRef.current = 0
+    })
+  }, [runCameraOpExclusive])
 
   // Поллинг дашборда — подтягивает srt[] после рестарта сервера и синхронизирует состав
   const activeRoomId = sessionMeta?.roomId
@@ -1918,7 +2034,37 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     if (isCamOff) {
       try {
         await ensureVideoProducer()
-      } catch {
+      } catch (err: unknown) {
+        console.error('[toggleCam] enable camera failed', err)
+        setIsCamOff(true)
+        const msg = (() => {
+          if (err instanceof Error && err.message === 'no_webrtc_transport') {
+            return 'Нет WebRTC‑подключения для камеры. Попробуйте перезайти в комнату.'
+          }
+          if (err instanceof DOMException) {
+            switch (err.name) {
+              case 'NotAllowedError':
+                return 'Нет доступа к камере. Разрешите камеру для этого сайта и попробуйте снова.'
+              case 'NotFoundError':
+                return 'Камера не найдена. Подключите устройство или выберите другую камеру.'
+              case 'NotReadableError':
+                return 'Камера занята другим приложением. Закройте его и попробуйте снова.'
+              case 'OverconstrainedError':
+                return 'Камера не подходит по настройкам. Выберите другое устройство или пресет.'
+              case 'SecurityError':
+                return 'Браузер не даёт доступ к камере на этой странице (нужен HTTPS).'
+              case 'AbortError':
+                return 'Запрос к камере прерван. Попробуйте ещё раз.'
+              default:
+                return err.message ? `Не удалось включить камеру: ${err.message}` : 'Не удалось включить камеру.'
+            }
+          }
+          if (err instanceof Error) {
+            return err.message ? `Не удалось включить камеру: ${err.message}` : 'Не удалось включить камеру.'
+          }
+          return 'Не удалось включить камеру.'
+        })()
+        window.alert(msg)
         return
       }
       const producer = videoProducerRef.current
@@ -1958,27 +2104,36 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   // ─── Device switching ────────────────────────────────────────────────────
 
   const switchCamera = useCallback(async (deviceId: string) => {
+    const trimmed = deviceId.trim()
+    if (!trimmed) return
+
+    // Если камера сейчас выключена — не трогаем getUserMedia (может дать "track ended" на устройстве),
+    // просто запоминаем выбор. При включении ensureVideoProducer возьмёт preferred id.
+    writePreferredCameraId(trimmed)
+
     const stream = localStreamRef.current
     const producer = videoProducerRef.current
-    if (!stream) return
+    if (!stream || !producer) return
 
-    const p = presetRef.current
-    const newStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        deviceId:  { exact: deviceId },
-        width:     { ideal: p.width },
-        height:    { ideal: p.height },
-        frameRate: { ideal: p.frameRate },
-      },
+    await runCameraOpExclusive('switch_camera', async () => {
+      const p = presetRef.current
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          deviceId: { exact: trimmed },
+          width: { ideal: p.width },
+          height: { ideal: p.height },
+          frameRate: { ideal: p.frameRate },
+        },
+      })
+      const newTrack = newStream.getVideoTracks()[0]
+      if (!newTrack) return
+
+      swapTrack(stream, 'video', newTrack, setLocalStream)
+      if (producer) await producer.replaceTrack({ track: newTrack })
+      uplinkLocalPrevRef.current = undefined
+      uplinkLocalEmaRef.current.delete('__local__')
+      lastVideoUplinkEmitAtRef.current = 0
     })
-    const newTrack = newStream.getVideoTracks()[0]
-    if (!newTrack) return
-
-    swapTrack(stream, 'video', newTrack, setLocalStream)
-    if (producer) await producer.replaceTrack({ track: newTrack })
-    uplinkLocalPrevRef.current = undefined
-    uplinkLocalEmaRef.current.delete('__local__')
-    lastVideoUplinkEmitAtRef.current = 0
   }, [])
 
   const switchMic = useCallback(async (deviceId: string) => {
@@ -2018,45 +2173,47 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     const producer = videoProducerRef.current
     if (!stream || !producer) return
 
-    const currentVideoTrack = stream.getVideoTracks()[0]
-    const currentDeviceId = currentVideoTrack?.getSettings().deviceId
+    await runCameraOpExclusive('change_preset', async () => {
+      const currentVideoTrack = stream.getVideoTracks()[0]
+      const currentDeviceId = currentVideoTrack?.getSettings().deviceId
 
-    const newStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        ...(currentDeviceId ? { deviceId: { exact: currentDeviceId } } : {}),
-        width:     { ideal: preset.width },
-        height:    { ideal: preset.height },
-        frameRate: { ideal: preset.frameRate },
-      },
-    })
-    const newTrack = newStream.getVideoTracks()[0]
-    if (!newTrack) return
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          ...(currentDeviceId ? { deviceId: { exact: currentDeviceId } } : {}),
+          width: { ideal: preset.width },
+          height: { ideal: preset.height },
+          frameRate: { ideal: preset.frameRate },
+        },
+      })
+      const newTrack = newStream.getVideoTracks()[0]
+      if (!newTrack) return
 
-    swapTrack(stream, 'video', newTrack, setLocalStream)
-    await producer.replaceTrack({ track: newTrack })
-    uplinkLocalPrevRef.current = undefined
-    uplinkLocalEmaRef.current.delete('__local__')
-    lastVideoUplinkEmitAtRef.current = 0
+      swapTrack(stream, 'video', newTrack, setLocalStream)
+      await producer.replaceTrack({ track: newTrack })
+      uplinkLocalPrevRef.current = undefined
+      uplinkLocalEmaRef.current.delete('__local__')
+      lastVideoUplinkEmitAtRef.current = 0
 
-    const sender = producer.rtpSender
-    if (sender) {
-      const fpsCap = capVideoFramerate(preset.frameRate, newTrack)
-      const layered = buildSimulcastEncodings(preset, fpsCap)
-      const params = sender.getParameters()
-      const encs = params.encodings
-      if (encs && encs.length >= 3) {
-        layered.forEach((layer, i) => {
-          encs[i].maxBitrate = layer.maxBitrate
-          encs[i].maxFramerate = layer.maxFramerate
-        })
-      } else if (encs && encs.length >= 1) {
-        encs[0].maxBitrate = preset.maxBitrate
-        encs[0].maxFramerate = fpsCap
-      } else {
-        params.encodings = [{ maxBitrate: preset.maxBitrate, maxFramerate: fpsCap }]
+      const sender = producer.rtpSender
+      if (sender) {
+        const fpsCap = capVideoFramerate(preset.frameRate, newTrack)
+        const layered = buildSimulcastEncodings(preset, fpsCap)
+        const params = sender.getParameters()
+        const encs = params.encodings
+        if (encs && encs.length >= 3) {
+          layered.forEach((layer, i) => {
+            encs[i].maxBitrate = layer.maxBitrate
+            encs[i].maxFramerate = layer.maxFramerate
+          })
+        } else if (encs && encs.length >= 1) {
+          encs[0].maxBitrate = preset.maxBitrate
+          encs[0].maxFramerate = fpsCap
+        } else {
+          params.encodings = [{ maxBitrate: preset.maxBitrate, maxFramerate: fpsCap }]
+        }
+        await sender.setParameters(params)
       }
-      await sender.setParameters(params)
-    }
+    })
   }, [])
 
   const stopScreenShare = useCallback(() => {
