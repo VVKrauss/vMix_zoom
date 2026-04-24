@@ -3,7 +3,6 @@ import type { NavigateFunction } from 'react-router-dom'
 import { requestMessengerUnreadRefresh } from '../lib/messenger'
 import type { MessengerConversationSummary } from '../lib/messengerConversations'
 import type { DirectMessage } from '../lib/messenger'
-import { supabase } from '../lib/supabase'
 
 /**
  * DELETE в chat_conversation_members для текущего пользователя — убрать чат из дерева (в т.ч. взаимное скрытие ЛС).
@@ -30,42 +29,14 @@ export function useMessengerSelfMembershipDeleteRealtime(opts: {
   } = opts
 
   useEffect(() => {
-    const uid = userId?.trim() ?? ''
-    if (!uid) return
-    const channel = supabase
-      .channel(`messenger-member-self-delete:${uid}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'chat_conversation_members',
-          filter: `user_id=eq.${uid}`,
-        },
-        (payload) => {
-          const oldRow = payload.old as Record<string, unknown>
-          const raw = oldRow?.conversation_id
-          const convId = typeof raw === 'string' ? raw.trim() : raw != null ? String(raw).trim() : ''
-          if (!convId) return
-          setItems((prev) => prev.filter((i) => i.id !== convId))
-          setPendingJoinSidebarById((prev) => {
-            if (!prev[convId]) return prev
-            const next = { ...prev }
-            delete next[convId]
-            return next
-          })
-          requestMessengerUnreadRefresh()
-          if (conversationIdRef.current.trim() === convId) {
-            setMessages([])
-            setActiveConversation(null)
-            navigate('/dashboard/messenger?view=list', { replace: true })
-          }
-        },
-      )
-      .subscribe()
-
-    return () => {
-      void supabase.removeChannel(channel)
-    }
+    // Supabase realtime removed. We'll reintroduce this via backend socket.io events later.
+    void userId
+    void navigate
+    void conversationIdRef
+    void setItems
+    void setPendingJoinSidebarById
+    void setMessages
+    void setActiveConversation
+    void requestMessengerUnreadRefresh
   }, [navigate, userId])
 }

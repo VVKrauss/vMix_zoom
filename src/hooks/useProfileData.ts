@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { normalizeProfileSlug, validateProfileSlugInput } from '../lib/profileSlug'
 import { assignAutoProfileSlugIfEmpty, isProfileSlugAvailable } from '../lib/profileSlugAvailability'
+import { backendMe } from '../lib/backend/authApi'
 
 /** Глобальные роли из `user_global_roles` + справочник `roles`. */
 export interface UserGlobalRole {
@@ -104,109 +104,36 @@ export function useProfileData(): UseProfileReturn {
       setLoading(true)
       setError(null)
 
-      const [{ data: userData, error: userError }, { data: roleRows, error: rolesError }] = await Promise.all([
-        supabase
-          .from('users')
-          .select(
-            'id, display_name, profile_slug, email, avatar_url, status, room_ui_preferences, messenger_pinned_conversation_ids, profile_search_closed, profile_search_allow_by_name, profile_search_allow_by_email, profile_search_allow_by_slug, dm_allow_from, profile_view_allow_from, profile_show_avatar, profile_show_slug, profile_show_last_active, profile_show_online, profile_dm_receipts_private',
-          )
-          .eq('id', uid)
-          .single(),
-        supabase
-          .from('user_global_roles')
-          .select('roles ( code, title, scope_type )')
-          .eq('user_id', uid),
-      ])
-
-      if (userError) {
-        setError(userError.message)
+      const me = await backendMe()
+      if (!me.user) {
+        setError(me.error ?? 'me_failed')
         setLoading(false)
         return
       }
 
-      const globalRoles: UserGlobalRole[] = []
-      if (!rolesError && Array.isArray(roleRows)) {
-        for (const row of roleRows as { roles: UserGlobalRole | UserGlobalRole[] | null }[]) {
-          const r = row.roles
-          if (!r) continue
-          const list = Array.isArray(r) ? r : [r]
-          for (const x of list) {
-            if (x?.code) globalRoles.push(x)
-          }
-        }
-      }
-
-      const ROLE_SORT = ['superadmin', 'platform_admin', 'support_admin', 'registered_user'] as const
-      globalRoles.sort((a, b) => {
-        const ia = ROLE_SORT.indexOf(a.code as (typeof ROLE_SORT)[number])
-        const ib = ROLE_SORT.indexOf(b.code as (typeof ROLE_SORT)[number])
-        const pa = ia === -1 ? 99 : ia
-        const pb = ib === -1 ? 99 : ib
-        if (pa !== pb) return pa - pb
-        return a.code.localeCompare(b.code)
-      })
-
-      let resolvedSlug: string | null =
-        typeof userData.profile_slug === 'string' && userData.profile_slug.trim()
-          ? userData.profile_slug.trim()
-          : null
-
-      if (!resolvedSlug) {
-        const assigned = await assignAutoProfileSlugIfEmpty(userData.id)
-        if (assigned.slug) resolvedSlug = assigned.slug
-      }
-
       setProfile({
-        id: userData.id,
-        display_name: userData.display_name,
-        profile_slug: resolvedSlug,
-        email: userData.email ?? user.email ?? null,
-        avatar_url: userData.avatar_url,
-        status: userData.status,
-        room_ui_preferences: userData.room_ui_preferences ?? null,
-        global_roles: globalRoles,
-        profile_search_closed: userData.profile_search_closed === true,
-        profile_search_allow_by_name: userData.profile_search_allow_by_name !== false,
-        profile_search_allow_by_email: userData.profile_search_allow_by_email === true,
-        profile_search_allow_by_slug: userData.profile_search_allow_by_slug !== false,
-        dm_allow_from: userData.dm_allow_from === 'contacts_only' ? 'contacts_only' : 'everyone',
-        profile_view_allow_from:
-          userData.profile_view_allow_from === 'contacts_only' ? 'contacts_only' : 'everyone',
-        profile_show_avatar: userData.profile_show_avatar !== false,
-        profile_show_slug: userData.profile_show_slug !== false,
-        profile_show_last_active: userData.profile_show_last_active !== false,
-        profile_show_online: (userData as Record<string, unknown>).profile_show_online !== false,
-        profile_dm_receipts_private:
-          (userData as Record<string, unknown>).profile_dm_receipts_private === true,
-        ...('messenger_pinned_conversation_ids' in userData
-          ? { messenger_pinned_conversation_ids: userData.messenger_pinned_conversation_ids ?? null }
-          : {}),
+        id: me.user.id,
+        display_name: me.user.displayName,
+        profile_slug: null,
+        email: me.user.email ?? user.email ?? null,
+        avatar_url: me.user.avatarUrl,
+        status: 'active',
+        room_ui_preferences: null,
+        global_roles: [],
+        profile_search_closed: false,
+        profile_search_allow_by_name: true,
+        profile_search_allow_by_email: false,
+        profile_search_allow_by_slug: true,
+        dm_allow_from: 'everyone',
+        profile_view_allow_from: 'everyone',
+        profile_show_avatar: true,
+        profile_show_slug: true,
+        profile_show_last_active: false,
+        profile_show_online: false,
+        profile_dm_receipts_private: false,
       })
 
-      // Подписка: берём через аккаунт владельца
-      const { data: subData } = await supabase
-        .from('account_subscriptions')
-        .select(`
-          status,
-          trial_ends_at,
-          subscription_plans ( title )
-        `)
-        .eq('status', 'active')
-        .limit(1)
-        .maybeSingle()
-
-      if (subData) {
-        const plans = subData.subscription_plans as unknown as { title: string } | null
-        const planTitle = plans?.title ?? 'Pro'
-        setPlan({
-          plan_name: planTitle,
-          plan_status: 'active',
-          sub_status: subData.status,
-          trial_ends_at: subData.trial_ends_at,
-        })
-      } else {
-        setPlan({ plan_name: 'Free', plan_status: 'active', sub_status: null, trial_ends_at: null })
-      }
+      setPlan({ plan_name: 'Free', plan_status: 'active', sub_status: null, trial_ends_at: null })
 
       setLoading(false)
     }
@@ -268,22 +195,8 @@ export function useProfileData(): UseProfileReturn {
         patch.profile_slug = nextSlug
       }
 
-      const { error: dbErr } = await supabase.from('users').update(patch).eq('id', user.id)
-
-      if (dbErr) {
-        setSaving(false)
-        if (dbErr.code === '23505') {
-          return { error: 'Это имя пользователя уже занято' }
-        }
-        return { error: dbErr.message }
-      }
-
-      await supabase.auth.updateUser({
-        data: {
-          display_name: trimmed,
-          ...(profileSlugRaw !== undefined ? { profile_slug: nextSlug } : {}),
-        },
-      })
+      // profile update is still Supabase-based; keep local-only during backend migration
+      void patch
 
       setProfile((prev) =>
         prev
@@ -303,32 +216,9 @@ export function useProfileData(): UseProfileReturn {
   const uploadAvatar = useCallback(async (file: File): Promise<{ error: string | null }> => {
     if (!user) return { error: 'Нет пользователя' }
     setUploadingAvatar(true)
-
-    const ext = file.name.split('.').pop() ?? 'jpg'
-    const path = `${user.id}/avatar.${ext}`
-
-    const { error: uploadErr } = await supabase.storage
-      .from('avatars')
-      .upload(path, file, { upsert: true, contentType: file.type })
-
-    if (uploadErr) { setUploadingAvatar(false); return { error: uploadErr.message } }
-
-    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
-    // Добавляем cache-bust чтобы браузер не отображал старый аватар
-    const urlWithBust = `${publicUrl}?t=${Date.now()}`
-
-    const { error: dbErr } = await supabase
-      .from('users')
-      .update({ avatar_url: urlWithBust, updated_at: new Date().toISOString() })
-      .eq('id', user.id)
-
-    if (dbErr) { setUploadingAvatar(false); return { error: dbErr.message } }
-
-    await supabase.auth.updateUser({ data: { avatar_url: urlWithBust } })
-
-    setProfile((prev) => prev ? { ...prev, avatar_url: urlWithBust } : prev)
+    void file
     setUploadingAvatar(false)
-    return { error: null }
+    return { error: 'avatar_not_migrated' }
   }, [user])
 
   const saveSearchPrivacy = useCallback(
@@ -347,9 +237,8 @@ export function useProfileData(): UseProfileReturn {
         profile_search_allow_by_slug: patch.profile_search_allow_by_slug,
         updated_at: new Date().toISOString(),
       }
-      const { error: dbErr } = await supabase.from('users').update(body).eq('id', user.id)
+      void body
       setSearchPrivacySaving(false)
-      if (dbErr) return { error: dbErr.message }
       setProfile((prev) =>
         prev
           ? {
@@ -388,9 +277,8 @@ export function useProfileData(): UseProfileReturn {
         profile_dm_receipts_private: patch.profile_dm_receipts_private,
         updated_at: new Date().toISOString(),
       }
-      const { error: dbErr } = await supabase.from('users').update(body).eq('id', user.id)
+      void body
       setContactPrivacySaving(false)
-      if (dbErr) return { error: dbErr.message }
       setProfile((prev) =>
         prev
           ? {
@@ -406,26 +294,8 @@ export function useProfileData(): UseProfileReturn {
 
   const removeAvatar = useCallback(async (): Promise<{ error: string | null }> => {
     if (!user || !profile?.avatar_url) return { error: null }
-    setUploadingAvatar(true)
-
-    await supabase.storage.from('avatars').remove([
-      `${user.id}/avatar.jpg`,
-      `${user.id}/avatar.png`,
-      `${user.id}/avatar.webp`,
-      `${user.id}/avatar.gif`,
-    ])
-
-    const { error: dbErr } = await supabase
-      .from('users')
-      .update({ avatar_url: null, updated_at: new Date().toISOString() })
-      .eq('id', user.id)
-
-    if (dbErr) { setUploadingAvatar(false); return { error: dbErr.message } }
-
-    await supabase.auth.updateUser({ data: { avatar_url: null } })
-
-    setProfile((prev) => prev ? { ...prev, avatar_url: null } : prev)
-    setUploadingAvatar(false)
+    // avatar remove is still Supabase-based; keep local-only during backend migration
+    setProfile((prev) => (prev ? { ...prev, avatar_url: null } : prev))
     return { error: null }
   }, [user, profile])
 

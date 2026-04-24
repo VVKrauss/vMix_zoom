@@ -7,6 +7,7 @@ import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import { listMyContacts } from '../lib/socialGraph'
 import { setPendingHostClaim } from '../lib/spaceRoom'
 import { newRoomId } from '../utils/roomId'
+import { MigrationPasswordResetNoticeModal } from './MigrationPasswordResetNoticeModal'
 import {
   AdminPanelIcon,
   ChatBubbleIcon,
@@ -35,9 +36,14 @@ type DashboardShellProps = {
 }
 
 const INCOMING_PINS_BANNER_DISMISS_PREFIX = 'vmix.dashboard.incomingPin.dismissSig:'
+const MIGRATION_RESET_NOTICE_DISMISS_PREFIX = 'redflow.migration.passwordResetNotice.dismissed:'
 
 function incomingPinDismissStorageKey(userId: string): string {
   return `${INCOMING_PINS_BANNER_DISMISS_PREFIX}${userId}`
+}
+
+function migrationResetNoticeDismissKey(userId: string): string {
+  return `${MIGRATION_RESET_NOTICE_DISMISS_PREFIX}${userId}`
 }
 
 function incomingPinsSignature(ids: string[]): string {
@@ -67,9 +73,13 @@ export function DashboardShell({
   const [cabinetMenuOpen, setCabinetMenuOpen] = useState(false)
   const [incomingPinSig, setIncomingPinSig] = useState<string | null>(null)
   const [dismissedIncomingPinSig, setDismissedIncomingPinSig] = useState<string | null>(null)
+  const [migrationNoticeOpen, setMigrationNoticeOpen] = useState(false)
+  const [migrationNoticeDismissed, setMigrationNoticeDismissed] = useState<boolean>(false)
   useEffect(() => {
     if (!user?.id) {
       setDismissedIncomingPinSig(null)
+      setMigrationNoticeDismissed(false)
+      setMigrationNoticeOpen(false)
       return
     }
     try {
@@ -77,7 +87,17 @@ export function DashboardShell({
     } catch {
       setDismissedIncomingPinSig(null)
     }
+    try {
+      setMigrationNoticeDismissed(Boolean(localStorage.getItem(migrationResetNoticeDismissKey(user.id))))
+    } catch {
+      setMigrationNoticeDismissed(false)
+    }
   }, [user?.id])
+
+  useEffect(() => {
+    if (!user?.id) return
+    if (!migrationNoticeDismissed) setMigrationNoticeOpen(true)
+  }, [user?.id, migrationNoticeDismissed])
 
   const refreshIncomingPinsSig = useCallback(() => {
     if (!user?.id) {
@@ -123,6 +143,17 @@ export function DashboardShell({
     setDismissedIncomingPinSig(incomingPinSig)
   }
 
+  const dismissMigrationNotice = () => {
+    if (!user?.id) return
+    try {
+      localStorage.setItem(migrationResetNoticeDismissKey(user.id), '1')
+    } catch {
+      /* ignore quota / private mode */
+    }
+    setMigrationNoticeDismissed(true)
+    setMigrationNoticeOpen(false)
+  }
+
   const goCreateRoom = () => {
     const id = newRoomId()
     setPendingHostClaim(id)
@@ -155,6 +186,7 @@ export function DashboardShell({
         showCabinetBurger ? ' dashboard-page--cabinet-mobile-burger' : ''
       }${unifiedCabinetNav ? ' dashboard-page--unified-top-nav' : ''}`}
     >
+      <MigrationPasswordResetNoticeModal open={migrationNoticeOpen} onClose={dismissMigrationNotice} />
       <header
         className={`dashboard-topbar${unifiedCabinetNav ? ' dashboard-topbar--unified' : ''}`}
       >

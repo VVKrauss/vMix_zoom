@@ -1,5 +1,3 @@
-import { supabase } from './supabase'
-
 export type PublicGuestPreviewMessage = {
   id: string
   sender_user_id: string | null
@@ -65,55 +63,7 @@ export async function fetchPublicConversationGuestPreview(
   publicNick: string,
   messageLimit = 40,
 ): Promise<PublicGuestPreviewResult> {
-  const nick = publicNick.trim()
-  if (!nick) return { ok: false, error: 'invalid_nick' }
-
-  const { data, error } = await supabase.rpc('get_public_conversation_guest_preview', {
-    p_public_nick: nick,
-    p_message_limit: messageLimit,
-  })
-
-  if (error) return { ok: false, error: 'rpc', message: error.message }
-
-  if (!data || typeof data !== 'object') return { ok: false, error: 'parse' }
-  const j = data as Record<string, unknown>
-  if (j.ok !== true) {
-    const code = typeof j.error === 'string' ? j.error : ''
-    if (code === 'not_found') return { ok: false, error: 'not_found' }
-    if (code === 'not_public') return { ok: false, error: 'not_public' }
-    if (code === 'invalid_nick') return { ok: false, error: 'invalid_nick' }
-    return { ok: false, error: 'parse' }
-  }
-
-  const cid = typeof j.conversation_id === 'string' ? j.conversation_id : ''
-  const kind = j.kind === 'channel' ? 'channel' : j.kind === 'group' ? 'group' : null
-  if (!cid || !kind) return { ok: false, error: 'parse' }
-
-  return {
-    ok: true,
-    data: {
-      conversationId: cid,
-      kind,
-      title: typeof j.title === 'string' && j.title.trim() ? j.title.trim() : kind === 'channel' ? 'Канал' : 'Группа',
-      publicNick: typeof j.public_nick === 'string' && j.public_nick.trim() ? j.public_nick.trim() : null,
-      memberCount:
-        typeof j.member_count === 'number' ? j.member_count : Number(j.member_count ?? 0) || 0,
-      avatarPath: typeof j.avatar_path === 'string' && j.avatar_path.trim() ? j.avatar_path.trim() : null,
-      avatarThumbPath:
-        typeof j.avatar_thumb_path === 'string' && j.avatar_thumb_path.trim() ? j.avatar_thumb_path.trim() : null,
-      channelPostingMode:
-        j.channel_posting_mode === 'everyone'
-          ? 'everyone'
-          : j.channel_posting_mode === 'admins_only'
-            ? 'admins_only'
-            : null,
-      channelCommentsMode:
-        j.channel_comments_mode === 'disabled'
-          ? 'disabled'
-          : j.channel_comments_mode === 'everyone'
-            ? 'everyone'
-            : null,
-      messages: parseMessages(j.messages),
-    },
-  }
+  void publicNick
+  void messageLimit
+  return { ok: false, error: 'rpc', message: 'not_migrated' }
 }

@@ -1,14 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { Session, User } from '@supabase/supabase-js'
-import { supabase } from '../lib/supabase'
-import { getEmailConfirmationRedirectUrl } from '../config/authUrls'
+import type { BackendUser } from '../lib/backend/authApi'
+import { backendMe, backendSignIn, backendSignOut, backendSignUp } from '../lib/backend/authApi'
 import { clearDesktopRoomViewStorage } from '../config/roomUiStorage'
 import { HOST_SESSION_KEY, PENDING_HOST_CLAIM_KEY } from '../lib/spaceRoom'
 
 interface AuthContextValue {
-  user: User | null
-  session: Session | null
+  user: BackendUser | null
+  /** зарезервировано под refresh/session info (пока не нужно фронту) */
+  session: null
   /** true пока идёт первоначальная проверка сессии */
   loading: boolean
   signUp: (email: string, password: string, displayName: string) => Promise<{ error: string | null }>
@@ -19,43 +19,33 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser]       = useState<User | null>(null)
-  const [session, setSession] = useState<Session | null>(null)
+  const [user, setUser]       = useState<BackendUser | null>(null)
+  const [session]             = useState<null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Читаем текущую сессию при монтировании
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      setUser(data.session?.user ?? null)
+    let cancelled = false
+    void backendMe().then(({ user }) => {
+      if (cancelled) return
+      setUser(user)
       setLoading(false)
     })
-
-    // Слушаем изменения: вход, выход, рефреш токена
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession)
-      setUser(newSession?.user ?? null)
-    })
-
-    return () => subscription.unsubscribe()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const signUp = useCallback(async (email: string, password: string, displayName: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { display_name: displayName },
-        emailRedirectTo: getEmailConfirmationRedirectUrl(),
-      },
-    })
-    if (error) return { error: error.message }
+    const res = await backendSignUp(email, password, displayName)
+    if (res.error) return { error: res.error }
+    setUser(res.user)
     return { error: null }
   }, [])
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) return { error: error.message }
+    const res = await backendSignIn(email, password)
+    if (res.error) return { error: res.error }
+    setUser(res.user)
     clearDesktopRoomViewStorage()
     return { error: null }
   }, [])
@@ -67,7 +57,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       /* noop */
     }
-    await supabase.auth.signOut()
+    await backendSignOut()
+    setUser(null)
   }, [])
 
   return (

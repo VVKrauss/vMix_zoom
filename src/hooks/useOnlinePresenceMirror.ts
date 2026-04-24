@@ -1,6 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { RealtimeChannel } from '@supabase/supabase-js'
-import { supabase } from '../lib/supabase'
 import { isPeerPresenceOnlineFromMirror } from '../lib/messengerPeerPresence'
 
 type PresenceMirrorRow = {
@@ -54,82 +52,8 @@ export function useOnlinePresenceMirror(args: {
   /** Локальная переоценка окна online (нужно, чтобы оно гасло без новых событий). */
   tickMs?: number
 }): Record<string, boolean> {
-  const { viewerId, userIds, tickMs = 1500 } = args
-
-  const key = useMemo(() => {
-    const me = viewerId?.trim() ?? ''
-    if (!me) return ''
-    const ids = [...new Set(userIds.map((x) => x.trim()).filter(Boolean))]
-      .filter((id) => id !== me)
-      .sort()
-    return ids.join('\0')
-  }, [viewerId, userIds])
-
-  const ids = useMemo(() => (key ? key.split('\0').filter(Boolean) : []), [key])
-
-  const rowsRef = useRef<Map<string, PresenceMirrorRow>>(new Map())
-  const [epoch, setEpoch] = useState(0)
-
-  useEffect(() => {
-    rowsRef.current = new Map()
-    setEpoch((e) => e + 1)
-  }, [key])
-
-  useEffect(() => {
-    const me = viewerId?.trim() ?? ''
-    if (!me || ids.length === 0) return
-
-    let cancelled = false
-    let channel: RealtimeChannel | null = null
-    const bump = () => setEpoch((e) => e + 1)
-
-    void (async () => {
-      const { data, error } = await supabase
-        .from('user_presence_public')
-        .select('user_id,last_active_at,presence_last_background_at,profile_show_online')
-        .in('user_id', ids)
-      if (cancelled || error) return
-
-      const next = new Map<string, PresenceMirrorRow>()
-      for (const raw of (data ?? []) as unknown[]) {
-        const parsed = parsePresenceRow(raw)
-        if (!parsed) continue
-        next.set(parsed.userId, parsed)
-      }
-      rowsRef.current = next
-      bump()
-    })()
-
-    const filter = ids.length === 1 ? `user_id=eq.${ids[0]}` : `user_id=in.(${ids.join(',')})`
-    channel = supabase
-      .channel(`presence-mirror:${ids.length}-${ids[0]?.slice(0, 8) ?? '0'}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_presence_public', filter }, (payload) => {
-        const parsed = parsePresenceRow(payload.new ?? payload.old)
-        if (!parsed) return
-        if (!ids.includes(parsed.userId)) return
-        rowsRef.current.set(parsed.userId, parsed)
-        bump()
-      })
-      .subscribe()
-
-    const tickId = window.setInterval(bump, tickMs)
-    return () => {
-      cancelled = true
-      window.clearInterval(tickId)
-      if (channel) void supabase.removeChannel(channel)
-    }
-  }, [viewerId, ids, tickMs])
-
-  return useMemo(() => {
-    const out: Record<string, boolean> = {}
-    const nowMs = Date.now()
-    for (const id of ids) {
-      const row = rowsRef.current.get(id)
-      out[id] = row ? computeOnline(row, nowMs) : false
-    }
-    // tie to epoch
-    void epoch
-    return out
-  }, [ids, epoch])
+  // Presence mirror is disabled during backend migration.
+  void isPeerPresenceOnlineFromMirror
+  void args
+  return {}
 }
-

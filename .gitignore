@@ -2,6 +2,7 @@ node_modules/
 .env
 dist/
 supabase/.temp/
+dump.sql
 
 # Backend copy from server (local only)
 backend/

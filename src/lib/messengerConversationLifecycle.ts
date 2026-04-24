@@ -1,4 +1,3 @@
-import { supabase } from './supabase'
 import { leaveChannel } from './channels'
 import { leaveGroupChat } from './groups'
 
@@ -14,28 +13,22 @@ function rpcOk(data: unknown): { ok: boolean; err: string | null } {
 export async function leaveDirectConversationClient(conversationId: string): Promise<{ error: string | null }> {
   const cid = conversationId.trim()
   if (!cid) return { error: 'Не выбран чат' }
-  const { data, error } = await supabase.rpc('leave_direct_conversation', { p_conversation_id: cid })
-  if (error) return { error: error.message }
-  const { ok, err } = rpcOk(data)
-  return ok ? { error: null } : { error: err ?? 'Не удалось удалить чат у себя' }
+  void rpcOk
+  return { error: 'not_migrated' }
 }
 
 export async function deleteDirectConversationForAllClient(conversationId: string): Promise<{ error: string | null }> {
   const cid = conversationId.trim()
   if (!cid) return { error: 'Не выбран чат' }
-  const { data, error } = await supabase.rpc('delete_direct_conversation_for_all', { p_conversation_id: cid })
-  if (error) return { error: error.message }
-  const { ok, err } = rpcOk(data)
-  return ok ? { error: null } : { error: err ?? 'Не удалось удалить переписку' }
+  void rpcOk
+  return { error: 'not_migrated' }
 }
 
 export async function deleteOwnedGroupOrChannelClient(conversationId: string): Promise<{ error: string | null }> {
   const cid = conversationId.trim()
   if (!cid) return { error: 'Не выбран чат' }
-  const { data, error } = await supabase.rpc('delete_owned_group_or_channel', { p_conversation_id: cid })
-  if (error) return { error: error.message }
-  const { ok, err } = rpcOk(data)
-  return ok ? { error: null } : { error: err ?? 'Не удалось удалить чат' }
+  void rpcOk
+  return { error: 'not_migrated' }
 }
 
 export async function leaveGroupOrChannelClient(

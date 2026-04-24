@@ -1,23 +1,26 @@
 import { FormEvent, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../context/AuthContext'
+import { Link, useLocation } from 'react-router-dom'
+import { backendResetPassword } from '../lib/backend/authApi'
 
 export function ResetPasswordPage() {
-  const { session, loading: authLoading } = useAuth()
+  const loc = useLocation()
   const [password, setPassword] = useState('')
   const [password2, setPassword2] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState(false)
 
-  const canReset = useMemo(() => Boolean(session?.user?.id), [session?.user?.id])
+  const token = useMemo(() => {
+    const sp = new URLSearchParams(loc.search)
+    return (sp.get('token') ?? '').trim()
+  }, [loc.search])
+  const canReset = useMemo(() => Boolean(token), [token])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
-    if (password.length < 6) {
-      setError('Пароль должен быть минимум 6 символов')
+    if (password.length < 8) {
+      setError('Пароль должен быть минимум 8 символов')
       return
     }
     if (password !== password2) {
@@ -25,10 +28,10 @@ export function ResetPasswordPage() {
       return
     }
     setLoading(true)
-    const { error } = await supabase.auth.updateUser({ password })
+    const res = await backendResetPassword(token, password)
     setLoading(false)
-    if (error) {
-      setError(error.message)
+    if (res.error) {
+      setError(res.error)
       return
     }
     setOk(true)
@@ -52,13 +55,6 @@ export function ResetPasswordPage() {
               Войти
             </Link>
           </div>
-        ) : authLoading ? (
-          <div className="confirm-sent">
-            <div className="confirm-sent__icon" aria-hidden>
-              …
-            </div>
-            <p className="confirm-sent__text">Проверяем ссылку…</p>
-          </div>
         ) : !canReset ? (
           <div className="confirm-sent">
             <div className="confirm-sent__icon" aria-hidden>
@@ -79,10 +75,10 @@ export function ResetPasswordPage() {
               <input
                 className="join-input"
                 type="password"
-                placeholder="Минимум 6 символов"
+                placeholder="Минимум 8 символов"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                minLength={6}
+                minLength={8}
                 autoFocus
                 required
               />
@@ -94,7 +90,7 @@ export function ResetPasswordPage() {
                 placeholder="Повторите пароль"
                 value={password2}
                 onChange={(e) => setPassword2(e.target.value)}
-                minLength={6}
+                minLength={8}
                 required
               />
 

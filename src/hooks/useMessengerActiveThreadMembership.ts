@@ -1,6 +1,5 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react'
 import { hasPendingConversationJoinRequest } from '../lib/chatRequests'
-import { supabase } from '../lib/supabase'
 
 /**
  * Роль текущего пользователя в открытом чате и флаг pending join request (для UI группы/канала).
@@ -35,24 +34,10 @@ export function useMessengerActiveThreadMembership(opts: {
     setActiveConversationRole(null)
     setPendingJoinRequest(null)
 
-    void Promise.all([
-      supabase
-        .from('chat_conversation_members')
-        .select('role')
-        .eq('conversation_id', cid)
-        .eq('user_id', userId)
-        .maybeSingle(),
-      hasPendingConversationJoinRequest(cid),
-    ]).then(([memberRes, pendingRes]) => {
+    // Supabase removed. Membership role is fetched per-thread in thread panes via backend.
+    void hasPendingConversationJoinRequest(cid).then((pendingRes) => {
       if (!active) return
-      if (!memberRes.error && memberRes.data) {
-        const role = typeof (memberRes.data as { role?: unknown })?.role === 'string'
-          ? String((memberRes.data as { role: string }).role).trim()
-          : null
-        setActiveConversationRole(role)
-      } else {
-        setActiveConversationRole(null)
-      }
+      setActiveConversationRole(null)
       if (pendingRes.error) {
         setPendingJoinRequest(null)
         setJoinRequestError(pendingRes.error)

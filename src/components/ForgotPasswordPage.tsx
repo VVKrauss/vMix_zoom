@@ -1,7 +1,6 @@
 import { FormEvent, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
-import { getPasswordResetRedirectUrl } from '../config/authUrls'
+import { backendForgotPassword } from '../lib/backend/authApi'
 
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -15,12 +14,10 @@ export function ForgotPasswordPage() {
     const v = email.trim()
     if (!v) return
     setLoading(true)
-    const { error } = await supabase.auth.resetPasswordForEmail(v, {
-      redirectTo: getPasswordResetRedirectUrl(),
-    })
+    const res = await backendForgotPassword(v)
     setLoading(false)
-    if (error) {
-      setError(error.message)
+    if (res.error) {
+      setError(res.error)
       return
     }
     setSentTo(v)

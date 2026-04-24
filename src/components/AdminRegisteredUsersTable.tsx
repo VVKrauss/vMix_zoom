@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../hooks/useProfile'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -66,48 +65,15 @@ async function rpcSetRole(
   code: string,
   grant: boolean,
 ): Promise<string | null> {
-  const { data, error: rpcErr } = await supabase.rpc('admin_set_user_global_role', {
-    p_target_user: userId,
-    p_role_code: code,
-    p_grant: grant,
-  })
-  if (rpcErr) return rpcErr.message
-  const res = data as SetRoleResult | null
-  if (!res?.ok) {
-    if (res?.error === 'only_superadmin') {
-      return 'Только суперадмин может назначать роль «Суперадмин».'
-    }
-    if (res?.error === 'forbidden') return 'Нет прав.'
-    if (res?.error === 'unknown_role') return 'Неизвестная роль.'
-    return 'Не удалось сохранить.'
-  }
-  return null
+  void userId
+  void code
+  void grant
+  return 'not_migrated'
 }
 
 async function rpcDeleteUser(userId: string): Promise<string | null> {
-  const { data, error: rpcErr } = await supabase.rpc('admin_delete_registered_user', {
-    p_target_user: userId,
-  })
-  if (rpcErr) return rpcErr.message
-  const res = data as DeleteUserResult | null
-  if (!res?.ok) {
-    switch (res?.error) {
-      case 'forbidden':
-        return 'Нет прав.'
-      case 'cannot_delete_self':
-        return 'Нельзя удалить свою учётную запись.'
-      case 'user_not_found':
-        return 'Пользователь не найден.'
-      case 'cannot_delete_staff':
-      case 'cannot_delete_peer':
-        return 'Недостаточно прав для удаления этого пользователя.'
-      case 'delete_failed':
-        return res.detail ? `Ошибка: ${res.detail}` : 'Не удалось удалить пользователя.'
-      default:
-        return 'Не удалось удалить пользователя.'
-    }
-  }
-  return null
+  void userId
+  return 'not_migrated'
 }
 
 export function AdminRegisteredUsersTable({ isSuperadmin }: { isSuperadmin: boolean }) {
@@ -139,13 +105,8 @@ export function AdminRegisteredUsersTable({ isSuperadmin }: { isSuperadmin: bool
   const refresh = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true)
     setError(null)
-    const uRes = await supabase.rpc('admin_list_registered_users', { p_limit: 200, p_offset: 0 })
-    if (uRes.error) {
-      setError(uRes.error.message)
-      setUsers([])
-    } else {
-      setUsers((uRes.data as AdminUserRow[] | null) ?? [])
-    }
+    setError('not_migrated')
+    setUsers([])
     if (showLoading) setLoading(false)
   }, [])
 

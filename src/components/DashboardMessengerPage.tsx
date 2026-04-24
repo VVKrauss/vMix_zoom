@@ -139,11 +139,11 @@ import {
   leaveDirectConversationClient,
   leaveGroupOrChannelClient,
 } from '../lib/messengerConversationLifecycle'
-import { supabase } from '../lib/supabase'
 import { fetchPublicUserProfile } from '../lib/userPublicProfile'
 import { writeMessengerThreadTailCache } from '../lib/messengerThreadTailCache'
 import { newRoomId } from '../utils/roomId'
 import { normalizeProfileSlug } from '../lib/profileSlug'
+import { getBackendSocket, refreshBackendSocketAuth } from '../lib/backend/socket'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import { ChevronLeftIcon, JoinRequestsIcon, MenuBurgerIcon } from './icons'
 import { useMessengerJumpToBottom } from '../hooks/useMessengerJumpToBottom'
@@ -580,32 +580,9 @@ export function DashboardMessengerPage() {
 
   // Mentions: in-app уведомления + бейджи (override mute делается на push-слое).
   useEffect(() => {
-    const uid = user?.id?.trim() ?? ''
-    if (!uid) return
-    const channel = supabase
-      .channel(`mentions-${uid}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chat_message_mentions',
-          filter: `user_id=eq.${uid}`,
-        },
-        (payload) => {
-          const row = payload.new as Record<string, unknown>
-          const cid = typeof row.conversation_id === 'string' ? row.conversation_id.trim() : ''
-          if (!cid) return
-          if (cid === foregroundThreadForMentionsRef.current.trim()) return
-          setMentionUnreadByConversationId((prev) => ({ ...prev, [cid]: (prev[cid] ?? 0) + 1 }))
-          const title = itemsRef.current.find((it) => it.id === cid)?.title?.trim() || 'чат'
-          toast.push({ tone: 'info', message: `Вас упомянули в: ${title}`, ms: 3200 })
-        },
-      )
-      .subscribe()
-    return () => {
-      void supabase.removeChannel(channel)
-    }
+    // Mentions realtime is still Supabase-based; disable during backend migration
+    void user?.id
+    void toast
   }, [toast, user?.id])
 
   useEffect(() => {
@@ -714,33 +691,16 @@ export function DashboardMessengerPage() {
   useEffect(() => {
     const cid = activeConversationId.trim()
     if (!cid || !user?.id || activeOpenThreadKind !== 'direct') return
-    const channel = supabase
-      .channel(`dm-peer-read:${cid}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'chat_conversation_members',
-          filter: `conversation_id=eq.${cid}`,
-        },
-        (payload) => {
-          const row = payload.new as { user_id?: string; last_read_at?: unknown }
-          const raw = row.last_read_at
-          if (!row.user_id || row.user_id === user.id || raw == null) return
-          const s =
-            typeof raw === 'string'
-              ? raw
-              : typeof raw === 'number'
-                ? new Date(raw).toISOString()
-                : String(raw)
-          if (s)
-            setDirectPeerLastReadAt((p) => mergePeerLastReadAt(p, s))
-        },
-      )
-      .subscribe()
+    refreshBackendSocketAuth()
+    const socket = getBackendSocket()
+    const onRead = (payload: { conversationId: string; userId: string; lastReadAt: string }) => {
+      if (payload.conversationId !== cid) return
+      if (payload.userId === user.id) return
+      if (payload.lastReadAt) setDirectPeerLastReadAt((p) => mergePeerLastReadAt(p, payload.lastReadAt))
+    }
+    socket.on('dm:read:updated', onRead)
     return () => {
-      void supabase.removeChannel(channel)
+      socket.off('dm:read:updated', onRead)
     }
   }, [activeConversationId, activeOpenThreadKind, user?.id])
 
@@ -752,32 +712,19 @@ export function DashboardMessengerPage() {
   useEffect(() => {
     const uid = user?.id?.trim() ?? ''
     if (!uid) return
-    const channel = supabase
-      .channel(`messenger-my-reads:${uid}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'chat_conversation_members',
-          filter: `user_id=eq.${uid}`,
-        },
-        (payload) => {
-          const row = payload.new as Record<string, unknown>
-          const cidRaw = row?.conversation_id
-          const cid =
-            typeof cidRaw === 'string' ? cidRaw.trim() : cidRaw != null ? String(cidRaw).trim() : ''
-          if (!cid) return
-          // Если last_read_at не менялся/пустой — не трогаем
-          if (row.last_read_at == null) return
-          setItems((prev) => prev.map((i) => (i.id === cid ? { ...i, unreadCount: 0 } : i)))
-          setActiveConversation((prev) => (prev && prev.id === cid ? { ...prev, unreadCount: 0 } : prev))
-          requestMessengerUnreadRefresh()
-        },
-      )
-      .subscribe()
+    refreshBackendSocketAuth()
+    const socket = getBackendSocket()
+    const onRead = (payload: { conversationId: string; userId: string; lastReadAt: string }) => {
+      if (payload.userId !== uid) return
+      const cid = payload.conversationId?.trim() ?? ''
+      if (!cid) return
+      setItems((prev) => prev.map((i) => (i.id === cid ? { ...i, unreadCount: 0 } : i)))
+      setActiveConversation((prev) => (prev && prev.id === cid ? { ...prev, unreadCount: 0 } : prev))
+      requestMessengerUnreadRefresh()
+    }
+    socket.on('dm:read:updated', onRead)
     return () => {
-      void supabase.removeChannel(channel)
+      socket.off('dm:read:updated', onRead)
     }
   }, [user?.id])
 
@@ -1830,41 +1777,9 @@ export function DashboardMessengerPage() {
     async (rawSlug: string) => {
       const slug = normalizeProfileSlug(rawSlug)
       if (!slug) return
-      /** Не `search_registered_users`: там исключён текущий пользователь — клик по своему @slug в «Сохранённом» давал «не найден». */
-      const { data, error: rpcErr } = await supabase.rpc('get_user_public_profile_by_slug', {
-        p_profile_slug: slug,
-      })
-      if (rpcErr) {
-        toast.push({ tone: 'error', message: rpcErr.message, ms: 2600 })
-        return
-      }
-      const row = data as Record<string, unknown> | null
-      if (!row || row.ok !== true) {
-        const code = typeof row?.error === 'string' ? row.error : ''
-        toast.push({
-          tone: 'error',
-          message:
-            code === 'not_found' || code === 'slug_required'
-              ? 'Пользователь не найден'
-              : 'Не удалось открыть профиль',
-          ms: 2600,
-        })
-        return
-      }
-      const id = typeof row.id === 'string' ? row.id.trim() : ''
-      if (!id) {
-        toast.push({ tone: 'error', message: 'Не удалось открыть профиль', ms: 2600 })
-        return
-      }
-      openUserPeek({
-        userId: id,
-        displayName:
-          typeof row.display_name === 'string' && row.display_name.trim()
-            ? String(row.display_name).trim()
-            : null,
-        avatarUrl:
-          typeof row.avatar_url === 'string' && row.avatar_url.trim() ? row.avatar_url.trim() : null,
-      })
+      // Public profile-by-slug is still Supabase-based; disable during backend migration
+      void slug
+      toast.push({ tone: 'error', message: 'Профиль по @slug пока недоступен', ms: 2200 })
     },
     [openUserPeek, toast],
   )
@@ -2354,22 +2269,12 @@ export function DashboardMessengerPage() {
         return
       }
 
-      const { data, error } = await supabase
-        .from('chat_conversation_members')
-        .select('role')
-        .eq('conversation_id', cid)
-        .eq('user_id', user.id)
-        .maybeSingle()
+      const roleRes =
+        item.kind === 'group'
+          ? await apiFetch<{ role: string | null }>(`/groups/${encodeURIComponent(cid)}/me`)
+          : await apiFetch<{ role: string | null }>(`/channels/${encodeURIComponent(cid)}/me`)
 
-      if (error || !data) {
-        toast.push({ tone: 'error', message: 'Не удалось проверить роль в чате.', ms: 3200 })
-        setDeleteFlowConversationId(null)
-        return
-      }
-      const role =
-        typeof (data as { role?: unknown }).role === 'string'
-          ? String((data as { role: string }).role).trim()
-          : null
+      const role = roleRes.error || !roleRes.data ? null : roleRes.data.role
       if (!role) {
         toast.push({ tone: 'error', message: 'Вы не участник этого чата.', ms: 3200 })
         setDeleteFlowConversationId(null)
@@ -2634,18 +2539,12 @@ export function DashboardMessengerPage() {
       setConversationInfoLoading(true)
       setConversationInfoRole(null)
       try {
-        const { data, error } = await supabase
-          .from('chat_conversation_members')
-          .select('role')
-          .eq('conversation_id', id)
-          .eq('user_id', user.id)
-          .maybeSingle()
-        if (error) {
-          setConversationInfoRole(null)
-        } else {
-          const role = typeof (data as any)?.role === 'string' ? String((data as any).role) : null
-          setConversationInfoRole(role)
-        }
+        const roleRes =
+          conv.kind === 'group'
+            ? await apiFetch<{ role: string | null }>(`/groups/${encodeURIComponent(id)}/me`)
+            : await apiFetch<{ role: string | null }>(`/channels/${encodeURIComponent(id)}/me`)
+        const role = roleRes.error || !roleRes.data ? null : roleRes.data.role
+        setConversationInfoRole(role)
       } finally {
         setConversationInfoLoading(false)
       }

@@ -1,5 +1,3 @@
-import { supabase } from '../lib/supabase'
-
 interface Props {
   roomId: string
   onTakeover: () => void
@@ -16,21 +14,7 @@ interface Props {
  */
 export function RoomHostClaimModal({ roomId, onTakeover, onJoinAsParticipant }: Props) {
   const handleTakeover = () => {
-    // Сигнал предыдущему устройству через Supabase Realtime Broadcast
-    const ch = supabase.channel(`room-mod:${roomId.trim()}`)
-    ch.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        void ch
-          .send({
-            type: 'broadcast',
-            event: 'host-transfer-claimed',
-            payload: { claimedAt: new Date().toISOString() },
-          })
-          .then(() => {
-            void supabase.removeChannel(ch)
-          })
-      }
-    })
+    // Realtime host-transfer signal was Supabase-based; disabled for now.
     onTakeover()
   }
 

@@ -1,4 +1,3 @@
-import { supabase } from './supabase'
 import { extractYoutubeVideoId, fetchYoutubeOembedMeta, youtubeThumbnailUrl } from './youtubeEmbed'
 
 /** Edge `link-preview` не должна «висеть» без ответа (invoke без таймаута). */
@@ -166,35 +165,8 @@ export async function fetchLinkPreview(url: string): Promise<{ data: LinkPreview
     return { data: null, error: null }
   }
 
-  type InvokeRet = Awaited<ReturnType<typeof supabase.functions.invoke>>
-  let invoked: InvokeRet
-  try {
-    invoked = await Promise.race([
-      supabase.functions.invoke('link-preview', { body: { url: u } }),
-      new Promise<never>((_, rej) => {
-        globalThis.setTimeout(() => rej(new Error('link_preview_timeout')), LINK_PREVIEW_INVOKE_MS)
-      }),
-    ])
-  } catch {
-    return { data: null, error: null }
-  }
-
-  const { data, error } = invoked
-  if (error) return { data: null, error: error.message }
-  if (!data || typeof data !== 'object') return { data: null, error: 'bad_preview' }
-  const r = data as Record<string, unknown>
-  if (typeof r.error === 'string' && r.error.trim()) return { data: null, error: r.error.trim() }
-  const out: LinkPreview = { url: typeof r.url === 'string' && r.url.trim() ? r.url.trim() : u }
-  if (typeof r.title === 'string' && r.title.trim()) out.title = r.title.trim()
-  if (typeof r.description === 'string' && r.description.trim()) out.description = r.description.trim()
-  if (typeof r.image === 'string' && r.image.trim()) out.image = r.image.trim()
-  const siteName = (typeof r.siteName === 'string' && r.siteName.trim()
-    ? r.siteName
-    : typeof r.site_name === 'string' && r.site_name.trim()
-      ? r.site_name
-      : '') as string
-  if (siteName.trim()) out.siteName = siteName.trim()
-  if (!linkPreviewHasDisplayableMeta(out)) return { data: null, error: null }
-  return { data: out, error: null }
+  // Supabase Edge Function was removed. We'll restore link previews via backend later.
+  void LINK_PREVIEW_INVOKE_MS
+  return { data: null, error: null }
 }
 

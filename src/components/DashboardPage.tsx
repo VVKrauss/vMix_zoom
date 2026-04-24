@@ -17,14 +17,7 @@ import { listMessengerPeersByMessageCount } from '../lib/messenger'
 import type { ContactCard } from '../lib/socialGraph'
 import { listMyContacts } from '../lib/socialGraph'
 import { fetchPersistentSpaceRoomsForUser, type PersistentSpaceRoomRow } from '../lib/spaceRoom'
-import {
-  getSupabaseDirectOrigin,
-  getSupabaseProxyOrigin,
-  getSupabaseUseProxy,
-  isSupabaseProxyOriginConfigured,
-  setSupabaseUseProxy,
-  supabase,
-} from '../lib/supabase'
+// Supabase removed
 import type { StoredLayoutMode } from '../config/roomUiStorage'
 import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
 import { DashboardContactsIncomingModal } from './DashboardContactsIncomingModal'
@@ -160,9 +153,8 @@ export function DashboardPage() {
   const [deleteRoomFromListTarget, setDeleteRoomFromListTarget] = useState<RoomChatConversationSummary | null>(null)
   const [deleteRoomFromListBusy, setDeleteRoomFromListBusy] = useState(false)
   const [roomArchiveActionErr, setRoomArchiveActionErr] = useState<string | null>(null)
-  const [supabaseUseProxy] = useState(() => getSupabaseUseProxy())
-  const [dbDirectReachable, setDbDirectReachable] = useState<'unknown' | 'yes' | 'no'>('unknown')
-  const [dbViaProxyReachable, setDbViaProxyReachable] = useState<'unknown' | 'yes' | 'no'>('unknown')
+  const [dbDirectReachable] = useState<'unknown' | 'yes' | 'no'>('unknown')
+  const [dbViaProxyReachable] = useState<'unknown' | 'yes' | 'no'>('unknown')
 
   const refreshHiddenIncoming = useCallback(() => {
     if (!user?.id) {
@@ -177,71 +169,10 @@ export function DashboardPage() {
   }, [refreshHiddenIncoming, contactsTick])
 
   useEffect(() => {
-    if (!isSupabaseProxyOriginConfigured()) return
-    const direct = getSupabaseDirectOrigin()
-    const proxy = getSupabaseProxyOrigin()
-    if (!direct || !proxy) return
-
-    const PROBE_MS = 12_000
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
-    if (!anonKey?.trim()) return
-
-    /** PostgREST: как у supabase-js (apikey + Bearer anon). */
-    const restProbeHeaders: Record<string, string> = {
-      Accept: 'application/json',
-      apikey: anonKey,
-      Authorization: `Bearer ${anonKey}`,
-    }
-    /** GoTrue /health: только apikey для Kong; Bearer с anon иногда даёт 401 и дублирует шум в консоли. */
-    const healthProbeHeaders: Record<string, string> = {
-      Accept: 'application/json',
-      apikey: anonKey,
-    }
-
-    async function probeSupabaseReach(origin: string, signal: AbortSignal): Promise<'yes' | 'no'> {
-      try {
-        const health = await fetch(`${origin}/auth/v1/health`, {
-          method: 'GET',
-          signal,
-          headers: healthProbeHeaders,
-        })
-        if (health.ok) return 'yes'
-        if (health.status >= 500) return 'no'
-        const rest = await fetch(`${origin}/rest/v1/`, {
-          method: 'GET',
-          signal,
-          headers: restProbeHeaders,
-        })
-        return rest.status >= 500 ? 'no' : 'yes'
-      } catch {
-        return 'no'
-      }
-    }
-
-    let cancelled = false
-    const acDirect = new AbortController()
-    const acProxy = new AbortController()
-    const tDirect = window.setTimeout(() => acDirect.abort(), PROBE_MS)
-    const tProxy = window.setTimeout(() => acProxy.abort(), PROBE_MS)
-
-    setDbDirectReachable('unknown')
-    setDbViaProxyReachable('unknown')
-
-    void probeSupabaseReach(direct, acDirect.signal).then((v) => {
-      if (!cancelled) setDbDirectReachable(v)
-    })
-    void probeSupabaseReach(proxy, acProxy.signal).then((v) => {
-      if (!cancelled) setDbViaProxyReachable(v)
-    })
-
-    return () => {
-      cancelled = true
-      acDirect.abort()
-      acProxy.abort()
-      window.clearTimeout(tDirect)
-      window.clearTimeout(tProxy)
-    }
-  }, [])
+    // legacy Supabase proxy probes removed
+    void dbDirectReachable
+    void dbViaProxyReachable
+  }, [dbDirectReachable, dbViaProxyReachable])
 
   useEffect(() => {
     if (!profile) return
@@ -368,38 +299,10 @@ export function DashboardPage() {
   const handleSaveRoomPrefs = async (event: FormEvent) => {
     event.preventDefault()
     if (!user) return
-    setRoomSaving(true)
-    setRoomSaveMsg(null)
-    setRoomSaveErr(null)
-
-    const { data, error: fetchErr } = await supabase
-      .from('users')
-      .select('room_ui_preferences')
-      .eq('id', user.id)
-      .single()
-
-    if (fetchErr) {
-      setRoomSaving(false)
-      setRoomSaveErr(fetchErr.message)
-      return
-    }
-
-    const merged = mergeRoomUiPrefs(data?.room_ui_preferences)
-    const next = {
-      layout_mode: roomLayout,
-      show_layout_toggle: roomShowLayoutToggle,
-      hide_video_letterboxing: roomHideVideoLetterboxing,
-      ...(merged.pip ? { pip: { pos: merged.pip.pos, size: merged.pip.size } } : {}),
-    }
-
-    const { error: upErr } = await supabase
-      .from('users')
-      .update({ room_ui_preferences: next, updated_at: new Date().toISOString() })
-      .eq('id', user.id)
-
+    // Supabase removed; backend persistence for room prefs not implemented yet.
     setRoomSaving(false)
-    if (upErr) setRoomSaveErr(upErr.message)
-    else setRoomSaveMsg('Сохранено')
+    setRoomSaveMsg(null)
+    setRoomSaveErr('Сохранение настроек комнаты пока недоступно.')
   }
 
   const persistentSlugs = useMemo(() => new Set(myRooms.map((r) => r.slug)), [myRooms])
@@ -627,87 +530,7 @@ export function DashboardPage() {
           <div className="dashboard-tile__flex-fill" aria-hidden />
         </section>
 
-        {isSupabaseProxyOriginConfigured() ? (
-          <section className="dashboard-tile dashboard-tile--supabase-proxy">
-            <h2 className="dashboard-tile__title">Прокси к базе</h2>
-            <div className="dashboard-form dashboard-form--compact">
-              <div
-                className="dashboard-supabase-db-probes"
-                role="status"
-                aria-live="polite"
-              >
-                <div
-                  className="dashboard-supabase-db-probe"
-                  title={`${getSupabaseDirectOrigin()}/auth/v1/health`}
-                >
-                  <span
-                    className={
-                      dbDirectReachable === 'yes'
-                        ? 'dashboard-supabase-proxy-dot dashboard-supabase-proxy-dot--ok'
-                        : dbDirectReachable === 'no'
-                          ? 'dashboard-supabase-proxy-dot dashboard-supabase-proxy-dot--bad'
-                          : 'dashboard-supabase-proxy-dot dashboard-supabase-proxy-dot--pending'
-                    }
-                    aria-hidden
-                  />
-                  <span className="dashboard-supabase-db-probe__label">Без прокси</span>
-                  <span
-                    className={
-                      dbDirectReachable === 'yes'
-                        ? 'dashboard-supabase-proxy-status-text dashboard-supabase-proxy-status-text--ok'
-                        : dbDirectReachable === 'no'
-                          ? 'dashboard-supabase-proxy-status-text dashboard-supabase-proxy-status-text--bad'
-                          : 'dashboard-supabase-proxy-status-text dashboard-supabase-proxy-status-text--pending'
-                    }
-                  >
-                    {dbDirectReachable === 'yes' ? 'есть' : dbDirectReachable === 'no' ? 'нет' : '…'}
-                  </span>
-                </div>
-                <div
-                  className="dashboard-supabase-db-probe"
-                  title={`${getSupabaseProxyOrigin()}/auth/v1/health`}
-                >
-                  <span
-                    className={
-                      dbViaProxyReachable === 'yes'
-                        ? 'dashboard-supabase-proxy-dot dashboard-supabase-proxy-dot--ok'
-                        : dbViaProxyReachable === 'no'
-                          ? 'dashboard-supabase-proxy-dot dashboard-supabase-proxy-dot--bad'
-                          : 'dashboard-supabase-proxy-dot dashboard-supabase-proxy-dot--pending'
-                    }
-                    aria-hidden
-                  />
-                  <span className="dashboard-supabase-db-probe__label">Через прокси</span>
-                  <span
-                    className={
-                      dbViaProxyReachable === 'yes'
-                        ? 'dashboard-supabase-proxy-status-text dashboard-supabase-proxy-status-text--ok'
-                        : dbViaProxyReachable === 'no'
-                          ? 'dashboard-supabase-proxy-status-text dashboard-supabase-proxy-status-text--bad'
-                          : 'dashboard-supabase-proxy-status-text dashboard-supabase-proxy-status-text--pending'
-                    }
-                  >
-                    {dbViaProxyReachable === 'yes' ? 'есть' : dbViaProxyReachable === 'no' ? 'нет' : '…'}
-                  </span>
-                </div>
-              </div>
-              <div className="dashboard-field" style={{ marginTop: 12 }}>
-                <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-supabase-proxy-toggle-row">
-                  <span className="dashboard-field__label">Включить прокси</span>
-                  <PillToggle
-                    checked={supabaseUseProxy}
-                    onCheckedChange={(next) => {
-                      if (next === supabaseUseProxy) return
-                      setSupabaseUseProxy(next)
-                      window.location.reload()
-                    }}
-                    ariaLabel="Включить прокси для запросов к базе"
-                  />
-                </div>
-              </div>
-            </div>
-          </section>
-        ) : null}
+        {null}
 
         <section className="dashboard-tile dashboard-tile--contact-privacy">
           <h2 className="dashboard-tile__title">Приватность</h2>

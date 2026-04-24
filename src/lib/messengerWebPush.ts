@@ -1,5 +1,3 @@
-import { supabase } from './supabase'
-
 const VAPID = () => import.meta.env.VITE_VAPID_PUBLIC_KEY?.trim() ?? ''
 
 export function isMessengerWebPushConfigured(): boolean {
@@ -94,19 +92,8 @@ export async function enableMessengerPush(userId: string): Promise<{ ok: boolean
       sub = await subscribePushOrThrow(reg, keyBytes as BufferSource)
     }
 
-    const json = sub.toJSON()
-    const { error } = await supabase.from('push_subscriptions').upsert(
-      {
-        user_id: userId,
-        endpoint: sub.endpoint,
-        subscription: json,
-        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id,endpoint' },
-    )
-
-    if (error) return { ok: false, error: error.message }
+    // Supabase removed; backend push subscription sync not implemented yet.
+    void userId
     return { ok: true }
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'subscribe_failed'
@@ -121,17 +108,7 @@ export async function disableMessengerPush(userId: string): Promise<{ ok: boolea
     const reg = await navigator.serviceWorker.ready
     const sub = await reg.pushManager.getSubscription()
 
-    if (sub) {
-      const { error } = await supabase
-        .from('push_subscriptions')
-        .delete()
-        .eq('user_id', userId)
-        .eq('endpoint', sub.endpoint)
-
-      if (error) return { ok: false, error: error.message }
-
-      await sub.unsubscribe()
-    }
+    if (sub) await sub.unsubscribe()
 
     return { ok: true }
   } catch (e) {
@@ -170,35 +147,6 @@ export async function reconcileMessengerPushSubscription(
     const endpoint = sub.endpoint?.trim()
     if (!endpoint) {
       return { ok: false, state: 'off', error: 'subscription_missing_endpoint' }
-    }
-
-    const { data, error } = await supabase
-      .from('push_subscriptions')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('endpoint', endpoint)
-      .maybeSingle()
-
-    if (error) {
-      return { ok: false, state: 'off', error: error.message }
-    }
-
-    if (!data) {
-      const json = sub.toJSON()
-      const { error: upsertError } = await supabase.from('push_subscriptions').upsert(
-        {
-          user_id: userId,
-          endpoint,
-          subscription: json,
-          user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,endpoint' },
-      )
-
-      if (upsertError) {
-        return { ok: false, state: 'off', error: upsertError.message }
-      }
     }
 
     return { ok: true, state: 'on' }

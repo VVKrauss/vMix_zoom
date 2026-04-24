@@ -9,7 +9,7 @@ import {
 import type { MessengerConversationSummary } from '../lib/messengerConversations'
 import { DM_PAGE_SIZE, MARK_DIRECT_READ_DEBOUNCE_MS, sortDirectMessagesChrono } from '../lib/messengerDashboardUtils'
 import { playMessageSound } from '../lib/messengerSound'
-import { supabase } from '../lib/supabase'
+import { getBackendSocket, refreshBackendSocketAuth } from '../lib/backend/socket'
 
 /**
  * Realtime по открытому direct-треду: INSERT/DELETE/UPDATE в chat_messages, звук, ресинк при ошибке канала.
@@ -49,7 +49,6 @@ export function useMessengerDirectThreadRealtime(opts: {
     const kind = itemsRef.current.find((i) => i.id === convId)?.kind ?? 'direct'
     if (kind !== 'direct') return
 
-    let sawSubscribed = false
     let markReadDebounce: ReturnType<typeof setTimeout> | null = null
     const scheduleMarkRead = () => {
       if (markReadDebounce != null) clearTimeout(markReadDebounce)
@@ -90,128 +89,48 @@ export function useMessengerDirectThreadRealtime(opts: {
       )
     }
 
-    const channel = supabase
-      .channel(`dm-thread:${convId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `conversation_id=eq.${convId}`,
-        },
-        (payload) => {
-          const row = payload.new as Record<string, unknown>
-          if (!row?.id) return
-          const msg = mapDirectMessageFromRow(row)
-          const isOwn = msg.senderUserId === uid
-          const skipSidebarBump =
-            isOwn && (msg.kind === 'text' || msg.kind === 'reaction' || msg.kind === 'image' || msg.kind === 'audio')
+    refreshBackendSocketAuth()
+    const socket = getBackendSocket()
+    const room = `dm:${convId}`
 
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === msg.id)) return prev
-            let base = prev
-            if (isOwn) {
-              const i = prev.findIndex(
-                (m) =>
-                  m.id.startsWith('local-') &&
-                  m.senderUserId === msg.senderUserId &&
-                  m.body === msg.body &&
-                  m.kind === msg.kind &&
-                  (m.meta?.react_to ?? '') === (msg.meta?.react_to ?? '') &&
-                  (m.replyToMessageId ?? '') === (msg.replyToMessageId ?? '') &&
-                  JSON.stringify(m.meta ?? null) === JSON.stringify(msg.meta ?? null),
-              )
-              if (i !== -1) base = [...prev.slice(0, i), ...prev.slice(i + 1)]
-            }
-            const next = [...base, msg]
-            next.sort(sortDirectMessagesChrono)
-            return next
-          })
-
-          queueMicrotask(() => bumpScrollIfPinned())
-
-          if (!skipSidebarBump && msg.kind !== 'reaction') {
-            bumpSidebarForInsert(msg)
-            if (!isOwn) scheduleMarkRead()
-          }
-          if (
-            !isOwn &&
-            document.hidden &&
-            !mutedConversationIdsRef.current.has(convId) &&
-            msg.kind !== 'reaction'
-          ) {
-            playMessageSound()
-          }
-        },
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `conversation_id=eq.${convId}`,
-        },
-        (payload) => {
-          const oldRow = payload.old as Record<string, unknown>
-          const id = typeof oldRow?.id === 'string' ? oldRow.id : ''
-          if (!id) return
-
-          setMessages((prev) => prev.filter((m) => m.id !== id))
-
-          if (reactionDeleteSidebarSyncedRef.current.has(id)) {
-            reactionDeleteSidebarSyncedRef.current.delete(id)
-            return
-          }
-
-          setItems((prev) =>
-            prev.map((item) =>
-              item.id === convId
-                ? { ...item, messageCount: Math.max(0, item.messageCount - 1) }
-                : item,
-            ),
-          )
-          setActiveConversation((prev) =>
-            prev && prev.id === convId
-              ? { ...prev, messageCount: Math.max(0, prev.messageCount - 1) }
-              : prev,
-          )
-        },
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `conversation_id=eq.${convId}`,
-        },
-        (payload) => {
-          const row = payload.new as Record<string, unknown>
-          if (!row?.id) return
-          const msg = mapDirectMessageFromRow(row)
-          setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)))
-          queueMicrotask(() => bumpScrollIfPinned())
-        },
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          sawSubscribed = true
-          return
-        }
-        if (!sawSubscribed || (status !== 'CHANNEL_ERROR' && status !== 'TIMED_OUT')) return
-        void (async () => {
-          const res = await listDirectMessagesPage(convId, { limit: DM_PAGE_SIZE })
-          if (res.error || !res.data?.length) return
-          mergeLatestPageIntoMessages(convId, res.data)
-          bumpScrollIfPinned()
-        })()
+    const onNew = (payload: { conversationId: string; message: any }) => {
+      if (payload.conversationId !== convId) return
+      const row = payload.message as Record<string, unknown>
+      if (!row?.id) return
+      const msg = mapDirectMessageFromRow({
+        id: row.id,
+        sender_user_id: row.senderUserId,
+        sender_name_snapshot: row.senderNameSnapshot,
+        kind: row.kind,
+        body: row.body,
+        meta: row.meta,
+        created_at: row.createdAt,
+        edited_at: row.editedAt,
+        reply_to_message_id: row.replyToMessageId,
       })
+
+      const isOwn = msg.senderUserId === uid
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === msg.id)) return prev
+        const next = [...prev, msg]
+        next.sort(sortDirectMessagesChrono)
+        return next
+      })
+      queueMicrotask(() => bumpScrollIfPinned())
+      bumpSidebarForInsert(msg)
+      if (!isOwn) scheduleMarkRead()
+      if (!isOwn && document.hidden && !mutedConversationIdsRef.current.has(convId) && msg.kind !== 'reaction') {
+        playMessageSound()
+      }
+    }
+
+    socket.on('dm:message:new', onNew)
+    socket.emit('room:join', { room })
 
     return () => {
       if (markReadDebounce != null) clearTimeout(markReadDebounce)
-      void supabase.removeChannel(channel)
+      socket.off('dm:message:new', onNew)
+      socket.emit('room:leave', { room })
     }
   }, [threadConversationId, listOnlyMobile, userId, bumpScrollIfPinned, mergeLatestPageIntoMessages])
 }

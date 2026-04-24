@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
 import type { SpaceRoomChatVisibility } from '../lib/spaceRoom'
 
 export type SpaceRoomAccessMode = 'link' | 'approval' | 'invite_only'
@@ -58,21 +57,8 @@ export function useSpaceRoomSettings(roomSlug: string | undefined): {
       setLoading(false)
       return
     }
-    void supabase
-      .from('space_rooms')
-      .select('slug, host_user_id, chat_visibility, access_mode, status, room_admin_user_ids')
-      .eq('slug', slug)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (error) {
-          console.warn('useSpaceRoomSettings:', error.message)
-          setRow(null)
-          setLoading(false)
-          return
-        }
-        setRow(parseRow(data as Record<string, unknown>))
-        setLoading(false)
-      })
+    setRow(null)
+    setLoading(false)
   }, [slug])
 
   useEffect(() => {
@@ -86,21 +72,8 @@ export function useSpaceRoomSettings(roomSlug: string | undefined): {
   }, [slug, refresh])
 
   useEffect(() => {
-    if (!slug) return
-    const ch = supabase
-      .channel(`space_room:${slug}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'space_rooms', filter: `slug=eq.${slug}` },
-        (payload) => {
-          const next = payload.new as Record<string, unknown> | undefined
-          if (next) setRow(parseRow(next))
-        },
-      )
-      .subscribe()
-    return () => {
-      void supabase.removeChannel(ch)
-    }
+    // Supabase realtime removed
+    void slug
   }, [slug])
 
   return { row, loading, refresh }

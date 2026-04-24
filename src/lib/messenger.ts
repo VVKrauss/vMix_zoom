@@ -2,7 +2,7 @@ import type { ReactionEmoji } from '../types/roomComms'
 import { REACTION_EMOJI_WHITELIST } from '../types/roomComms'
 import { isPostDraftV1 } from './postEditor/draftUtils'
 import type { PostDraftV1 } from './postEditor/types'
-import { supabase } from './supabase'
+import { apiFetch } from './backend/client'
 
 /** Событие для мгновенного пересчёта бейджа непрочитанных (см. useMessengerUnreadCount). */
 export const MESSENGER_UNREAD_REFRESH_EVENT = 'vmix:messenger-unread-refresh'
@@ -379,68 +379,14 @@ function unwrapRpcJsonData(data: unknown): unknown {
   return data
 }
 
-async function fetchDirectPeerDmReceiptContextMembersOnly(
-  conversationId: string,
-  uid: string,
-): Promise<{ data: DirectPeerDmReceiptContext | null; error: string | null }> {
-  const cid = conversationId.trim()
-  const { data, error } = await supabase
-    .from('chat_conversation_members')
-    .select('user_id, last_read_at')
-    .eq('conversation_id', cid)
-  if (error) return { data: null, error: error.message }
-  const peer = (data ?? []).find((r: { user_id?: string }) => r.user_id && r.user_id !== uid)
-  const lastReadAt = parseUnknownTimestampToIso(peer?.last_read_at)
-  return {
-    data: { lastReadAt, peerReceiptsPrivate: false },
-    error: null,
-  }
-}
-
-/** Загрузка `last_read_at` и `profile_dm_receipts_private` собеседника через RPC (обход RLS на `users`). */
 export async function fetchDirectPeerDmReceiptContext(
   conversationId: string,
 ): Promise<{ data: DirectPeerDmReceiptContext | null; error: string | null }> {
-  const { data: auth } = await supabase.auth.getUser()
-  const uid = auth.user?.id
-  if (!uid) return { data: null, error: 'auth' }
   const cid = conversationId.trim()
   if (!cid) return { data: null, error: 'conversation_required' }
-
-  const { data: rawRpc, error } = await supabase.rpc('get_direct_peer_read_receipt_context', {
-    p_conversation_id: cid,
-  })
-  const msg = error?.message ?? ''
-  const rpcMissing =
-    error &&
-    (msg.includes('get_direct_peer_read_receipt_context') ||
-      /schema cache|does not exist|PGRST202/i.test(msg) ||
-      (error as { code?: string }).code === '42883')
-  if (error && rpcMissing) {
-    return fetchDirectPeerDmReceiptContextMembersOnly(cid, uid)
-  }
-  if (error) return { data: null, error: error.message }
-
-  const data = unwrapRpcJsonData(rawRpc)
-  if (!data || typeof data !== 'object') return { data: null, error: 'rpc_invalid' }
-  const j = data as Record<string, unknown>
-  if (j.ok !== true && j.ok !== 'true') {
-    const err = typeof j.error === 'string' ? j.error : 'rpc_failed'
-    return { data: null, error: err }
-  }
-
-  let lastReadAt = parseUnknownTimestampToIso(j.peer_last_read_at)
-  const peerReceiptsPrivate = j.peer_dm_receipts_private === true
-
-  if (!lastReadAt) {
-    const fb = await fetchDirectPeerDmReceiptContextMembersOnly(cid, uid)
-    if (fb.data?.lastReadAt) lastReadAt = fb.data.lastReadAt
-  }
-
-  return {
-    data: { lastReadAt, peerReceiptsPrivate },
-    error: null,
-  }
+  // Supabase receipt-context RPC is not available after backend migration.
+  // For now we return "no receipt info" (UI should degrade gracefully).
+  return { data: { lastReadAt: null, peerReceiptsPrivate: false }, error: null }
 }
 
 /** Статусы исходящего в ЛС: контур / половина / полный круг (без галочек). */
@@ -543,54 +489,20 @@ function mapDirectConversationRow(row: Record<string, unknown>): DirectConversat
 async function attachConversationAvatars(
   items: DirectConversationSummary[],
 ): Promise<DirectConversationSummary[]> {
-  const userIds = Array.from(
-    new Set(
-      items
-        .map((item) => item.otherUserId?.trim() ?? '')
-        .filter(Boolean),
-    ),
-  )
-
-  if (userIds.length === 0) return items
-
-  const { data, error } = await supabase
-    .from('users')
-    .select('id, avatar_url')
-    .in('id', userIds)
-
-  if (error) return items
-
-  const avatarMap = new Map<string, string | null>()
-  for (const row of data ?? []) {
-    const id = typeof row.id === 'string' ? row.id : ''
-    if (!id) continue
-    avatarMap.set(id, typeof row.avatar_url === 'string' && row.avatar_url.trim() ? row.avatar_url.trim() : null)
-  }
-
-  return items.map((item) => ({
-    ...item,
-    avatarUrl: item.otherUserId
-      ? item.avatarUrl ?? avatarMap.get(item.otherUserId) ?? null
-      : null,
-  }))
+  // Supabase removed; avatar URLs должны приходить из backend `/dm` (или будут null).
+  return items
 }
 
 export async function ensureSelfDirectConversation(): Promise<{ data: string | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('ensure_self_direct_conversation')
-  if (error) return { data: null, error: error.message }
-  return { data: typeof data === 'string' ? data : null, error: null }
+  // not supported in new backend yet
+  return { data: null, error: null }
 }
 
 export async function listDirectConversationsForUser(
 ): Promise<{ data: DirectConversationSummary[] | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('list_my_direct_conversations')
-  if (error) return { data: null, error: error.message }
-  const mapped = (data ?? []).map((row: unknown) => mapDirectConversationRow(row as Record<string, unknown>))
-  const withAvatars = await attachConversationAvatars(mapped)
-  return {
-    data: withAvatars,
-    error: null,
-  }
+  const res = await apiFetch<{ items: DirectConversationSummary[] }>('/dm')
+  if (res.error || !res.data) return { data: null, error: res.error ?? 'dm_list_failed' }
+  return { data: res.data.items ?? [], error: null }
 }
 
 export async function getDirectConversationForUser(
@@ -647,77 +559,48 @@ export async function listDirectMessagesPage(
   conversationId: string,
   options?: { before?: { createdAt: string; id: string }; limit?: number },
 ): Promise<{ data: DirectMessage[] | null; error: string | null; hasMoreOlder: boolean }> {
-  const limit = Math.min(
-    Math.max(options?.limit ?? 50, 1),
-    DIRECT_MESSAGES_PAGE_MAX,
-  )
+  const limit = Math.min(Math.max(options?.limit ?? 50, 1), DIRECT_MESSAGES_PAGE_MAX)
   const before = options?.before
-
-  const convo = await getDirectConversationForUser(conversationId)
-  if (convo.error) return { data: null, error: convo.error, hasMoreOlder: false }
-  if (!convo.data) return { data: null, error: 'Чат не найден', hasMoreOlder: false }
-
-  let query = supabase
-    .from('chat_messages')
-    .select('id, sender_user_id, sender_name_snapshot, kind, body, meta, created_at, edited_at, reply_to_message_id')
-    .eq('conversation_id', conversationId)
-    .order('created_at', { ascending: false })
-    .order('id', { ascending: false })
-    .limit(limit)
-
-  if (before) {
-    const ts = escapePostgrestQuotedTimestamp(before.createdAt)
-    const bid = before.id.trim()
-    query = query.or(`and(created_at.eq."${ts}",id.lt.${bid}),created_at.lt."${ts}"`)
+  const qs = new URLSearchParams()
+  qs.set('limit', String(limit))
+  if (before?.createdAt && before?.id) {
+    qs.set('beforeCreatedAt', before.createdAt)
+    qs.set('beforeId', before.id)
   }
-
-  const { data, error } = await query
-
-  if (error) return { data: null, error: error.message, hasMoreOlder: false }
-
-  const rows = (data ?? []) as Record<string, unknown>[]
-  const chronological = [...rows].reverse().map((row) => mapDirectMessageFromRow(row))
-  const hasMoreOlder = rows.length === limit
-  return { data: chronological, error: null, hasMoreOlder }
+  const res = await apiFetch<{ items: DirectMessage[]; hasMoreOlder: boolean }>(
+    `/dm/${encodeURIComponent(conversationId)}/messages?${qs.toString()}`,
+  )
+  if (res.error || !res.data) return { data: null, error: res.error ?? 'dm_messages_failed', hasMoreOlder: false }
+  return { data: res.data.items ?? [], error: null, hasMoreOlder: Boolean(res.data.hasMoreOlder) }
 }
 
 export async function ensureDirectConversationWithUser(
   targetUserId: string,
   targetTitle?: string | null,
 ): Promise<{ data: string | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('ensure_direct_conversation_with_user', {
-    p_target_user_id: targetUserId,
-    p_target_title: targetTitle ?? null,
+  const res = await apiFetch<{ conversationId: string }>('/dm', {
+    method: 'POST',
+    body: JSON.stringify({ targetUserId, title: targetTitle ?? null }),
   })
-  if (error) {
-    const msg = error.message
-    if (msg.includes('dm_not_allowed')) {
-      return {
-        data: null,
-        error: 'Этот пользователь принимает личные сообщения только от взаимных контактов.',
-      }
-    }
-    return { data: null, error: msg }
-  }
-  return { data: typeof data === 'string' ? data : null, error: null }
+  if (res.error || !res.data) return { data: null, error: res.error ?? 'dm_ensure_failed' }
+  return { data: res.data.conversationId ?? null, error: null }
 }
 
 export async function markDirectConversationRead(
   conversationId: string,
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase.rpc('mark_direct_conversation_read', {
-    p_conversation_id: conversationId,
+  const res = await apiFetch<{ ok: true }>(`/dm/${encodeURIComponent(conversationId)}/read`, {
+    method: 'POST',
+    body: JSON.stringify({ lastReadAt: new Date().toISOString() }),
   })
-  if (!error) requestMessengerUnreadRefresh()
-  return { error: error?.message ?? null }
+  if (!res.error) requestMessengerUnreadRefresh()
+  return { error: res.error }
 }
 
 export async function getDirectUnreadCount(): Promise<{ data: number | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('list_my_direct_conversations')
-  if (error) return { data: null, error: error.message }
-  const count = Array.isArray(data)
-    ? data.reduce((sum: number, row: Record<string, unknown>) => sum + (typeof row.unread_count === 'number' ? row.unread_count : Number(row.unread_count ?? 0) || 0), 0)
-    : 0
+  const list = await listDirectConversationsForUser()
+  if (list.error) return { data: null, error: list.error }
+  const count = (list.data ?? []).reduce((sum, row) => sum + (row.unreadCount ?? 0), 0)
   return { data: count, error: null }
 }
 
@@ -744,19 +627,24 @@ export async function appendDirectMessage(
     replyToMessageId?: string | null
   },
 ): Promise<{ data: AppendDirectMessageResult | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('append_direct_message', {
-    p_conversation_id: conversationId,
-    p_body: body,
-    p_kind: options?.kind ?? 'text',
-    p_meta: options?.meta ?? null,
-    p_reply_to_message_id: options?.replyToMessageId?.trim() || null,
-  })
-
-  if (error) return { data: null, error: error.message }
-  return {
-    data: parseAppendDirectMessageRpcPayload(data),
-    error: null,
+  const kind: DirectMessageKind = options?.kind ?? 'text'
+  if (kind !== 'text' && kind !== 'image' && kind !== 'audio') {
+    return { data: null, error: 'kind_not_supported' }
   }
+  const res = await apiFetch<{ messageId: string; createdAt: string }>(
+    `/dm/${encodeURIComponent(conversationId)}/messages`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        kind,
+        body,
+        meta: options?.meta ?? null,
+        replyToMessageId: options?.replyToMessageId?.trim() || null,
+      }),
+    },
+  )
+  if (res.error || !res.data) return { data: null, error: res.error ?? 'send_failed' }
+  return { data: { messageId: res.data.messageId ?? null, createdAt: res.data.createdAt ?? null }, error: null }
 }
 
 export type ToggleDirectMessageReactionResult = {
@@ -788,13 +676,14 @@ export async function toggleDirectMessageReaction(
   targetMessageId: string,
   emoji: ReactionEmoji,
 ): Promise<{ data: ToggleDirectMessageReactionResult | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('toggle_direct_message_reaction', {
-    p_conversation_id: conversationId,
-    p_target_message_id: targetMessageId,
-    p_emoji: emoji,
+  const res = await apiFetch<Record<string, unknown>>(`/dm/${encodeURIComponent(conversationId)}/reactions/toggle`, {
+    method: 'POST',
+    body: JSON.stringify({ targetMessageId, emoji }),
   })
-  if (error) return { data: null, error: error.message }
-  return { data: parseToggleDirectMessageReactionPayload(data), error: null }
+  if (res.error || !res.data) return { data: null, error: res.error ?? 'reaction_failed' }
+  const parsed = parseToggleDirectMessageReactionPayload(res.data)
+  if (!parsed) return { data: null, error: 'bad_response' }
+  return { data: parsed, error: null }
 }
 
 export async function editDirectMessage(
@@ -802,23 +691,23 @@ export async function editDirectMessage(
   messageId: string,
   newBody: string,
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase.rpc('edit_direct_message', {
-    p_conversation_id: conversationId.trim(),
-    p_message_id: messageId.trim(),
-    p_new_body: newBody,
+  const res = await apiFetch<{ ok: boolean }>(`/dm/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/edit`, {
+    method: 'POST',
+    body: JSON.stringify({ newBody }),
   })
-  return { error: error?.message ?? null }
+  if (res.error || !res.data) return { error: res.error ?? 'edit_failed' }
+  return { error: null }
 }
 
 export async function deleteDirectMessage(
   conversationId: string,
   messageId: string,
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase.rpc('delete_direct_message', {
-    p_conversation_id: conversationId.trim(),
-    p_message_id: messageId.trim(),
+  const res = await apiFetch<{ ok: boolean }>(`/dm/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/delete`, {
+    method: 'POST',
   })
-  return { error: error?.message ?? null }
+  if (res.error || !res.data) return { error: res.error ?? 'delete_failed' }
+  return { error: null }
 }
 
 /** Макс. размер исходного файла до пережатия в uploadMessengerImage. */
@@ -877,34 +766,47 @@ export async function uploadMessengerImage(
   conversationId: string,
   file: File,
 ): Promise<{ path: string | null; thumbPath: string | null; error: string | null }> {
-  const cid = conversationId.trim()
-  if (!cid) return { path: null, thumbPath: null, error: 'Нет чата' }
-  if (!file.type.startsWith('image/')) return { path: null, thumbPath: null, error: 'Нужен файл изображения' }
-  if (file.size > MESSENGER_PHOTO_INPUT_MAX_BYTES)
-    return { path: null, thumbPath: null, error: 'Файл слишком большой (макс. 20 МБ)' }
-
   try {
+    if (file.size > MESSENGER_PHOTO_INPUT_MAX_BYTES) return { path: null, thumbPath: null, error: 'file_too_large' }
     const { full, thumb } = await messengerImageFullAndThumbBlobs(file)
-    const id =
-      typeof crypto !== 'undefined' && 'randomUUID' in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-    const path = `${cid}/${id}.jpg`
-    const thumbPath = `${cid}/${id}_thumb.jpg`
-    const { error } = await supabase.storage.from('messenger-media').upload(path, full, {
-      contentType: 'image/jpeg',
-      upsert: false,
-    })
-    if (error) return { path: null, thumbPath: null, error: error.message }
-    const { error: thumbErr } = await supabase.storage.from('messenger-media').upload(thumbPath, thumb, {
-      contentType: 'image/jpeg',
-      upsert: false,
-    })
-    if (thumbErr) return { path, thumbPath: null, error: null }
-    return { path, thumbPath, error: null }
+
+    const presign = async (blob: Blob, fileName: string) => {
+      const pres = await apiFetch<{
+        file: { id: string }
+        upload: { method: string; url: string; headers?: Record<string, string> }
+      }>('/files/presign-upload', {
+        method: 'POST',
+        body: JSON.stringify({
+          purpose: 'messenger_media',
+          contentType: 'image/jpeg',
+          sizeBytes: blob.size,
+          fileName,
+        }),
+      })
+      if (pres.error || !pres.data) return { id: null as string | null, error: pres.error ?? 'presign_failed', upload: null as any }
+      return { id: pres.data.file.id, upload: pres.data.upload, error: null }
+    }
+
+    const upFull = await presign(full, `${conversationId}.jpg`)
+    if (upFull.error || !upFull.id) return { path: null, thumbPath: null, error: upFull.error }
+    const upThumb = await presign(thumb, `${conversationId}_thumb.jpg`)
+    if (upThumb.error || !upThumb.id) return { path: null, thumbPath: null, error: upThumb.error }
+
+    const put = async (upload: { url: string; headers?: Record<string, string> }, blob: Blob) => {
+      const headers = new Headers(upload.headers ?? {})
+      const r = await fetch(upload.url, { method: 'PUT', headers, body: blob })
+      if (!r.ok) throw new Error(`upload_failed:${r.status}`)
+    }
+
+    await put(upFull.upload, full)
+    await apiFetch('/files/complete-upload', { method: 'POST', body: JSON.stringify({ fileId: upFull.id }) })
+    await put(upThumb.upload, thumb)
+    await apiFetch('/files/complete-upload', { method: 'POST', body: JSON.stringify({ fileId: upThumb.id }) })
+
+    // We return file IDs as "path" / "thumbPath". Signed URL resolves via GET /files/:id.
+    return { path: upFull.id, thumbPath: upThumb.id, error: null }
   } catch (e) {
-    const msg = e instanceof Error ? e.message : 'upload_failed'
-    return { path: null, thumbPath: null, error: msg }
+    return { path: null, thumbPath: null, error: e instanceof Error ? e.message : 'upload_failed' }
   }
 }
 
@@ -913,24 +815,37 @@ export async function uploadMessengerAudio(
   conversationId: string,
   blob: Blob,
 ): Promise<{ path: string | null; error: string | null }> {
-  const cid = conversationId.trim()
-  if (!cid) return { path: null, error: 'Нет чата' }
-  if (blob.size > MESSENGER_AUDIO_MAX_BYTES)
-    return { path: null, error: 'Запись слишком длинная или файл слишком большой' }
-  const ext = extensionForAudioBlob(blob)
-  const id =
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-  const path = `${cid}/${id}.${ext}`
-  const ct =
-    blob.type && blob.type.startsWith('audio/') ? blob.type : ext === 'webm' ? 'audio/webm' : `audio/${ext}`
-  const { error } = await supabase.storage.from('messenger-media').upload(path, blob, {
-    contentType: ct,
-    upsert: false,
-  })
-  if (error) return { path: null, error: error.message }
-  return { path, error: null }
+  try {
+    if (blob.size > MESSENGER_AUDIO_MAX_BYTES) return { path: null, error: 'file_too_large' }
+    const ext = extensionForAudioBlob(blob)
+    const contentType = blob.type?.trim() || 'application/octet-stream'
+    const pres = await apiFetch<{
+      file: { id: string }
+      upload: { method: string; url: string; headers?: Record<string, string> }
+    }>('/files/presign-upload', {
+      method: 'POST',
+      body: JSON.stringify({
+        purpose: 'messenger_media',
+        contentType,
+        sizeBytes: blob.size,
+        fileName: `${conversationId}.${ext}`,
+      }),
+    })
+    if (pres.error || !pres.data) return { path: null, error: pres.error ?? 'presign_failed' }
+
+    const headers = new Headers(pres.data.upload.headers ?? {})
+    const r = await fetch(pres.data.upload.url, { method: 'PUT', headers, body: blob })
+    if (!r.ok) return { path: null, error: `upload_failed:${r.status}` }
+
+    const done = await apiFetch<{ ok: boolean }>('/files/complete-upload', {
+      method: 'POST',
+      body: JSON.stringify({ fileId: pres.data.file.id }),
+    })
+    if (done.error) return { path: null, error: done.error }
+    return { path: pres.data.file.id, error: null }
+  } catch (e) {
+    return { path: null, error: e instanceof Error ? e.message : 'upload_failed' }
+  }
 }
 
 /**
@@ -950,11 +865,10 @@ export async function getMessengerImageSignedUrl(
   storagePath: string,
   expiresSec = 3600,
 ): Promise<{ url: string | null; error: string | null }> {
-  const path = storagePath.trim()
-  if (!path) return { url: null, error: 'empty_path' }
-  const { data, error } = await supabase.storage
-    .from('messenger-media')
-    .createSignedUrl(path, expiresSec)
-  if (error) return { url: null, error: error.message }
-  return { url: data?.signedUrl ?? null, error: null }
+  void expiresSec
+  const id = storagePath.trim()
+  if (!id) return { url: null, error: 'validation_error' }
+  const res = await apiFetch<{ url: string }>(`/files/${encodeURIComponent(id)}`)
+  if (res.error || !res.data) return { url: null, error: res.error ?? 'signed_url_failed' }
+  return { url: res.data.url ?? null, error: null }
 }

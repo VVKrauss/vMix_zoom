@@ -1,9 +1,8 @@
-import { supabase } from './supabase'
+import { apiFetch } from './backend/client'
 
 export type ConversationMentionPick = {
   userId: string
   displayName: string
-  profileSlug: string
   avatarUrl: string | null
 }
 
@@ -12,24 +11,17 @@ export async function listConversationMembersForMentions(
 ): Promise<{ data: ConversationMentionPick[] | null; error: string | null }> {
   const cid = conversationId.trim()
   if (!cid) return { data: null, error: 'Нет чата' }
-  const { data, error } = await supabase.rpc('list_conversation_members_for_mentions', {
-    p_conversation_id: cid,
-  })
-  if (error) return { data: null, error: error.message }
-  const rows = Array.isArray(data) ? data : []
-  const out: ConversationMentionPick[] = rows
-    .map((r) => {
-      const row = r as Record<string, unknown>
-      const userId = typeof row.user_id === 'string' ? row.user_id.trim() : ''
-      const displayName =
-        typeof row.display_name === 'string' && row.display_name.trim() ? row.display_name.trim() : 'Пользователь'
-      const profileSlug = typeof row.profile_slug === 'string' ? row.profile_slug.trim() : ''
-      if (!userId || !profileSlug) return null
-      const avatarUrl =
-        typeof row.avatar_url === 'string' && row.avatar_url.trim() ? row.avatar_url.trim() : null
-      return { userId, displayName, profileSlug, avatarUrl }
-    })
-    .filter(Boolean) as ConversationMentionPick[]
+  const res = await apiFetch<{ items: { userId: string; displayName: string; avatarUrl: string | null }[] }>(
+    `/dm/${encodeURIComponent(cid)}/members`,
+  )
+  if (res.error || !res.data) return { data: null, error: res.error ?? 'request_failed' }
+  const out: ConversationMentionPick[] = (res.data.items ?? [])
+    .map((row) => ({
+      userId: String(row.userId ?? '').trim(),
+      displayName: String(row.displayName ?? '').trim() || 'Пользователь',
+      avatarUrl: row.avatarUrl ? String(row.avatarUrl) : null,
+    }))
+    .filter((x) => Boolean(x.userId))
   return { data: out, error: null }
 }
 
@@ -38,7 +30,7 @@ export async function markMyMentionsRead(
 ): Promise<{ error: string | null }> {
   const cid = conversationId.trim()
   if (!cid) return { error: 'Нет чата' }
-  const { error } = await supabase.rpc('mark_my_mentions_read', { p_conversation_id: cid })
-  return { error: error?.message ?? null }
+  // Пока не реализовано на backend
+  return { error: null }
 }
 

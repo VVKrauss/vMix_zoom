@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 
 type AdminAccessInfo = { staff?: boolean; superadmin?: boolean }
@@ -36,24 +35,10 @@ export function useCanAccessAdminPanel(): {
       setLoading(false)
       return
     }
-    let cancelled = false
-    setLoading(true)
-    void supabase.rpc('admin_access_info').then(({ data, error }) => {
-      if (cancelled) return
-      if (error) {
-        setAllowed(false)
-        setIsSuperadmin(false)
-        setLoading(false)
-        return
-      }
-      const info = parseAccessInfo(data)
-      setAllowed(info.staff === true)
-      setIsSuperadmin(info.superadmin === true)
-      setLoading(false)
-    })
-    return () => {
-      cancelled = true
-    }
+    // Admin panel is disabled until backend admin API is implemented.
+    setAllowed(false)
+    setIsSuperadmin(false)
+    setLoading(false)
   }, [uid])
 
   return { allowed, loading, isSuperadmin }

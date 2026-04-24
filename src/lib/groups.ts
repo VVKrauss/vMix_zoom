@@ -1,7 +1,7 @@
 import type { ReactionEmoji } from '../types/roomComms'
 import { REACTION_EMOJI_WHITELIST } from '../types/roomComms'
-import { supabase } from './supabase'
 import { mapDirectMessageFromRow, type DirectMessage } from './messenger'
+import { apiFetch } from './backend/client'
 
 export type GroupChatSummary = {
   id: string
@@ -47,42 +47,45 @@ export async function createGroupChat(
   title: string,
   isPublic: boolean,
 ): Promise<{ data: string | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('create_group_chat', { p_title: title, p_is_public: isPublic })
-  if (error) return { data: null, error: error.message }
-  return { data: typeof data === 'string' ? data : null, error: null }
+  const res = await apiFetch<{ conversationId: string }>('/groups', {
+    method: 'POST',
+    body: JSON.stringify({ title, isPublic }),
+  })
+  if (res.error || !res.data?.conversationId) return { data: null, error: res.error ?? 'not_created' }
+  return { data: res.data.conversationId, error: null }
 }
 
 export async function joinPublicGroupChat(conversationId: string): Promise<{ error: string | null }> {
-  const { data, error } = await supabase.rpc('join_public_group_chat', { p_conversation_id: conversationId.trim() })
-  if (error) return { error: error.message }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_joined' }
-  return { error: null }
+  const cid = conversationId.trim()
+  if (!cid) return { error: 'conversation_required' }
+  const res = await apiFetch<{ ok: true; joined: boolean }>(`/groups/${encodeURIComponent(cid)}/join`, { method: 'POST' })
+  return { error: res.error ?? null }
 }
 
 export async function leaveGroupChat(conversationId: string): Promise<{ error: string | null }> {
-  const { data, error } = await supabase.rpc('leave_group_chat', { p_conversation_id: conversationId.trim() })
-  if (error) return { error: error.message }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_left' }
-  return { error: null }
+  const cid = conversationId.trim()
+  if (!cid) return { error: 'conversation_required' }
+  const res = await apiFetch<{ ok: true; left: boolean }>(`/groups/${encodeURIComponent(cid)}/leave`, { method: 'POST' })
+  return { error: res.error ?? null }
 }
 
 export async function addUsersToGroupChat(conversationId: string, userIds: string[]): Promise<{ error: string | null; added: number }> {
-  const { data, error } = await supabase.rpc('add_users_to_group_chat', {
-    p_conversation_id: conversationId.trim(),
-    p_user_ids: userIds,
+  const cid = conversationId.trim()
+  const ids = [...new Set(userIds.map((x) => x.trim()).filter(Boolean))]
+  if (!cid) return { error: 'conversation_required', added: 0 }
+  if (ids.length === 0) return { error: null, added: 0 }
+  const res = await apiFetch<{ ok: true; added: number }>(`/groups/${encodeURIComponent(cid)}/members/add`, {
+    method: 'POST',
+    body: JSON.stringify({ userIds: ids }),
   })
-  if (error) return { error: error.message, added: 0 }
-  const row = data as Record<string, unknown> | null
-  const added = typeof row?.added === 'number' ? row!.added : Number(row?.added ?? 0) || 0
-  return { error: row && row.ok === false ? (typeof row.error === 'string' ? row.error : 'forbidden') : null, added }
+  if (res.error || !res.data) return { error: res.error ?? 'request_failed', added: 0 }
+  return { error: null, added: typeof res.data.added === 'number' ? res.data.added : Number(res.data.added ?? 0) || 0 }
 }
 
 export async function listMyGroupChats(): Promise<{ data: GroupChatSummary[] | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('list_my_group_chats')
-  if (error) return { data: null, error: error.message }
-  const rows = Array.isArray(data) ? data : []
+  const res = await apiFetch<{ items: Record<string, unknown>[] }>('/groups')
+  if (res.error || !res.data) return { data: null, error: res.error ?? 'request_failed' }
+  const rows = Array.isArray(res.data.items) ? res.data.items : []
   return { data: rows.map((r) => mapGroupRow(r as Record<string, unknown>)).filter((x) => x.id), error: null }
 }
 
@@ -94,18 +97,19 @@ export async function updateGroupProfile(args: {
   avatarPath?: string | null
   avatarThumbPath?: string | null
 }): Promise<{ error: string | null }> {
-  const { data, error } = await supabase.rpc('update_group_profile', {
-    p_conversation_id: args.conversationId.trim(),
-    p_title: args.title ?? null,
-    p_public_nick: args.publicNick ?? null,
-    p_is_public: args.isPublic ?? null,
-    p_avatar_path: args.avatarPath ?? null,
-    p_avatar_thumb_path: args.avatarThumbPath ?? null,
+  const cid = args.conversationId.trim()
+  if (!cid) return { error: 'conversation_required' }
+  const res = await apiFetch<{ ok: true }>(`/groups/${encodeURIComponent(cid)}/profile`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      title: args.title ?? null,
+      publicNick: args.publicNick ?? null,
+      isPublic: args.isPublic ?? null,
+      avatarPath: args.avatarPath ?? null,
+      avatarThumbPath: args.avatarThumbPath ?? null,
+    }),
   })
-  if (error) return { error: error.message }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_updated' }
-  return { error: null }
+  return { error: res.error ?? null }
 }
 
 export type InviteConversationPreview = {
@@ -141,11 +145,24 @@ function mapInvitePreviewRow(row: Record<string, unknown>): InviteConversationPr
 }
 
 export async function resolveConversationByInvite(token: string): Promise<{ data: InviteConversationPreview | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('resolve_conversation_by_invite', { p_token: token.trim() })
-  if (error) return { data: null, error: error.message }
-  const rows = Array.isArray(data) ? data : data ? [data] : []
-  const row = rows[0] as Record<string, unknown> | undefined
-  const mapped = row ? mapInvitePreviewRow(row) : null
+  const t = token.trim()
+  if (!t) return { data: null, error: 'token_required' }
+  const res = await apiFetch<{ ok: true; conversation: Record<string, unknown> }>(`/invites/${encodeURIComponent(t)}`)
+  if (res.error || !res.data?.conversation) return { data: null, error: res.error ?? 'request_failed' }
+  const c = res.data.conversation
+  const mapped: InviteConversationPreview = {
+    id: typeof c.id === 'string' ? c.id : String(c.id ?? ''),
+    kind: c.kind === 'channel' ? 'channel' : 'group',
+    title: typeof c.title === 'string' && c.title.trim() ? c.title.trim() : c.kind === 'channel' ? 'Канал' : 'Группа',
+    publicNick: typeof c.publicNick === 'string' && c.publicNick.trim() ? c.publicNick.trim() : null,
+    avatarPath: typeof c.avatarPath === 'string' && c.avatarPath.trim() ? c.avatarPath.trim() : null,
+    avatarThumbPath: typeof c.avatarThumbPath === 'string' && c.avatarThumbPath.trim() ? c.avatarThumbPath.trim() : null,
+    memberCount: typeof c.memberCount === 'number' ? c.memberCount : Number(c.memberCount ?? 0) || 0,
+    isPublic: c.isPublic === true,
+    postingMode: c.postingMode === 'everyone' ? 'everyone' : 'admins_only',
+    commentsMode: c.commentsMode === 'disabled' ? 'disabled' : 'everyone',
+  }
+  if (!mapped.id) return { data: null, error: 'request_failed' }
   return { data: mapped, error: null }
 }
 
@@ -153,30 +170,43 @@ export async function joinConversationByInvite(token: string): Promise<{
   data: { conversationId: string; kind: 'group' | 'channel'; joined?: boolean; requested?: boolean } | null
   error: string | null
 }> {
-  const { data, error } = await supabase.rpc('join_conversation_by_invite', { p_token: token.trim() })
-  if (error) return { data: null, error: error.message }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) return { data: null, error: typeof row?.error === 'string' ? row.error : 'not_joined' }
-  const conversationId = typeof row.conversation_id === 'string' ? row.conversation_id : ''
-  const kind = row.kind === 'channel' ? 'channel' : 'group'
-  if (!conversationId) return { data: null, error: 'not_joined' }
-  const joined = row.joined === true || row.already_member === true
-  const requested = row.requested === true
-  return { data: { conversationId, kind, ...(joined ? { joined: true } : {}), ...(requested ? { requested: true } : {}) }, error: null }
+  const t = token.trim()
+  if (!t) return { data: null, error: 'token_required' }
+  const res = await apiFetch<{ ok: true; conversationId: string; kind: 'group' | 'channel'; joined?: boolean; requested?: boolean }>(
+    `/invites/${encodeURIComponent(t)}/join`,
+    { method: 'POST' },
+  )
+  if (res.error || !res.data?.conversationId) return { data: null, error: res.error ?? 'request_failed' }
+  return {
+    data: {
+      conversationId: res.data.conversationId,
+      kind: res.data.kind === 'channel' ? 'channel' : 'group',
+      joined: res.data.joined,
+      requested: res.data.requested,
+    },
+    error: null,
+  }
 }
 
 export async function getOrCreateConversationInvite(conversationId: string): Promise<{ data: { token: string } | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('get_or_create_conversation_invite', { p_conversation_id: conversationId.trim() })
-  if (error) return { data: null, error: error.message }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) return { data: null, error: typeof row?.error === 'string' ? row.error : 'not_created' }
-  const token = typeof row.token === 'string' && row.token.trim() ? row.token.trim() : ''
-  return token ? { data: { token }, error: null } : { data: null, error: 'not_created' }
+  const cid = conversationId.trim()
+  if (!cid) return { data: null, error: 'conversation_required' }
+  const res = await apiFetch<{ ok: true; token: string }>('/invites', {
+    method: 'POST',
+    body: JSON.stringify({ conversationId: cid }),
+  })
+  if (res.error || !res.data?.token) return { data: null, error: res.error ?? 'request_failed' }
+  return { data: { token: res.data.token }, error: null }
 }
 
 export async function markGroupRead(conversationId: string): Promise<{ error: string | null }> {
-  const { error } = await supabase.rpc('mark_group_read', { p_conversation_id: conversationId.trim() })
-  return { error: error?.message ?? null }
+  const cid = conversationId.trim()
+  if (!cid) return { error: 'conversation_required' }
+  const res = await apiFetch<{ ok: true }>(`/groups/${encodeURIComponent(cid)}/read`, {
+    method: 'POST',
+    body: JSON.stringify({ lastReadAt: new Date().toISOString() }),
+  })
+  return { error: res.error ?? null }
 }
 
 function mapMessagesFromRows(rows: unknown): DirectMessage[] {
@@ -190,16 +220,20 @@ export async function listGroupMessagesPage(
 ): Promise<{ data: DirectMessage[] | null; error: string | null; hasMoreOlder: boolean }> {
   const limit = Math.max(1, Math.min(options?.limit ?? 50, 120))
   const before = options?.before
-  const { data, error } = await supabase.rpc('list_group_messages_page', {
-    p_conversation_id: conversationId.trim(),
-    p_limit: limit,
-    p_before_created_at: before?.createdAt ?? null,
-    p_before_id: before?.id ?? null,
-  })
-  if (error) return { data: null, error: error.message, hasMoreOlder: false }
-  // DB function returns chronological order already (ASC).
-  const chronological = mapMessagesFromRows(data)
-  return { data: chronological, error: null, hasMoreOlder: chronological.length === limit }
+  const cid = conversationId.trim()
+  if (!cid) return { data: null, error: 'conversation_required', hasMoreOlder: false }
+  const qs = new URLSearchParams()
+  qs.set('limit', String(limit))
+  if (before?.createdAt && before?.id) {
+    qs.set('beforeCreatedAt', before.createdAt)
+    qs.set('beforeId', before.id)
+  }
+  const res = await apiFetch<{ items: unknown[]; hasMoreOlder: boolean }>(
+    `/groups/${encodeURIComponent(cid)}/messages?${qs}`,
+  )
+  if (res.error || !res.data) return { data: null, error: res.error ?? 'request_failed', hasMoreOlder: false }
+  const chronological = mapMessagesFromRows(res.data.items)
+  return { data: chronological, error: null, hasMoreOlder: res.data.hasMoreOlder === true }
 }
 
 function parseOkMessageResult(data: unknown): { messageId: string | null; createdAt: string | null } {
@@ -220,15 +254,19 @@ export async function appendGroupMessage(
     replyToMessageId?: string | null
   },
 ): Promise<{ data: { messageId: string | null; createdAt: string | null } | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('append_group_message', {
-    p_conversation_id: conversationId.trim(),
-    p_body: args.body,
-    p_kind: args.kind ?? 'text',
-    p_meta: args.meta ?? null,
-    p_reply_to_message_id: args.replyToMessageId ?? null,
+  const cid = conversationId.trim()
+  if (!cid) return { data: null, error: 'conversation_required' }
+  const res = await apiFetch<{ messageId: string; createdAt: string }>(`/groups/${encodeURIComponent(cid)}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      kind: args.kind ?? 'text',
+      body: args.body,
+      meta: args.meta ?? null,
+      replyToMessageId: args.replyToMessageId ?? null,
+    }),
   })
-  if (error) return { data: null, error: error.message }
-  return { data: parseOkMessageResult(data), error: null }
+  if (res.error || !res.data) return { data: null, error: res.error ?? 'not_sent' }
+  return { data: { messageId: res.data.messageId ?? null, createdAt: res.data.createdAt ?? null }, error: null }
 }
 
 export type ToggleGroupReactionResult = { action: 'added' | 'removed'; messageId: string; createdAt: string | null }
@@ -257,26 +295,27 @@ export async function toggleGroupMessageReaction(
   targetMessageId: string,
   emoji: ReactionEmoji,
 ): Promise<{ data: ToggleGroupReactionResult | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('toggle_group_message_reaction', {
-    p_conversation_id: conversationId.trim(),
-    p_target_message_id: targetMessageId.trim(),
-    p_emoji: emoji,
-  })
-  if (error) return { data: null, error: error.message }
-  return { data: parseToggleReaction(data), error: null }
+  const cid = conversationId.trim()
+  const tid = targetMessageId.trim()
+  if (!cid || !tid) return { data: null, error: 'validation' }
+  const res = await apiFetch<{ action: 'added' | 'removed'; messageId: string; createdAt: string | null }>(
+    `/groups/${encodeURIComponent(cid)}/reactions/toggle`,
+    { method: 'POST', body: JSON.stringify({ targetMessageId: tid, emoji }) },
+  )
+  if (res.error || !res.data) return { data: null, error: res.error ?? 'request_failed' }
+  return { data: { action: res.data.action, messageId: res.data.messageId, createdAt: res.data.createdAt }, error: null }
 }
 
 export async function deleteGroupMessage(
   conversationId: string,
   messageId: string,
 ): Promise<{ error: string | null }> {
-  const { data, error } = await supabase.rpc('delete_group_message', {
-    p_conversation_id: conversationId.trim(),
-    p_message_id: messageId.trim(),
+  const cid = conversationId.trim()
+  const mid = messageId.trim()
+  if (!cid || !mid) return { error: 'validation' }
+  const res = await apiFetch<{ ok: true; deleted: number }>(`/groups/${encodeURIComponent(cid)}/messages/${encodeURIComponent(mid)}`, {
+    method: 'DELETE',
   })
-  if (error) return { error: error.message }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_deleted' }
-  return { error: null }
+  return { error: res.error ?? null }
 }
 

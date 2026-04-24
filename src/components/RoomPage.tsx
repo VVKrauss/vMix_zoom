@@ -95,8 +95,6 @@ import {
   removeSpaceRoomAdminUser,
   type SpaceRoomChatVisibility,
 } from '../lib/spaceRoom'
-import { supabase } from '../lib/supabase'
-import type { RealtimeChannel } from '@supabase/supabase-js'
 import type { StudioOutputPreset } from '../types/studio'
 import { getContactStatuses, setContactPin, type ContactStatus } from '../lib/socialGraph'
 
@@ -562,7 +560,7 @@ export function RoomPage({
   const isDbSpaceRoomHost = useIsDbSpaceRoomHost(roomId, user?.id)
   const [chatContactStatuses, setChatContactStatuses] = useState<Record<string, ContactStatus>>({})
   /** Ref на Realtime-канал модерации (room-mod:slug) для отправки broadcast без создания дубля */
-  const modChannelRef = useRef<RealtimeChannel | null>(null)
+  const modChannelRef = useRef<null>(null)
   /** Запросы на вход (access_mode=approval) */
   const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([])
   const [roomManageModalOpen, setRoomManageModalOpen] = useState(false)
@@ -676,46 +674,14 @@ export function RoomPage({
     [user?.id, canEditSpaceRoomPolicies, roomId],
   )
 
-  // Supabase Realtime broadcast-канал комнаты: join-requests и host-transfer
+  // Realtime модерация комнаты (раньше было через Supabase Realtime). Пока отключено.
   useEffect(() => {
     const slug = roomId.trim()
     if (!slug) return
-
-    const ch = supabase
-      .channel(`room-mod:${slug}`, { config: { broadcast: { ack: false } } })
-      .on('broadcast', { event: 'join-request' }, (msg) => {
-        if (!isDbSpaceRoomHost) return
-        const payload = msg.payload as { requestId?: string; userId?: string | null; displayName?: string } | null
-        const requestId = typeof payload?.requestId === 'string' ? payload.requestId : `${Date.now()}`
-        const userId = typeof payload?.userId === 'string' ? payload.userId : null
-        const displayName = typeof payload?.displayName === 'string' && payload.displayName
-          ? payload.displayName
-          : userId ?? 'Участник'
-        setJoinRequests((prev) => {
-          if (prev.some((r) => r.requestId === requestId)) return prev
-          // Показываем тост о новом запросе
-          setJoinRequestToast(displayName)
-          if (joinRequestToastTimerRef.current) clearTimeout(joinRequestToastTimerRef.current)
-          joinRequestToastTimerRef.current = setTimeout(() => setJoinRequestToast(null), 5000)
-          return [...prev, { requestId, userId, displayName, receivedAt: Date.now() }]
-        })
-      })
-      .on('broadcast', { event: 'host-transfer-claimed' }, () => {
-        // Управление перехвачено другим устройством — очищаем session host
-        clearHostSessionIfMatches(slug)
-        setHostTransferredToast(true)
-        if (hostTransferToastTimerRef.current) clearTimeout(hostTransferToastTimerRef.current)
-        hostTransferToastTimerRef.current = setTimeout(() => {
-          setHostTransferredToast(false)
-        }, 6000)
-      })
-      .subscribe()
-
-    modChannelRef.current = ch
+    modChannelRef.current = null
 
     return () => {
       modChannelRef.current = null
-      void supabase.removeChannel(ch)
       if (hostTransferToastTimerRef.current) clearTimeout(hostTransferToastTimerRef.current)
     }
   }, [roomId, isDbSpaceRoomHost])
@@ -727,13 +693,7 @@ export function RoomPage({
 
       // Используем уже подписанный канал — создание нового дубля ломает Realtime
       const ch = modChannelRef.current
-      if (ch) {
-        void ch.send({
-          type: 'broadcast',
-          event: 'join-approved',
-          payload: { requestId: req.requestId, userId: req.userId },
-        })
-      }
+      void ch
 
       // Для авторизованных — дополнительно пишем в approved_joiners (для fallback и re-entry)
       if (req.userId) {
@@ -755,13 +715,7 @@ export function RoomPage({
       }
       // Уведомляем гостя через уже подписанный канал
       const ch = modChannelRef.current
-      if (ch) {
-        void ch.send({
-          type: 'broadcast',
-          event: 'join-request-denied',
-          payload: { requestId: req.requestId, userId: req.userId },
-        })
-      }
+      void ch
       setJoinRequests((prev) => prev.filter((r) => r.requestId !== req.requestId))
     },
     [roomId, user?.id],
@@ -818,7 +772,7 @@ export function RoomPage({
       : 'Отправка сообщений недоступна в текущем режиме чата.'
     : null
 
-  const avatarUrl = user?.user_metadata?.avatar_url as string | undefined
+  const avatarUrl = undefined
   const messengerUnreadCount = useMessengerUnreadCount()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
@@ -1352,7 +1306,7 @@ export function RoomPage({
       name={name}
       isMuted={isMuted}
       isCamOff={isCamOff}
-      avatarUrl={user?.user_metadata?.avatar_url as string | undefined}
+      avatarUrl={undefined}
       videoStyle={localCameraTileVideoStyle}
       showInfo={showInfo}
       showMeter={showMeter}

@@ -2,7 +2,6 @@ import { listMyChannels, type ChannelSummary } from './channels'
 import { listMyGroupChats, type GroupChatSummary } from './groups'
 import { listDirectConversationsForUser, type DirectConversationSummary } from './messenger'
 import { listMyContactDisplayOverrides, type MyContactDisplayOverride } from './socialGraph'
-import { supabase } from './supabase'
 
 export type MessengerConversationKind = 'direct' | 'group' | 'channel'
 
@@ -141,12 +140,7 @@ export async function listMessengerConversations(): Promise<{
   data: MessengerConversationSummary[] | null
   error: string | null
 }> {
-  const [d, g, c] = await Promise.all([
-    listDirectConversationsForUser(),
-    listMyGroupChats(),
-    listMyChannels(),
-  ])
-
+  const [d, g, c] = await Promise.all([listDirectConversationsForUser(), listMyGroupChats(), listMyChannels()])
   const err = d.error || g.error || c.error
   if (err) return { data: null, error: err }
 
@@ -230,15 +224,9 @@ export async function searchOpenPublicConversations(
   query: string,
   limit = 20,
 ): Promise<{ data: OpenPublicConversationSearchHit[] | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('search_open_public_conversations', {
-    p_query: query.trim(),
-    p_limit: limit,
-  })
-  if (error) return { data: null, error: error.message }
-  const rows = Array.isArray(data) ? data : []
-  const mapped = rows
-    .map((r) => mapOpenPublicSearchRow(r as Record<string, unknown>))
-    .filter((x): x is OpenPublicConversationSearchHit => x != null)
-  return { data: mapped, error: null }
+  // Not migrated yet (was Supabase RPC)
+  void query
+  void limit
+  return { data: [], error: null }
 }
 

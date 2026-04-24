@@ -6,7 +6,6 @@ import { useAuth } from '../../context/AuthContext'
 import { useProfile } from '../../hooks/useProfile'
 import { useStableMobileMessenger } from '../../hooks/useStableMobileMessenger'
 import { useToast } from '../../context/ToastContext'
-import { supabase } from '../../lib/supabase'
 import { truncateMessengerReplySnippet } from '../../lib/messengerUi'
 import { buildQuotePreview } from '../../lib/messengerQuotePreview'
 import { MESSENGER_COMPOSER_EMOJIS } from '../../lib/messengerComposerEmojis'
@@ -53,6 +52,8 @@ import { DraftLinkPreviewBar } from './DraftLinkPreviewBar'
 import { MessengerImageLightbox } from './MessengerImageLightbox'
 import { MessengerVoiceRecordBtn } from './MessengerVoiceRecordBtn'
 import { MentionAutocomplete } from './MentionAutocomplete'
+import { getBackendSocket, refreshBackendSocketAuth } from '../../lib/backend/socket'
+import { apiFetch } from '../../lib/backend/client'
 
 const QUICK_REACTION_EMOJI: ReactionEmoji = '❤️'
 
@@ -234,19 +235,14 @@ export function GroupThreadPane({
       setMyGroupMemberRole(null)
       return
     }
-    void supabase
-      .from('chat_conversation_members')
-      .select('role')
-      .eq('conversation_id', cid)
-      .eq('user_id', user.id)
-      .maybeSingle()
-      .then(({ data, error }) => {
+    void apiFetch<{ role: string | null }>(`/groups/${encodeURIComponent(cid)}/me`)
+      .then((res) => {
         if (cancelled) return
-        if (error || !data) {
+        if (res.error || !res.data) {
           setMyGroupMemberRole(null)
           return
         }
-        const r = typeof (data as { role?: unknown }).role === 'string' ? (data as { role: string }).role.trim() : null
+        const r = typeof res.data.role === 'string' && res.data.role.trim() ? res.data.role.trim() : null
         setMyGroupMemberRole(r)
       })
     return () => {
@@ -417,42 +413,48 @@ export function GroupThreadPane({
   useEffect(() => {
     const cid = conversationId.trim()
     if (!cid || !user?.id || !canView) return
-    const channel = supabase.channel(`group-thread:${cid}`)
-    const filter = `conversation_id=eq.${cid}`
+    refreshBackendSocketAuth()
+    const socket = getBackendSocket()
+    const room = `conv:${cid}`
 
-    channel
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter }, (payload) => {
-        const msg = mapDirectMessageFromRow(payload.new as Record<string, unknown>)
-        if (!msg.id) return
-        if (msg.senderUserId === user.id && msg.kind !== 'reaction') return
-        if (cidRef.current.trim() !== cid) return
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === msg.id)) return prev
-          return [...prev, msg].sort(sortChrono)
+    const onNew = (payload: { conversationId: string; message: any }) => {
+      if (payload.conversationId !== cid) return
+      const row = payload.message as Record<string, unknown>
+      const msg = mapDirectMessageFromRow({
+        id: row.id,
+        sender_user_id: row.senderUserId,
+        sender_name_snapshot: row.senderNameSnapshot,
+        kind: row.kind,
+        body: row.body,
+        meta: row.meta,
+        created_at: row.createdAt,
+        edited_at: row.editedAt,
+        reply_to_message_id: row.replyToMessageId,
+      })
+      if (!msg.id) return
+      if (msg.senderUserId === user.id && msg.kind !== 'reaction') return
+      if (cidRef.current.trim() !== cid) return
+
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === msg.id)) return prev
+        return [...prev, msg].sort(sortChrono)
+      })
+      const preview = previewTextForDirectMessageTail(msg)
+      onTouchTail?.({ lastMessageAt: msg.createdAt, lastMessagePreview: preview })
+      if (pinnedToBottomRef.current && msg.kind !== 'reaction') {
+        requestAnimationFrame(() => {
+          const el = messagesScrollRef.current
+          if (el) el.scrollTop = el.scrollHeight
         })
-        const preview = previewTextForDirectMessageTail(msg)
-        onTouchTail?.({ lastMessageAt: msg.createdAt, lastMessagePreview: preview })
-        if (pinnedToBottomRef.current && msg.kind !== 'reaction') {
-          requestAnimationFrame(() => {
-            const el = messagesScrollRef.current
-            if (el) el.scrollTop = el.scrollHeight
-          })
-        }
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages', filter }, (payload) => {
-        const msg = mapDirectMessageFromRow(payload.new as Record<string, unknown>)
-        if (!msg.id) return
-        setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m)))
-      })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'chat_messages', filter }, (payload) => {
-        const id = chatMessageDeleteRowId(payload.old as Record<string, unknown>)
-        if (!id || cidRef.current.trim() !== cid) return
-        removeMessageById(id)
-      })
-      .subscribe()
+      }
+    }
+
+    socket.on('thread:message:new' as any, onNew)
+    socket.emit('room:join', { room })
 
     return () => {
-      supabase.removeChannel(channel)
+      socket.off('thread:message:new' as any, onNew)
+      socket.emit('room:leave', { room })
     }
   }, [conversationId, user?.id, onTouchTail, removeMessageById, viewerOnly])
 

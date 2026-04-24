@@ -52,25 +52,9 @@ export function PublicUserPage() {
     setError(null)
     setProfile(null)
     void (async () => {
-      const { supabase } = await import('../lib/supabase')
-      const { data, error: rpcErr } = await supabase.rpc('get_user_public_profile_by_slug', {
-        p_profile_slug: slug,
-      })
+      void slug
       if (!active) return
-      if (rpcErr) {
-        setError(rpcErr.message)
-        setLoading(false)
-        return
-      }
-      const parsed = parsePublicProfile(data)
-      if (!parsed) {
-        const row = data as Record<string, unknown> | null
-        const code = typeof row?.error === 'string' ? row.error : ''
-        setError(code === 'not_found' ? 'Пользователь не найден.' : 'Не удалось загрузить профиль.')
-        setLoading(false)
-        return
-      }
-      setProfile(parsed)
+      setError('Публичные профили пока недоступны: Supabase удалён, backend API ещё не реализован.')
       setLoading(false)
     })()
     return () => {

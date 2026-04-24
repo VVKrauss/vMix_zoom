@@ -1,5 +1,3 @@
-import { supabase } from './supabase'
-
 export type SiteNewsItem = {
   id: string
   published_at: string
@@ -11,13 +9,7 @@ export type SiteNewsItem = {
 }
 
 export async function listSiteNews(): Promise<{ data: SiteNewsItem[] | null; error: string | null }> {
-  const { data, error } = await supabase
-    .from('site_news')
-    .select('id, published_at, title, body, image_url, created_at, updated_at')
-    .order('published_at', { ascending: false })
-
-  if (error) return { data: null, error: error.message }
-  return { data: (data ?? []) as SiteNewsItem[], error: null }
+  return { data: [], error: 'not_migrated' }
 }
 
 export async function insertSiteNews(row: {
@@ -26,13 +18,8 @@ export async function insertSiteNews(row: {
   body: string
   image_url?: string | null
 }): Promise<{ error: string | null }> {
-  const { error } = await supabase.from('site_news').insert({
-    published_at: row.published_at.trim(),
-    title: row.title.trim(),
-    body: row.body.trim(),
-    image_url: row.image_url?.trim() || null,
-  })
-  return { error: error?.message ?? null }
+  void row
+  return { error: 'not_migrated' }
 }
 
 export async function updateSiteNews(
@@ -44,20 +31,12 @@ export async function updateSiteNews(
     image_url?: string | null
   },
 ): Promise<{ error: string | null }> {
-  const image_url = row.image_url?.trim() || null
-  const { error } = await supabase
-    .from('site_news')
-    .update({
-      published_at: row.published_at.trim(),
-      title: row.title.trim(),
-      body: row.body.trim(),
-      image_url,
-    })
-    .eq('id', id.trim())
-  return { error: error?.message ?? null }
+  void id
+  void row
+  return { error: 'not_migrated' }
 }
 
 export async function deleteSiteNews(id: string): Promise<{ error: string | null }> {
-  const { error } = await supabase.from('site_news').delete().eq('id', id.trim())
-  return { error: error?.message ?? null }
+  void id
+  return { error: 'not_migrated' }
 }
