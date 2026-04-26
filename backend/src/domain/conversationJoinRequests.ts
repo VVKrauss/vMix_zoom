@@ -11,7 +11,19 @@ async function conversationKind(pool: Pool, conversationId: string): Promise<'gr
 
 async function isConversationAdmin(pool: Pool, conversationId: string, userId: string): Promise<boolean> {
   const r = await pool.query<{ role: string }>(
-    `select role from public.chat_conversation_members where conversation_id = $1 and user_id = $2 limit 1`,
+    `
+    select role
+      from public.chat_conversation_members
+     where conversation_id = $1 and user_id = $2
+     order by
+       case role
+         when 'owner' then 0
+         when 'admin' then 1
+         when 'moderator' then 2
+         else 3
+       end asc
+     limit 1
+    `,
     [conversationId, userId],
   )
   const role = r.rows[0]?.role ?? 'member'

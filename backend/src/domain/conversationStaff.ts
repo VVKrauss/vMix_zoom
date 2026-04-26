@@ -10,6 +10,13 @@ async function assertGroupOrChannelStaff(pool: Pool, conversationId: string, use
      where c.id = $1
        and c.closed_at is null
        and m.user_id = $2
+     order by
+       case m.role
+         when 'owner' then 0
+         when 'admin' then 1
+         when 'moderator' then 2
+         else 3
+       end asc
      limit 1
     `,
     [conversationId, userId],
@@ -31,6 +38,13 @@ async function assertCanAssignStaffRoles(pool: Pool, conversationId: string, use
        and m.user_id = $2
        and c.closed_at is null
        and c.kind in ('group','channel')
+     order by
+       case m.role
+         when 'owner' then 0
+         when 'admin' then 1
+         when 'moderator' then 2
+         else 3
+       end asc
      limit 1
     `,
     [conversationId, userId],
@@ -90,8 +104,32 @@ export async function removeConversationMemberByStaff(
   const roles = await pool.query<{ caller_role: string; target_role: string }>(
     `
     select
-      (select role from public.chat_conversation_members where conversation_id=$1 and user_id=$2 limit 1) as caller_role,
-      (select role from public.chat_conversation_members where conversation_id=$1 and user_id=$3 limit 1) as target_role
+      (
+        select role
+          from public.chat_conversation_members
+         where conversation_id=$1 and user_id=$2
+         order by
+           case role
+             when 'owner' then 0
+             when 'admin' then 1
+             when 'moderator' then 2
+             else 3
+           end asc
+         limit 1
+      ) as caller_role,
+      (
+        select role
+          from public.chat_conversation_members
+         where conversation_id=$1 and user_id=$3
+         order by
+           case role
+             when 'owner' then 0
+             when 'admin' then 1
+             when 'moderator' then 2
+             else 3
+           end asc
+         limit 1
+      ) as target_role
     `,
     [cid, args.userId, target],
   )

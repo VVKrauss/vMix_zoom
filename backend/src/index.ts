@@ -680,7 +680,11 @@ app.post('/api/storage/signed-url', async (req) => {
     // When object is missing, do not fail the whole UI — just return no URL.
     const code = String(e?.name ?? e?.Code ?? e?.code ?? '')
     const status = Number(e?.$metadata?.httpStatusCode ?? 0)
-    if (code === 'NoSuchKey' || status === 404) {
+    if (status === 404 || code === 'NoSuchKey' || code === 'NotFound' || code === 'NotFoundException') {
+      return { signedUrl: null }
+    }
+    // Some S3-compatible providers return 403 AccessDenied for missing objects / private keys.
+    if (status === 403 && code === 'AccessDenied') {
       return { signedUrl: null }
     }
     app.log.error({ err: e, bucket: body.bucket, path: body.path, resolved: t }, 'storage_signed_url_failed')
