@@ -7,8 +7,14 @@ export async function presenceForegroundPulse(pool: Pool, userId: string): Promi
        set last_active_at = now()
      where u.id = $1
        and (
+         -- Keep DB writes bounded, but never get stuck "offline" after a background mark.
          u.last_active_at is null
-         or u.last_active_at < now() - interval '40 seconds'
+         or u.last_active_at < now() - interval '8 seconds'
+         or (
+           u.presence_last_background_at is not null
+           and u.last_active_at is not null
+           and u.last_active_at <= u.presence_last_background_at
+         )
        )
     `,
     [userId],

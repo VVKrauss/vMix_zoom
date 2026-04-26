@@ -70,6 +70,7 @@
 | Действие | Путь / протокол | Модуль |
 |----------|-----------------|--------|
 | WebSocket | `wss://…/ws` (same host as API) | `src/api/realtime.ts`, `realtimeClient.ts` |
+| `db_change` (подписка `subscribe`) | канал `peer-presence:{user_id}` | INSERT/UPDATE/DELETE `public.user_presence_public` → `useOnlinePresenceMirror` |
 
 ### 2.6 Edge / Functions (замена Supabase Functions)
 

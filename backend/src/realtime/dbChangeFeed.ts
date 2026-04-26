@@ -39,6 +39,7 @@ export async function ensureDbChangeTriggers(pool: pg.Pool): Promise<void> {
     { name: 'chat_messages', events: ['INSERT', 'UPDATE', 'DELETE'] },
     { name: 'chat_conversation_members', events: ['UPDATE', 'DELETE'] },
     { name: 'chat_message_mentions', events: ['INSERT', 'UPDATE'] },
+    { name: 'user_presence_public', events: ['INSERT', 'UPDATE', 'DELETE'] },
   ]
 
   for (const t of tables) {

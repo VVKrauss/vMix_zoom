@@ -9,7 +9,7 @@ alwaysApply: true
 
 # Сервер (VPS) и деплой
 
-У проекта есть VPS: `204.168.146.200`.
+У проекта есть VPS: `204.168.146.200` (SSH/`scp` — пользователь **`root`**).
 
 ## Доступ и передача файлов
 
@@ -48,19 +48,19 @@ alwaysApply: true
 
 Правило: в архиве **не должно быть** `backend/node_modules`, `backend/dist`, `.env`, `deploy/api.env`, дампов и предыдущих `*.tgz`.
 
-Пример (PowerShell) — минимальный релиз для VPS (API+proxy configs):
+Пример (PowerShell) — минимальный релиз для VPS (API+proxy configs). **Один и тот же** `$ts` и **полный путь** `$archive` — и для `tar`, и для `scp` (не полагаться на «текущую папку»).
 
-- `$ts = Get-Date -Format "yyyyMMdd-HHmmss"`
-- `$archive = "C:\Code\release-clean-$ts.tgz"`
-- `tar -czf $archive -C "C:\Code\vMix replacer" backend\src backend\sql backend\package.json backend\package-lock.json backend\tsconfig.json backend\Dockerfile deploy`
+```powershell
+$ts = Get-Date -Format "yyyyMMdd-HHmmss"
+$archive = "C:\Code\release-clean-$ts.tgz"
+tar -czf $archive -C "C:\Code\vMix replacer" backend\src backend\sql backend\package.json backend\package-lock.json backend\tsconfig.json backend\Dockerfile deploy
+# загрузка того же файла, что только что создали:
+scp $archive root@204.168.146.200:/opt/redflow/releases/
+# при необходимости:
+# scp -i <path_to_key> $archive root@204.168.146.200:/opt/redflow/releases/
+```
 
-Рекомендуемый шаблон (Windows PowerShell):
-
-- Подключение:
-  - `ssh <user>@204.168.146.200`
-- Передача:
-  - `scp ".\\release-clean-$ts.tgz" <user>@204.168.146.200:/opt/redflow/releases/`
-  - (если ключ не подхватывается автоматически) `scp -i <path_to_key> ".\\release-clean-$ts.tgz" <user>@204.168.146.200:/opt/redflow/releases/`
+Подключение: `ssh root@204.168.146.200`
 
 ## Стандарт деплоя: без ручного `ts` (по последнему архиву)
 
@@ -102,7 +102,7 @@ alwaysApply: true
 Конфиги на VPS:
 
 - `/opt/redflow/shared/stack.env` — переменные для compose (минимум `POSTGRES_PASSWORD=...`)
-- `/opt/redflow/current/deploy/api.env` — переменные API (JWT/S3/ORIGIN). **Секреты не коммитим**, файл создаётся на сервере из `api.env.example`.
+- `/opt/redflow/shared/api.env` — переменные API для контейнера (см. `env_file` в `deploy/docker-compose.vps.yml`: JWT/S3/ORIGIN). **Секреты не коммитим**; в репозитории ориентир — `deploy/api.env.example`.
 
 Диагностика после деплоя (минимум):
 

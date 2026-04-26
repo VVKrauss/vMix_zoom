@@ -31,7 +31,6 @@ export function rtChannel(name: string): SupaLikeChannel {
         return api
       }
       if (t === 'postgres_changes') {
-        // Server-side db_change stream is not implemented yet; keep API surface but it will be silent.
         onBase((e) => {
           if (e.type !== 'db_change') return
           cb({ new: e.row, table: e.table, eventType: e.action })

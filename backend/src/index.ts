@@ -980,6 +980,13 @@ await startDbChangeListener({
         }
       }
     }
+
+    if (table === 'user_presence_public') {
+      const uid = typeof row.user_id === 'string' ? row.user_id.trim() : ''
+      if (uid) {
+        broadcastDbChange(`peer-presence:${uid}`, table, action, row)
+      }
+    }
   },
 })
 
