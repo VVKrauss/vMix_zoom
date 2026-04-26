@@ -146,7 +146,7 @@ export function AdminPage() {
               aria-label="VPS"
               title="VPS"
             >
-              <FiRrIcon name="server" />
+              <FiRrIcon name="database" />
               <span className="admin-tabs__text">VPS</span>
             </button>
             <button
