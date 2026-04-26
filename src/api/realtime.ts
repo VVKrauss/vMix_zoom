@@ -13,5 +13,5 @@ function wsUrl(): string {
   return u.toString()
 }
 
-export const realtime = new RealtimeClient(wsUrl())
+export const realtime = new RealtimeClient(wsUrl)
 

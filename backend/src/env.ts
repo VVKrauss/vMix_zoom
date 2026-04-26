@@ -9,7 +9,9 @@ const EnvSchema = z.object({
 
   JWT_ACCESS_SECRET: z.string().min(32),
   JWT_ISSUER: z.string().min(1).default('redflow'),
-  ACCESS_TTL_SEC: z.coerce.number().int().positive().default(900),
+  // Access token lifetime. Refresh cookie still exists for rotation, but UX must not require re-login every 15 minutes.
+  // Default: 90 days.
+  ACCESS_TTL_SEC: z.coerce.number().int().positive().default(60 * 60 * 24 * 90),
   REFRESH_TTL_SEC: z.coerce.number().int().positive().default(60 * 60 * 24 * 30),
   REFRESH_COOKIE_NAME: z.string().min(1).default('rf_refresh'),
 

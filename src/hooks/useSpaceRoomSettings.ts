@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import type { SpaceRoomChatVisibility } from '../lib/spaceRoom'
-import { dbTableSelectOne } from '../api/dbApi'
+import { fetchJson } from '../api/http'
 import { realtime } from '../api/realtime'
 
 export type SpaceRoomAccessMode = 'link' | 'approval' | 'invite_only'
@@ -59,11 +59,7 @@ export function useSpaceRoomSettings(roomSlug: string | undefined): {
       setLoading(false)
       return
     }
-    void dbTableSelectOne<Record<string, unknown>>({
-      table: 'space_rooms',
-      select: 'slug,host_user_id,chat_visibility,access_mode,status,room_admin_user_ids',
-      filters: { slug },
-    }).then((r) => {
+    void fetchJson<{ row: Record<string, unknown> | null }>(`/api/v1/space-rooms/${encodeURIComponent(slug)}/settings`, { method: 'GET', auth: true }).then((r) => {
       if (!r.ok) {
         console.warn('useSpaceRoomSettings:', r.error.message)
         setRow(null)

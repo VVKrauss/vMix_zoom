@@ -1,4 +1,4 @@
-import { dbRpc, dbTableInsert, dbTableSelect, dbTableSelectOne, dbTableUpdate } from '../api/dbApi'
+import { fetchJson } from '../api/http'
 
 /** Постоянная комната — строка в БД сохраняется при выходе хоста (закрыта, но не удалена). Временная — как раньше, без долгой ссылки. */
 export type SpaceRoomLifecycleKind = 'permanent' | 'temporary'
@@ -233,11 +233,7 @@ export async function getSpaceRoomJoinStatus(
   if (matchesPendingHostClaim(trimmed) || isSessionHostFor(trimmed)) {
     return { joinable: true, denial: 'none', isDbHost: false }
   }
-  const r = await dbTableSelectOne<Record<string, unknown>>({
-    table: 'space_rooms',
-    select: 'status,host_user_id,retain_instance,access_mode,created_at,banned_user_ids,approved_joiners',
-    filters: { slug: trimmed },
-  })
+  const r = await fetchJson<{ row: any | null }>(`/api/v1/public/space-rooms/${encodeURIComponent(trimmed)}/join-info`, { method: 'GET' })
   if (!r.ok) {
     console.warn('getSpaceRoomJoinStatus:', r.error.message)
     return { joinable: false, denial: 'closed_or_missing', isDbHost: false }
@@ -329,13 +325,7 @@ export async function fetchPersistentSpaceRoomsForUser(
   const uid = userId.trim()
   if (!uid) return { data: [], error: null }
 
-  const r = await dbTableSelect<any>({
-    table: 'space_rooms',
-    select:
-      'slug,status,access_mode,chat_visibility,created_at,display_name,avatar_url,guest_policy,require_creator_host_for_join,cumulative_open_seconds,open_session_started_at',
-    filters: { host_user_id: uid, retain_instance: true },
-    order: [{ column: 'created_at', ascending: false }],
-  })
+  const r = await fetchJson<{ rows: any[] }>(`/api/v1/me/space-rooms/persistent`, { method: 'GET', auth: true })
   if (!r.ok) return { data: null, error: r.error.message }
   const data = r.data.rows as any[]
 
@@ -405,13 +395,27 @@ export async function registerSpaceRoomAsHost(
     insertPayload.require_creator_host_for_join = true
   }
 
-  const ins = await dbTableInsert({ table: 'space_rooms', row: insertPayload })
-  if (!ins.ok) {
-    if (String(ins.error.message).includes('23505')) return false
-    console.warn('registerSpaceRoomAsHost:', ins.error.message)
+  const r = await fetchJson<any>(`/api/v1/space-rooms`, {
+    method: 'POST',
+    auth: true,
+    body: JSON.stringify({
+      slug: trimmed,
+      lifecycle: permanent ? 'permanent' : 'temporary',
+      chatVisibility,
+      displayName: typeof insertPayload.display_name === 'string' ? insertPayload.display_name : null,
+      avatarUrl: typeof insertPayload.avatar_url === 'string' ? insertPayload.avatar_url : null,
+      guestPolicy:
+        insertPayload.guest_policy && typeof insertPayload.guest_policy === 'object' && !Array.isArray(insertPayload.guest_policy)
+          ? insertPayload.guest_policy
+          : null,
+      requireCreatorHostForJoin: insertPayload.require_creator_host_for_join === true,
+    }),
+  })
+  if (!r.ok) {
+    console.warn('registerSpaceRoomAsHost:', r.error.message)
     return false
   }
-  return true
+  return r.data?.ok === true
 }
 
 export async function updateSpaceRoomChatVisibility(
@@ -422,22 +426,22 @@ export async function updateSpaceRoomChatVisibility(
   const trimmed = slug.trim()
   if (!trimmed) return false
   if (!isChatVisibility(visibility)) return false
-  const upd = await dbTableUpdate({
-    table: 'space_rooms',
-    patch: { chat_visibility: visibility, updated_at: new Date().toISOString() },
-    filters: { slug: trimmed },
+  const r = await fetchJson<any>(`/api/v1/space-rooms/${encodeURIComponent(trimmed)}/chat-visibility`, {
+    method: 'PATCH',
+    auth: true,
+    body: JSON.stringify({ chatVisibility: visibility }),
   })
-  if (!upd.ok) {
-    console.warn('updateSpaceRoomChatVisibility:', upd.error.message)
+  if (!r.ok) {
+    console.warn('updateSpaceRoomChatVisibility:', r.error.message)
     return false
   }
-  return true
+  return r.data?.ok === true
 }
 
 export async function hostLeaveSpaceRoom(slug: string): Promise<void> {
   const trimmed = slug.trim()
   if (!trimmed) return
-  await dbRpc('host_leave_space_room', { p_slug: trimmed })
+  await fetchJson<any>(`/api/v1/space-rooms/${encodeURIComponent(trimmed)}/host-leave`, { method: 'POST', auth: true, body: '{}' })
 }
 
 /** Заблокировать пользователя в комнате (хост / staff / со-админ комнаты — RLS). Read-modify-write. */
@@ -448,24 +452,16 @@ export async function banUserFromSpaceRoom(
 ): Promise<boolean> {
   const trimmed = slug.trim()
   if (!trimmed || !targetUserId) return false
-  const sel = await dbTableSelectOne<{ banned_user_ids: unknown }>({
-    table: 'space_rooms',
-    select: 'banned_user_ids',
-    filters: { slug: trimmed },
+  const r = await fetchJson<any>(`/api/v1/space-rooms/${encodeURIComponent(trimmed)}/ban`, {
+    method: 'POST',
+    auth: true,
+    body: JSON.stringify({ targetUserId }),
   })
-  if (!sel.ok || !sel.data.row) return false
-  const current: string[] = Array.isArray((sel.data.row as any).banned_user_ids) ? (sel.data.row as any).banned_user_ids : []
-  if (current.includes(targetUserId)) return true
-  const upd = await dbTableUpdate({
-    table: 'space_rooms',
-    patch: { banned_user_ids: [...current, targetUserId], updated_at: new Date().toISOString() },
-    filters: { slug: trimmed },
-  })
-  if (!upd.ok) {
-    console.warn('banUserFromSpaceRoom:', upd.error.message)
+  if (!r.ok) {
+    console.warn('banUserFromSpaceRoom:', r.error.message)
     return false
   }
-  return true
+  return r.data?.ok === true
 }
 
 /** Одобрить вход пользователя (режим approval; хост / staff / со-админ — RLS). */
@@ -476,24 +472,16 @@ export async function approveSpaceRoomJoiner(
 ): Promise<boolean> {
   const trimmed = slug.trim()
   if (!trimmed || !targetUserId) return false
-  const sel = await dbTableSelectOne<{ approved_joiners: unknown }>({
-    table: 'space_rooms',
-    select: 'approved_joiners',
-    filters: { slug: trimmed },
+  const r = await fetchJson<any>(`/api/v1/space-rooms/${encodeURIComponent(trimmed)}/approve-joiner`, {
+    method: 'POST',
+    auth: true,
+    body: JSON.stringify({ targetUserId }),
   })
-  if (!sel.ok || !sel.data.row) return false
-  const current: string[] = Array.isArray((sel.data.row as any).approved_joiners) ? (sel.data.row as any).approved_joiners : []
-  if (current.includes(targetUserId)) return true
-  const upd = await dbTableUpdate({
-    table: 'space_rooms',
-    patch: { approved_joiners: [...current, targetUserId], updated_at: new Date().toISOString() },
-    filters: { slug: trimmed },
-  })
-  if (!upd.ok) {
-    console.warn('approveSpaceRoomJoiner:', upd.error.message)
+  if (!r.ok) {
+    console.warn('approveSpaceRoomJoiner:', r.error.message)
     return false
   }
-  return true
+  return r.data?.ok === true
 }
 
 /** Убрать пользователя из списка ожидающих (отклонить или очистить после входа). */
@@ -504,19 +492,10 @@ export async function removeSpaceRoomApprovedJoiner(
 ): Promise<void> {
   const trimmed = slug.trim()
   if (!trimmed || !targetUserId) return
-  const sel = await dbTableSelectOne<{ approved_joiners: unknown }>({
-    table: 'space_rooms',
-    select: 'approved_joiners',
-    filters: { slug: trimmed },
-  })
-  if (!sel.ok || !sel.data.row) return
-  const current: string[] = Array.isArray((sel.data.row as any).approved_joiners) ? (sel.data.row as any).approved_joiners : []
-  const next = current.filter((id) => id !== targetUserId)
-  if (next.length === current.length) return
-  await dbTableUpdate({
-    table: 'space_rooms',
-    patch: { approved_joiners: next, updated_at: new Date().toISOString() },
-    filters: { slug: trimmed },
+  await fetchJson<any>(`/api/v1/space-rooms/${encodeURIComponent(trimmed)}/remove-approved-joiner`, {
+    method: 'POST',
+    auth: true,
+    body: JSON.stringify({ targetUserId }),
   })
 }
 
@@ -528,16 +507,16 @@ export async function updateSpaceRoomAccessMode(
 ): Promise<boolean> {
   const trimmed = slug.trim()
   if (!trimmed) return false
-  const upd = await dbTableUpdate({
-    table: 'space_rooms',
-    patch: { access_mode: mode, updated_at: new Date().toISOString() },
-    filters: { slug: trimmed },
+  const r = await fetchJson<any>(`/api/v1/space-rooms/${encodeURIComponent(trimmed)}/access-mode`, {
+    method: 'PATCH',
+    auth: true,
+    body: JSON.stringify({ accessMode: mode }),
   })
-  if (!upd.ok) {
-    console.warn('updateSpaceRoomAccessMode:', upd.error.message)
+  if (!r.ok) {
+    console.warn('updateSpaceRoomAccessMode:', r.error.message)
     return false
   }
-  return true
+  return r.data?.ok === true
 }
 
 function parseUuidArray(raw: unknown): string[] {
@@ -550,30 +529,16 @@ export async function addSpaceRoomAdminUser(slug: string, targetUserId: string):
   const trimmed = slug.trim()
   const tid = targetUserId.trim()
   if (!trimmed || !tid) return false
-  const sel = await dbTableSelectOne<{ host_user_id: unknown; room_admin_user_ids: unknown }>({
-    table: 'space_rooms',
-    select: 'host_user_id,room_admin_user_ids',
-    filters: { slug: trimmed },
+  const r = await fetchJson<any>(`/api/v1/space-rooms/${encodeURIComponent(trimmed)}/admins/add`, {
+    method: 'POST',
+    auth: true,
+    body: JSON.stringify({ targetUserId: tid }),
   })
-  if (!sel.ok || !sel.data.row) {
-    if (!sel.ok) console.warn('addSpaceRoomAdminUser:', sel.error.message)
+  if (!r.ok) {
+    console.warn('addSpaceRoomAdminUser:', r.error.message)
     return false
   }
-  const row = sel.data.row as any
-  const hostId = typeof row.host_user_id === 'string' ? row.host_user_id : null
-  if (hostId && tid === hostId) return false
-  const current = parseUuidArray(row.room_admin_user_ids)
-  if (current.includes(tid)) return true
-  const upd = await dbTableUpdate({
-    table: 'space_rooms',
-    patch: { room_admin_user_ids: [...current, tid], updated_at: new Date().toISOString() },
-    filters: { slug: trimmed },
-  })
-  if (!upd.ok) {
-    console.warn('addSpaceRoomAdminUser:', upd.error.message)
-    return false
-  }
-  return true
+  return r.data?.ok === true
 }
 
 /** Снять со-администратора комнаты. */
@@ -581,26 +546,14 @@ export async function removeSpaceRoomAdminUser(slug: string, targetUserId: strin
   const trimmed = slug.trim()
   const tid = targetUserId.trim()
   if (!trimmed || !tid) return false
-  const sel = await dbTableSelectOne<{ room_admin_user_ids: unknown }>({
-    table: 'space_rooms',
-    select: 'room_admin_user_ids',
-    filters: { slug: trimmed },
+  const r = await fetchJson<any>(`/api/v1/space-rooms/${encodeURIComponent(trimmed)}/admins/remove`, {
+    method: 'POST',
+    auth: true,
+    body: JSON.stringify({ targetUserId: tid }),
   })
-  if (!sel.ok || !sel.data.row) {
-    if (!sel.ok) console.warn('removeSpaceRoomAdminUser:', sel.error.message)
+  if (!r.ok) {
+    console.warn('removeSpaceRoomAdminUser:', r.error.message)
     return false
   }
-  const current = parseUuidArray((sel.data.row as any).room_admin_user_ids)
-  const next = current.filter((id) => id !== tid)
-  if (next.length === current.length) return true
-  const upd = await dbTableUpdate({
-    table: 'space_rooms',
-    patch: { room_admin_user_ids: next, updated_at: new Date().toISOString() },
-    filters: { slug: trimmed },
-  })
-  if (!upd.ok) {
-    console.warn('removeSpaceRoomAdminUser:', upd.error.message)
-    return false
-  }
-  return true
+  return r.data?.ok === true
 }

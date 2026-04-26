@@ -1,7 +1,4 @@
-import { dbTableSelectOne, dbTableUpdate } from '../api/dbApi'
-import { buildAutoProfileSlug } from './profileSlug'
-
-const ASSIGN_ATTEMPTS = 14
+import { fetchJson } from '../api/http'
 
 /** Кто занял slug: null — свободен, строка — id пользователя. */
 export async function fetchProfileSlugOwner(
@@ -9,13 +6,9 @@ export async function fetchProfileSlugOwner(
 ): Promise<{ userId: string | null; error: string | null }> {
   const s = slug.trim()
   if (!s) return { userId: null, error: null }
-  const r = await dbTableSelectOne<{ id: string }>({
-    table: 'users',
-    select: 'id',
-    filters: { profile_slug: s },
-  })
+  const r = await fetchJson<{ userId: string | null }>(`/api/v1/public/profile-slug/${encodeURIComponent(s)}/owner`, { method: 'GET' })
   if (!r.ok) return { userId: null, error: r.error.message }
-  return { userId: r.data.row?.id ?? null, error: null }
+  return { userId: r.data.userId ?? null, error: null }
 }
 
 export async function isProfileSlugAvailable(slug: string, excludeUserId: string): Promise<boolean> {
@@ -32,23 +25,12 @@ export async function assignAutoProfileSlugIfEmpty(
 ): Promise<{ slug: string | null; error: string | null }> {
   const uid = userId.trim()
   if (!uid) return { slug: null, error: 'Нет пользователя' }
-
-  for (let i = 0; i < ASSIGN_ATTEMPTS; i++) {
-    const candidate = buildAutoProfileSlug(nowMs + i * 17)
-    const free = await isProfileSlugAvailable(candidate, uid)
-    if (!free) continue
-
-    const upd = await dbTableUpdate({
-      table: 'users',
-      patch: { profile_slug: candidate, updated_at: new Date().toISOString() },
-      filters: { id: uid, profile_slug__is: null },
-    })
-    if (!upd.ok) {
-      // backend должен маппить unique violation на понятный код; временно — по сообщению.
-      if (String(upd.error.message).includes('23505')) continue
-      return { slug: null, error: upd.error.message }
-    }
-    return { slug: candidate, error: null }
-  }
-  return { slug: null, error: 'Не удалось подобрать свободный ник, попробуйте позже.' }
+  // Server-side: try to assign a random slug if `profile_slug` is still NULL.
+  // `nowMs` is kept for backward compatibility but is no longer used on the client.
+  void nowMs
+  const r = await fetchJson<any>(`/api/v1/me/profile/assign-auto-slug-if-empty`, { method: 'POST', auth: true, body: '{}' })
+  if (!r.ok) return { slug: null, error: r.error.message }
+  if (r.data?.ok !== true) return { slug: null, error: 'Не удалось подобрать свободный ник, попробуйте позже.' }
+  const slug = typeof r.data.slug === 'string' && r.data.slug.trim() ? r.data.slug.trim() : null
+  return { slug, error: null }
 }

@@ -1,4 +1,4 @@
-import { legacyRpc } from '../api/legacyRpcApi'
+import { fetchJson } from '../api/http'
 import type { RoomChatConversationSummary } from './chatArchive'
 import type { PersistentSpaceRoomRow } from './spaceRoom'
 import { spaceRoomEffectiveOpenSeconds } from './spaceRoom'
@@ -44,14 +44,10 @@ export async function fetchDashboardRoomStatsForHost(
   const s = slug.trim()
   if (!s) return { data: null, error: 'Нет slug' }
 
-  const r = await legacyRpc('dashboard_room_stats_for_host', { p_slug: s })
-  if (r.error) return { data: null, error: r.error }
-  const data = r.data
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) {
-    const err = typeof row?.error === 'string' ? row.error : 'request_failed'
-    return { data: null, error: err }
-  }
+  const r = await fetchJson<any>(`/api/v1/rooms/${encodeURIComponent(s)}/dashboard-stats`, { method: 'GET', auth: true })
+  if (!r.ok) return { data: null, error: r.error.message }
+  const row = r.data as Record<string, unknown> | null
+  if (!row || row.ok !== true) return { data: null, error: typeof row?.error === 'string' ? String(row.error) : 'request_failed' }
 
   return {
     data: {
@@ -83,14 +79,10 @@ export async function fetchRoomChatGuestsDashboard(
   const id = conversationId.trim()
   if (!id) return { data: null, error: 'Нет id' }
 
-  const r = await legacyRpc('list_room_chat_guest_senders_dashboard', { p_conversation_id: id })
-  if (r.error) return { data: null, error: r.error }
-  const data = r.data
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) {
-    const err = typeof row?.error === 'string' ? row.error : 'request_failed'
-    return { data: null, error: err }
-  }
+  const r = await fetchJson<any>(`/api/v1/room-chats/${encodeURIComponent(id)}/guest-senders-dashboard`, { method: 'GET', auth: true })
+  if (!r.ok) return { data: null, error: r.error.message }
+  const row = r.data as Record<string, unknown> | null
+  if (!row || row.ok !== true) return { data: null, error: typeof row?.error === 'string' ? String(row.error) : 'request_failed' }
 
   const rawGuests = row.guests
   const guests: DashboardRoomGuestSender[] = Array.isArray(rawGuests)
@@ -121,14 +113,10 @@ export async function fetchRoomChatMembersDashboard(
   const id = conversationId.trim()
   if (!id) return { data: null, error: 'Нет id' }
 
-  const r = await legacyRpc('list_room_chat_registered_members_dashboard', { p_conversation_id: id })
-  if (r.error) return { data: null, error: r.error }
-  const data = r.data
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) {
-    const err = typeof row?.error === 'string' ? row.error : 'request_failed'
-    return { data: null, error: err }
-  }
+  const r = await fetchJson<any>(`/api/v1/room-chats/${encodeURIComponent(id)}/registered-members-dashboard`, { method: 'GET', auth: true })
+  if (!r.ok) return { data: null, error: r.error.message }
+  const row = r.data as Record<string, unknown> | null
+  if (!row || row.ok !== true) return { data: null, error: typeof row?.error === 'string' ? String(row.error) : 'request_failed' }
 
   const raw = row.members
   const members: DashboardRoomMemberProfile[] = Array.isArray(raw)

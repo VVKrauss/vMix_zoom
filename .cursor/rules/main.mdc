@@ -40,6 +40,20 @@ alwaysApply: true
 Правило: **релиз-архив нельзя хранить внутри папки проекта**, если команда упаковки делает `tar ... .` — иначе следующий релиз подхватит предыдущие архивы.
 Если хранение неизбежно, то обязательно исключать `*.tgz`.
 
+## Упаковка релиза: только нужные файлы (предпочтительно)
+
+На Windows упаковка `tar ... -C <repo> .` по всей рабочей директории может **подвесить терминал** (много файлов, длинные пути, права, кеши).
+
+Предпочтительный подход: **`tar` с явным списком путей** — так не обходим весь репозиторий и не тащим мусор.
+
+Правило: в архиве **не должно быть** `backend/node_modules`, `backend/dist`, `.env`, `deploy/api.env`, дампов и предыдущих `*.tgz`.
+
+Пример (PowerShell) — минимальный релиз для VPS (API+proxy configs):
+
+- `$ts = Get-Date -Format "yyyyMMdd-HHmmss"`
+- `$archive = "C:\Code\release-clean-$ts.tgz"`
+- `tar -czf $archive -C "C:\Code\vMix replacer" backend\src backend\sql backend\package.json backend\package-lock.json backend\tsconfig.json backend\Dockerfile deploy`
+
 Рекомендуемый шаблон (Windows PowerShell):
 
 - Подключение:

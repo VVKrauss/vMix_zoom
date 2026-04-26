@@ -139,7 +139,7 @@ import {
   leaveDirectConversationClient,
   leaveGroupOrChannelClient,
 } from '../lib/messengerConversationLifecycle'
-import { dbTableSelectOne } from '../api/dbApi'
+import { fetchJson } from '../api/http'
 import { rtChannel, rtRemoveChannel } from '../api/realtimeCompat'
 import { fetchPublicUserProfile } from '../lib/userPublicProfile'
 import { writeMessengerThreadTailCache } from '../lib/messengerThreadTailCache'
@@ -2374,10 +2374,9 @@ export function DashboardMessengerPage() {
         return
       }
 
-      const memRes = await dbTableSelectOne<any>({
-        table: 'chat_conversation_members',
-        select: 'role',
-        filters: { conversation_id: cid, user_id: user.id },
+      const memRes = await fetchJson<{ row: any | null }>(`/api/v1/me/conversations/${encodeURIComponent(cid)}/membership`, {
+        method: 'GET',
+        auth: true,
       })
       if (!memRes.ok || !memRes.data?.row) {
         toast.push({ tone: 'error', message: 'Не удалось проверить роль в чате.', ms: 3200 })
@@ -2652,10 +2651,9 @@ export function DashboardMessengerPage() {
       setConversationInfoLoading(true)
       setConversationInfoRole(null)
       try {
-        const r = await dbTableSelectOne<any>({
-          table: 'chat_conversation_members',
-          select: 'role',
-          filters: { conversation_id: id, user_id: user.id },
+        const r = await fetchJson<{ row: any | null }>(`/api/v1/me/conversations/${encodeURIComponent(id)}/membership`, {
+          method: 'GET',
+          auth: true,
         })
         if (r.ok && r.data?.row) {
           const role = typeof (r.data.row as any)?.role === 'string' ? String((r.data.row as any).role) : null

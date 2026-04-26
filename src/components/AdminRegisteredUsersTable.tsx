@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../hooks/useProfile'
 import { ConfirmDialog } from './ConfirmDialog'
-import { legacyRpc } from '../api/legacyRpcApi'
+import { fetchJson } from '../api/http'
 
 export type AdminUserRow = {
   id: string
@@ -66,10 +66,13 @@ async function rpcSetRole(
   code: string,
   grant: boolean,
 ): Promise<string | null> {
-  const r = await legacyRpc('admin_set_user_global_role', { p_target_user: userId, p_role_code: code, p_grant: grant })
-  if (r.error) return r.error
-  const data = r.data
-  const res = data as SetRoleResult | null
+  const r = await fetchJson<SetRoleResult>(`/api/v1/admin/users/${encodeURIComponent(userId)}/global-role`, {
+    method: 'POST',
+    auth: true,
+    body: JSON.stringify({ code, grant }),
+  })
+  if (!r.ok) return r.error.message
+  const res = r.data as SetRoleResult | null
   if (!res?.ok) {
     if (res?.error === 'only_superadmin') {
       return 'Только суперадмин может назначать роль «Суперадмин».'
@@ -82,10 +85,9 @@ async function rpcSetRole(
 }
 
 async function rpcDeleteUser(userId: string): Promise<string | null> {
-  const r = await legacyRpc('admin_delete_registered_user', { p_target_user: userId })
-  if (r.error) return r.error
-  const data = r.data
-  const res = data as DeleteUserResult | null
+  const r = await fetchJson<DeleteUserResult>(`/api/v1/admin/users/${encodeURIComponent(userId)}`, { method: 'DELETE', auth: true })
+  if (!r.ok) return r.error.message
+  const res = r.data as DeleteUserResult | null
   if (!res?.ok) {
     switch (res?.error) {
       case 'forbidden':
@@ -135,13 +137,11 @@ export function AdminRegisteredUsersTable({ isSuperadmin }: { isSuperadmin: bool
   const refresh = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true)
     setError(null)
-    const uRes = await legacyRpc('admin_list_registered_users', { p_limit: 200, p_offset: 0 })
-    if (uRes.error) {
-      setError(uRes.error)
+    const uRes = await fetchJson<{ rows: AdminUserRow[] }>(`/api/v1/admin/users?limit=200&offset=0`, { method: 'GET', auth: true })
+    if (!uRes.ok) {
+      setError(uRes.error.message)
       setUsers([])
-    } else {
-      setUsers((uRes.data as AdminUserRow[] | null) ?? [])
-    }
+    } else setUsers((uRes.data.rows as AdminUserRow[] | null) ?? [])
     if (showLoading) setLoading(false)
   }, [])
 

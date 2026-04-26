@@ -17,7 +17,7 @@ import { listMessengerPeersByMessageCount } from '../lib/messenger'
 import type { ContactCard } from '../lib/socialGraph'
 import { listMyContacts } from '../lib/socialGraph'
 import { fetchPersistentSpaceRoomsForUser, type PersistentSpaceRoomRow } from '../lib/spaceRoom'
-import { dbTableSelectOne, dbTableUpdate } from '../api/dbApi'
+import { v1GetMeProfile, v1PatchMeProfile } from '../api/meProfileApi'
 import type { StoredLayoutMode } from '../config/roomUiStorage'
 import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
 import { DashboardContactsIncomingModal } from './DashboardContactsIncomingModal'
@@ -295,18 +295,14 @@ export function DashboardPage() {
     setRoomSaveMsg(null)
     setRoomSaveErr(null)
 
-    const fetchRes = await dbTableSelectOne<any>({
-      table: 'users',
-      select: 'room_ui_preferences',
-      filters: { id: user.id },
-    })
-    if (!fetchRes.ok) {
+    const fetchRes = await v1GetMeProfile()
+    if (fetchRes.error) {
       setRoomSaving(false)
-      setRoomSaveErr(fetchRes.error.message)
+      setRoomSaveErr(fetchRes.error)
       return
     }
 
-    const merged = mergeRoomUiPrefs((fetchRes.data?.row as any)?.room_ui_preferences)
+    const merged = mergeRoomUiPrefs((fetchRes.data as any)?.room_ui_preferences)
     const next = {
       layout_mode: roomLayout,
       show_layout_toggle: roomShowLayoutToggle,
@@ -314,14 +310,10 @@ export function DashboardPage() {
       ...(merged.pip ? { pip: { pos: merged.pip.pos, size: merged.pip.size } } : {}),
     }
 
-    const upRes = await dbTableUpdate({
-      table: 'users',
-      filters: { id: user.id },
-      patch: { room_ui_preferences: next, updated_at: new Date().toISOString() },
-    })
+    const upRes = await v1PatchMeProfile({ room_ui_preferences: next })
 
     setRoomSaving(false)
-    if (!upRes.ok) setRoomSaveErr(upRes.error.message)
+    if (upRes.error) setRoomSaveErr(upRes.error)
     else setRoomSaveMsg('Сохранено')
   }
 

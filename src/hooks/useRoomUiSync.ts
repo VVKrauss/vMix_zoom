@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { dbTableSelectOne, dbTableUpdate } from '../api/dbApi'
+import { v1GetMeProfile, v1PatchMeProfile } from '../api/meProfileApi'
 import type { StoredLayoutMode } from '../config/roomUiStorage'
 import type { PipPos, PipSize } from '../components/DraggablePip'
 import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
@@ -51,13 +51,9 @@ export function useRoomUiSync({
     loadedRef.current = true
     let cancelled = false
     void (async () => {
-      const r = await dbTableSelectOne<any>({
-        table: 'users',
-        select: 'room_ui_preferences',
-        filters: { id: user.id },
-      })
-      if (cancelled || !r.ok || !r.data?.row) return
-      const m = mergeRoomUiPrefs((r.data.row as any).room_ui_preferences)
+      const r = await v1GetMeProfile()
+      if (cancelled || r.error || !r.data) return
+      const m = mergeRoomUiPrefs((r.data as any).room_ui_preferences)
         skipSavesRef.current += 1
         setLayout(m.layout_mode)
         setShowLayoutToggle(m.show_layout_toggle)
@@ -79,17 +75,12 @@ export function useRoomUiSync({
         skipSavesRef.current -= 1
         return
       }
-      void dbTableUpdate({
-        table: 'users',
-        filters: { id: user.id },
-        patch: {
-          room_ui_preferences: {
-            layout_mode: layout,
-            show_layout_toggle: showLayoutToggle,
-            hide_video_letterboxing: hideVideoLetterboxing,
-            pip: { pos: pipPos, size: pipSize },
-          },
-          updated_at: new Date().toISOString(),
+      void v1PatchMeProfile({
+        room_ui_preferences: {
+          layout_mode: layout,
+          show_layout_toggle: showLayoutToggle,
+          hide_video_letterboxing: hideVideoLetterboxing,
+          pip: { pos: pipPos, size: pipSize },
         },
       })
     }, SAVE_DEBOUNCE_MS)

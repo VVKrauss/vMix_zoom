@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { dbTableSelectOne } from '../api/dbApi'
+import { fetchJson } from '../api/http'
 
 /** Совпадение с `space_rooms.host_user_id` для slug комнаты (эфирная комната). */
 export function useIsDbSpaceRoomHost(roomSlug: string | undefined, userId: string | undefined): boolean {
@@ -13,11 +13,7 @@ export function useIsDbSpaceRoomHost(roomSlug: string | undefined, userId: strin
     }
     let cancelled = false
     void (async () => {
-      const r = await dbTableSelectOne<any>({
-        table: 'space_rooms',
-        select: 'host_user_id',
-        filters: { slug },
-      })
+      const r = await fetchJson<{ row: any | null }>(`/api/v1/space-rooms/${encodeURIComponent(slug)}/settings`, { method: 'GET', auth: true })
       if (cancelled || !r.ok) {
         if (!cancelled) setIsHost(false)
         return

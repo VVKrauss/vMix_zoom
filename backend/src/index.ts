@@ -9,8 +9,10 @@ import { readEnv } from './env.js'
 import { hashPassword, verifyPassword } from './auth/passwords.js'
 import { signAccessToken, verifyAccessToken } from './auth/tokens.js'
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
+import { ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import crypto from 'node:crypto'
+import os from 'node:os'
 import { WebSocketServer } from 'ws'
 import { URL } from 'node:url'
 import { registerApiV1 } from './api/v1/register.js'
@@ -265,9 +267,156 @@ async function rotateRefreshSession(refreshTokenPlain: string, req: any, reply: 
   return { userId: row.user_id, newRefresh }
 }
 
+async function requireStaff(req: any): Promise<{ userId: string }> {
+  const a = await requireAuth(req)
+  const ok = await isStaff(a.userId)
+  if (!ok) throw Object.assign(new Error('forbidden'), { statusCode: 403 })
+  return a
+}
+
+function releaseInfo(): { version: string | null; nodeEnv: string | null } {
+  const v = String(process.env.RELEASE_VERSION ?? '').trim()
+  const nodeEnv = String(process.env.NODE_ENV ?? '').trim()
+  return { version: v || null, nodeEnv: nodeEnv || null }
+}
+
 registerApiV1(app, { db, requireAuth })
 
 app.get('/api/health', async () => ({ ok: true }))
+
+// VPS diagnostics (admin only)
+app.get('/api/admin/vps', async (req) => {
+  await requireStaff(req)
+
+  const now = new Date().toISOString()
+  const rel = releaseInfo()
+
+  // DB check
+  let dbOk = false
+  let dbError: string | null = null
+  let dbServerVersion: string | null = null
+  let dbNow: string | null = null
+  try {
+    const r = await db.pool.query<{ version: string }>(`show server_version`)
+    dbServerVersion = r.rows[0]?.version ?? null
+    const t = await db.pool.query<{ now: string }>(`select now()::timestamptz as now`)
+    dbNow = t.rows[0]?.now ?? null
+    dbOk = true
+  } catch (e: any) {
+    dbOk = false
+    dbError = typeof e?.message === 'string' ? e.message : 'db_failed'
+  }
+
+  // S3 check (lightweight listing)
+  const buckets = env.S3_BUCKET_AVATARS && env.S3_BUCKET_MESSENGER_MEDIA
+    ? [
+        { logical: 'avatars', bucket: env.S3_BUCKET_AVATARS },
+        { logical: 'messenger-media', bucket: env.S3_BUCKET_MESSENGER_MEDIA },
+      ]
+    : env.S3_BUCKET
+      ? [{ logical: 'legacy', bucket: env.S3_BUCKET }]
+      : []
+
+  const s3Checks: any[] = []
+  for (const b of buckets) {
+    try {
+      const out = await s3.send(new ListObjectsV2Command({ Bucket: b.bucket, MaxKeys: 1 }))
+      s3Checks.push({
+        logical: b.logical,
+        bucket: b.bucket,
+        ok: true,
+        sampleKey: out.Contents?.[0]?.Key ?? null,
+      })
+    } catch (e: any) {
+      s3Checks.push({
+        logical: b.logical,
+        bucket: b.bucket,
+        ok: false,
+        error: typeof e?.message === 'string' ? e.message : 's3_failed',
+      })
+    }
+  }
+
+  // VPS metrics (best-effort)
+  const memTotal = os.totalmem()
+  const memFree = os.freemem()
+  const load = os.loadavg()
+  const uptimeSec = os.uptime()
+
+  return {
+    ok: true,
+    now,
+    release: rel,
+    db: { ok: dbOk, error: dbError, serverVersion: dbServerVersion, now: dbNow },
+    s3: {
+      endpoint: env.S3_ENDPOINT,
+      region: env.S3_REGION,
+      buckets: s3Checks,
+      note: 'Storage providers usually do not expose total/free capacity via S3 API; this endpoint checks connectivity only.',
+    },
+    vps: {
+      memTotalBytes: memTotal,
+      memFreeBytes: memFree,
+      loadAvg: { '1m': load[0], '5m': load[1], '15m': load[2] },
+      uptimeSec,
+      hostname: os.hostname(),
+      platform: os.platform(),
+      arch: os.arch(),
+    },
+  }
+})
+
+// Admin DB explorer (tables + preview rows)
+app.get('/api/admin/db/tables', async (req) => {
+  await requireStaff(req)
+  const r = await db.pool.query<{ table_name: string }>(
+    `
+    select table_name
+      from information_schema.tables
+     where table_schema = 'public'
+       and table_type = 'BASE TABLE'
+     order by table_name asc
+    `,
+  )
+  return { rows: r.rows.map((x) => x.table_name) }
+})
+
+app.get('/api/admin/db/tables/:table', async (req) => {
+  await requireStaff(req)
+  const table = String((req.params as any)?.table ?? '').trim()
+  const Q = z.object({
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+    offset: z.coerce.number().int().min(0).max(50_000).default(0),
+  })
+  const q = Q.parse((req as any).query ?? {})
+
+  const allow = await db.pool.query<{ table_name: string }>(
+    `
+    select table_name
+      from information_schema.tables
+     where table_schema='public'
+       and table_type='BASE TABLE'
+       and table_name=$1
+     limit 1
+    `,
+    [table],
+  )
+  if (!allow.rowCount) throw Object.assign(new Error('unknown_table'), { statusCode: 404 })
+
+  const ident = table.replace(/"/g, '""')
+  const cols = await db.pool.query<{ column_name: string; data_type: string }>(
+    `
+    select column_name, data_type
+      from information_schema.columns
+     where table_schema='public'
+       and table_name=$1
+     order by ordinal_position asc
+    `,
+    [table],
+  )
+  const rows = await db.pool.query(`select * from public."${ident}" limit $1 offset $2`, [q.limit, q.offset])
+  return { table, columns: cols.rows, rows: rows.rows }
+})
 
 app.post('/api/auth/signup', async (req, reply) => {
   const Body = z.object({
@@ -464,431 +613,18 @@ app.patch('/api/auth/profile', async (req) => {
   return { user: { id: u.id, email: u.email ?? null, displayName: u.display_name ?? null } }
 })
 
-app.post('/api/db/rpc/:name', async (req) => {
-  const a = await requireAuth(req)
-  const name = assertRpc(String((req.params as any).name ?? ''))
-  const Body = z.object({ args: z.record(z.string(), z.unknown()).default({}) })
-  const body = Body.parse(req.body)
-
-  // Portable DB import excludes Supabase-era SQL functions.
-  // For the RPCs used by the current frontend we implement equivalents here.
-  if (name === 'admin_access_info') {
-    const staff = await isStaff(a.userId)
-    const r = await db.pool.query<{ code: string }>(
-      `select r.code
-         from public.user_global_roles ugr
-         join public.roles r on r.id = ugr.role_id
-        where ugr.user_id = $1 and r.scope_type = 'global'`,
-      [a.userId],
-    )
-    const codes = new Set(r.rows.map((x) => x.code))
-    return { staff, superadmin: codes.has('superadmin') }
-  }
-
-  if (name === 'presence_foreground_pulse' || name === 'touch_my_presence') {
-    // NOTE: portable schema may not include a UNIQUE/PK on user_id, so avoid ON CONFLICT here.
-    await db.pool.query(
-      `update public.user_presence_public
-          set last_active_at = now(),
-              updated_at = now()
-        where user_id = $1`,
-      [a.userId],
-    )
-    await db.pool.query(
-      `insert into public.user_presence_public (user_id, last_active_at, updated_at)
-       select $1, now(), now()
-        where not exists (select 1 from public.user_presence_public where user_id = $1)`,
-      [a.userId],
-    )
-    return { ok: true }
-  }
-
-  if (name === 'presence_mark_background') {
-    await db.pool.query(
-      `update public.user_presence_public
-          set presence_last_background_at = now(),
-              updated_at = now()
-        where user_id = $1`,
-      [a.userId],
-    )
-    await db.pool.query(
-      `insert into public.user_presence_public (user_id, presence_last_background_at, updated_at)
-       select $1, now(), now()
-        where not exists (select 1 from public.user_presence_public where user_id = $1)`,
-      [a.userId],
-    )
-    return { ok: true }
-  }
-
-  if (name === 'list_my_contact_aliases') {
-    return await listMyContactAliasRows(db.pool, a.userId, body.args.p_contact_user_ids)
-  }
-
-  if (name === 'get_my_conversation_notification_mutes') {
-    return await getMyConversationNotificationMuteRows(db.pool, a.userId, body.args.p_conversation_ids)
-  }
-
-  if (name === 'set_conversation_notifications_muted') {
-    const cid = String(body.args.p_conversation_id ?? '').trim()
-    if (!cid) throw Object.assign(new Error('bad_conversation_id'), { statusCode: 400 })
-    const muted = Boolean(body.args.p_muted)
-    await assertConversationMember(cid, a.userId)
-
-    await db.pool.query(
-      `update public.chat_conversation_notification_mutes
-          set muted = $3,
-              updated_at = now()
-        where user_id = $1
-          and conversation_id = $2`,
-      [a.userId, cid, muted],
-    )
-    await db.pool.query(
-      `insert into public.chat_conversation_notification_mutes (user_id, conversation_id, muted, created_at, updated_at)
-       select $1, $2, $3, now(), now()
-        where not exists (
-          select 1 from public.chat_conversation_notification_mutes
-           where user_id = $1 and conversation_id = $2
-        )`,
-      [a.userId, cid, muted],
-    )
-
-    return { ok: true, muted }
-  }
-
-  if (name === 'list_my_contacts') {
-    return await listMyContacts(db.pool, a.userId)
-  }
-
-  if (name === 'list_my_direct_conversations') {
-    return await listMyDirectConversations(db.pool, a.userId)
-  }
-
-  if (name === 'list_my_group_chats') {
-    return await listMyGroupChats(db.pool, a.userId)
-  }
-
-  if (name === 'list_my_channels') {
-    return await listMyChannels(db.pool, a.userId)
-  }
-
-  if (name === 'ensure_self_direct_conversation') {
-    const existing = await db.pool.query<{ id: string }>(
-      `
-      select c.id
-        from public.chat_conversations c
-        join public.chat_conversation_members m on m.conversation_id = c.id
-       where c.kind = 'direct'
-         and m.user_id = $1
-         and not exists (
-           select 1 from public.chat_conversation_members m2
-            where m2.conversation_id = c.id
-              and m2.user_id <> $1
-         )
-       limit 1
-      `,
-      [a.userId],
-    )
-    const found = existing.rows[0]?.id
-    if (found) return found
-
-    const created = await db.pool.query<{ id: string }>(
-      `insert into public.chat_conversations (id, kind, title, created_by, created_at)
-       values (gen_random_uuid(), 'direct', null, $1, now())
-       returning id`,
-      [a.userId],
-    )
-    const cid = created.rows[0]?.id
-    if (!cid) throw new Error('create_conversation_failed')
-    await db.pool.query(
-      `insert into public.chat_conversation_members (conversation_id, user_id, role, joined_at)
-       values ($1, $2, 'owner', now())
-       on conflict do nothing`,
-      [cid, a.userId],
-    )
-    return cid
-  }
-
-  const argKeys = Object.keys(body.args)
-  const placeholders = argKeys.map((_, i) => `$${i + 1}`).join(', ')
-  const values = argKeys.map((k) => body.args[k])
-  const sql = `select * from public.${name}(${placeholders})`
-  const r = await db.pool.query(sql, values)
-  return r.rows[0] ?? null
-})
-
-// --- DB CRUD facade used by frontend (scaffold) ---
-// IMPORTANT: production must do allow-lists + per-user auth checks.
-const AllowedTables = new Set<string>([
-  'users',
-  'space_rooms',
-  'chat_conversations',
-  'chat_conversation_members',
-  'chat_messages',
-  'push_subscriptions',
-  'site_news',
-  'user_global_roles',
-  'account_subscriptions',
-  'user_presence_public',
-])
-
-const AllowedRpc = new Set<string>([
-  // Минимум для текущего фронта; расширять по мере миграции.
-  'admin_access_info',
-  'get_user_profile_for_peek',
-  'host_leave_space_room',
-  'presence_mark_background',
-  'presence_foreground_pulse',
-  'touch_my_presence',
-  'list_my_direct_conversations',
-  'list_my_group_chats',
-  'list_my_channels',
-  'list_my_contacts',
-  'list_my_contact_aliases',
-  'get_my_conversation_notification_mutes',
-  'set_conversation_notifications_muted',
-  'ensure_self_direct_conversation',
-])
-
-function assertRpc(name: string): string {
-  const n = name.trim()
-  if (!AllowedRpc.has(n)) throw Object.assign(new Error('rpc_not_allowed'), { statusCode: 403 })
-  return n
+// Legacy DB facade (PostgREST/RPC emulation) is forbidden: migration uses /api/v1/* only.
+function legacyDbDisabled(): never {
+  throw Object.assign(new Error('legacy_db_disabled'), { statusCode: 410 })
 }
 
-function assertTable(table: string): string {
-  const t = table.trim()
-  if (!AllowedTables.has(t)) throw Object.assign(new Error('table_not_allowed'), { statusCode: 403 })
-  return t
-}
+app.post('/api/db/rpc/:name', async () => legacyDbDisabled())
 
-function buildWhere(filters: Record<string, unknown>): { sql: string; values: unknown[] } {
-  const keys = Object.keys(filters)
-  const values: unknown[] = []
-  const parts: string[] = []
-  for (const k of keys) {
-    const v = (filters as any)[k]
-    if (k.endsWith('__is')) {
-      const col = k.slice(0, -4)
-      values.push(v)
-      parts.push(`${col} is ${v === null ? 'null' : `$${values.length}`}`)
-      continue
-    }
-    if (k.endsWith('__in')) {
-      const col = k.slice(0, -4)
-      const arr = Array.isArray(v) ? v : []
-      if (!arr.length) {
-        parts.push('false')
-        continue
-      }
-      values.push(arr)
-      parts.push(`${col} = any($${values.length})`)
-      continue
-    }
-    // eq
-    values.push(v)
-    parts.push(`${k} = $${values.length}`)
-  }
-  return { sql: parts.length ? `where ${parts.join(' and ')}` : '', values }
-}
-
-app.post('/api/db/select-one', async (req) => {
-  const a = await requireAuth(req)
-  const Body = z.object({
-    table: z.string().min(1),
-    select: z.string().optional(),
-    filters: z.record(z.string(), z.unknown()).default({}),
-  })
-  const body = Body.parse(req.body)
-  const table = assertTable(body.table)
-  const cols = sanitizeSelect(body.select)
-  const filters = body.filters as Record<string, unknown>
-
-  if (table === 'users') {
-    if ('profile_slug' in filters) {
-      const normalized = cols.replace(/\s+/g, '')
-      if (!/^id(,profile_slug)?$/i.test(normalized)) {
-        throw Object.assign(new Error('forbidden_select'), { statusCode: 403 })
-      }
-    } else {
-      if (filters.id !== a.userId) throw Object.assign(new Error('forbidden'), { statusCode: 403 })
-    }
-  }
-  if (table === 'push_subscriptions' || table === 'user_global_roles') {
-    if (filters.user_id !== a.userId) throw Object.assign(new Error('forbidden'), { statusCode: 403 })
-  }
-  if (table === 'chat_messages') {
-    const cid = typeof filters.conversation_id === 'string' ? filters.conversation_id : ''
-    await assertConversationMember(cid, a.userId)
-  }
-  if (table === 'chat_conversations') {
-    const cid = typeof filters.id === 'string' ? filters.id : ''
-    await assertConversationMember(cid, a.userId)
-  }
-  if (table === 'chat_conversation_members') {
-    const cid = typeof filters.conversation_id === 'string' ? filters.conversation_id : ''
-    if (filters.user_id !== a.userId) await assertConversationMember(cid, a.userId)
-  }
-  if (table === 'user_presence_public') {
-    assertUserPresenceSelectAllowed(filters, a.userId)
-  }
-  if (table === 'account_subscriptions') {
-    const where = buildWhere(filters)
-    const r = await db.pool.query(
-      `select ${cols}
-         from public.account_subscriptions s
-        where s.account_id in (select account_id from public.account_members where user_id = $1)
-          ${where.sql ? 'and ' + where.sql.replace(/^where\\s+/i, '') : ''}
-        limit 1`,
-      [a.userId, ...where.values],
-    )
-    return { row: r.rows[0] ?? null }
-  }
-
-  const where = buildWhere(filters)
-  const r = await db.pool.query(`select ${cols} from public.${table} ${where.sql} limit 1`, where.values)
-  return { row: r.rows[0] ?? null }
-})
-
-app.post('/api/db/select', async (req) => {
-  const a = await requireAuth(req)
-  const Body = z.object({
-    table: z.string().min(1),
-    select: z.string().optional(),
-    filters: z.record(z.string(), z.unknown()).default({}),
-    limit: z.number().int().positive().max(1000).optional(),
-    order: z.array(z.object({ column: z.string().min(1), ascending: z.boolean().optional() })).optional(),
-  })
-  const body = Body.parse(req.body)
-  const table = assertTable(body.table)
-  const cols = sanitizeSelect(body.select)
-  const filters = body.filters as Record<string, unknown>
-
-  if (table === 'users') {
-    if (filters.id !== a.userId) throw Object.assign(new Error('forbidden'), { statusCode: 403 })
-  }
-  if (table === 'push_subscriptions' || table === 'user_global_roles') {
-    if (filters.user_id !== a.userId) throw Object.assign(new Error('forbidden'), { statusCode: 403 })
-  }
-  if (table === 'chat_messages') {
-    const cid = typeof filters.conversation_id === 'string' ? filters.conversation_id : ''
-    await assertConversationMember(cid, a.userId)
-  }
-  if (table === 'chat_conversations') {
-    const cid = typeof filters.id === 'string' ? filters.id : ''
-    await assertConversationMember(cid, a.userId)
-  }
-  if (table === 'chat_conversation_members') {
-    const cid = typeof filters.conversation_id === 'string' ? filters.conversation_id : ''
-    if (filters.user_id !== a.userId) await assertConversationMember(cid, a.userId)
-  }
-  if (table === 'user_presence_public') {
-    assertUserPresenceSelectAllowed(filters, a.userId)
-  }
-  if (table === 'account_subscriptions') {
-    const where = buildWhere(filters)
-    const order =
-      body.order && body.order.length
-        ? `order by ${body.order.map((o) => `${o.column} ${o.ascending === false ? 'desc' : 'asc'}`).join(', ')}`
-        : ''
-    const limit = body.limit ? `limit ${body.limit}` : ''
-    const r = await db.pool.query(
-      `select ${cols}
-         from public.account_subscriptions s
-        where s.account_id in (select account_id from public.account_members where user_id = $1)
-          ${where.sql ? 'and ' + where.sql.replace(/^where\\s+/i, '') : ''}
-        ${order}
-        ${limit}`,
-      [a.userId, ...where.values],
-    )
-    return { rows: r.rows }
-  }
-
-  const where = buildWhere(filters)
-  const order =
-    body.order && body.order.length
-      ? `order by ${body.order.map((o) => `${o.column} ${o.ascending === false ? 'desc' : 'asc'}`).join(', ')}`
-      : ''
-  const limit = body.limit ? `limit ${body.limit}` : ''
-  const r = await db.pool.query(`select ${cols} from public.${table} ${where.sql} ${order} ${limit}`, where.values)
-  return { rows: r.rows }
-})
-
-app.post('/api/db/insert', async (req) => {
-  const a = await requireAuth(req)
-  const Body = z.object({ table: z.string().min(1), row: z.record(z.string(), z.unknown()) })
-  const body = Body.parse(req.body)
-  const table = assertTable(body.table)
-  const row = body.row as Record<string, unknown>
-
-  if (table === 'push_subscriptions') {
-    if (row.user_id !== a.userId) throw Object.assign(new Error('forbidden'), { statusCode: 403 })
-  } else {
-    throw Object.assign(new Error('insert_not_allowed'), { statusCode: 403 })
-  }
-
-  const cols = Object.keys(row)
-  const vals = cols.map((c) => (row as any)[c])
-  const ph = cols.map((_, i) => `$${i + 1}`).join(', ')
-  await db.pool.query(`insert into public.${table} (${cols.join(',')}) values (${ph})`, vals)
-  return { ok: true }
-})
-
-app.patch('/api/db/update', async (req) => {
-  const a = await requireAuth(req)
-  const Body = z.object({
-    table: z.string().min(1),
-    patch: z.record(z.string(), z.unknown()),
-    filters: z.record(z.string(), z.unknown()).default({}),
-  })
-  const body = Body.parse(req.body)
-  const table = assertTable(body.table)
-  const filters = body.filters as Record<string, unknown>
-  let patch = body.patch as Record<string, unknown>
-
-  if (table === 'users') {
-    if (filters.id !== a.userId) throw Object.assign(new Error('forbidden'), { statusCode: 403 })
-    patch = sanitizeUserSelfPatch(patch)
-  }
-  if (table === 'push_subscriptions') {
-    if (filters.user_id !== a.userId) throw Object.assign(new Error('forbidden'), { statusCode: 403 })
-  }
-  if (table === 'space_rooms') {
-    const slug = typeof filters.slug === 'string' ? filters.slug : ''
-    if (!slug) throw Object.assign(new Error('forbidden'), { statusCode: 403 })
-    const staff = await isStaff(a.userId)
-    if (!staff) {
-      const r = await db.pool.query(`select 1 from public.space_rooms where slug = $1 and host_user_id = $2 limit 1`, [slug, a.userId])
-      if (!r.rowCount) throw Object.assign(new Error('forbidden'), { statusCode: 403 })
-    }
-  }
-  if (table === 'chat_messages') {
-    const cid = typeof filters.conversation_id === 'string' ? filters.conversation_id : ''
-    await assertConversationMember(cid, a.userId)
-  }
-
-  const cols = Object.keys(patch)
-  const vals = cols.map((c) => (patch as any)[c])
-  const sets = cols.map((c, i) => `${c} = $${i + 1}`).join(', ')
-  const where = buildWhere(body.filters)
-  await db.pool.query(`update public.${table} set ${sets} ${where.sql}`, [...vals, ...where.values])
-  return { ok: true }
-})
-
-app.delete('/api/db/delete', async (req) => {
-  const a = await requireAuth(req)
-  const Body = z.object({ table: z.string().min(1), filters: z.record(z.string(), z.unknown()).default({}) })
-  const body = Body.parse(req.body)
-  const table = assertTable(body.table)
-  const filters = body.filters as Record<string, unknown>
-  if (table === 'push_subscriptions') {
-    if (filters.user_id !== a.userId) throw Object.assign(new Error('forbidden'), { statusCode: 403 })
-  } else {
-    throw Object.assign(new Error('delete_not_allowed'), { statusCode: 403 })
-  }
-  const where = buildWhere(body.filters)
-  await db.pool.query(`delete from public.${table} ${where.sql}`, where.values)
-  return { ok: true }
-})
+app.post('/api/db/select-one', async () => legacyDbDisabled())
+app.post('/api/db/select', async () => legacyDbDisabled())
+app.post('/api/db/insert', async () => legacyDbDisabled())
+app.patch('/api/db/update', async () => legacyDbDisabled())
+app.delete('/api/db/delete', async () => legacyDbDisabled())
 
 app.post('/api/storage/upload', async (req, reply) => {
   await requireAuth(req)
@@ -933,12 +669,23 @@ app.post('/api/storage/signed-url', async (req) => {
   })
   const body = Body.parse(req.body)
   const t = resolveStorageTarget(body.bucket, body.path)
-  const signedUrl = await getSignedUrl(
-    s3,
-    new GetObjectCommand({ Bucket: t.bucket, Key: t.key }),
-    { expiresIn: body.expiresInSec },
-  )
-  return { signedUrl }
+  try {
+    const signedUrl = await getSignedUrl(
+      s3,
+      new GetObjectCommand({ Bucket: t.bucket, Key: t.key }),
+      { expiresIn: body.expiresInSec },
+    )
+    return { signedUrl }
+  } catch (e: any) {
+    // When object is missing, do not fail the whole UI — just return no URL.
+    const code = String(e?.name ?? e?.Code ?? e?.code ?? '')
+    const status = Number(e?.$metadata?.httpStatusCode ?? 0)
+    if (code === 'NoSuchKey' || status === 404) {
+      return { signedUrl: null }
+    }
+    app.log.error({ err: e, bucket: body.bucket, path: body.path, resolved: t }, 'storage_signed_url_failed')
+    throw e
+  }
 })
 
 // --- Functions (Supabase Edge replacements) ---

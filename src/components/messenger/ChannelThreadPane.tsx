@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { useStableMobileMessenger } from '../../hooks/useStableMobileMessenger'
 import { useMessengerPeerAliasesForMessages } from '../../hooks/useMessengerPeerAliasesForMessages'
-import { dbTableSelectOne } from '../../api/dbApi'
+import { fetchJson } from '../../api/http'
 import { rtChannel, rtRemoveChannel } from '../../api/realtimeCompat'
 import {
   mapDirectMessageFromRow,
@@ -492,11 +492,7 @@ export function ChannelThreadPane({
       return
     }
     void (async () => {
-      const r = await dbTableSelectOne<any>({
-        table: 'chat_conversation_members',
-        select: 'role',
-        filters: { conversation_id: cid, user_id: user.id },
-      })
+      const r = await fetchJson<{ row: any | null }>(`/api/v1/me/conversations/${encodeURIComponent(cid)}/membership`, { method: 'GET', auth: true })
       if (cancelled) return
       if (!r.ok || !r.data?.row) {
         setMyChannelMemberRole(null)

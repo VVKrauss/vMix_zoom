@@ -1,4 +1,4 @@
-import { legacyRpc } from '../api/legacyRpcApi'
+import { fetchJson } from '../api/http'
 
 export type PublicGuestPreviewMessage = {
   id: string
@@ -68,12 +68,12 @@ export async function fetchPublicConversationGuestPreview(
   const nick = publicNick.trim()
   if (!nick) return { ok: false, error: 'invalid_nick' }
 
-  const r = await legacyRpc('get_public_conversation_guest_preview', { p_public_nick: nick, p_message_limit: messageLimit })
-  if (r.error) return { ok: false, error: 'rpc', message: r.error }
-  const data = r.data
-
-  if (!data || typeof data !== 'object') return { ok: false, error: 'parse' }
-  const j = data as Record<string, unknown>
+  const qs = new URLSearchParams()
+  qs.set('publicNick', nick)
+  qs.set('messageLimit', String(Math.max(1, Math.min(messageLimit, 80))))
+  const r = await fetchJson<any>(`/api/v1/public/conversations/guest-preview?${qs.toString()}`, { method: 'GET' })
+  if (!r.ok) return { ok: false, error: 'rpc', message: r.error.message }
+  const j = r.data as Record<string, unknown>
   if (j.ok !== true) {
     const code = typeof j.error === 'string' ? j.error : ''
     if (code === 'not_found') return { ok: false, error: 'not_found' }

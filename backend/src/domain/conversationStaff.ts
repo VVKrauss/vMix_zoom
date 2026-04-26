@@ -47,25 +47,30 @@ export async function listConversationMembersForManagement(
   await assertGroupOrChannelStaff(pool, cid, args.userId)
   const r = await pool.query(
     `
-    select
-      m.user_id,
-      m.role as member_role,
-      coalesce(nullif(btrim(u.display_name), ''), 'Пользователь')::text as display_name
-    from public.chat_conversation_members m
-    join public.chat_conversations c on c.id = m.conversation_id
-    left join public.users u on u.id = m.user_id
-    where m.conversation_id = $1
-      and c.kind in ('group','channel')
-      and c.closed_at is null
-    order by
-      case m.role
-        when 'owner' then 0
-        when 'admin' then 1
-        when 'moderator' then 2
-        else 3
-      end,
-      display_name asc,
-      m.user_id asc
+    select user_id, member_role, display_name
+      from (
+        select distinct on (m.user_id)
+          m.user_id,
+          m.role as member_role,
+          coalesce(nullif(btrim(u.display_name), ''), 'Пользователь')::text as display_name,
+          case m.role
+            when 'owner' then 0
+            when 'admin' then 1
+            when 'moderator' then 2
+            else 3
+          end as role_rank
+        from public.chat_conversation_members m
+        join public.chat_conversations c on c.id = m.conversation_id
+        left join public.users u on u.id = m.user_id
+        where m.conversation_id = $1
+          and c.kind in ('group','channel')
+          and c.closed_at is null
+        order by m.user_id asc, role_rank asc
+      ) t
+     order by
+      t.role_rank asc,
+      t.display_name asc,
+      t.user_id asc
     `,
     [cid],
   )

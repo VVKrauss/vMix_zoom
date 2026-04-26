@@ -1,6 +1,6 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react'
 import type { MessengerConversationSummary } from '../lib/messengerConversations'
-import { dbTableSelectOne } from '../api/dbApi'
+import { fetchJson } from '../api/http'
 
 /**
  * Публичность группы/канала для шапки треда (отдельно от summary в списке).
@@ -39,11 +39,7 @@ export function useMessengerActiveConversationPublic(opts: {
     setActiveConversationIsPublicLoading(true)
     void (async () => {
       try {
-        const r = await dbTableSelectOne<any>({
-          table: 'chat_conversations',
-          select: 'kind, group_is_public, channel_is_public',
-          filters: { id: cid },
-        })
+        const r = await fetchJson<{ row: any | null }>(`/api/v1/conversations/${encodeURIComponent(cid)}/public-info`, { method: 'GET', auth: true })
         if (!active) return
         if (!r.ok || !r.data?.row) {
           setActiveConversationIsPublic(null)

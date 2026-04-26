@@ -9,15 +9,35 @@ type Handler = (e: RealtimeEvent) => void
 export class RealtimeClient {
   private ws: WebSocket | null = null
   private handlers = new Map<string, Set<Handler>>()
-  private url: string
+  private getUrl: () => string
+  private lastUrl: string | null = null
 
-  constructor(url: string) {
-    this.url = url
+  constructor(urlOrProvider: string | (() => string)) {
+    this.getUrl = typeof urlOrProvider === 'function' ? urlOrProvider : () => urlOrProvider
+  }
+
+  private safeSend(payload: unknown): void {
+    if (!this.ws) return
+    // Avoid noisy errors when React unmounts while WS is closing.
+    if (this.ws.readyState !== WebSocket.OPEN) return
+    try {
+      this.ws.send(JSON.stringify(payload))
+    } catch {
+      /* noop */
+    }
   }
 
   connect(): void {
-    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return
-    this.ws = new WebSocket(this.url)
+    const nextUrl = this.getUrl()
+    const urlChanged = this.lastUrl != null && this.lastUrl !== nextUrl
+    if (!urlChanged && this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return
+    try {
+      if (urlChanged) this.ws?.close()
+    } catch {
+      /* noop */
+    }
+    this.lastUrl = nextUrl
+    this.ws = new WebSocket(nextUrl)
     this.ws.onmessage = (msg) => {
       try {
         const parsed = JSON.parse(String(msg.data)) as { channel?: string } & RealtimeEvent
@@ -37,11 +57,7 @@ export class RealtimeClient {
     const ev = event.trim()
     if (!ch || !ev) return
     this.connect()
-    try {
-      this.ws?.send(JSON.stringify({ type: 'broadcast', channel: ch, event: ev, payload }))
-    } catch {
-      /* noop */
-    }
+    this.safeSend({ type: 'broadcast', channel: ch, event: ev, payload })
   }
 
   channel(name: string): { on: (handler: Handler) => RealtimeUnsubscribe; subscribe: () => void; unsubscribe: () => void } {
@@ -60,18 +76,10 @@ export class RealtimeClient {
       },
       subscribe: () => {
         this.connect()
-        try {
-          this.ws?.send(JSON.stringify({ type: 'subscribe', channel: ch }))
-        } catch {
-          /* noop */
-        }
+        this.safeSend({ type: 'subscribe', channel: ch })
       },
       unsubscribe: () => {
-        try {
-          this.ws?.send(JSON.stringify({ type: 'unsubscribe', channel: ch }))
-        } catch {
-          /* noop */
-        }
+        this.safeSend({ type: 'unsubscribe', channel: ch })
         this.handlers.delete(ch)
       },
     }

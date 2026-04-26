@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useProfile } from '../../hooks/useProfile'
 import { useStableMobileMessenger } from '../../hooks/useStableMobileMessenger'
 import { useToast } from '../../context/ToastContext'
-import { dbTableSelectOne } from '../../api/dbApi'
+import { fetchJson } from '../../api/http'
 import { rtChannel, rtRemoveChannel } from '../../api/realtimeCompat'
 import { truncateMessengerReplySnippet } from '../../lib/messengerUi'
 import { buildQuotePreview } from '../../lib/messengerQuotePreview'
@@ -264,11 +264,7 @@ export function GroupThreadPane({
       return
     }
     void (async () => {
-      const r = await dbTableSelectOne<any>({
-        table: 'chat_conversation_members',
-        select: 'role',
-        filters: { conversation_id: cid, user_id: user.id },
-      })
+      const r = await fetchJson<{ row: any | null }>(`/api/v1/me/conversations/${encodeURIComponent(cid)}/membership`, { method: 'GET', auth: true })
       if (cancelled) return
       if (!r.ok || !r.data?.row) {
         setMyGroupMemberRole(null)

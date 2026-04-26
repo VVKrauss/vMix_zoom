@@ -131,9 +131,9 @@ export async function listChannelPostsPage(
   const before = options?.before
   const r = await v1ListChannelPostsPage({ conversationId, limit, before: before ?? null })
   if (r.error) return { data: null, error: r.error, hasMoreOlder: false }
-  const newestFirst = mapMessagesFromRows(r.data)
-  const chronological = [...newestFirst].reverse()
-  return { data: chronological, error: null, hasMoreOlder: newestFirst.length === limit }
+  // v1 already returns chronological (oldest -> newest).
+  const chronological = mapMessagesFromRows(r.data)
+  return { data: chronological, error: null, hasMoreOlder: chronological.length === limit }
 }
 
 export async function listChannelCommentsPage(
@@ -145,9 +145,9 @@ export async function listChannelCommentsPage(
   const before = options?.before
   const r = await v1ListChannelCommentsPage({ conversationId, postId, limit, before: before ?? null })
   if (r.error) return { data: null, error: r.error, hasMoreOlder: false }
-  const newestFirst = mapMessagesFromRows(r.data)
-  const chronological = [...newestFirst].reverse()
-  return { data: chronological, error: null, hasMoreOlder: newestFirst.length === limit }
+  // v1 already returns chronological (oldest -> newest).
+  const chronological = mapMessagesFromRows(r.data)
+  return { data: chronological, error: null, hasMoreOlder: chronological.length === limit }
 }
 
 /** Реакции (kind=reaction) на посты и комментарии — отдельная выборка по meta.react_to. */

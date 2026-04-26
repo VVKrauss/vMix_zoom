@@ -1,7 +1,7 @@
-import { legacyRpc } from '../api/legacyRpcApi'
 import { listMyRoomChatConversations } from '../api/roomChatApi'
 import { listConversationMembersBasic } from '../api/conversationMembersApi'
-import { dbTableSelect, dbTableSelectOne } from '../api/dbApi'
+import { fetchJson } from '../api/http'
+import { v1ListConversationMessagesPage } from '../api/messengerApi'
 
 export const ROOM_CHAT_PAGE_SIZE = 10
 
@@ -83,32 +83,24 @@ export async function leaveRoomChatArchiveEntry(
   const id = conversationId.trim()
   if (!id) return { ok: false, removedConversation: false, error: 'Нет id' }
 
-  const r = await legacyRpc('leave_room_chat_archive_entry', { p_conversation_id: id })
-  if (r.error) return { ok: false, removedConversation: false, error: r.error }
-  const data = r.data
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) {
-    const err = typeof row?.error === 'string' ? row.error : 'request_failed'
-    return { ok: false, removedConversation: false, error: err }
-  }
-  return {
-    ok: true,
-    removedConversation: row.removed_conversation === true,
-    error: null,
-  }
+  const r = await fetchJson<{ ok: boolean; removedConversation?: boolean; error?: string }>(
+    `/api/v1/me/room-chat-conversations/${encodeURIComponent(id)}/leave`,
+    { method: 'POST', auth: true, body: '{}' },
+  )
+  if (!r.ok) return { ok: false, removedConversation: false, error: r.error.message }
+  if (r.data.ok !== true) return { ok: false, removedConversation: false, error: r.data.error ?? 'request_failed' }
+  return { ok: true, removedConversation: r.data.removedConversation === true, error: null }
 }
 
 /** Админ: удалить room-чаты без сообщений или без участников. */
 export async function adminPurgeStaleRoomChats(): Promise<{ deleted: number; error: string | null }> {
-  const r = await legacyRpc('admin_purge_stale_room_chats', {})
-  if (r.error) return { deleted: 0, error: r.error }
-  const data = r.data
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) {
-    const err = typeof row?.error === 'string' ? row.error : 'request_failed'
-    return { deleted: 0, error: err }
-  }
-  const n = typeof row.deleted === 'number' ? row.deleted : Number(row.deleted ?? 0) || 0
+  const r = await fetchJson<{ ok: boolean; deleted?: number }>(`/api/v1/admin/room-chats/purge-stale`, {
+    method: 'POST',
+    auth: true,
+    body: '{}',
+  })
+  if (!r.ok) return { deleted: 0, error: r.error.message }
+  const n = typeof r.data.deleted === 'number' ? r.data.deleted : Number(r.data.deleted ?? 0) || 0
   return { deleted: n, error: null }
 }
 
@@ -154,13 +146,14 @@ export async function getRoomChatConversationForUser(
   userId: string,
 ): Promise<{ data: RoomChatConversationSummary | null; error: string | null }> {
   void userId
-  const r = await dbTableSelectOne<any>({
-    table: 'chat_conversations',
-    select: 'id, kind, space_room_slug, title, created_at, closed_at, last_message_at, last_message_preview, message_count',
-    filters: { id: conversationId },
+  const id = conversationId.trim()
+  if (!id) return { data: null, error: 'Нет id' }
+  const r = await fetchJson<{ row: any | null }>(`/api/v1/me/room-chat-conversations/${encodeURIComponent(id)}`, {
+    method: 'GET',
+    auth: true,
   })
   if (!r.ok) return { data: null, error: r.error.message }
-  const row = r.data.row as any
+  const row = r.data.row
   if (!row) return { data: null, error: null }
   if (row.kind !== 'room') return { data: null, error: 'Чат не найден' }
   return { data: mapConversationRow(row as Record<string, unknown>), error: null }
@@ -174,15 +167,9 @@ export async function listRoomChatMessagesForUser(
   if (convo.error) return { data: null, error: convo.error }
   if (!convo.data) return { data: null, error: 'Чат не найден' }
 
-  const r = await dbTableSelect<any>({
-    table: 'chat_messages',
-    select: 'id, sender_user_id, sender_name_snapshot, kind, body, created_at',
-    filters: { conversation_id: conversationId },
-    order: [{ column: 'created_at', ascending: true }],
-    limit: 1000,
-  })
-  if (!r.ok) return { data: null, error: r.error.message }
-  const data = r.data.rows ?? []
+  const r = await v1ListConversationMessagesPage({ conversationId, limit: 1000, before: null })
+  if (r.error || !r.data) return { data: null, error: r.error ?? 'request_failed' }
+  const data = r.data.messages ?? []
   return {
     data: (data ?? []).map((row: any) => ({
       id: String(row.id),
