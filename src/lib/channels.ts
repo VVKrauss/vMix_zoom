@@ -1,6 +1,7 @@
 import type { ReactionEmoji } from '../types/roomComms'
 import { REACTION_EMOJI_WHITELIST } from '../types/roomComms'
 import { mapDirectMessageFromRow, type DirectMessage } from './messenger'
+import { dedupeDirectMessagesByIdStable } from './messengerMessageDedupe'
 import { v1ListMyChannels, v1MarkConversationRead } from '../api/messengerApi'
 import {
   v1AppendChannelComment,
@@ -120,7 +121,8 @@ export async function leaveChannel(conversationId: string): Promise<{ error: str
 
 function mapMessagesFromRows(rows: unknown): DirectMessage[] {
   const arr = Array.isArray(rows) ? rows : []
-  return arr.map((r) => mapDirectMessageFromRow(r as Record<string, unknown>)).filter((m) => m.id)
+  const mapped = arr.map((r) => mapDirectMessageFromRow(r as Record<string, unknown>)).filter((m) => m.id)
+  return dedupeDirectMessagesByIdStable(mapped)
 }
 
 export async function listChannelPostsPage(

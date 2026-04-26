@@ -1100,8 +1100,10 @@ export function DashboardMessengerPage() {
         meta: imageMeta,
       }
       setMessages((prev) => {
+        const id = (newMsg.id || '').trim()
         if (prev.some((m) => m.id === newMsg.id)) return prev
-        return [...prev, newMsg].sort(sortDirectMessagesChrono)
+        const base = id ? prev.filter((m) => m.id !== id) : prev
+        return [...base, newMsg].sort(sortDirectMessagesChrono)
       })
       setItems((prev) =>
         prev.map((item) =>
@@ -1173,20 +1175,23 @@ export function DashboardMessengerPage() {
     const snap = profile?.display_name?.trim() || 'Вы'
     const finalId = res.data?.messageId ?? optimistic.id
     const finalAt = res.data?.createdAt ?? optimistic.createdAt
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === optimistic.id
-          ? {
-              ...optimistic,
-              id: finalId,
-              createdAt: finalAt,
-              senderNameSnapshot: snap,
-              replyToMessageId: replyId,
-              meta: linkMetaRecord ?? optimistic.meta,
-            }
-          : m,
-      ),
-    )
+    setMessages((prev) => {
+      const next = prev
+        .filter((m) => m.id !== finalId)
+        .map((m) =>
+          m.id === optimistic.id
+            ? {
+                ...optimistic,
+                id: finalId,
+                createdAt: finalAt,
+                senderNameSnapshot: snap,
+                replyToMessageId: replyId,
+                meta: linkMetaRecord ?? optimistic.meta,
+              }
+            : m,
+        )
+      return next
+    })
 
     setItems((prev) =>
       prev.map((item) =>
@@ -1279,8 +1284,10 @@ export function DashboardMessengerPage() {
         meta: audioMeta,
       }
       setMessages((prev) => {
+        const id = (newMsg.id || '').trim()
         if (prev.some((m) => m.id === newMsg.id)) return prev
-        return [...prev, newMsg].sort(sortDirectMessagesChrono)
+        const base = id ? prev.filter((m) => m.id !== id) : prev
+        return [...base, newMsg].sort(sortDirectMessagesChrono)
       })
       setItems((prev) =>
         prev.map((item) =>

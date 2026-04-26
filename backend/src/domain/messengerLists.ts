@@ -6,37 +6,58 @@ export async function listMyDirectConversations(pool: Pool, userId: string): Pro
     `
       select *
       from (
-        select distinct on (c.id)
-        c.id,
-        c.title,
-        c.created_at,
-        c.last_message_at,
-        c.last_message_preview,
-        c.message_count,
-        other.user_id as other_user_id,
-        u.display_name as other_display_name,
-        u.avatar_url as other_avatar_url,
-        (
-          select count(*)
-            from public.chat_messages m
-           where m.conversation_id = c.id
-             and m.sender_user_id is distinct from $1
-             and m.created_at > coalesce(me.last_read_at, 'epoch'::timestamptz)
-        )::int as unread_count
-        from public.chat_conversations c
-        join public.chat_conversation_members me
-          on me.conversation_id = c.id
-         and me.user_id = $1
-        left join lateral (
-          select m2.user_id
-            from public.chat_conversation_members m2
-           where m2.conversation_id = c.id
-             and m2.user_id <> $1
-           limit 1
-        ) other on true
-        left join public.users u on u.id = other.user_id
-        where c.kind = 'direct'
-        order by c.id, c.last_message_at desc nulls last, c.created_at desc
+        -- Canonical 1:1 conversations via direct_conversation_pairs (prevents duplicates in the list).
+        select
+          c.id,
+          c.title,
+          c.created_at,
+          c.last_message_at,
+          c.last_message_preview,
+          c.message_count,
+          (case when p.user_a = $1::uuid then p.user_b else p.user_a end) as other_user_id,
+          u.display_name as other_display_name,
+          u.avatar_url as other_avatar_url,
+          (
+            select count(*)
+              from public.chat_messages m
+             where m.conversation_id = c.id
+               and m.sender_user_id is distinct from $1
+               and m.created_at > coalesce(me.last_read_at, 'epoch'::timestamptz)
+          )::int as unread_count
+          from public.direct_conversation_pairs p
+          join public.chat_conversations c on c.id = p.conversation_id
+          join public.chat_conversation_members me
+            on me.conversation_id = c.id
+           and me.user_id = $1
+          left join public.users u on u.id = (case when p.user_a = $1::uuid then p.user_b else p.user_a end)
+         where c.kind = 'direct'
+           and (p.user_a = $1::uuid or p.user_b = $1::uuid)
+
+        union all
+
+        -- Self "Saved" conversation (single-member direct), not represented in pairs table.
+        select
+          c.id,
+          c.title,
+          c.created_at,
+          c.last_message_at,
+          c.last_message_preview,
+          c.message_count,
+          null::uuid as other_user_id,
+          null::text as other_display_name,
+          null::text as other_avatar_url,
+          0::int as unread_count
+          from public.chat_conversations c
+          join public.chat_conversation_members me
+            on me.conversation_id = c.id
+           and me.user_id = $1
+         where c.kind = 'direct'
+           and not exists (
+             select 1
+             from public.chat_conversation_members m2
+             where m2.conversation_id = c.id
+               and m2.user_id <> $1
+           )
       ) t
       order by t.last_message_at desc nulls last, t.created_at desc
       `,

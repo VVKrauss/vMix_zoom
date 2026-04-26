@@ -650,7 +650,11 @@ export function GroupThreadPane({
       setReplyTo(null)
       setPhotoUploading(false)
       setSending(false)
-      setMessages((prev) => [...prev, newMsg].sort(sortChrono))
+      setMessages((prev) => {
+        const id = (newMsg.id || '').trim()
+        const base = id ? prev.filter((m) => m.id !== id) : prev
+        return [...base, newMsg].sort(sortChrono)
+      })
       onTouchTail?.({ lastMessageAt: createdAt, lastMessagePreview: preview })
       return
     }
@@ -687,11 +691,17 @@ export function GroupThreadPane({
     }
     const finalId = res.data?.messageId ?? optimistic.id
     const finalAt = res.data?.createdAt ?? optimistic.createdAt
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === optimistic.id ? { ...optimistic, id: finalId, createdAt: finalAt, meta: linkMetaRecord ?? optimistic.meta } : m,
-      ),
-    )
+    setMessages((prev) => {
+      const next = prev
+        // If realtime already inserted the final row, drop it and keep the optimistic->final swap.
+        .filter((m) => m.id !== finalId)
+        .map((m) =>
+          m.id === optimistic.id
+            ? { ...optimistic, id: finalId, createdAt: finalAt, meta: linkMetaRecord ?? optimistic.meta }
+            : m,
+        )
+      return next
+    })
     onTouchTail?.({ lastMessageAt: finalAt, lastMessagePreview: body })
     setSending(false)
   }, [
@@ -757,7 +767,11 @@ export function GroupThreadPane({
       setReplyTo(null)
       setVoiceUploading(false)
       setSending(false)
-      setMessages((prev) => [...prev, newMsg].sort(sortChrono))
+      setMessages((prev) => {
+        const id = (newMsg.id || '').trim()
+        const base = id ? prev.filter((m) => m.id !== id) : prev
+        return [...base, newMsg].sort(sortChrono)
+      })
       onTouchTail?.({ lastMessageAt: createdAt, lastMessagePreview: preview })
     },
     [

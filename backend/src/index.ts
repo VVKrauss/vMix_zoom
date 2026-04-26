@@ -38,6 +38,17 @@ const s3 = new S3Client({
 
 const app = Fastify({ logger: true })
 
+// Always log unexpected errors (otherwise we may only see statusCode=500 without details).
+app.setErrorHandler((err: any, req: any, reply: any) => {
+  const statusCode = Number(err?.statusCode ?? err?.status ?? 0) || 500
+  const url = String(req?.url ?? '')
+  const method = String(req?.method ?? '')
+  const reqId = String((req as any)?.id ?? (req as any)?.reqId ?? '')
+  app.log.error({ err, statusCode, method, url, reqId }, 'request_error')
+  const message = statusCode >= 500 ? 'Internal Server Error' : String(err?.message ?? 'request_failed')
+  void reply.code(statusCode).send({ message })
+})
+
 type PasswordResetCode = { code: string; expiresAtMs: number }
 const passwordResetCodes = new Map<string, PasswordResetCode>()
 
@@ -660,15 +671,29 @@ app.post('/api/storage/remove', async (req) => {
   return { ok: true }
 })
 
-app.post('/api/storage/signed-url', async (req) => {
+app.post('/api/storage/signed-url', async (req, reply) => {
   await requireAuth(req)
   const Body = z.object({
     bucket: z.string().min(1),
     path: z.string().min(1),
-    expiresInSec: z.number().int().positive().max(3600),
+    // Frontend may omit expiresInSec; default to short-lived URL.
+    // Allow longer TTL for cached avatars/media (frontend uses 7 days).
+    expiresInSec: z.coerce.number().int().positive().max(60 * 60 * 24 * 7).default(60),
   })
-  const body = Body.parse(req.body)
-  const t = resolveStorageTarget(body.bucket, body.path)
+  const parsed = Body.safeParse(req.body)
+  if (!parsed.success) {
+    app.log.warn({ issues: parsed.error.issues, body: req.body }, 'storage_signed_url_bad_body')
+    return reply.code(400).send({ message: 'bad_signed_url_request' })
+  }
+  const body = parsed.data
+  let t: { bucket: string; key: string }
+  try {
+    t = resolveStorageTarget(body.bucket, body.path)
+  } catch (e: any) {
+    const statusCode = Number(e?.statusCode ?? 0) || 400
+    app.log.warn({ err: e, bucket: body.bucket, path: body.path }, 'storage_signed_url_bad_target')
+    return reply.code(statusCode).send({ message: e?.message ?? 'bad_storage_target' })
+  }
   try {
     const signedUrl = await getSignedUrl(
       s3,
@@ -684,7 +709,7 @@ app.post('/api/storage/signed-url', async (req) => {
       return { signedUrl: null }
     }
     // Some S3-compatible providers return 403 AccessDenied for missing objects / private keys.
-    if (status === 403 && code === 'AccessDenied') {
+    if (status === 403 && (code === 'AccessDenied' || code === 'AccessDeniedException')) {
       return { signedUrl: null }
     }
     app.log.error({ err: e, bucket: body.bucket, path: body.path, resolved: t }, 'storage_signed_url_failed')

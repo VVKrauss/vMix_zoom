@@ -19,6 +19,8 @@ import {
   type DirectMessage,
   type MessengerForwardNav,
 } from '../../lib/messenger'
+import { dedupeDirectMessagesByIdStable } from '../../lib/messengerMessageDedupe'
+import { optimisticMessageMatches } from '../../lib/messengerOptimisticMatch'
 import { buildQuotePreview } from '../../lib/messengerQuotePreview'
 import { useDevRenderTrace } from '../../lib/devTrace'
 import {
@@ -648,7 +650,11 @@ export function ChannelThreadPane({
         createdAt,
         meta: imageMeta,
       }
-      setPosts((prev) => [...prev, newMsg].sort(sortChrono))
+      setPosts((prev) => {
+        const id = (newMsg.id || '').trim()
+        const base = id ? prev.filter((p) => p.id !== id) : prev
+        return [...base, newMsg].sort(sortChrono)
+      })
       onTouchTail?.({
         lastMessageAt: createdAt,
         lastMessagePreview: previewTextForDirectMessageTail({ kind: 'image', body, meta: imageMeta }),
@@ -687,18 +693,21 @@ export function ChannelThreadPane({
     }
     const finalId = res.data?.messageId ?? optimistic.id
     const finalAt = res.data?.createdAt ?? optimistic.createdAt
-    setPosts((prev) =>
-      prev.map((m) =>
-        m.id === optimistic.id
-          ? {
-              ...optimistic,
-              id: finalId,
-              createdAt: finalAt,
-              meta: linkMeta ?? optimistic.meta,
-            }
-          : m,
-      ),
-    )
+    setPosts((prev) => {
+      const next = prev
+        .filter((m) => m.id !== finalId)
+        .map((m) =>
+          m.id === optimistic.id
+            ? {
+                ...optimistic,
+                id: finalId,
+                createdAt: finalAt,
+                meta: linkMeta ?? optimistic.meta,
+              }
+            : m,
+        )
+      return next
+    })
     onTouchTail?.({ lastMessageAt: finalAt, lastMessagePreview: body })
     setFeedSending(false)
     requestAnimationFrame(() => {
@@ -764,7 +773,11 @@ export function ChannelThreadPane({
         createdAt,
         meta: audioMeta,
       }
-      setPosts((prev) => [...prev, newMsg].sort(sortChrono))
+      setPosts((prev) => {
+        const id = (newMsg.id || '').trim()
+        const base = id ? prev.filter((p) => p.id !== id) : prev
+        return [...base, newMsg].sort(sortChrono)
+      })
       onTouchTail?.({
         lastMessageAt: createdAt,
         lastMessagePreview: previewTextForDirectMessageTail({ kind: 'audio', body, meta: audioMeta }),
@@ -865,7 +878,7 @@ export function ChannelThreadPane({
       if (!active) return
       const hadCache = Boolean(cached?.posts?.length)
       if (cached) {
-        setPosts(cached.posts ?? [])
+        setPosts(dedupeDirectMessagesByIdStable(cached.posts ?? []))
         setHasMoreOlder(Boolean(cached.hasMoreOlder))
         setThreadLoading(false)
         pendingChannelTailScrollRef.current = true
@@ -894,7 +907,7 @@ export function ChannelThreadPane({
         }
         return
       }
-      const nextPosts = (res.data ?? []).filter((m) => m.kind !== 'reaction')
+      const nextPosts = dedupeDirectMessagesByIdStable((res.data ?? []).filter((m) => m.kind !== 'reaction'))
       setPosts(nextPosts)
       setHasMoreOlder(res.hasMoreOlder)
       if (!hadCache) pendingChannelTailScrollRef.current = true
@@ -930,6 +943,7 @@ export function ChannelThreadPane({
         const msg = mapDirectMessageFromRow(payload.new as Record<string, unknown>)
         if (!msg.id) return
         if (cidRef.current.trim() !== cid) return
+        const selfId = user.id
         if (msg.kind === 'reaction') {
           setReactions((prev) => (prev.some((r) => r.id === msg.id) ? prev : [...prev, msg].sort(sortChrono)))
           return
@@ -939,10 +953,8 @@ export function ChannelThreadPane({
             if (prev.some((p) => p.id === msg.id)) return prev
             const withoutMatchingOptimistic = prev.filter((p) => {
               if (!p.id.startsWith('local-')) return true
-              if (p.senderUserId !== msg.senderUserId) return true
-              if (p.kind !== msg.kind) return true
-              if ((p.body ?? '') !== (msg.body ?? '')) return true
-              return false
+              if (!selfId || p.senderUserId !== selfId || msg.senderUserId !== selfId) return true
+              return !optimisticMessageMatches(p, msg, { senderId: selfId })
             })
             return [...withoutMatchingOptimistic, msg].sort(sortChrono)
           })

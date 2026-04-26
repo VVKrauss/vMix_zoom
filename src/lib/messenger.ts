@@ -15,6 +15,7 @@ import {
   v1EnsureDirectConversationWithUser,
   v1GetDirectPeerReceiptContext,
 } from '../api/messengerApi'
+import { dedupeDirectMessagesByIdStable } from './messengerMessageDedupe'
 
 /** Событие для мгновенного пересчёта бейджа непрочитанных (см. useMessengerUnreadCount). */
 export const MESSENGER_UNREAD_REFRESH_EVENT = 'vmix:messenger-unread-refresh'
@@ -579,7 +580,9 @@ export async function listDirectMessagesPage(
 
   const r = await v1ListConversationMessagesPage({ conversationId, limit, before: before ?? null })
   if (r.error || !r.data) return { data: null, error: r.error, hasMoreOlder: false }
-  const chronological = (r.data.messages ?? []).map((row) => mapDirectMessageFromRow(row as Record<string, unknown>))
+  const chronological = dedupeDirectMessagesByIdStable(
+    (r.data.messages ?? []).map((row) => mapDirectMessageFromRow(row as Record<string, unknown>)),
+  )
   return { data: chronological, error: null, hasMoreOlder: r.data.hasMoreOlder }
 }
 

@@ -29,11 +29,9 @@ export function AdminPage() {
         <nav className="dashboard-topbar__nav">
           <Link to="/" className="dashboard-topbar__nav-link dashboard-topbar__nav-link--icon" title="На главную" aria-label="На главную">
             <HomeIcon />
-            <span className="dashboard-topbar__nav-text">На главную</span>
           </Link>
           <Link to="/dashboard" className="dashboard-topbar__nav-link dashboard-topbar__nav-link--icon" title="Личный кабинет" aria-label="Личный кабинет">
             <SettingsGearIcon />
-            <span className="dashboard-topbar__nav-text">Кабинет</span>
           </Link>
           <Link
             to="/dashboard/messenger"
@@ -42,7 +40,6 @@ export function AdminPage() {
             aria-label="Мессенджер"
           >
             <ChatBubbleIcon />
-            <span className="dashboard-topbar__nav-text">Мессенджер</span>
             {messengerUnread > 0 ? (
               <span className="dashboard-topbar__nav-ms-badge">
                 {messengerUnread > 99 ? '99+' : messengerUnread}
@@ -57,7 +54,6 @@ export function AdminPage() {
             aria-label="Выйти"
           >
             <LogOutIcon />
-            <span className="dashboard-topbar__nav-text">Выйти</span>
           </button>
         </nav>
       </header>
