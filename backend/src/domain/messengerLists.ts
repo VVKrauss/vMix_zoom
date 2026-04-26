@@ -4,7 +4,9 @@ import type { Pool } from 'pg'
 export async function listMyDirectConversations(pool: Pool, userId: string): Promise<unknown[]> {
   const r = await pool.query(
     `
-      select distinct on (c.id)
+      select *
+      from (
+        select distinct on (c.id)
         c.id,
         c.title,
         c.created_at,
@@ -21,20 +23,22 @@ export async function listMyDirectConversations(pool: Pool, userId: string): Pro
              and m.sender_user_id is distinct from $1
              and m.created_at > coalesce(me.last_read_at, 'epoch'::timestamptz)
         )::int as unread_count
-      from public.chat_conversations c
-      join public.chat_conversation_members me
-        on me.conversation_id = c.id
-       and me.user_id = $1
-      left join lateral (
-        select m2.user_id
-          from public.chat_conversation_members m2
-         where m2.conversation_id = c.id
-           and m2.user_id <> $1
-         limit 1
-      ) other on true
-      left join public.users u on u.id = other.user_id
-      where c.kind = 'direct'
-      order by c.last_message_at desc nulls last, c.created_at desc
+        from public.chat_conversations c
+        join public.chat_conversation_members me
+          on me.conversation_id = c.id
+         and me.user_id = $1
+        left join lateral (
+          select m2.user_id
+            from public.chat_conversation_members m2
+           where m2.conversation_id = c.id
+             and m2.user_id <> $1
+           limit 1
+        ) other on true
+        left join public.users u on u.id = other.user_id
+        where c.kind = 'direct'
+        order by c.id, c.last_message_at desc nulls last, c.created_at desc
+      ) t
+      order by t.last_message_at desc nulls last, t.created_at desc
       `,
     [userId],
   )
@@ -44,7 +48,9 @@ export async function listMyDirectConversations(pool: Pool, userId: string): Pro
 export async function listMyGroupChats(pool: Pool, userId: string): Promise<unknown[]> {
   const r = await pool.query(
     `
-      select distinct on (c.id)
+      select *
+      from (
+        select distinct on (c.id)
         c.id,
         c.title,
         c.created_at,
@@ -61,12 +67,14 @@ export async function listMyGroupChats(pool: Pool, userId: string): Promise<unkn
         null::text as other_display_name,
         null::text as other_avatar_url,
         0::int as unread_count
-      from public.chat_conversations c
-      join public.chat_conversation_members me
-        on me.conversation_id = c.id
-       and me.user_id = $1
-      where c.kind = 'group'
-      order by c.last_message_at desc nulls last, c.created_at desc
+        from public.chat_conversations c
+        join public.chat_conversation_members me
+          on me.conversation_id = c.id
+         and me.user_id = $1
+        where c.kind = 'group'
+        order by c.id, c.last_message_at desc nulls last, c.created_at desc
+      ) t
+      order by t.last_message_at desc nulls last, t.created_at desc
       `,
     [userId],
   )
@@ -76,7 +84,9 @@ export async function listMyGroupChats(pool: Pool, userId: string): Promise<unkn
 export async function listMyChannels(pool: Pool, userId: string): Promise<unknown[]> {
   const r = await pool.query(
     `
-      select distinct on (c.id)
+      select *
+      from (
+        select distinct on (c.id)
         c.id,
         c.title,
         c.created_at,
@@ -95,12 +105,14 @@ export async function listMyChannels(pool: Pool, userId: string): Promise<unknow
         null::text as other_display_name,
         null::text as other_avatar_url,
         0::int as unread_count
-      from public.chat_conversations c
-      join public.chat_conversation_members me
-        on me.conversation_id = c.id
-       and me.user_id = $1
-      where c.kind = 'channel'
-      order by c.last_message_at desc nulls last, c.created_at desc
+        from public.chat_conversations c
+        join public.chat_conversation_members me
+          on me.conversation_id = c.id
+         and me.user_id = $1
+        where c.kind = 'channel'
+        order by c.id, c.last_message_at desc nulls last, c.created_at desc
+      ) t
+      order by t.last_message_at desc nulls last, t.created_at desc
       `,
     [userId],
   )

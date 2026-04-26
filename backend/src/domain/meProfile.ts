@@ -121,7 +121,19 @@ export async function patchMeProfile(pool: Pool, args: { userId: string; patch: 
   const clean = sanitizeMeUsersPatch(args.patch)
   const cols = Object.keys(clean)
   const vals = cols.map((c) => (clean as any)[c])
-  const sets = cols.map((c, i) => `${c} = $${i + 1}`).join(', ')
+
+  // VPS schema: `messenger_pinned_conversation_ids` is jsonb.
+  // Accept an array of uuids/strings and store as JSON array of strings.
+  const pinnedIdx = cols.indexOf('messenger_pinned_conversation_ids')
+  if (pinnedIdx >= 0) {
+    const v = vals[pinnedIdx]
+    const arr = Array.isArray(v) ? v : v == null ? [] : []
+    vals[pinnedIdx] = JSON.stringify(arr.map((x) => String(x)).map((x) => x.trim()).filter(Boolean))
+  }
+
+  const sets = cols
+    .map((c, i) => (c === 'messenger_pinned_conversation_ids' ? `${c} = ($${i + 1})::jsonb` : `${c} = $${i + 1}`))
+    .join(', ')
   await pool.query(`update public.users set ${sets} where id = $${cols.length + 1}`, [...vals, args.userId])
 }
 
