@@ -11,7 +11,7 @@ import { AdminRoomChatsCleanupPanel } from './AdminRoomChatsCleanupPanel'
 import { AdminSiteNewsPanel } from './AdminSiteNewsPanel'
 import { ChatBubbleIcon } from './icons'
 
-type AdminTab = 'dashboard' | 'users' | 'server' | 'notifications' | 'roomChats' | 'news'
+type AdminTab = 'dashboard' | 'users' | 'videoServer' | 'vps' | 'notifications' | 'roomChats' | 'news'
 
 export function AdminPage() {
   const { signOut } = useAuth()
@@ -75,10 +75,17 @@ export function AdminPage() {
             </button>
             <button
               type="button"
-              className={`admin-sidebar__link${tab === 'server' ? ' admin-sidebar__link--active' : ''}`}
-              onClick={() => setTab('server')}
+              className={`admin-sidebar__link${tab === 'videoServer' ? ' admin-sidebar__link--active' : ''}`}
+              onClick={() => setTab('videoServer')}
             >
-              Сервер
+              Сервер Видео
+            </button>
+            <button
+              type="button"
+              className={`admin-sidebar__link${tab === 'vps' ? ' admin-sidebar__link--active' : ''}`}
+              onClick={() => setTab('vps')}
+            >
+              VPS
             </button>
             <button
               type="button"
@@ -107,7 +114,30 @@ export function AdminPage() {
             </section>
           ) : null}
 
-          {tab === 'server' ? <ServerSettingsModal variant="inline" open /> : null}
+          {tab === 'videoServer' ? <ServerSettingsModal variant="inline" open /> : null}
+
+          {tab === 'vps' ? (
+            <section className="dashboard-section">
+              <h2 className="dashboard-section__subtitle">VPS</h2>
+              <p className="dashboard-section__hint">
+                Эта вкладка — про API/БД/прокси на VPS (не про signaling/vMix).
+              </p>
+              <div className="admin-rooms-panel" role="region" aria-label="Быстрые проверки">
+                <div className="admin-rooms-panel__head">Быстрые проверки</div>
+                <div className="admin-rooms-panel__body">
+                  <p style={{ marginTop: 0 }}>
+                    Health-check API: <code className="admin-dashboard-code">GET /api/health</code>
+                  </p>
+                  <p style={{ marginBottom: 0 }}>
+                    Если нужно — добавим сюда статус БД и версии релиза отдельным эндпоинтом
+                    <code className="admin-dashboard-code"> /api/admin/vps</code>.
+                  </p>
+                </div>
+              </div>
+
+              <AdminRoomChatsCleanupPanel />
+            </section>
+          ) : null}
 
           {tab === 'notifications' ? <TelegramNotificationsPanel /> : null}
 

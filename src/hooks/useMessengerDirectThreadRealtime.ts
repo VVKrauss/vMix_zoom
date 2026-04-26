@@ -9,7 +9,7 @@ import {
 import type { MessengerConversationSummary } from '../lib/messengerConversations'
 import { DM_PAGE_SIZE, MARK_DIRECT_READ_DEBOUNCE_MS, sortDirectMessagesChrono } from '../lib/messengerDashboardUtils'
 import { playMessageSound } from '../lib/messengerSound'
-import { supabase } from '../lib/supabase'
+import { rtChannel, rtRemoveChannel } from '../api/realtimeCompat'
 
 /**
  * Realtime по открытому direct-треду: INSERT/DELETE/UPDATE в chat_messages, звук, ресинк при ошибке канала.
@@ -90,8 +90,7 @@ export function useMessengerDirectThreadRealtime(opts: {
       )
     }
 
-    const channel = supabase
-      .channel(`dm-thread:${convId}`)
+    const channel = rtChannel(`dm-thread:${convId}`)
       .on(
         'postgres_changes',
         {
@@ -100,7 +99,7 @@ export function useMessengerDirectThreadRealtime(opts: {
           table: 'chat_messages',
           filter: `conversation_id=eq.${convId}`,
         },
-        (payload) => {
+        (payload: any) => {
           const row = payload.new as Record<string, unknown>
           if (!row?.id) return
           const msg = mapDirectMessageFromRow(row)
@@ -153,7 +152,7 @@ export function useMessengerDirectThreadRealtime(opts: {
           table: 'chat_messages',
           filter: `conversation_id=eq.${convId}`,
         },
-        (payload) => {
+        (payload: any) => {
           const oldRow = payload.old as Record<string, unknown>
           const id = typeof oldRow?.id === 'string' ? oldRow.id : ''
           if (!id) return
@@ -187,7 +186,7 @@ export function useMessengerDirectThreadRealtime(opts: {
           table: 'chat_messages',
           filter: `conversation_id=eq.${convId}`,
         },
-        (payload) => {
+        (payload: any) => {
           const row = payload.new as Record<string, unknown>
           if (!row?.id) return
           const msg = mapDirectMessageFromRow(row)
@@ -195,7 +194,7 @@ export function useMessengerDirectThreadRealtime(opts: {
           queueMicrotask(() => bumpScrollIfPinned())
         },
       )
-      .subscribe((status) => {
+      .subscribe((status: any) => {
         if (status === 'SUBSCRIBED') {
           sawSubscribed = true
           return
@@ -211,7 +210,7 @@ export function useMessengerDirectThreadRealtime(opts: {
 
     return () => {
       if (markReadDebounce != null) clearTimeout(markReadDebounce)
-      void supabase.removeChannel(channel)
+      rtRemoveChannel(channel)
     }
   }, [threadConversationId, listOnlyMobile, userId, bumpScrollIfPinned, mergeLatestPageIntoMessages])
 }

@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { legacyRpc } from '../api/legacyRpcApi'
 
 export type PublicGuestPreviewMessage = {
   id: string
@@ -68,12 +68,9 @@ export async function fetchPublicConversationGuestPreview(
   const nick = publicNick.trim()
   if (!nick) return { ok: false, error: 'invalid_nick' }
 
-  const { data, error } = await supabase.rpc('get_public_conversation_guest_preview', {
-    p_public_nick: nick,
-    p_message_limit: messageLimit,
-  })
-
-  if (error) return { ok: false, error: 'rpc', message: error.message }
+  const r = await legacyRpc('get_public_conversation_guest_preview', { p_public_nick: nick, p_message_limit: messageLimit })
+  if (r.error) return { ok: false, error: 'rpc', message: r.error }
+  const data = r.data
 
   if (!data || typeof data !== 'object') return { ok: false, error: 'parse' }
   const j = data as Record<string, unknown>

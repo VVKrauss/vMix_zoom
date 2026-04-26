@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { User } from '@supabase/supabase-js'
-import { supabase } from '../lib/supabase'
+import { dbTableSelectOne, dbTableUpdate } from '../api/dbApi'
 import type { StoredLayoutMode } from '../config/roomUiStorage'
 import type { PipPos, PipSize } from '../components/DraggablePip'
 import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
@@ -8,7 +7,7 @@ import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
 const SAVE_DEBOUNCE_MS = 650
 
 interface Args {
-  user: User | null
+  user: { id: string } | null
   isViewportMobile: boolean
   layout: StoredLayoutMode
   pipPos: PipPos
@@ -51,14 +50,14 @@ export function useRoomUiSync({
     if (loadedRef.current) return
     loadedRef.current = true
     let cancelled = false
-    void supabase
-      .from('users')
-      .select('room_ui_preferences')
-      .eq('id', user.id)
-      .single()
-      .then(({ data, error }) => {
-        if (cancelled || error || !data) return
-        const m = mergeRoomUiPrefs(data.room_ui_preferences)
+    void (async () => {
+      const r = await dbTableSelectOne<any>({
+        table: 'users',
+        select: 'room_ui_preferences',
+        filters: { id: user.id },
+      })
+      if (cancelled || !r.ok || !r.data?.row) return
+      const m = mergeRoomUiPrefs((r.data.row as any).room_ui_preferences)
         skipSavesRef.current += 1
         setLayout(m.layout_mode)
         setShowLayoutToggle(m.show_layout_toggle)
@@ -67,7 +66,7 @@ export function useRoomUiSync({
           setPipPos(m.pip.pos)
           setPipSize(m.pip.size)
         }
-      })
+    })()
     return () => {
       cancelled = true
     }
@@ -80,9 +79,10 @@ export function useRoomUiSync({
         skipSavesRef.current -= 1
         return
       }
-      void supabase
-        .from('users')
-        .update({
+      void dbTableUpdate({
+        table: 'users',
+        filters: { id: user.id },
+        patch: {
           room_ui_preferences: {
             layout_mode: layout,
             show_layout_toggle: showLayoutToggle,
@@ -90,8 +90,8 @@ export function useRoomUiSync({
             pip: { pos: pipPos, size: pipSize },
           },
           updated_at: new Date().toISOString(),
-        })
-        .eq('id', user.id)
+        },
+      })
     }, SAVE_DEBOUNCE_MS)
     return () => window.clearTimeout(t)
   }, [user, isViewportMobile, layout, pipPos, pipSize, showLayoutToggle, hideVideoLetterboxing])

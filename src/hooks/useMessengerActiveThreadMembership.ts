@@ -1,6 +1,6 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react'
 import { hasPendingConversationJoinRequest } from '../lib/chatRequests'
-import { supabase } from '../lib/supabase'
+import { dbTableSelectOne } from '../api/dbApi'
 
 /**
  * Роль текущего пользователя в открытом чате и флаг pending join request (для UI группы/канала).
@@ -36,18 +36,17 @@ export function useMessengerActiveThreadMembership(opts: {
     setPendingJoinRequest(null)
 
     void Promise.all([
-      supabase
-        .from('chat_conversation_members')
-        .select('role')
-        .eq('conversation_id', cid)
-        .eq('user_id', userId)
-        .maybeSingle(),
+      dbTableSelectOne<any>({
+        table: 'chat_conversation_members',
+        select: 'role',
+        filters: { conversation_id: cid, user_id: userId },
+      }),
       hasPendingConversationJoinRequest(cid),
     ]).then(([memberRes, pendingRes]) => {
       if (!active) return
-      if (!memberRes.error && memberRes.data) {
-        const role = typeof (memberRes.data as { role?: unknown })?.role === 'string'
-          ? String((memberRes.data as { role: string }).role).trim()
+      if (memberRes.ok && memberRes.data?.row) {
+        const role = typeof (memberRes.data.row as { role?: unknown })?.role === 'string'
+          ? String((memberRes.data.row as { role: string }).role).trim()
           : null
         setActiveConversationRole(role)
       } else {

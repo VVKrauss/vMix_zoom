@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../hooks/useProfile'
 import { ConfirmDialog } from './ConfirmDialog'
+import { legacyRpc } from '../api/legacyRpcApi'
 
 export type AdminUserRow = {
   id: string
@@ -66,12 +66,9 @@ async function rpcSetRole(
   code: string,
   grant: boolean,
 ): Promise<string | null> {
-  const { data, error: rpcErr } = await supabase.rpc('admin_set_user_global_role', {
-    p_target_user: userId,
-    p_role_code: code,
-    p_grant: grant,
-  })
-  if (rpcErr) return rpcErr.message
+  const r = await legacyRpc('admin_set_user_global_role', { p_target_user: userId, p_role_code: code, p_grant: grant })
+  if (r.error) return r.error
+  const data = r.data
   const res = data as SetRoleResult | null
   if (!res?.ok) {
     if (res?.error === 'only_superadmin') {
@@ -85,10 +82,9 @@ async function rpcSetRole(
 }
 
 async function rpcDeleteUser(userId: string): Promise<string | null> {
-  const { data, error: rpcErr } = await supabase.rpc('admin_delete_registered_user', {
-    p_target_user: userId,
-  })
-  if (rpcErr) return rpcErr.message
+  const r = await legacyRpc('admin_delete_registered_user', { p_target_user: userId })
+  if (r.error) return r.error
+  const data = r.data
   const res = data as DeleteUserResult | null
   if (!res?.ok) {
     switch (res?.error) {
@@ -139,9 +135,9 @@ export function AdminRegisteredUsersTable({ isSuperadmin }: { isSuperadmin: bool
   const refresh = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true)
     setError(null)
-    const uRes = await supabase.rpc('admin_list_registered_users', { p_limit: 200, p_offset: 0 })
+    const uRes = await legacyRpc('admin_list_registered_users', { p_limit: 200, p_offset: 0 })
     if (uRes.error) {
-      setError(uRes.error.message)
+      setError(uRes.error)
       setUsers([])
     } else {
       setUsers((uRes.data as AdminUserRow[] | null) ?? [])

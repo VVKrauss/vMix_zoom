@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { v1ListConversationMembersForMentions, v1MarkMyMentionsRead } from '../api/mentionsApi'
 
 export type ConversationMentionPick = {
   userId: string
@@ -12,11 +12,9 @@ export async function listConversationMembersForMentions(
 ): Promise<{ data: ConversationMentionPick[] | null; error: string | null }> {
   const cid = conversationId.trim()
   if (!cid) return { data: null, error: 'Нет чата' }
-  const { data, error } = await supabase.rpc('list_conversation_members_for_mentions', {
-    p_conversation_id: cid,
-  })
-  if (error) return { data: null, error: error.message }
-  const rows = Array.isArray(data) ? data : []
+  const r = await v1ListConversationMembersForMentions(cid)
+  if (r.error) return { data: null, error: r.error }
+  const rows = Array.isArray(r.data) ? r.data : []
   const out: ConversationMentionPick[] = rows
     .map((r) => {
       const row = r as Record<string, unknown>
@@ -38,7 +36,7 @@ export async function markMyMentionsRead(
 ): Promise<{ error: string | null }> {
   const cid = conversationId.trim()
   if (!cid) return { error: 'Нет чата' }
-  const { error } = await supabase.rpc('mark_my_mentions_read', { p_conversation_id: cid })
-  return { error: error?.message ?? null }
+  const r = await v1MarkMyMentionsRead(cid)
+  return { error: r.error }
 }
 

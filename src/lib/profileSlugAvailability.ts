@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { dbTableSelectOne, dbTableUpdate } from '../api/dbApi'
 import { buildAutoProfileSlug } from './profileSlug'
 
 const ASSIGN_ATTEMPTS = 14
@@ -9,10 +9,13 @@ export async function fetchProfileSlugOwner(
 ): Promise<{ userId: string | null; error: string | null }> {
   const s = slug.trim()
   if (!s) return { userId: null, error: null }
-  const { data, error } = await supabase.from('users').select('id').eq('profile_slug', s).maybeSingle()
-  if (error) return { userId: null, error: error.message }
-  const id = typeof (data as { id?: string } | null)?.id === 'string' ? (data as { id: string }).id : null
-  return { userId: id, error: null }
+  const r = await dbTableSelectOne<{ id: string }>({
+    table: 'users',
+    select: 'id',
+    filters: { profile_slug: s },
+  })
+  if (!r.ok) return { userId: null, error: r.error.message }
+  return { userId: r.data.row?.id ?? null, error: null }
 }
 
 export async function isProfileSlugAvailable(slug: string, excludeUserId: string): Promise<boolean> {
@@ -35,21 +38,17 @@ export async function assignAutoProfileSlugIfEmpty(
     const free = await isProfileSlugAvailable(candidate, uid)
     if (!free) continue
 
-    const { data, error } = await supabase
-      .from('users')
-      .update({ profile_slug: candidate, updated_at: new Date().toISOString() })
-      .eq('id', uid)
-      .is('profile_slug', null)
-      .select('id')
-      .maybeSingle()
-
-    if (error) {
-      if (error.code === '23505') continue
-      return { slug: null, error: error.message }
+    const upd = await dbTableUpdate({
+      table: 'users',
+      patch: { profile_slug: candidate, updated_at: new Date().toISOString() },
+      filters: { id: uid, profile_slug__is: null },
+    })
+    if (!upd.ok) {
+      // backend должен маппить unique violation на понятный код; временно — по сообщению.
+      if (String(upd.error.message).includes('23505')) continue
+      return { slug: null, error: upd.error.message }
     }
-    if (data) return { slug: candidate, error: null }
-    /* Уже заполнили в другой вкладке */
-    return { slug: null, error: null }
+    return { slug: candidate, error: null }
   }
   return { slug: null, error: 'Не удалось подобрать свободный ник, попробуйте позже.' }
 }

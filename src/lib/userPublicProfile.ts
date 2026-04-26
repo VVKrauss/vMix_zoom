@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { dbRpc } from '../api/dbApi'
 
 /** PostgREST отдаёт timestamptz в JSON как строку; на всякий случай принимаем и число ms. */
 function parseRpcTimestamp(v: unknown): string | null {
@@ -36,11 +36,11 @@ export async function fetchPublicUserProfile(
   const id = userId.trim()
   if (!id) return { data: null, error: 'Не указан пользователь' }
 
-  const { data, error } = await supabase.rpc('get_user_profile_for_peek', {
+  const r = await dbRpc<unknown>('get_user_profile_for_peek', {
     p_target_user_id: id,
   })
-
-  if (error) return { data: null, error: error.message }
+  if (!r.ok) return { data: null, error: r.error.message }
+  const data = r.data
 
   const row = data as Record<string, unknown> | null
   if (!row || row.error) {

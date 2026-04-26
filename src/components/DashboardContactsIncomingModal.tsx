@@ -46,11 +46,21 @@ export function DashboardContactsIncomingModal({
     [items],
   )
 
+  const uniqueIncoming = useMemo(() => {
+    const m = new Map<string, ContactCard>()
+    for (const c of incoming) {
+      const uid = String(c.targetUserId ?? '').trim()
+      if (!uid) continue
+      if (!m.has(uid)) m.set(uid, c)
+    }
+    return [...m.values()]
+  }, [incoming])
+
   const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds])
 
   const visibleRows = useMemo(() => {
-    return incoming.filter((c) => showHidden || !hiddenSet.has(c.targetUserId))
-  }, [incoming, hiddenSet, showHidden])
+    return uniqueIncoming.filter((c) => showHidden || !hiddenSet.has(c.targetUserId))
+  }, [uniqueIncoming, hiddenSet, showHidden])
 
   if (!open) return null
 

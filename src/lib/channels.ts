@@ -1,7 +1,25 @@
 import type { ReactionEmoji } from '../types/roomComms'
 import { REACTION_EMOJI_WHITELIST } from '../types/roomComms'
-import { supabase } from './supabase'
 import { mapDirectMessageFromRow, type DirectMessage } from './messenger'
+import { v1ListMyChannels, v1MarkConversationRead } from '../api/messengerApi'
+import {
+  v1AppendChannelComment,
+  v1AppendChannelFeedMessage,
+  v1AppendChannelPostRich,
+  v1CreateChannel,
+  v1DeleteChannelComment,
+  v1DeleteChannelPost,
+  v1EditChannelComment,
+  v1EditChannelPostRich,
+  v1JoinPublicChannel,
+  v1LeaveChannel,
+  v1ListChannelCommentCounts,
+  v1ListChannelCommentsPage,
+  v1ListChannelPostsPage,
+  v1ListChannelReactionsForTargets,
+  v1ToggleChannelReaction,
+  v1UpdateChannelProfile,
+} from '../api/channelApi'
 
 export type ChannelSummary = {
   id: string
@@ -48,29 +66,27 @@ function mapChannelRow(row: Record<string, unknown>): ChannelSummary {
 }
 
 export async function listMyChannels(): Promise<{ data: ChannelSummary[] | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('list_my_channels')
-  if (error) return { data: null, error: error.message }
+  const { data, error } = await v1ListMyChannels()
+  if (error || !data) return { data: null, error }
   const rows = Array.isArray(data) ? data : []
   return { data: rows.map((r) => mapChannelRow(r as Record<string, unknown>)).filter((x) => x.id), error: null }
 }
 
 export async function markChannelRead(conversationId: string): Promise<{ error: string | null }> {
-  const { error } = await supabase.rpc('mark_channel_read', { p_conversation_id: conversationId.trim() })
-  return { error: error?.message ?? null }
+  const r = await v1MarkConversationRead(conversationId)
+  return { error: r.error }
 }
 
 export async function createChannel(
   title: string,
   opts?: { isPublic?: boolean; postingMode?: 'admins_only' | 'everyone'; commentsMode?: 'everyone' | 'disabled' },
 ): Promise<{ data: string | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('create_channel', {
-    p_title: title,
-    p_is_public: opts?.isPublic ?? false,
-    p_posting_mode: opts?.postingMode ?? 'admins_only',
-    p_comments_mode: opts?.commentsMode ?? 'everyone',
+  return await v1CreateChannel({
+    title,
+    isPublic: opts?.isPublic ?? false,
+    postingMode: opts?.postingMode ?? 'admins_only',
+    commentsMode: opts?.commentsMode ?? 'everyone',
   })
-  if (error) return { data: null, error: error.message }
-  return { data: typeof data === 'string' ? data : null, error: null }
 }
 
 export async function updateChannelProfile(args: {
@@ -83,36 +99,23 @@ export async function updateChannelProfile(args: {
   avatarPath?: string | null
   avatarThumbPath?: string | null
 }): Promise<{ error: string | null }> {
-  const { data, error } = await supabase.rpc('update_channel_profile', {
-    p_conversation_id: args.conversationId.trim(),
-    p_title: args.title ?? null,
-    p_public_nick: args.publicNick ?? null,
-    p_is_public: args.isPublic ?? null,
-    p_posting_mode: args.postingMode ?? null,
-    p_comments_mode: args.commentsMode ?? null,
-    p_avatar_path: args.avatarPath ?? null,
-    p_avatar_thumb_path: args.avatarThumbPath ?? null,
+  return await v1UpdateChannelProfile(args.conversationId, {
+    title: args.title ?? undefined,
+    publicNick: args.publicNick ?? undefined,
+    isPublic: args.isPublic ?? undefined,
+    postingMode: args.postingMode ?? undefined,
+    commentsMode: args.commentsMode ?? undefined,
+    avatarPath: args.avatarPath ?? undefined,
+    avatarThumbPath: args.avatarThumbPath ?? undefined,
   })
-  if (error) return { error: error.message }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_updated' }
-  return { error: null }
 }
 
 export async function joinPublicChannel(conversationId: string): Promise<{ error: string | null }> {
-  const { data, error } = await supabase.rpc('join_public_channel', { p_conversation_id: conversationId.trim() })
-  if (error) return { error: error.message }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_joined' }
-  return { error: null }
+  return await v1JoinPublicChannel(conversationId)
 }
 
 export async function leaveChannel(conversationId: string): Promise<{ error: string | null }> {
-  const { data, error } = await supabase.rpc('leave_channel', { p_conversation_id: conversationId.trim() })
-  if (error) return { error: error.message }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_left' }
-  return { error: null }
+  return await v1LeaveChannel(conversationId)
 }
 
 function mapMessagesFromRows(rows: unknown): DirectMessage[] {
@@ -126,14 +129,9 @@ export async function listChannelPostsPage(
 ): Promise<{ data: DirectMessage[] | null; error: string | null; hasMoreOlder: boolean }> {
   const limit = Math.max(1, Math.min(options?.limit ?? 30, 80))
   const before = options?.before
-  const { data, error } = await supabase.rpc('list_channel_posts_page', {
-    p_conversation_id: conversationId.trim(),
-    p_limit: limit,
-    p_before_created_at: before?.createdAt ?? null,
-    p_before_id: before?.id ?? null,
-  })
-  if (error) return { data: null, error: error.message, hasMoreOlder: false }
-  const newestFirst = mapMessagesFromRows(data)
+  const r = await v1ListChannelPostsPage({ conversationId, limit, before: before ?? null })
+  if (r.error) return { data: null, error: r.error, hasMoreOlder: false }
+  const newestFirst = mapMessagesFromRows(r.data)
   const chronological = [...newestFirst].reverse()
   return { data: chronological, error: null, hasMoreOlder: newestFirst.length === limit }
 }
@@ -145,15 +143,9 @@ export async function listChannelCommentsPage(
 ): Promise<{ data: DirectMessage[] | null; error: string | null; hasMoreOlder: boolean }> {
   const limit = Math.max(1, Math.min(options?.limit ?? 50, 120))
   const before = options?.before
-  const { data, error } = await supabase.rpc('list_channel_comments_page', {
-    p_conversation_id: conversationId.trim(),
-    p_post_id: postId.trim(),
-    p_limit: limit,
-    p_before_created_at: before?.createdAt ?? null,
-    p_before_id: before?.id ?? null,
-  })
-  if (error) return { data: null, error: error.message, hasMoreOlder: false }
-  const newestFirst = mapMessagesFromRows(data)
+  const r = await v1ListChannelCommentsPage({ conversationId, postId, limit, before: before ?? null })
+  if (r.error) return { data: null, error: r.error, hasMoreOlder: false }
+  const newestFirst = mapMessagesFromRows(r.data)
   const chronological = [...newestFirst].reverse()
   return { data: chronological, error: null, hasMoreOlder: newestFirst.length === limit }
 }
@@ -166,12 +158,9 @@ export async function listChannelReactionsForTargets(
   const cid = conversationId.trim()
   const ids = [...new Set(targetIds.map((x) => x.trim()).filter(Boolean))]
   if (!cid || ids.length === 0) return { data: [], error: null }
-  const { data, error } = await supabase.rpc('list_channel_reactions_for_targets', {
-    p_conversation_id: cid,
-    p_target_ids: ids,
-  })
-  if (error) return { data: null, error: error.message }
-  return { data: mapMessagesFromRows(data), error: null }
+  const r = await v1ListChannelReactionsForTargets({ conversationId: cid, targetIds: ids })
+  if (r.error) return { data: null, error: r.error }
+  return { data: mapMessagesFromRows(r.data), error: null }
 }
 
 export async function listChannelCommentCounts(
@@ -181,13 +170,10 @@ export async function listChannelCommentCounts(
   const cid = conversationId.trim()
   const ids = postIds.map((x) => x.trim()).filter(Boolean)
   if (!cid || ids.length === 0) return { data: {}, error: null }
-  const { data, error } = await supabase.rpc('list_channel_comment_counts', {
-    p_conversation_id: cid,
-    p_post_ids: ids,
-  })
-  if (error) return { data: null, error: error.message }
+  const r = await v1ListChannelCommentCounts({ conversationId: cid, postIds: ids })
+  if (r.error) return { data: null, error: r.error }
   const out: Record<string, number> = {}
-  const rows = Array.isArray(data) ? data : []
+  const rows = Array.isArray(r.data) ? r.data : []
   for (const r of rows) {
     const row = r as Record<string, unknown>
     const pid = typeof row.post_id === 'string' ? row.post_id : String(row.post_id ?? '')
@@ -212,13 +198,9 @@ export async function appendChannelPostRich(
   body: string,
   meta?: Record<string, unknown> | null,
 ): Promise<{ data: { messageId: string | null; createdAt: string | null } | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('append_channel_post_rich', {
-    p_conversation_id: conversationId.trim(),
-    p_body: body,
-    p_meta: meta ?? null,
-  })
-  if (error) return { data: null, error: error.message }
-  return { data: parseOkMessageResult(data), error: null }
+  const r = await v1AppendChannelPostRich({ conversationId, body, meta: meta ?? null })
+  if (r.error) return { data: null, error: r.error }
+  return { data: parseOkMessageResult(r.data), error: null }
 }
 
 /** Лента канала: как сообщение в группе (текст + meta, фото). */
@@ -226,14 +208,9 @@ export async function appendChannelFeedMessage(
   conversationId: string,
   args: { kind?: 'text' | 'image' | 'audio'; body: string; meta?: Record<string, unknown> | null },
 ): Promise<{ data: { messageId: string | null; createdAt: string | null } | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('append_channel_feed_message', {
-    p_conversation_id: conversationId.trim(),
-    p_body: args.body,
-    p_kind: args.kind ?? 'text',
-    p_meta: args.meta ?? null,
-  })
-  if (error) return { data: null, error: error.message }
-  return { data: parseOkMessageResult(data), error: null }
+  const r = await v1AppendChannelFeedMessage({ conversationId, kind: args.kind, body: args.body, meta: args.meta ?? null })
+  if (r.error) return { data: null, error: r.error }
+  return { data: parseOkMessageResult(r.data), error: null }
 }
 
 export async function appendChannelComment(
@@ -242,14 +219,14 @@ export async function appendChannelComment(
   body: string,
   options?: { quoteToMessageId?: string | null },
 ): Promise<{ data: { messageId: string | null; createdAt: string | null } | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('append_channel_comment', {
-    p_conversation_id: conversationId.trim(),
-    p_reply_to_message_id: postId.trim(),
-    p_body: body,
-    p_quote_to_message_id: options?.quoteToMessageId?.trim() || null,
+  const r = await v1AppendChannelComment({
+    conversationId,
+    postId,
+    body,
+    quoteToMessageId: options?.quoteToMessageId?.trim() || null,
   })
-  if (error) return { data: null, error: error.message }
-  return { data: parseOkMessageResult(data), error: null }
+  if (r.error) return { data: null, error: r.error }
+  return { data: parseOkMessageResult(r.data), error: null }
 }
 
 export async function editChannelComment(
@@ -257,29 +234,14 @@ export async function editChannelComment(
   messageId: string,
   newBody: string,
 ): Promise<{ error: string | null }> {
-  const { data, error } = await supabase.rpc('edit_channel_comment', {
-    p_conversation_id: conversationId.trim(),
-    p_message_id: messageId.trim(),
-    p_new_body: newBody,
-  })
-  if (error) return { error: error.message }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_edited' }
-  return { error: null }
+  return await v1EditChannelComment({ conversationId, messageId, newBody })
 }
 
 export async function deleteChannelComment(
   conversationId: string,
   messageId: string,
 ): Promise<{ error: string | null }> {
-  const { data, error } = await supabase.rpc('delete_channel_comment', {
-    p_conversation_id: conversationId.trim(),
-    p_message_id: messageId.trim(),
-  })
-  if (error) return { error: error.message }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_deleted' }
-  return { error: null }
+  return await v1DeleteChannelComment({ conversationId, messageId })
 }
 
 export async function editChannelPostRich(
@@ -288,31 +250,16 @@ export async function editChannelPostRich(
   newBody: string,
   meta: Record<string, unknown> | null,
 ): Promise<{ error: string | null }> {
-  const { data, error } = await supabase.rpc('edit_channel_post_rich', {
-    p_conversation_id: conversationId.trim(),
-    p_message_id: messageId.trim(),
-    p_new_body: newBody,
-    p_meta: meta,
-  })
-  if (error) return { error: error.message }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_edited' }
-  return { error: null }
+  return await v1EditChannelPostRich({ conversationId, messageId, newBody, meta })
 }
 
 export async function deleteChannelPost(
   conversationId: string,
   messageId: string,
 ): Promise<{ error: string | null; deleted: number }> {
-  const { data, error } = await supabase.rpc('delete_channel_post', {
-    p_conversation_id: conversationId.trim(),
-    p_message_id: messageId.trim(),
-  })
-  if (error) return { error: error.message, deleted: 0 }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_deleted', deleted: 0 }
-  const deleted = typeof row.deleted === 'number' ? row.deleted : Number(row.deleted ?? 0) || 0
-  return { error: null, deleted }
+  const r = await v1DeleteChannelPost({ conversationId, messageId })
+  if (r.error) return { error: r.error, deleted: 0 }
+  return { error: null, deleted: r.data?.deleted ?? 0 }
 }
 
 export type ToggleChannelReactionResult = { action: 'added' | 'removed'; messageId: string; createdAt: string | null }
@@ -341,12 +288,8 @@ export async function toggleChannelMessageReaction(
   targetMessageId: string,
   emoji: ReactionEmoji,
 ): Promise<{ data: ToggleChannelReactionResult | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('toggle_channel_message_reaction', {
-    p_conversation_id: conversationId.trim(),
-    p_target_message_id: targetMessageId.trim(),
-    p_emoji: emoji,
-  })
-  if (error) return { data: null, error: error.message }
-  return { data: parseToggleReaction(data), error: null }
+  const r = await v1ToggleChannelReaction({ conversationId, targetMessageId, emoji })
+  if (r.error) return { data: null, error: r.error }
+  return { data: parseToggleReaction(r.data), error: null }
 }
 

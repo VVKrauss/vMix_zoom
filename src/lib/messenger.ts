@@ -2,7 +2,19 @@ import type { ReactionEmoji } from '../types/roomComms'
 import { REACTION_EMOJI_WHITELIST } from '../types/roomComms'
 import { isPostDraftV1 } from './postEditor/draftUtils'
 import type { PostDraftV1 } from './postEditor/types'
-import { supabase } from './supabase'
+import { storageGetSignedUrl, storageUpload } from '../api/storageApi'
+import {
+  v1AppendConversationMessage,
+  v1DeleteConversationMessage,
+  v1EditConversationMessage,
+  v1EnsureSelfDirectConversation,
+  v1GetMyConversations,
+  v1ListConversationMessagesPage,
+  v1MarkConversationRead,
+  v1ToggleConversationReaction,
+  v1EnsureDirectConversationWithUser,
+  v1GetDirectPeerReceiptContext,
+} from '../api/messengerApi'
 
 /** Событие для мгновенного пересчёта бейджа непрочитанных (см. useMessengerUnreadCount). */
 export const MESSENGER_UNREAD_REFRESH_EVENT = 'vmix:messenger-unread-refresh'
@@ -379,68 +391,24 @@ function unwrapRpcJsonData(data: unknown): unknown {
   return data
 }
 
-async function fetchDirectPeerDmReceiptContextMembersOnly(
-  conversationId: string,
-  uid: string,
-): Promise<{ data: DirectPeerDmReceiptContext | null; error: string | null }> {
-  const cid = conversationId.trim()
-  const { data, error } = await supabase
-    .from('chat_conversation_members')
-    .select('user_id, last_read_at')
-    .eq('conversation_id', cid)
-  if (error) return { data: null, error: error.message }
-  const peer = (data ?? []).find((r: { user_id?: string }) => r.user_id && r.user_id !== uid)
-  const lastReadAt = parseUnknownTimestampToIso(peer?.last_read_at)
-  return {
-    data: { lastReadAt, peerReceiptsPrivate: false },
-    error: null,
-  }
-}
-
 /** Загрузка `last_read_at` и `profile_dm_receipts_private` собеседника через RPC (обход RLS на `users`). */
 export async function fetchDirectPeerDmReceiptContext(
   conversationId: string,
 ): Promise<{ data: DirectPeerDmReceiptContext | null; error: string | null }> {
-  const { data: auth } = await supabase.auth.getUser()
-  const uid = auth.user?.id
-  if (!uid) return { data: null, error: 'auth' }
   const cid = conversationId.trim()
   if (!cid) return { data: null, error: 'conversation_required' }
 
-  const { data: rawRpc, error } = await supabase.rpc('get_direct_peer_read_receipt_context', {
-    p_conversation_id: cid,
-  })
-  const msg = error?.message ?? ''
-  const rpcMissing =
-    error &&
-    (msg.includes('get_direct_peer_read_receipt_context') ||
-      /schema cache|does not exist|PGRST202/i.test(msg) ||
-      (error as { code?: string }).code === '42883')
-  if (error && rpcMissing) {
-    return fetchDirectPeerDmReceiptContextMembersOnly(cid, uid)
-  }
-  if (error) return { data: null, error: error.message }
-
-  const data = unwrapRpcJsonData(rawRpc)
-  if (!data || typeof data !== 'object') return { data: null, error: 'rpc_invalid' }
-  const j = data as Record<string, unknown>
+  const r = await v1GetDirectPeerReceiptContext(cid)
+  if (r.error || !r.data || typeof r.data !== 'object') return { data: null, error: r.error ?? 'request_failed' }
+  const j = r.data as Record<string, unknown>
   if (j.ok !== true && j.ok !== 'true') {
-    const err = typeof j.error === 'string' ? j.error : 'rpc_failed'
+    const err = typeof j.error === 'string' ? (j.error as string) : 'rpc_failed'
     return { data: null, error: err }
   }
 
-  let lastReadAt = parseUnknownTimestampToIso(j.peer_last_read_at)
+  const lastReadAt = parseUnknownTimestampToIso(j.peer_last_read_at)
   const peerReceiptsPrivate = j.peer_dm_receipts_private === true
-
-  if (!lastReadAt) {
-    const fb = await fetchDirectPeerDmReceiptContextMembersOnly(cid, uid)
-    if (fb.data?.lastReadAt) lastReadAt = fb.data.lastReadAt
-  }
-
-  return {
-    data: { lastReadAt, peerReceiptsPrivate },
-    error: null,
-  }
+  return { data: { lastReadAt, peerReceiptsPrivate }, error: null }
 }
 
 /** Статусы исходящего в ЛС: контур / половина / полный круг (без галочек). */
@@ -540,57 +508,17 @@ function mapDirectConversationRow(row: Record<string, unknown>): DirectConversat
   }
 }
 
-async function attachConversationAvatars(
-  items: DirectConversationSummary[],
-): Promise<DirectConversationSummary[]> {
-  const userIds = Array.from(
-    new Set(
-      items
-        .map((item) => item.otherUserId?.trim() ?? '')
-        .filter(Boolean),
-    ),
-  )
-
-  if (userIds.length === 0) return items
-
-  const { data, error } = await supabase
-    .from('users')
-    .select('id, avatar_url')
-    .in('id', userIds)
-
-  if (error) return items
-
-  const avatarMap = new Map<string, string | null>()
-  for (const row of data ?? []) {
-    const id = typeof row.id === 'string' ? row.id : ''
-    if (!id) continue
-    avatarMap.set(id, typeof row.avatar_url === 'string' && row.avatar_url.trim() ? row.avatar_url.trim() : null)
-  }
-
-  return items.map((item) => ({
-    ...item,
-    avatarUrl: item.otherUserId
-      ? item.avatarUrl ?? avatarMap.get(item.otherUserId) ?? null
-      : null,
-  }))
-}
-
 export async function ensureSelfDirectConversation(): Promise<{ data: string | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('ensure_self_direct_conversation')
-  if (error) return { data: null, error: error.message }
-  return { data: typeof data === 'string' ? data : null, error: null }
+  return await v1EnsureSelfDirectConversation()
 }
 
 export async function listDirectConversationsForUser(
 ): Promise<{ data: DirectConversationSummary[] | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('list_my_direct_conversations')
-  if (error) return { data: null, error: error.message }
-  const mapped = (data ?? []).map((row: unknown) => mapDirectConversationRow(row as Record<string, unknown>))
-  const withAvatars = await attachConversationAvatars(mapped)
-  return {
-    data: withAvatars,
-    error: null,
-  }
+  const r = await v1GetMyConversations()
+  if (r.error || !r.data) return { data: null, error: r.error }
+  const rows = r.data.direct
+  const mapped = (rows ?? []).map((row: unknown) => mapDirectConversationRow(row as Record<string, unknown>))
+  return { data: mapped, error: null }
 }
 
 export async function getDirectConversationForUser(
@@ -631,17 +559,9 @@ export async function listMessengerPeersByMessageCount(
 
 const DIRECT_MESSAGES_PAGE_MAX = 100
 
-/** Для PostgREST or(): значение created_at в двойных кавычках. */
-function escapePostgrestQuotedTimestamp(iso: string): string {
-  return iso.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-}
-
 /**
  * Страница личных сообщений: по умолчанию последние `limit` штук;
  * с `before` — ещё `limit` сообщений старше курсора (created_at, id).
- *
- * Реализовано через PostgREST (RLS на `chat_messages`), без RPC — чтобы работало,
- * даже если миграция `list_direct_messages_page` ещё не применена на проекте.
  */
 export async function listDirectMessagesPage(
   conversationId: string,
@@ -657,67 +577,43 @@ export async function listDirectMessagesPage(
   if (convo.error) return { data: null, error: convo.error, hasMoreOlder: false }
   if (!convo.data) return { data: null, error: 'Чат не найден', hasMoreOlder: false }
 
-  let query = supabase
-    .from('chat_messages')
-    .select('id, sender_user_id, sender_name_snapshot, kind, body, meta, created_at, edited_at, reply_to_message_id')
-    .eq('conversation_id', conversationId)
-    .order('created_at', { ascending: false })
-    .order('id', { ascending: false })
-    .limit(limit)
-
-  if (before) {
-    const ts = escapePostgrestQuotedTimestamp(before.createdAt)
-    const bid = before.id.trim()
-    query = query.or(`and(created_at.eq."${ts}",id.lt.${bid}),created_at.lt."${ts}"`)
-  }
-
-  const { data, error } = await query
-
-  if (error) return { data: null, error: error.message, hasMoreOlder: false }
-
-  const rows = (data ?? []) as Record<string, unknown>[]
-  const chronological = [...rows].reverse().map((row) => mapDirectMessageFromRow(row))
-  const hasMoreOlder = rows.length === limit
-  return { data: chronological, error: null, hasMoreOlder }
+  const r = await v1ListConversationMessagesPage({ conversationId, limit, before: before ?? null })
+  if (r.error || !r.data) return { data: null, error: r.error, hasMoreOlder: false }
+  const chronological = (r.data.messages ?? []).map((row) => mapDirectMessageFromRow(row as Record<string, unknown>))
+  return { data: chronological, error: null, hasMoreOlder: r.data.hasMoreOlder }
 }
 
 export async function ensureDirectConversationWithUser(
   targetUserId: string,
   targetTitle?: string | null,
 ): Promise<{ data: string | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('ensure_direct_conversation_with_user', {
-    p_target_user_id: targetUserId,
-    p_target_title: targetTitle ?? null,
-  })
-  if (error) {
-    const msg = error.message
-    if (msg.includes('dm_not_allowed')) {
-      return {
-        data: null,
-        error: 'Этот пользователь принимает личные сообщения только от взаимных контактов.',
-      }
+  const r = await v1EnsureDirectConversationWithUser({ targetUserId, targetTitle: targetTitle ?? null })
+  if (r.error) {
+    if (r.error.includes('dm_not_allowed')) {
+      return { data: null, error: 'Этот пользователь принимает личные сообщения только от взаимных контактов.' }
     }
-    return { data: null, error: msg }
+    return { data: null, error: r.error }
   }
-  return { data: typeof data === 'string' ? data : null, error: null }
+  return { data: r.data, error: null }
 }
 
 export async function markDirectConversationRead(
   conversationId: string,
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase.rpc('mark_direct_conversation_read', {
-    p_conversation_id: conversationId,
-  })
-  if (!error) requestMessengerUnreadRefresh()
-  return { error: error?.message ?? null }
+  const r = await v1MarkConversationRead(conversationId)
+  if (!r.error) requestMessengerUnreadRefresh()
+  return { error: r.error }
 }
 
 export async function getDirectUnreadCount(): Promise<{ data: number | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('list_my_direct_conversations')
-  if (error) return { data: null, error: error.message }
-  const count = Array.isArray(data)
-    ? data.reduce((sum: number, row: Record<string, unknown>) => sum + (typeof row.unread_count === 'number' ? row.unread_count : Number(row.unread_count ?? 0) || 0), 0)
-    : 0
+  const r = await v1GetMyConversations()
+  if (r.error || !r.data) return { data: null, error: r.error }
+  const rows = Array.isArray(r.data.direct) ? (r.data.direct as unknown[]) : []
+  const count = rows.reduce<number>((sum, row) => {
+    const r = (row ?? {}) as Record<string, unknown>
+    const v = typeof r.unread_count === 'number' ? r.unread_count : Number(r.unread_count ?? 0) || 0
+    return sum + v
+  }, 0)
   return { data: count, error: null }
 }
 
@@ -744,17 +640,16 @@ export async function appendDirectMessage(
     replyToMessageId?: string | null
   },
 ): Promise<{ data: AppendDirectMessageResult | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('append_direct_message', {
-    p_conversation_id: conversationId,
-    p_body: body,
-    p_kind: options?.kind ?? 'text',
-    p_meta: options?.meta ?? null,
-    p_reply_to_message_id: options?.replyToMessageId?.trim() || null,
+  const r = await v1AppendConversationMessage({
+    conversationId,
+    body,
+    kind: (options?.kind ?? 'text') as any,
+    meta: options?.meta ?? null,
+    replyToMessageId: options?.replyToMessageId?.trim() || null,
   })
-
-  if (error) return { data: null, error: error.message }
+  if (r.error) return { data: null, error: r.error }
   return {
-    data: parseAppendDirectMessageRpcPayload(data),
+    data: parseAppendDirectMessageRpcPayload(r.data),
     error: null,
   }
 }
@@ -788,13 +683,9 @@ export async function toggleDirectMessageReaction(
   targetMessageId: string,
   emoji: ReactionEmoji,
 ): Promise<{ data: ToggleDirectMessageReactionResult | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('toggle_direct_message_reaction', {
-    p_conversation_id: conversationId,
-    p_target_message_id: targetMessageId,
-    p_emoji: emoji,
-  })
-  if (error) return { data: null, error: error.message }
-  return { data: parseToggleDirectMessageReactionPayload(data), error: null }
+  const r = await v1ToggleConversationReaction({ conversationId, targetMessageId, emoji })
+  if (r.error) return { data: null, error: r.error }
+  return { data: parseToggleDirectMessageReactionPayload(r.data), error: null }
 }
 
 export async function editDirectMessage(
@@ -802,23 +693,16 @@ export async function editDirectMessage(
   messageId: string,
   newBody: string,
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase.rpc('edit_direct_message', {
-    p_conversation_id: conversationId.trim(),
-    p_message_id: messageId.trim(),
-    p_new_body: newBody,
-  })
-  return { error: error?.message ?? null }
+  const r = await v1EditConversationMessage({ conversationId, messageId, newBody })
+  return { error: r.error }
 }
 
 export async function deleteDirectMessage(
   conversationId: string,
   messageId: string,
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase.rpc('delete_direct_message', {
-    p_conversation_id: conversationId.trim(),
-    p_message_id: messageId.trim(),
-  })
-  return { error: error?.message ?? null }
+  const r = await v1DeleteConversationMessage({ conversationId, messageId })
+  return { error: r.error }
 }
 
 /** Макс. размер исходного файла до пережатия в uploadMessengerImage. */
@@ -891,16 +775,22 @@ export async function uploadMessengerImage(
         : `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const path = `${cid}/${id}.jpg`
     const thumbPath = `${cid}/${id}_thumb.jpg`
-    const { error } = await supabase.storage.from('messenger-media').upload(path, full, {
-      contentType: 'image/jpeg',
+    const r1 = await storageUpload({
+      bucket: 'messenger-media' as any,
+      path,
+      file: full,
       upsert: false,
-    })
-    if (error) return { path: null, thumbPath: null, error: error.message }
-    const { error: thumbErr } = await supabase.storage.from('messenger-media').upload(thumbPath, thumb, {
       contentType: 'image/jpeg',
-      upsert: false,
     })
-    if (thumbErr) return { path, thumbPath: null, error: null }
+    if (!r1.ok) return { path: null, thumbPath: null, error: r1.error.message }
+    const r2 = await storageUpload({
+      bucket: 'messenger-media' as any,
+      path: thumbPath,
+      file: thumb,
+      upsert: false,
+      contentType: 'image/jpeg',
+    })
+    if (!r2.ok) return { path, thumbPath: null, error: null }
     return { path, thumbPath, error: null }
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'upload_failed'
@@ -925,11 +815,14 @@ export async function uploadMessengerAudio(
   const path = `${cid}/${id}.${ext}`
   const ct =
     blob.type && blob.type.startsWith('audio/') ? blob.type : ext === 'webm' ? 'audio/webm' : `audio/${ext}`
-  const { error } = await supabase.storage.from('messenger-media').upload(path, blob, {
-    contentType: ct,
+  const r = await storageUpload({
+    bucket: 'messenger-media' as any,
+    path,
+    file: blob,
     upsert: false,
+    contentType: ct,
   })
-  if (error) return { path: null, error: error.message }
+  if (!r.ok) return { path: null, error: r.error.message }
   return { path, error: null }
 }
 
@@ -952,9 +845,7 @@ export async function getMessengerImageSignedUrl(
 ): Promise<{ url: string | null; error: string | null }> {
   const path = storagePath.trim()
   if (!path) return { url: null, error: 'empty_path' }
-  const { data, error } = await supabase.storage
-    .from('messenger-media')
-    .createSignedUrl(path, expiresSec)
-  if (error) return { url: null, error: error.message }
-  return { url: data?.signedUrl ?? null, error: null }
+  const r = await storageGetSignedUrl({ bucket: 'messenger-media' as any, path, expiresInSec: expiresSec })
+  if (!r.ok) return { url: null, error: r.error.message }
+  return { url: r.data.signedUrl ?? null, error: null }
 }

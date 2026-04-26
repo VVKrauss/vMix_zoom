@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { v1DeletePushSubscription, v1PushSubscriptionExists, v1UpsertPushSubscription } from '../api/pushSubscriptionsApi'
 
 const VAPID = () => import.meta.env.VITE_VAPID_PUBLIC_KEY?.trim() ?? ''
 
@@ -71,7 +71,7 @@ async function subscribePushOrThrow(reg: ServiceWorkerRegistration, keyBytes: Bu
   }
 }
 
-export async function enableMessengerPush(userId: string): Promise<{ ok: boolean; error?: string }> {
+export async function enableMessengerPush(_userId: string): Promise<{ ok: boolean; error?: string }> {
   if (!isWebPushApiSupported() || !isMessengerWebPushConfigured()) {
     return { ok: false, error: 'push_not_configured' }
   }
@@ -95,18 +95,12 @@ export async function enableMessengerPush(userId: string): Promise<{ ok: boolean
     }
 
     const json = sub.toJSON()
-    const { error } = await supabase.from('push_subscriptions').upsert(
-      {
-        user_id: userId,
-        endpoint: sub.endpoint,
-        subscription: json,
-        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id,endpoint' },
-    )
-
-    if (error) return { ok: false, error: error.message }
+    const { error } = await v1UpsertPushSubscription({
+      endpoint: sub.endpoint,
+      subscription: json,
+      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+    })
+    if (error) return { ok: false, error }
     return { ok: true }
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'subscribe_failed'
@@ -114,7 +108,7 @@ export async function enableMessengerPush(userId: string): Promise<{ ok: boolean
   }
 }
 
-export async function disableMessengerPush(userId: string): Promise<{ ok: boolean; error?: string }> {
+export async function disableMessengerPush(_userId: string): Promise<{ ok: boolean; error?: string }> {
   if (!isWebPushApiSupported()) return { ok: true }
 
   try {
@@ -122,13 +116,8 @@ export async function disableMessengerPush(userId: string): Promise<{ ok: boolea
     const sub = await reg.pushManager.getSubscription()
 
     if (sub) {
-      const { error } = await supabase
-        .from('push_subscriptions')
-        .delete()
-        .eq('user_id', userId)
-        .eq('endpoint', sub.endpoint)
-
-      if (error) return { ok: false, error: error.message }
+      const { error } = await v1DeletePushSubscription(sub.endpoint)
+      if (error) return { ok: false, error }
 
       await sub.unsubscribe()
     }
@@ -145,9 +134,9 @@ export async function disableMessengerPush(userId: string): Promise<{ ok: boolea
  * Не включает push сама по себе (нет подписки в браузере → state off).
  */
 export async function reconcileMessengerPushSubscription(
-  userId: string,
+  _userId: string,
 ): Promise<{ ok: boolean; state: 'absent' | 'off' | 'on' | 'denied'; error?: string }> {
-  if (!userId || !isWebPushApiSupported()) {
+  if (!_userId || !isWebPushApiSupported()) {
     return { ok: true, state: 'absent' }
   }
 
@@ -172,33 +161,16 @@ export async function reconcileMessengerPushSubscription(
       return { ok: false, state: 'off', error: 'subscription_missing_endpoint' }
     }
 
-    const { data, error } = await supabase
-      .from('push_subscriptions')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('endpoint', endpoint)
-      .maybeSingle()
-
-    if (error) {
-      return { ok: false, state: 'off', error: error.message }
-    }
-
-    if (!data) {
+    const exists = await v1PushSubscriptionExists(endpoint)
+    if (exists.error) return { ok: false, state: 'off', error: exists.error }
+    if (!exists.data) {
       const json = sub.toJSON()
-      const { error: upsertError } = await supabase.from('push_subscriptions').upsert(
-        {
-          user_id: userId,
-          endpoint,
-          subscription: json,
-          user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,endpoint' },
-      )
-
-      if (upsertError) {
-        return { ok: false, state: 'off', error: upsertError.message }
-      }
+      const { error: upsertError } = await v1UpsertPushSubscription({
+        endpoint,
+        subscription: json,
+        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      })
+      if (upsertError) return { ok: false, state: 'off', error: upsertError }
     }
 
     return { ok: true, state: 'on' }

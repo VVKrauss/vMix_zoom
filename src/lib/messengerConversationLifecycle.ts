@@ -1,6 +1,6 @@
-import { supabase } from './supabase'
 import { leaveChannel } from './channels'
 import { leaveGroupChat } from './groups'
+import { legacyRpc } from '../api/legacyRpcApi'
 
 function rpcOk(data: unknown): { ok: boolean; err: string | null } {
   const row = data as Record<string, unknown> | null
@@ -14,8 +14,9 @@ function rpcOk(data: unknown): { ok: boolean; err: string | null } {
 export async function leaveDirectConversationClient(conversationId: string): Promise<{ error: string | null }> {
   const cid = conversationId.trim()
   if (!cid) return { error: 'Не выбран чат' }
-  const { data, error } = await supabase.rpc('leave_direct_conversation', { p_conversation_id: cid })
-  if (error) return { error: error.message }
+  const r = await legacyRpc('leave_direct_conversation', { p_conversation_id: cid })
+  if (r.error) return { error: r.error }
+  const data = r.data
   const { ok, err } = rpcOk(data)
   return ok ? { error: null } : { error: err ?? 'Не удалось удалить чат у себя' }
 }
@@ -23,8 +24,9 @@ export async function leaveDirectConversationClient(conversationId: string): Pro
 export async function deleteDirectConversationForAllClient(conversationId: string): Promise<{ error: string | null }> {
   const cid = conversationId.trim()
   if (!cid) return { error: 'Не выбран чат' }
-  const { data, error } = await supabase.rpc('delete_direct_conversation_for_all', { p_conversation_id: cid })
-  if (error) return { error: error.message }
+  const r = await legacyRpc('delete_direct_conversation_for_all', { p_conversation_id: cid })
+  if (r.error) return { error: r.error }
+  const data = r.data
   const { ok, err } = rpcOk(data)
   return ok ? { error: null } : { error: err ?? 'Не удалось удалить переписку' }
 }
@@ -32,8 +34,9 @@ export async function deleteDirectConversationForAllClient(conversationId: strin
 export async function deleteOwnedGroupOrChannelClient(conversationId: string): Promise<{ error: string | null }> {
   const cid = conversationId.trim()
   if (!cid) return { error: 'Не выбран чат' }
-  const { data, error } = await supabase.rpc('delete_owned_group_or_channel', { p_conversation_id: cid })
-  if (error) return { error: error.message }
+  const r = await legacyRpc('delete_owned_group_or_channel', { p_conversation_id: cid })
+  if (r.error) return { error: r.error }
+  const data = r.data
   const { ok, err } = rpcOk(data)
   return ok ? { error: null } : { error: err ?? 'Не удалось удалить чат' }
 }

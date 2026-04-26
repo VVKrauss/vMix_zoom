@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { dbRpc, dbTableInsert, dbTableSelect, dbTableSelectOne, dbTableUpdate } from '../api/dbApi'
 
 /** Постоянная комната — строка в БД сохраняется при выходе хоста (закрыта, но не удалена). Временная — как раньше, без долгой ссылки. */
 export type SpaceRoomLifecycleKind = 'permanent' | 'temporary'
@@ -233,15 +233,16 @@ export async function getSpaceRoomJoinStatus(
   if (matchesPendingHostClaim(trimmed) || isSessionHostFor(trimmed)) {
     return { joinable: true, denial: 'none', isDbHost: false }
   }
-  const { data, error } = await supabase
-    .from('space_rooms')
-    .select('status, host_user_id, retain_instance, access_mode, created_at, banned_user_ids, approved_joiners')
-    .eq('slug', trimmed)
-    .maybeSingle()
-  if (error) {
-    console.warn('getSpaceRoomJoinStatus:', error.message)
+  const r = await dbTableSelectOne<Record<string, unknown>>({
+    table: 'space_rooms',
+    select: 'status,host_user_id,retain_instance,access_mode,created_at,banned_user_ids,approved_joiners',
+    filters: { slug: trimmed },
+  })
+  if (!r.ok) {
+    console.warn('getSpaceRoomJoinStatus:', r.error.message)
     return { joinable: false, denial: 'closed_or_missing', isDbHost: false }
   }
+  const data = r.data.row as any
   if (!data || data.status !== 'open') {
     return { joinable: false, denial: 'closed_or_missing', isDbHost: false }
   }
@@ -328,16 +329,15 @@ export async function fetchPersistentSpaceRoomsForUser(
   const uid = userId.trim()
   if (!uid) return { data: [], error: null }
 
-  const { data, error } = await supabase
-    .from('space_rooms')
-    .select(
-      'slug, status, access_mode, chat_visibility, created_at, display_name, avatar_url, guest_policy, require_creator_host_for_join, cumulative_open_seconds, open_session_started_at',
-    )
-    .eq('host_user_id', uid)
-    .eq('retain_instance', true)
-    .order('created_at', { ascending: false })
-
-  if (error) return { data: null, error: error.message }
+  const r = await dbTableSelect<any>({
+    table: 'space_rooms',
+    select:
+      'slug,status,access_mode,chat_visibility,created_at,display_name,avatar_url,guest_policy,require_creator_host_for_join,cumulative_open_seconds,open_session_started_at',
+    filters: { host_user_id: uid, retain_instance: true },
+    order: [{ column: 'created_at', ascending: false }],
+  })
+  if (!r.ok) return { data: null, error: r.error.message }
+  const data = r.data.rows as any[]
 
   const rows = (data ?? []).map((r) => {
     const gpRaw = r.guest_policy
@@ -405,10 +405,10 @@ export async function registerSpaceRoomAsHost(
     insertPayload.require_creator_host_for_join = true
   }
 
-  const { error } = await supabase.from('space_rooms').insert(insertPayload)
-  if (error) {
-    if (error.code === '23505') return false
-    console.warn('registerSpaceRoomAsHost:', error.message)
+  const ins = await dbTableInsert({ table: 'space_rooms', row: insertPayload })
+  if (!ins.ok) {
+    if (String(ins.error.message).includes('23505')) return false
+    console.warn('registerSpaceRoomAsHost:', ins.error.message)
     return false
   }
   return true
@@ -422,23 +422,22 @@ export async function updateSpaceRoomChatVisibility(
   const trimmed = slug.trim()
   if (!trimmed) return false
   if (!isChatVisibility(visibility)) return false
-  const { error, data } = await supabase
-    .from('space_rooms')
-    .update({ chat_visibility: visibility, updated_at: new Date().toISOString() })
-    .eq('slug', trimmed)
-    .select('slug')
-    .maybeSingle()
-  if (error) {
-    console.warn('updateSpaceRoomChatVisibility:', error.message)
+  const upd = await dbTableUpdate({
+    table: 'space_rooms',
+    patch: { chat_visibility: visibility, updated_at: new Date().toISOString() },
+    filters: { slug: trimmed },
+  })
+  if (!upd.ok) {
+    console.warn('updateSpaceRoomChatVisibility:', upd.error.message)
     return false
   }
-  return Boolean(data?.slug)
+  return true
 }
 
 export async function hostLeaveSpaceRoom(slug: string): Promise<void> {
   const trimmed = slug.trim()
   if (!trimmed) return
-  await supabase.rpc('host_leave_space_room', { p_slug: trimmed })
+  await dbRpc('host_leave_space_room', { p_slug: trimmed })
 }
 
 /** Заблокировать пользователя в комнате (хост / staff / со-админ комнаты — RLS). Read-modify-write. */
@@ -449,16 +448,21 @@ export async function banUserFromSpaceRoom(
 ): Promise<boolean> {
   const trimmed = slug.trim()
   if (!trimmed || !targetUserId) return false
-  const { data: row } = await supabase.from('space_rooms').select('banned_user_ids').eq('slug', trimmed).maybeSingle()
-  if (!row) return false
-  const current: string[] = Array.isArray(row.banned_user_ids) ? row.banned_user_ids : []
+  const sel = await dbTableSelectOne<{ banned_user_ids: unknown }>({
+    table: 'space_rooms',
+    select: 'banned_user_ids',
+    filters: { slug: trimmed },
+  })
+  if (!sel.ok || !sel.data.row) return false
+  const current: string[] = Array.isArray((sel.data.row as any).banned_user_ids) ? (sel.data.row as any).banned_user_ids : []
   if (current.includes(targetUserId)) return true
-  const { error } = await supabase
-    .from('space_rooms')
-    .update({ banned_user_ids: [...current, targetUserId], updated_at: new Date().toISOString() })
-    .eq('slug', trimmed)
-  if (error) {
-    console.warn('banUserFromSpaceRoom:', error.message)
+  const upd = await dbTableUpdate({
+    table: 'space_rooms',
+    patch: { banned_user_ids: [...current, targetUserId], updated_at: new Date().toISOString() },
+    filters: { slug: trimmed },
+  })
+  if (!upd.ok) {
+    console.warn('banUserFromSpaceRoom:', upd.error.message)
     return false
   }
   return true
@@ -472,16 +476,21 @@ export async function approveSpaceRoomJoiner(
 ): Promise<boolean> {
   const trimmed = slug.trim()
   if (!trimmed || !targetUserId) return false
-  const { data: row } = await supabase.from('space_rooms').select('approved_joiners').eq('slug', trimmed).maybeSingle()
-  if (!row) return false
-  const current: string[] = Array.isArray(row.approved_joiners) ? row.approved_joiners : []
+  const sel = await dbTableSelectOne<{ approved_joiners: unknown }>({
+    table: 'space_rooms',
+    select: 'approved_joiners',
+    filters: { slug: trimmed },
+  })
+  if (!sel.ok || !sel.data.row) return false
+  const current: string[] = Array.isArray((sel.data.row as any).approved_joiners) ? (sel.data.row as any).approved_joiners : []
   if (current.includes(targetUserId)) return true
-  const { error } = await supabase
-    .from('space_rooms')
-    .update({ approved_joiners: [...current, targetUserId], updated_at: new Date().toISOString() })
-    .eq('slug', trimmed)
-  if (error) {
-    console.warn('approveSpaceRoomJoiner:', error.message)
+  const upd = await dbTableUpdate({
+    table: 'space_rooms',
+    patch: { approved_joiners: [...current, targetUserId], updated_at: new Date().toISOString() },
+    filters: { slug: trimmed },
+  })
+  if (!upd.ok) {
+    console.warn('approveSpaceRoomJoiner:', upd.error.message)
     return false
   }
   return true
@@ -495,15 +504,20 @@ export async function removeSpaceRoomApprovedJoiner(
 ): Promise<void> {
   const trimmed = slug.trim()
   if (!trimmed || !targetUserId) return
-  const { data: row } = await supabase.from('space_rooms').select('approved_joiners').eq('slug', trimmed).maybeSingle()
-  if (!row) return
-  const current: string[] = Array.isArray(row.approved_joiners) ? row.approved_joiners : []
+  const sel = await dbTableSelectOne<{ approved_joiners: unknown }>({
+    table: 'space_rooms',
+    select: 'approved_joiners',
+    filters: { slug: trimmed },
+  })
+  if (!sel.ok || !sel.data.row) return
+  const current: string[] = Array.isArray((sel.data.row as any).approved_joiners) ? (sel.data.row as any).approved_joiners : []
   const next = current.filter((id) => id !== targetUserId)
   if (next.length === current.length) return
-  await supabase
-    .from('space_rooms')
-    .update({ approved_joiners: next, updated_at: new Date().toISOString() })
-    .eq('slug', trimmed)
+  await dbTableUpdate({
+    table: 'space_rooms',
+    patch: { approved_joiners: next, updated_at: new Date().toISOString() },
+    filters: { slug: trimmed },
+  })
 }
 
 /** Режим входа в комнату (хост / staff / со-админ — RLS). */
@@ -514,17 +528,16 @@ export async function updateSpaceRoomAccessMode(
 ): Promise<boolean> {
   const trimmed = slug.trim()
   if (!trimmed) return false
-  const { error, data } = await supabase
-    .from('space_rooms')
-    .update({ access_mode: mode, updated_at: new Date().toISOString() })
-    .eq('slug', trimmed)
-    .select('slug')
-    .maybeSingle()
-  if (error) {
-    console.warn('updateSpaceRoomAccessMode:', error.message)
+  const upd = await dbTableUpdate({
+    table: 'space_rooms',
+    patch: { access_mode: mode, updated_at: new Date().toISOString() },
+    filters: { slug: trimmed },
+  })
+  if (!upd.ok) {
+    console.warn('updateSpaceRoomAccessMode:', upd.error.message)
     return false
   }
-  return Boolean(data?.slug)
+  return true
 }
 
 function parseUuidArray(raw: unknown): string[] {
@@ -537,25 +550,27 @@ export async function addSpaceRoomAdminUser(slug: string, targetUserId: string):
   const trimmed = slug.trim()
   const tid = targetUserId.trim()
   if (!trimmed || !tid) return false
-  const { data: row, error: selErr } = await supabase
-    .from('space_rooms')
-    .select('host_user_id, room_admin_user_ids')
-    .eq('slug', trimmed)
-    .maybeSingle()
-  if (selErr || !row) {
-    if (selErr) console.warn('addSpaceRoomAdminUser:', selErr.message)
+  const sel = await dbTableSelectOne<{ host_user_id: unknown; room_admin_user_ids: unknown }>({
+    table: 'space_rooms',
+    select: 'host_user_id,room_admin_user_ids',
+    filters: { slug: trimmed },
+  })
+  if (!sel.ok || !sel.data.row) {
+    if (!sel.ok) console.warn('addSpaceRoomAdminUser:', sel.error.message)
     return false
   }
+  const row = sel.data.row as any
   const hostId = typeof row.host_user_id === 'string' ? row.host_user_id : null
   if (hostId && tid === hostId) return false
   const current = parseUuidArray(row.room_admin_user_ids)
   if (current.includes(tid)) return true
-  const { error } = await supabase
-    .from('space_rooms')
-    .update({ room_admin_user_ids: [...current, tid], updated_at: new Date().toISOString() })
-    .eq('slug', trimmed)
-  if (error) {
-    console.warn('addSpaceRoomAdminUser:', error.message)
+  const upd = await dbTableUpdate({
+    table: 'space_rooms',
+    patch: { room_admin_user_ids: [...current, tid], updated_at: new Date().toISOString() },
+    filters: { slug: trimmed },
+  })
+  if (!upd.ok) {
+    console.warn('addSpaceRoomAdminUser:', upd.error.message)
     return false
   }
   return true
@@ -566,24 +581,25 @@ export async function removeSpaceRoomAdminUser(slug: string, targetUserId: strin
   const trimmed = slug.trim()
   const tid = targetUserId.trim()
   if (!trimmed || !tid) return false
-  const { data: row, error: selErr } = await supabase
-    .from('space_rooms')
-    .select('room_admin_user_ids')
-    .eq('slug', trimmed)
-    .maybeSingle()
-  if (selErr || !row) {
-    if (selErr) console.warn('removeSpaceRoomAdminUser:', selErr.message)
+  const sel = await dbTableSelectOne<{ room_admin_user_ids: unknown }>({
+    table: 'space_rooms',
+    select: 'room_admin_user_ids',
+    filters: { slug: trimmed },
+  })
+  if (!sel.ok || !sel.data.row) {
+    if (!sel.ok) console.warn('removeSpaceRoomAdminUser:', sel.error.message)
     return false
   }
-  const current = parseUuidArray(row.room_admin_user_ids)
+  const current = parseUuidArray((sel.data.row as any).room_admin_user_ids)
   const next = current.filter((id) => id !== tid)
   if (next.length === current.length) return true
-  const { error } = await supabase
-    .from('space_rooms')
-    .update({ room_admin_user_ids: next, updated_at: new Date().toISOString() })
-    .eq('slug', trimmed)
-  if (error) {
-    console.warn('removeSpaceRoomAdminUser:', error.message)
+  const upd = await dbTableUpdate({
+    table: 'space_rooms',
+    patch: { room_admin_user_ids: next, updated_at: new Date().toISOString() },
+    filters: { slug: trimmed },
+  })
+  if (!upd.ok) {
+    console.warn('removeSpaceRoomAdminUser:', upd.error.message)
     return false
   }
   return true

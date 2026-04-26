@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { RealtimeChannel } from '@supabase/supabase-js'
-import { supabase } from '../lib/supabase'
 import { isPeerPresenceOnlineFromMirror } from '../lib/messengerPeerPresence'
+import { v1ListUserPresencePublicByIds } from '../api/presenceMirrorApi'
 
 type PresenceMirrorRow = {
   userId: string
@@ -80,18 +79,13 @@ export function useOnlinePresenceMirror(args: {
     if (!me || ids.length === 0) return
 
     let cancelled = false
-    let channel: RealtimeChannel | null = null
     const bump = () => setEpoch((e) => e + 1)
 
     void (async () => {
-      const { data, error } = await supabase
-        .from('user_presence_public')
-        .select('user_id,last_active_at,presence_last_background_at,profile_show_online')
-        .in('user_id', ids)
-      if (cancelled || error) return
-
+      const { data, error } = await v1ListUserPresencePublicByIds(ids)
+      if (cancelled || error || !data) return
       const next = new Map<string, PresenceMirrorRow>()
-      for (const raw of (data ?? []) as unknown[]) {
+      for (const raw of data as unknown[]) {
         const parsed = parsePresenceRow(raw)
         if (!parsed) continue
         next.set(parsed.userId, parsed)
@@ -100,23 +94,27 @@ export function useOnlinePresenceMirror(args: {
       bump()
     })()
 
-    const filter = ids.length === 1 ? `user_id=eq.${ids[0]}` : `user_id=in.(${ids.join(',')})`
-    channel = supabase
-      .channel(`presence-mirror:${ids.length}-${ids[0]?.slice(0, 8) ?? '0'}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_presence_public', filter }, (payload) => {
-        const parsed = parsePresenceRow(payload.new ?? payload.old)
-        if (!parsed) return
-        if (!ids.includes(parsed.userId)) return
-        rowsRef.current.set(parsed.userId, parsed)
+    const REFRESH_MS = 8000
+    const refreshId = window.setInterval(() => {
+      void (async () => {
+        const { data, error } = await v1ListUserPresencePublicByIds(ids)
+        if (cancelled || error || !data) return
+        const next = new Map<string, PresenceMirrorRow>()
+        for (const raw of data as unknown[]) {
+          const parsed = parsePresenceRow(raw)
+          if (!parsed) continue
+          next.set(parsed.userId, parsed)
+        }
+        rowsRef.current = next
         bump()
-      })
-      .subscribe()
+      })()
+    }, REFRESH_MS)
 
     const tickId = window.setInterval(bump, tickMs)
     return () => {
       cancelled = true
       window.clearInterval(tickId)
-      if (channel) void supabase.removeChannel(channel)
+      window.clearInterval(refreshId)
     }
   }, [viewerId, ids, tickMs])
 

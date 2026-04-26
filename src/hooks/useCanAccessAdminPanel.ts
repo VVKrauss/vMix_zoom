@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { fetchJson } from '../api/http'
 
 type AdminAccessInfo = { staff?: boolean; superadmin?: boolean }
 
@@ -38,19 +38,24 @@ export function useCanAccessAdminPanel(): {
     }
     let cancelled = false
     setLoading(true)
-    void supabase.rpc('admin_access_info').then(({ data, error }) => {
+    void (async () => {
+      const r = await fetchJson<AdminAccessInfo>('/api/db/rpc/admin_access_info', {
+        method: 'POST',
+        auth: true,
+        body: JSON.stringify({ args: {} }),
+      })
       if (cancelled) return
-      if (error) {
+      if (!r.ok) {
         setAllowed(false)
         setIsSuperadmin(false)
         setLoading(false)
         return
       }
-      const info = parseAccessInfo(data)
+      const info = parseAccessInfo(r.data)
       setAllowed(info.staff === true)
       setIsSuperadmin(info.superadmin === true)
       setLoading(false)
-    })
+    })()
     return () => {
       cancelled = true
     }

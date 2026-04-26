@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { dbTableSelectOne } from '../api/dbApi'
 
 /** Совпадение с `space_rooms.host_user_id` для slug комнаты (эфирная комната). */
 export function useIsDbSpaceRoomHost(roomSlug: string | undefined, userId: string | undefined): boolean {
@@ -12,18 +12,18 @@ export function useIsDbSpaceRoomHost(roomSlug: string | undefined, userId: strin
       return
     }
     let cancelled = false
-    void supabase
-      .from('space_rooms')
-      .select('host_user_id')
-      .eq('slug', slug)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (cancelled || error) {
-          if (!cancelled) setIsHost(false)
-          return
-        }
-        setIsHost(data?.host_user_id === userId)
+    void (async () => {
+      const r = await dbTableSelectOne<any>({
+        table: 'space_rooms',
+        select: 'host_user_id',
+        filters: { slug },
       })
+      if (cancelled || !r.ok) {
+        if (!cancelled) setIsHost(false)
+        return
+      }
+      setIsHost((r.data?.row as any)?.host_user_id === userId)
+    })()
     return () => {
       cancelled = true
     }

@@ -2,7 +2,7 @@ import { listMyChannels, type ChannelSummary } from './channels'
 import { listMyGroupChats, type GroupChatSummary } from './groups'
 import { listDirectConversationsForUser, type DirectConversationSummary } from './messenger'
 import { listMyContactDisplayOverrides, type MyContactDisplayOverride } from './socialGraph'
-import { supabase } from './supabase'
+import { legacyRpc } from '../api/legacyRpcApi'
 
 export type MessengerConversationKind = 'direct' | 'group' | 'channel'
 
@@ -230,11 +230,9 @@ export async function searchOpenPublicConversations(
   query: string,
   limit = 20,
 ): Promise<{ data: OpenPublicConversationSearchHit[] | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('search_open_public_conversations', {
-    p_query: query.trim(),
-    p_limit: limit,
-  })
-  if (error) return { data: null, error: error.message }
+  const r = await legacyRpc('search_open_public_conversations', { p_query: query.trim(), p_limit: limit })
+  if (r.error) return { data: null, error: r.error }
+  const data = r.data
   const rows = Array.isArray(data) ? data : []
   const mapped = rows
     .map((r) => mapOpenPublicSearchRow(r as Record<string, unknown>))

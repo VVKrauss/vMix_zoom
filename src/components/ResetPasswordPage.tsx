@@ -1,17 +1,29 @@
 import { FormEvent, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { authConfirmPasswordReset, authUpdatePassword } from '../api/authApi'
 
 export function ResetPasswordPage() {
   const { session, loading: authLoading } = useAuth()
+  const loc = useLocation()
   const [password, setPassword] = useState('')
   const [password2, setPassword2] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState(false)
 
-  const canReset = useMemo(() => Boolean(session?.user?.id), [session?.user?.id])
+  const qp = useMemo(() => new URLSearchParams(loc.search), [loc.search])
+  const resetEmail = qp.get('email')?.trim() || ''
+  const resetCode = qp.get('code')?.trim() || ''
+
+  // Supabase-style flow required an active session after clicking email link.
+  // Our self-hosted flow supports both:
+  // - authenticated change (session)
+  // - unauthenticated reset via (email, code) from query params
+  const canResetByCode = Boolean(resetEmail && resetCode)
+  const canResetBySession = Boolean(session?.user?.id)
+  const canReset = canResetByCode || canResetBySession
+  const awaitingEmailLink = Boolean(resetEmail && !resetCode && !canResetBySession)
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -25,10 +37,12 @@ export function ResetPasswordPage() {
       return
     }
     setLoading(true)
-    const { error } = await supabase.auth.updateUser({ password })
+    const r = canResetByCode
+      ? await authConfirmPasswordReset({ email: resetEmail, code: resetCode, newPassword: password })
+      : await authUpdatePassword({ password })
     setLoading(false)
-    if (error) {
-      setError(error.message)
+    if (!r.ok) {
+      setError(r.error.message)
       return
     }
     setOk(true)
@@ -58,6 +72,21 @@ export function ResetPasswordPage() {
               …
             </div>
             <p className="confirm-sent__text">Проверяем ссылку…</p>
+          </div>
+        ) : awaitingEmailLink ? (
+          <div className="confirm-sent">
+            <div className="confirm-sent__icon" aria-hidden>
+              ✉️
+            </div>
+            <h2 className="confirm-sent__title">Ссылка для сброса отправлена</h2>
+            <p className="confirm-sent__text">
+              Мы отправили письмо на <strong>{resetEmail}</strong>.<br />
+              Перейдите по ссылке в письме, чтобы установить новый пароль.
+            </p>
+            <p className="confirm-sent__hint">Не пришло? Проверьте папку «Спам».</p>
+            <Link to="/login" className="join-btn join-btn--block confirm-sent__back">
+              Вернуться ко входу
+            </Link>
           </div>
         ) : !canReset ? (
           <div className="confirm-sent">

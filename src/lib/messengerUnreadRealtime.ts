@@ -1,10 +1,9 @@
-import type { RealtimeChannel } from '@supabase/supabase-js'
 import { mapDirectMessageFromRow, previewTextForDirectMessageTail } from './messenger'
-import { supabase } from './supabase'
+import { rtChannel, rtRemoveChannel } from '../api/realtimeCompat'
 
 type Notify = () => void
 
-let channel: RealtimeChannel | null = null
+let channel: any | null = null
 let boundUserId: string | null = null
 let refCount = 0
 const notifies = new Set<Notify>()
@@ -59,16 +58,15 @@ export function subscribeMessengerUnreadRealtime(userId: string, onSignal: () =>
 
   if (!channel || boundUserId !== userId) {
     if (channel) {
-      void supabase.removeChannel(channel)
+      rtRemoveChannel(channel)
       channel = null
     }
     boundUserId = userId
-    channel = supabase
-      .channel(`messenger-unread:${userId}`)
+    channel = rtChannel(`messenger-unread:${userId}`)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'chat_messages' },
-        (payload) => {
+        (payload: any) => {
           emit()
           emitBgMessage(payload.new as Record<string, unknown>)
         },
@@ -92,7 +90,7 @@ export function subscribeMessengerUnreadRealtime(userId: string, onSignal: () =>
     notifies.delete(onSignal)
     refCount = Math.max(0, refCount - 1)
     if (refCount === 0 && channel) {
-      void supabase.removeChannel(channel)
+      rtRemoveChannel(channel)
       channel = null
       boundUserId = null
     }

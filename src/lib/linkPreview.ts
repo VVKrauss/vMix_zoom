@@ -1,5 +1,5 @@
-import { supabase } from './supabase'
 import { extractYoutubeVideoId, fetchYoutubeOembedMeta, youtubeThumbnailUrl } from './youtubeEmbed'
+import { fetchJson } from '../api/http'
 
 /** Edge `link-preview` не должна «висеть» без ответа (invoke без таймаута). */
 const LINK_PREVIEW_INVOKE_MS = 8000
@@ -166,11 +166,18 @@ export async function fetchLinkPreview(url: string): Promise<{ data: LinkPreview
     return { data: null, error: null }
   }
 
-  type InvokeRet = Awaited<ReturnType<typeof supabase.functions.invoke>>
+  type InvokeRet = { data: any; error: { message: string } | null }
   let invoked: InvokeRet
   try {
     invoked = await Promise.race([
-      supabase.functions.invoke('link-preview', { body: { url: u } }),
+      (async () => {
+        const r = await fetchJson(`/api/functions/link-preview`, {
+          method: 'POST',
+          auth: true,
+          body: JSON.stringify({ url: u }),
+        })
+        return r.ok ? { data: r.data, error: null } : { data: null, error: { message: r.error.message } }
+      })(),
       new Promise<never>((_, rej) => {
         globalThis.setTimeout(() => rej(new Error('link_preview_timeout')), LINK_PREVIEW_INVOKE_MS)
       }),

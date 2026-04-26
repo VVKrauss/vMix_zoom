@@ -95,8 +95,8 @@ import {
   removeSpaceRoomAdminUser,
   type SpaceRoomChatVisibility,
 } from '../lib/spaceRoom'
-import { supabase } from '../lib/supabase'
-import type { RealtimeChannel } from '@supabase/supabase-js'
+import { rtChannel, rtRemoveChannel } from '../api/realtimeCompat'
+type RealtimeChannel = any
 import type { StudioOutputPreset } from '../types/studio'
 import { getContactStatuses, setContactPin, type ContactStatus } from '../lib/socialGraph'
 
@@ -681,9 +681,8 @@ export function RoomPage({
     const slug = roomId.trim()
     if (!slug) return
 
-    const ch = supabase
-      .channel(`room-mod:${slug}`, { config: { broadcast: { ack: false } } })
-      .on('broadcast', { event: 'join-request' }, (msg) => {
+    const ch = rtChannel(`room-mod:${slug}`)
+      .on('broadcast', { event: 'join-request' }, (msg: any) => {
         if (!isDbSpaceRoomHost) return
         const payload = msg.payload as { requestId?: string; userId?: string | null; displayName?: string } | null
         const requestId = typeof payload?.requestId === 'string' ? payload.requestId : `${Date.now()}`
@@ -715,7 +714,7 @@ export function RoomPage({
 
     return () => {
       modChannelRef.current = null
-      void supabase.removeChannel(ch)
+      rtRemoveChannel(ch)
       if (hostTransferToastTimerRef.current) clearTimeout(hostTransferToastTimerRef.current)
     }
   }, [roomId, isDbSpaceRoomHost])

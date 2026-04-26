@@ -6,3 +6,103 @@ alwaysApply: true
 # Код
 
 Всегда придерживаться принципов **Clean Code**: понятные имена, небольшие функции с одной зоной ответственности, явные зависимости, читаемый поток управления, без лишней сложности и «магии»; не раздувать дифф сверх задачи.
+
+# Сервер (VPS) и деплой
+
+У проекта есть VPS: `204.168.146.200`.
+
+## Доступ и передача файлов
+
+- Подключение к серверу — **только по SSH** (ключ уже есть).
+- Передача файлов на сервер — **всегда через `scp`** (не `ftp`, не web-панели, не “копипаст” в терминал).
+
+## Порядок инструкций (важно)
+
+Если правки кода/новые файлы должны попасть на VPS, то **сначала** всегда давать:
+
+- команды сборки релиза локально
+- команду `scp` для загрузки архива в `/opt/redflow/releases/`
+
+И только **после этого** — команды, которые нужно выполнить **на VPS** (распаковка, переключение `/opt/redflow/current`, `systemctl restart`, `docker compose up`, диагностика).
+
+## Упаковка релиза (обязательно исключать тяжёлые файлы)
+
+При подготовке релиз-архива **нельзя** включать большие артефакты миграции/локальной разработки (иначе архив вырастает до гигабайтов и деплой становится медленным/дорогим).
+
+Всегда исключать минимум:
+
+- `dump.sql`, `dump.*.sql` (дампы БД)
+- `node_modules`, `dist`
+- `node_modules_ci_test`
+- `.env`, `deploy/api.env` (секреты)
+- `release-clean-*.tgz`, `*.tgz` (предыдущие релиз-архивы в рабочей папке; иначе архив начинает включать сам себя и раздувается лавинообразно)
+
+Правило: **релиз-архив нельзя хранить внутри папки проекта**, если команда упаковки делает `tar ... .` — иначе следующий релиз подхватит предыдущие архивы.
+Если хранение неизбежно, то обязательно исключать `*.tgz`.
+
+Рекомендуемый шаблон (Windows PowerShell):
+
+- Подключение:
+  - `ssh <user>@204.168.146.200`
+- Передача:
+  - `scp ".\\release-clean-$ts.tgz" <user>@204.168.146.200:/opt/redflow/releases/`
+  - (если ключ не подхватывается автоматически) `scp -i <path_to_key> ".\\release-clean-$ts.tgz" <user>@204.168.146.200:/opt/redflow/releases/`
+
+## Стандарт деплоя: без ручного `ts` (по последнему архиву)
+
+Правило: на VPS **не вводим `ts=...` руками**. После загрузки архива в `/opt/redflow/releases/` всегда разворачиваем **последний** `release-clean-*.tgz`, вычисляя `ts` из имени файла.
+
+На VPS:
+
+- распаковка + переключение `current`:
+ - `cd /opt/redflow/releases && archive="$(ls -1t release-clean-*.tgz | head -n 1)" && ts="${archive#release-clean-}" && ts="${ts%.tgz}" && mkdir -p "/opt/redflow/releases/$ts" && tar -xzf "$archive" -C "/opt/redflow/releases/$ts" && ln -sfn "/opt/redflow/releases/$ts" /opt/redflow/current`
+
+- перезапуск:
+ - `systemctl restart redflow-stack.service`
+
+- compose recreate + build:
+ - `cd /opt/redflow/current/deploy && /usr/local/lib/docker/cli-plugins/docker-compose -f docker-compose.vps.yml --env-file /opt/redflow/shared/stack.env up -d --build`
+
+## Рекомендуемый вариант развёртывания (recreate + диагностика)
+
+Цель: деплой должен быть **повторяемым**, с **атомарной заменой** версии (recreate), автоматической диагностикой и простым откатом.
+
+Используемый подход:
+
+- **systemd** управляет сервисом (автозапуск, рестарт, логи).
+- Деплой идёт “релизами”:
+  - загружаем архив релиза в `/opt/redflow/releases/` (например `release-clean-YYYYMMDD-HHMMSS.tgz`)
+  - распаковываем
+  - переключаем симлинк `/opt/redflow/current` на новый релиз (атомарно)
+  - применяем/обновляем конфиги в `shared/` при необходимости
+  - перезапускаем стек
+  - выполняем диагностику (status + логи + health-check при наличии)
+
+Ожидаемая структура на сервере:
+
+- `/opt/redflow/`
+  - `releases/` — версии
+  - `current -> releases/<ts>/` — активная версия
+  - `shared/` — общие данные (конфиг/секреты), не трогаются при recreate
+
+Конфиги на VPS:
+
+- `/opt/redflow/shared/stack.env` — переменные для compose (минимум `POSTGRES_PASSWORD=...`)
+- `/opt/redflow/current/deploy/api.env` — переменные API (JWT/S3/ORIGIN). **Секреты не коммитим**, файл создаётся на сервере из `api.env.example`.
+
+Диагностика после деплоя (минимум):
+
+- `systemctl status redflow-stack.service --no-pager`
+- `journalctl -u redflow-stack.service -n 200 --no-pager`
+- `cd /opt/redflow/current/deploy && /usr/local/lib/docker/cli-plugins/docker-compose -f docker-compose.vps.yml --env-file /opt/redflow/shared/stack.env ps`
+
+Health-check:
+
+- Внешний: `curl -fsS https://api2.redflow.online/api/health`
+- Локальный (через правильный SNI, без DNS/firewall): `curl -kfsS --resolve api2.redflow.online:443:127.0.0.1 https://api2.redflow.online/api/health`
+
+Правило: если диагностика/health-check не прошли — деплой считается проваленным, нужен откат на предыдущий релиз (переключение `current` назад + рестарт).
+
+# Миграция с Supabase (отдельный трек)
+
+Пошаговый план, контракт v1 и правило постоянного обновления путей/стека: **`docs/SUPABASE_EXIT_RUNBOOK.md`**, **`docs/API_CONTRACT_V1.md`**, правило **`.cursor/rules/supabase-exit-progress.mdc`** (always apply). При работе в этом треке — обновлять runbook/контракт и отмечать готовые шаги **`[x] 🎆`**.

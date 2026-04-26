@@ -1,3 +1,196 @@
+# База данных (self-hosted PostgreSQL на VPS)
+
+Этот репозиторий переходит с Supabase на **собственный PostgreSQL** на VPS.
+
+Источник фактического состояния схемы на момент перехода: `dump.sql` (pg_dump).
+
+**Практический перенос «как у Supabase», но на VPS:** официальный self-hosted Docker stack + пошаговые runbook’и в [MIGRATION_README.md](./MIGRATION_README.md).
+
+## TL;DR
+
+- Дамп **не “просто” разворачивается** на чистом PostgreSQL, потому что он содержит Supabase-специфичные схемы/расширения/роли и RLS-политики, завязанные на `auth.uid()` и ролях `anon`/`authenticated`.
+- **Данные приложения** в основном лежат в таблицах схемы `public` и **переносимы**.
+- Supabase-специфичные вещи (`auth`, `storage`, `realtime`, `supabase_*`, `graphql*`, `vault`/`supabase_vault`) **не переносимы “как есть”** без поднятия аналога Supabase-стека или серьёзной переработки.
+
+---
+
+## Снимок схемы с VPS (текущая “истина”)
+
+В репозитории держим schema-only снимок **реально работающей** БД на VPS:
+
+- файл: `docs/db-schema.vps.sql`
+- формат: `pg_dump --schema-only` (без данных, без owner/privileges)
+
+Сгенерировать/обновить снимок на VPS:
+
+```bash
+cd /opt/redflow/current/deploy
+docker compose -f docker-compose.vps.yml --env-file /opt/redflow/shared/stack.env exec -T postgres \
+  pg_dump -d redflow --schema-only --no-owner --no-privileges --if-exists --clean \
+  --quote-all-identifiers --exclude-schema=information_schema --exclude-schema=pg_catalog
+```
+
+Дальше вставь вывод в `docs/db-schema.vps.sql` (я могу записать сюда, если пришлёшь вывод в чат).
+
+## 1) Что именно есть в `dump.sql`
+
+### 1.1. Supabase-специфичные схемы/объекты
+
+В дампе присутствуют (неполный смысловой список):
+
+- схемы: `auth`, `storage`, `realtime`, `supabase_functions`, `supabase_migrations`, `graphql`, `graphql_public`, `vault`, `pgbouncer`, `extensions`
+- расширения: `pg_net`, `pg_graphql`, `supabase_vault`, а также обычные `pgcrypto`, `"uuid-ossp"`, `pg_stat_statements`
+- политики RLS и проверки доступа через `auth.uid()` и роли `anon`/`authenticated`
+
+### 1.2. Таблицы приложения (схема `public`)
+
+Эти таблицы — доменная модель приложения и основной кандидат на перенос:
+
+- `access_invites`
+- `account_entitlement_overrides`
+- `account_members`
+- `account_role_assignments`
+- `account_subscriptions`
+- `account_usage_counters`
+- `accounts`
+- `app_version`
+- `audit_logs`
+- `auth_identities`
+- `chat_conversation_invites`
+- `chat_conversation_join_requests`
+- `chat_conversation_members`
+- `chat_conversation_notification_mutes`
+- `chat_conversations`
+- `chat_message_mentions`
+- `chat_messages`
+- `chat_messages_live_session`
+- `contact_aliases`
+- `event_registrations`
+- `events`
+- `guests`
+- `join_tokens`
+- `live_session_participants`
+- `live_sessions`
+- `moderation_actions`
+- `permissions`
+- `plan_entitlements`
+- `push_subscriptions`
+- `refresh_sessions`
+- `role_permissions`
+- `roles`
+- `room_members`
+- `room_role_assignments`
+- `rooms`
+- `site_news`
+- `space_rooms`
+- `subscription_plans`
+- `user_blocks`
+- `user_contact_list_hides`
+- `user_favorites`
+- `user_global_roles`
+- `user_presence_public`
+- `users`
+
+---
+
+## 2) Что можно перенести на VPS “впрямую”
+
+### 2.1. Переносимые таблицы (как данные приложения)
+
+Практически **все таблицы `public.*`** можно перенести как данные, **если** на целевой БД вы обеспечите совместимую схему (см. раздел 4).
+
+### 2.2. Что переносится вместе со схемой без Supabase-зависимостей
+
+Как минимум переносимы/воспроизводимы в обычном PostgreSQL:
+
+- таблицы и индексы схемы `public`
+- обычные расширения: `pgcrypto`, `"uuid-ossp"`, `pg_stat_statements` (по желанию)
+
+---
+
+## 3) Что НЕ получится перенести “как есть” (и почему)
+
+### 3.1. Supabase Auth (`auth.*`)
+
+Таблицы `auth.*` — это внутренности Supabase Auth (Gotrue) и они связаны:
+
+- с их моделью токенов/сессий
+- с ролями и политиками доступа
+- с функциями типа `auth.uid()`
+
+Если мы уходим с Supabase Auth, то `auth.*` **не являются целевой схемой**.
+
+### 3.2. Supabase Storage (`storage.*`)
+
+`storage.buckets`, `storage.objects`, multipart-таблицы и политики — часть Supabase Storage, плюс вне БД есть реальное blob-хранилище.
+Без поднятого аналога Storage-сервиса “как у Supabase” это **не переносится напрямую**.
+
+### 3.3. Supabase Realtime (`realtime.*`)
+
+`realtime.*` (включая партиции `realtime.messages_YYYY_MM_DD`) относится к инфраструктуре Supabase Realtime.
+При уходе с Supabase это **нецелевые данные**.
+
+### 3.4. Supabase migrations / hooks / vault / graphql / net
+
+- `supabase_migrations.*`, `supabase_functions.*` — инфраструктура Supabase.
+- `supabase_vault`/`vault` — Supabase Vault Extension (обычно отсутствует на vanilla Postgres).
+- `pg_net`, `pg_graphql` — расширения, которые на VPS могут отсутствовать; даже если поставить, логика Supabase вокруг них не появляется автоматически.
+
+### 3.5. RLS/права (`CREATE POLICY ... auth.uid()`)
+
+В дампе много политик вида `... USING (user_id = auth.uid()) ...`.
+На vanilla Postgres нет `auth.uid()` и нет ролей `authenticated/anon` “из коробки”.
+Значит, политики **не применимы как есть** — их нужно либо переписать под вашу систему аутентификации, либо временно отключить RLS на период миграции/переноса.
+
+---
+
+## 4) Важная зависимость: ссылки на `auth.users`
+
+В `dump.sql` есть внешние ключи из `public` на `auth.users`, например:
+
+- `public.users(id) -> auth.users(id)`
+- `public.push_subscriptions(user_id) -> auth.users(id)`
+- `public.chat_conversation_invites(created_by) -> auth.users(id)`
+- `public.chat_conversation_notification_mutes(user_id) -> auth.users(id)`
+
+При уходе с Supabase Auth это нужно **развязать**:
+
+- либо заменить ссылки на `public.users(id)` (и обеспечить, что `public.users` становится “истинной” таблицей идентичности),
+- либо завести собственную таблицу `auth.users` (не Supabase), но тогда придётся обеспечить совместимость всей схемы/политик/функций, что обычно хуже.
+
+---
+
+## 5) Можно ли “просто развернуть весь дамп” на VPS?
+
+**В текущем виде — нет, не “просто”.** Причины:
+
+- в дампе есть `CREATE EXTENSION` для `pg_net`, `pg_graphql`, `supabase_vault` (на VPS их, скорее всего, нет);
+- множество `ALTER ... OWNER TO supabase_*` — а в дампе нет `CREATE ROLE supabase_*`, значит восстановление будет падать на владельцах, если роли не создать заранее;
+- политики RLS используют `auth.uid()` и роли `authenticated/anon`, которых на чистом Postgres нет.
+
+### 5.1. Какие есть реалистичные варианты
+
+- **Вариант A (не рекомендуется):** попытаться воспроизвести Supabase-окружение на VPS (роли, расширения, схемы, совместимые функции). Это фактически “почти Supabase”.
+- **Вариант B (рекомендуется):** сделать “application-only restore”:
+  - переносим только `public` (таблицы/данные/индексы/функции, которые не завязаны на Supabase),
+  - переписываем зависимости `auth.users` на новую модель,
+  - переносим/заменяем функциональность Storage/Realtime/Edge Functions на свои сервисы.
+
+---
+
+## 6) Новая “правильная история” после отказа от Supabase
+
+С этого момента источником правды считается **self-hosted Postgres на VPS** и наши собственные миграции.
+
+- **Снимок “как было в Supabase”**: `dump.sql` (зафиксирован в репозитории как артефакт миграции).
+- **Дальше**: добавляем миграции уже под self-hosted окружение (без supabase-схем), и документируем изменения здесь.
+
+Следующая миграция (план):
+
+- удалить/заменить зависимости от Supabase Auth (`auth.users`, `auth.uid()`, роли `authenticated/anon`)
+- определить новую auth-модель (таблица/токены/сессии) и обновить FK/RLS
+- вынести storage в отдельный сервис (например S3/MinIO) и заменить `storage.objects` на свою таблицу метаданных
+
 # DATABASE.md — Структура БД (Supabase / RedFlow)
 
 Проект: `dbhrmaabotdaagmiuzum` · регион: `eu-west-1` · Postgres 17

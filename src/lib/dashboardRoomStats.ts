@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { legacyRpc } from '../api/legacyRpcApi'
 import type { RoomChatConversationSummary } from './chatArchive'
 import type { PersistentSpaceRoomRow } from './spaceRoom'
 import { spaceRoomEffectiveOpenSeconds } from './spaceRoom'
@@ -44,8 +44,9 @@ export async function fetchDashboardRoomStatsForHost(
   const s = slug.trim()
   if (!s) return { data: null, error: 'Нет slug' }
 
-  const { data, error } = await supabase.rpc('dashboard_room_stats_for_host', { p_slug: s })
-  if (error) return { data: null, error: error.message }
+  const r = await legacyRpc('dashboard_room_stats_for_host', { p_slug: s })
+  if (r.error) return { data: null, error: r.error }
+  const data = r.data
   const row = data as Record<string, unknown> | null
   if (!row || row.ok !== true) {
     const err = typeof row?.error === 'string' ? row.error : 'request_failed'
@@ -82,10 +83,9 @@ export async function fetchRoomChatGuestsDashboard(
   const id = conversationId.trim()
   if (!id) return { data: null, error: 'Нет id' }
 
-  const { data, error } = await supabase.rpc('list_room_chat_guest_senders_dashboard', {
-    p_conversation_id: id,
-  })
-  if (error) return { data: null, error: error.message }
+  const r = await legacyRpc('list_room_chat_guest_senders_dashboard', { p_conversation_id: id })
+  if (r.error) return { data: null, error: r.error }
+  const data = r.data
   const row = data as Record<string, unknown> | null
   if (!row || row.ok !== true) {
     const err = typeof row?.error === 'string' ? row.error : 'request_failed'
@@ -121,10 +121,9 @@ export async function fetchRoomChatMembersDashboard(
   const id = conversationId.trim()
   if (!id) return { data: null, error: 'Нет id' }
 
-  const { data, error } = await supabase.rpc('list_room_chat_registered_members_dashboard', {
-    p_conversation_id: id,
-  })
-  if (error) return { data: null, error: error.message }
+  const r = await legacyRpc('list_room_chat_registered_members_dashboard', { p_conversation_id: id })
+  if (r.error) return { data: null, error: r.error }
+  const data = r.data
   const row = data as Record<string, unknown> | null
   if (!row || row.ok !== true) {
     const err = typeof row?.error === 'string' ? row.error : 'request_failed'

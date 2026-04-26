@@ -8,8 +8,8 @@
     "css:split": "node tools/split-css-blocks.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1037.0",
     "@flaticon/flaticon-uicons": "^3.3.1",
-    "@supabase/supabase-js": "^2.102.0",
     "mediasoup-client": "^3.6.105",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -22,6 +22,7 @@
     "@types/react": "^18.2.15",
     "@types/react-dom": "^18.2.7",
     "@vitejs/plugin-react": "^4.0.3",
+    "iconv-lite": "^0.6.3",
     "typescript": "^5.1.6",
     "vite": "^4.4.5",
     "vite-plugin-pwa": "^0.17.5"
