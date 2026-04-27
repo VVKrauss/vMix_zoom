@@ -52,8 +52,13 @@ ln -sfn /opt/redflow/releases/<ts> /opt/redflow/current
 
 ```bash
 export DATABASE_URL="postgresql://redflow:${POSTGRES_PASSWORD}@127.0.0.1:5432/redflow"
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /opt/redflow/current/docs/db-schema.vps.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/db-schema.vps.actual.sql
 ```
+
+Примечание: папка `docs/` может не входить в релиз на VPS. Поэтому:
+
+- схема снимается на VPS в `/tmp/db-schema.vps.actual.sql` через `pg_dump --schema-only`
+- затем либо применяется сразу из `/tmp`, либо скачивается в репозиторий как `docs/db-schema.vps.sql`
 
 ### 6) Запуск сервиса
 

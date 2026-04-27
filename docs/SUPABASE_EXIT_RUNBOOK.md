@@ -70,10 +70,10 @@
 
 **Цель:** один способ получить схему на пустой БД: миграции и/или schema-only, **без** зависимости от Supabase `auth.*` / RLS на `auth.uid()`.
 
-- `[x] 🎆` Зафиксирован канон: **schema-only** файл `docs/db-schema.vps.sql` генерируется из `dump.public.portable.sql` скриптом `scripts/gen-db-schema-vps.mjs`.
-- `[x] 🎆` Документирована команда наката на пустой инстанс (VPS / локально):
-  - Генерация (в репо): `node scripts/gen-db-schema-vps.mjs`
-  - Применение (psql): `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f docs/db-schema.vps.sql`
+- `[x] 🎆` Зафиксирован канон: **schema-only** файл `docs/db-schema.vps.sql` — это снимок **реально работающей** БД на VPS (pg_dump schema-only).
+- `[x] 🎆` Документирована команда снятия + применения:
+  - Снять на VPS (файл): `/tmp/db-schema.vps.actual.sql` (см. `docs/DATABASE.md`)
+  - Применение (psql): `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /tmp/db-schema.vps.actual.sql`
   - Проверка (пример): `psql "$DATABASE_URL" -c "select 1 from public.users limit 1"`
 
 ⚠️ Любой `pg_dump` с прод-Supabase — не путать с «portable» без фильтрации схем.
@@ -189,7 +189,7 @@
 | 2026-04-26 | 3 (часть) | Фронт: online presence mirror (`useOnlinePresenceMirror`) переведено на `/api/v1`. |
 | 2026-04-26 | 3 (часть) | Фронт: последние `supabase.from` (profile/siteNews/pushSubscriptions) переведены на `/api/v1`. |
 | 2026-04-26 | 3 🎆 | Шаг 3 завершён: в `src/` больше нет `supabase.rpc` / `supabase.from`; остаётся только shim `src/lib/supabase.ts` до удаления legacy `/api/db/*`. |
-| 2026-04-26 | 4 🎆 | Зафиксирован portable schema-only: `docs/db-schema.vps.sql` + генератор `scripts/gen-db-schema-vps.mjs`, команда наката через `psql`. |
+| 2026-04-27 | 4 🎆 | Обновлён канон schema snapshot: `docs/db-schema.vps.sql` теперь = фактический `pg_dump --schema-only` с VPS (включая `app_realtime` и triggers). |
 | 2026-04-26 | 5 🎆 | Зафиксирован clean VPS bootstrap: `docs/VPS_BOOTSTRAP.md` + артефакты `deploy/*` + systemd unit в cloud-init. |
 | 2026-04-26 | 7 🎆 | S3 smoke на VPS: `/api/storage/upload` → `/api/storage/signed-url` → download → `/api/storage/remove` (один бакет, prefixes). |
 | 2026-04-26 | 8 🎆 | WS smoke на VPS: `/ws?access_token=...` + `subscribe`/`broadcast` (scaffold). |

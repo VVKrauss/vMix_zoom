@@ -21,16 +21,22 @@
 - файл: `docs/db-schema.vps.sql`
 - формат: `pg_dump --schema-only` (без данных, без owner/privileges)
 
-Сгенерировать/обновить снимок на VPS:
+Сгенерировать/обновить снимок на VPS (создаём файл на VPS, затем скачиваем в репозиторий):
 
 ```bash
 cd /opt/redflow/current/deploy
 docker compose -f docker-compose.vps.yml --env-file /opt/redflow/shared/stack.env exec -T postgres \
-  pg_dump -d redflow --schema-only --no-owner --no-privileges --if-exists --clean \
-  --quote-all-identifiers --exclude-schema=information_schema --exclude-schema=pg_catalog
+  sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h 127.0.0.1 -U redflow -d redflow \
+    --schema-only --no-owner --no-privileges --if-exists --clean \
+    --quote-all-identifiers --exclude-schema=information_schema --exclude-schema=pg_catalog' \
+  > /tmp/db-schema.vps.actual.sql
 ```
 
-Дальше вставь вывод в `docs/db-schema.vps.sql` (я могу записать сюда, если пришлёшь вывод в чат).
+Скачать на локальную машину и положить в репозиторий:
+
+```bash
+scp root@204.168.146.200:/tmp/db-schema.vps.actual.sql "C:\Code\vMix replacer\docs\db-schema.vps.sql"
+```
 
 ## 1) Что именно есть в `dump.sql`
 
