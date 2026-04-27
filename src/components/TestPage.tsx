@@ -21,6 +21,30 @@ function nowIso() {
   return new Date().toISOString()
 }
 
+function isoToMs(s?: string): number | null {
+  if (!s) return null
+  const t = Date.parse(s)
+  return Number.isFinite(t) ? t : null
+}
+
+function durationMs(startedAt?: string, finishedAt?: string): number | null {
+  const a = isoToMs(startedAt)
+  const b = isoToMs(finishedAt)
+  if (a == null || b == null) return null
+  const d = b - a
+  return Number.isFinite(d) && d >= 0 ? d : null
+}
+
+function formatDuration(ms: number | null | undefined): string {
+  if (ms == null) return ''
+  if (ms < 1000) return `${ms}ms`
+  const s = Math.round(ms / 100) / 10
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  const rem = Math.round((s - m * 60) * 10) / 10
+  return `${m}m ${rem}s`
+}
+
 function safeStringify(x: unknown): string {
   try {
     return JSON.stringify(x, null, 2)
@@ -31,6 +55,43 @@ function safeStringify(x: unknown): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => window.setTimeout(r, ms))
+}
+
+async function probeApiRaw(
+  path: string,
+  init?: RequestInit & { auth?: boolean; timeoutMs?: number },
+): Promise<{ ok: boolean; status: number; ms: number; bodyText?: string; error?: string; url?: string }> {
+  const base = apiBase()
+  const url = `${base}${path.startsWith('/') ? path : `/${path}`}`
+  const timeoutMs = Math.max(500, Math.min(60_000, Math.floor(init?.timeoutMs ?? 15_000)))
+
+  const headers = new Headers(init?.headers ?? {})
+  headers.set('accept', 'application/json')
+  if (init?.auth) {
+    const token = getAccessToken()
+    if (token) headers.set('authorization', `Bearer ${token}`)
+  }
+
+  const ac = new AbortController()
+  const t0 = performance.now()
+  const timer = window.setTimeout(() => ac.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, { ...init, headers, credentials: 'include', signal: ac.signal })
+    const ms = Math.round(performance.now() - t0)
+    let bodyText: string | undefined
+    try {
+      bodyText = await res.text()
+    } catch {
+      bodyText = undefined
+    }
+    return { ok: res.ok, status: res.status, ms, bodyText, url }
+  } catch (e) {
+    const ms = Math.round(performance.now() - t0)
+    const msg = e instanceof DOMException && e.name === 'AbortError' ? 'timeout' : e instanceof Error ? e.message : 'fetch_failed'
+    return { ok: false, status: 0, ms, error: msg, url }
+  } finally {
+    window.clearTimeout(timer)
+  }
 }
 
 async function probeFetch(url: string, init?: RequestInit): Promise<{ ok: boolean; status: number; ms: number; bodyText?: string }> {
@@ -244,6 +305,8 @@ export function TestPage() {
     { id: 'webrtc-ice', title: 'WebRTC ICE: STUN/TURN кандидаты (host/srflx/relay)', status: 'idle' },
   ])
   const [running, setRunning] = useState(false)
+  const [runStartedAt, setRunStartedAt] = useState<string | null>(null)
+  const [runFinishedAt, setRunFinishedAt] = useState<string | null>(null)
 
   const signalingUrl = String(import.meta.env.VITE_SIGNALING_URL ?? '').trim().replace(/\/$/, '')
   const turnUrl = String(import.meta.env.VITE_TURN_URL ?? '').trim()
@@ -260,9 +323,34 @@ export function TestPage() {
         const token = getAccessToken()
         if (!token) throw new Error('not_logged_in (no access token)')
 
-        const ensured = await v1EnsureSelfDirectConversation()
-        if (ensured.error || !ensured.data) throw new Error(`ensure_self_dm_failed: ${ensured.error || 'no_conversation_id'}`)
-        const conversationId = ensured.data
+        const steps: any[] = []
+
+        // Step 1: ensure self DM (with retries + detailed network error)
+        let conversationId: string | null = null
+        {
+          const step = { step: 'ensure_self_direct', startedAt: nowIso() }
+          let lastErr: any = null
+          for (let i = 0; i < 3; i++) {
+            // eslint-disable-next-line no-await-in-loop
+            const ensured = await v1EnsureSelfDirectConversation()
+            if (!ensured.error && ensured.data) {
+              conversationId = ensured.data
+              lastErr = null
+              break
+            }
+            lastErr = ensured.error || 'no_conversation_id'
+            // eslint-disable-next-line no-await-in-loop
+            await sleep(250 + i * 250)
+          }
+          const finishedAt = nowIso()
+          steps.push({ ...step, finishedAt, durationMs: durationMs(step.startedAt, finishedAt), ok: Boolean(conversationId), error: lastErr })
+        }
+
+        // If ensure failed, probe raw endpoint to distinguish timeout vs CORS vs HTTP error.
+        if (!conversationId) {
+          const raw = await probeApiRaw('/api/v1/me/conversations/self-direct', { method: 'POST', auth: true, body: JSON.stringify({}), timeoutMs: 20_000 })
+          throw new Error(`ensure_self_dm_failed: ${raw.status || 0} ${raw.error || ''}`.trim())
+        }
 
         const nonce = `${Date.now()}-${Math.random().toString(16).slice(2)}`
         const body = `test ping ${nonce}`
@@ -270,6 +358,7 @@ export function TestPage() {
         const wsT0 = performance.now()
         const ch = `dm-thread:${conversationId}`
 
+        // Step 2: subscribe and wait for db_change for our message (longer timeout, because RU can be slow)
         const waitWs = new Promise<{ ok: boolean; ms: number; opened: boolean; match?: any; note?: string }>((resolve) => {
           let done = false
           let opened = false
@@ -307,13 +396,34 @@ export function TestPage() {
               /* noop */
             }
             resolve({ ok: false, ms: Math.round(performance.now() - wsT0), opened, note: 'ws_timeout_waiting_for_db_change' })
-          }, 5500)
+          }, 15_000)
         })
 
-        const sendT0 = performance.now()
-        const sent = await v1AppendConversationMessage({ conversationId, body, kind: 'text' })
-        const sendMs = Math.round(performance.now() - sendT0)
-        if (sent.error) throw new Error(`send_failed: ${sent.error}`)
+        // Step 3: send message (HTTP)
+        let sendMs = 0
+        {
+          const step = { step: 'send_message', startedAt: nowIso() }
+          const sendT0 = performance.now()
+          const sent = await v1AppendConversationMessage({ conversationId, body, kind: 'text' })
+          sendMs = Math.round(performance.now() - sendT0)
+          const finishedAt = nowIso()
+          steps.push({
+            ...step,
+            finishedAt,
+            durationMs: durationMs(step.startedAt, finishedAt),
+            ok: !sent.error,
+            error: sent.error,
+          })
+          if (sent.error) {
+            const raw = await probeApiRaw(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
+              method: 'POST',
+              auth: true,
+              body: JSON.stringify({ body, kind: 'text', meta: null, replyToMessageId: null, quoteToMessageId: null }),
+              timeoutMs: 25_000,
+            })
+            throw new Error(`send_failed: ${raw.status || 0} ${raw.error || ''}`.trim())
+          }
+        }
 
         const wsRes = await waitWs
 
@@ -322,7 +432,7 @@ export function TestPage() {
         if (!wsRes.ok) {
           const httpT0 = performance.now()
           let found = false
-          for (let i = 0; i < 6; i++) {
+          for (let i = 0; i < 20; i++) {
             // eslint-disable-next-line no-await-in-loop
             const page = await v1ListConversationMessagesPage({ conversationId, limit: 20 })
             if (!page.error && page.data?.messages?.some((m: any) => String(m?.body ?? '') === body)) {
@@ -330,7 +440,7 @@ export function TestPage() {
               break
             }
             // eslint-disable-next-line no-await-in-loop
-            await sleep(350)
+            await sleep(500)
           }
           httpFound = { ok: found, ms: Math.round(performance.now() - httpT0), found }
         }
@@ -350,6 +460,7 @@ export function TestPage() {
                     wsConfirm: wsRes,
                     httpConfirm: httpFound,
                     body,
+                    steps,
                     interpretation: wsRes.ok
                       ? 'ok_via_ws'
                       : httpFound?.found
@@ -544,10 +655,13 @@ export function TestPage() {
   const runAll = useCallback(async () => {
     if (running) return
     setRunning(true)
+    setRunStartedAt(nowIso())
+    setRunFinishedAt(null)
     for (const x of items) {
       // eslint-disable-next-line no-await-in-loop
       await runOne(x.id)
     }
+    setRunFinishedAt(nowIso())
     setRunning(false)
   }, [items, runOne, running])
 
@@ -557,7 +671,22 @@ export function TestPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const report = useMemo(() => buildReport(items), [items])
+  const report = useMemo(() => {
+    const base = buildReport(items) as any
+    const resultsWithDurations = (Array.isArray(base?.results) ? base.results : []).map((r: ProbeResult) => ({
+      ...r,
+      durationMs: durationMs(r.startedAt, r.finishedAt),
+    }))
+    return {
+      ...base,
+      run: {
+        startedAt: runStartedAt,
+        finishedAt: runFinishedAt,
+        durationMs: durationMs(runStartedAt ?? undefined, runFinishedAt ?? undefined),
+      },
+      results: resultsWithDurations,
+    }
+  }, [items, runFinishedAt, runStartedAt])
 
   const copyReport = async () => {
     const text = safeStringify(report)
@@ -598,6 +727,13 @@ export function TestPage() {
         <p className="news-page__empty" style={{ marginBottom: 12 }}>
           Страница помогает понять, что именно блокируется сетью (HTTPS/CORS/WSS).
         </p>
+        {runStartedAt ? (
+          <p className="news-page__empty" style={{ marginBottom: 12 }}>
+            Прогон: {runStartedAt}
+            {runFinishedAt ? ` → ${runFinishedAt}` : ''}{' '}
+            {runFinishedAt ? `(${formatDuration(durationMs(runStartedAt, runFinishedAt))})` : ''}
+          </p>
+        ) : null}
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
           <button className="join-btn join-btn--secondary" type="button" disabled={running} onClick={() => void runAll()}>
@@ -624,6 +760,9 @@ export function TestPage() {
                 <h2 className="news-page__item-title" style={{ margin: 0 }}>
                   {x.title}
                 </h2>
+                <span style={{ fontSize: 12, opacity: 0.8, whiteSpace: 'nowrap' }}>
+                  {formatDuration(durationMs(x.startedAt, x.finishedAt))}
+                </span>
                 <span
                   style={{
                     fontSize: 12,
