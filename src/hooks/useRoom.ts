@@ -328,6 +328,14 @@ function isEndedTrackError(err: unknown): boolean {
   return false
 }
 
+function isNotReadableCameraError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'NotReadableError'
+}
+
+function isAbortCameraError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'AbortError'
+}
+
 async function ensureTrackIsLiveSoon(track: MediaStreamTrack, ms: number): Promise<void> {
   const rs0 = String(track.readyState)
   if (rs0 !== 'live') throw new Error('track ended')
@@ -1094,6 +1102,25 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       }
       const preset = presetRef.current
       const camPref = readPreferredCameraId()
+      const releaseLocalVideoTracks = () => {
+        const stream = localStreamRef.current
+        if (!stream) return
+        for (const t of [...stream.getVideoTracks()]) {
+          try {
+            t.stop()
+          } catch {
+            /* noop */
+          }
+          try {
+            stream.removeTrack(t)
+          } catch {
+            /* noop */
+          }
+        }
+        const next = new MediaStream([...stream.getTracks()])
+        localStreamRef.current = next
+        setLocalStream(next)
+      }
       const requestCamStream = async (mode: 'preferred' | 'no_exact' | 'simple') => {
         if (mode === 'simple') {
           return await navigator.mediaDevices.getUserMedia({ video: true })
@@ -1122,6 +1149,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       for (let attempt = 0; attempt < 3; attempt++) {
         let v: MediaStream | null = null
         try {
+          // iOS Safari can report NotReadableError when previous video tracks weren't fully released.
+          // Best-effort: stop/remove old local video tracks before attempting a new capture.
+          if (attempt > 0 || isIosLikeDevice()) releaseLocalVideoTracks()
           const mode: 'preferred' | 'no_exact' | 'simple' =
             attempt === 0 ? 'preferred' : attempt === 1 ? 'no_exact' : 'simple'
           v = await requestCamStream(mode)
@@ -1144,14 +1174,18 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           } catch {
             /* noop */
           }
-          if (isEndedTrackError(err)) {
+          const iosRetryable = isIosLikeDevice() && (isNotReadableCameraError(err) || isAbortCameraError(err))
+          if (isEndedTrackError(err) || iosRetryable) {
             // Retry with a small delay; last attempt uses the simplest constraints ({ video: true }).
-            await sleepMs(attempt === 0 ? 80 : 40)
+            await sleepMs(attempt === 0 ? 140 : 90)
             if (attempt < 2) continue
           }
           // После всех попыток "track ended" — это почти всегда занятая/сломанная камера или запрет драйвера.
           if (isEndedTrackError(err)) {
             throw new DOMException('Camera track ended immediately', 'NotReadableError')
+          }
+          if (iosRetryable) {
+            throw new DOMException('Camera capture failed (iOS Safari)', 'NotReadableError')
           }
           throw err
         }
