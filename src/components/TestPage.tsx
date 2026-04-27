@@ -78,6 +78,9 @@ async function probeApiRaw(
 
   const headers = new Headers(init?.headers ?? {})
   headers.set('accept', 'application/json')
+  const body = init?.body as any
+  // For JSON string bodies ensure proper content-type; otherwise Fastify may treat it as plain text.
+  if (typeof body === 'string' && body && !headers.has('content-type')) headers.set('content-type', 'application/json')
   if (init?.auth) {
     const token = getAccessToken()
     if (token) headers.set('authorization', `Bearer ${token}`)
