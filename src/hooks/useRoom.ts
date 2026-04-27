@@ -412,6 +412,21 @@ async function produceVideoFromTrack(
     })
   }
 
+  // iOS Safari: исходящий simulcast часто нестабилен; сначала один слой (как типичный mobile‑send).
+  if (isIosLikeDevice()) {
+    try {
+      return await tryProduce(singleEncodings, true)
+    } catch (errIos1) {
+      try {
+        return await tryProduce(singleEncodings, false)
+      } catch {
+        if (isDevTraceEnabled()) {
+          console.warn('[produce] ios single encoding failed, try simulcast path', errIos1)
+        }
+      }
+    }
+  }
+
   // 1) Prefer simulcast. If forcing codec breaks (router mismatch / browser quirk), retry without forcing codec.
   try {
     return await tryProduce(simulcastEncodings, canForceCodecForSimulcast)
@@ -1121,13 +1136,24 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         setLocalStream(next)
       }
       const requestCamStream = async () => {
-        // максимально простой и максимально совместимый захват
+        if (isIosLikeDevice()) {
+          try {
+            return await navigator.mediaDevices.getUserMedia({
+              audio: false,
+              video: { facingMode: { ideal: 'user' } },
+            })
+          } catch {
+            /* fallback ниже */
+          }
+        }
         return await navigator.mediaDevices.getUserMedia({ video: true })
       }
 
+      const maxAttempts = isIosLikeDevice() ? 4 : 2
+
       // Некоторые браузеры/драйверы могут вернуть трек, который тут же завершится (ended).
-      // В этом случае — один быстрый retry, затем отдаём ошибку наружу.
-      for (let attempt = 0; attempt < 2; attempt++) {
+      // На iOS второй подряд getUserMedia сразу после stop часто даёт NotReadableError — больше попыток и паузы.
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
         let v: MediaStream | null = null
         try {
           releaseLocalVideoTracks()
@@ -1152,8 +1178,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
             /* noop */
           }
           if (isEndedTrackError(err) || isNotReadableCameraError(err) || isAbortCameraError(err)) {
-            await sleepMs(140)
-            if (attempt < 1) continue
+            const gap = isIosLikeDevice() ? [200, 450, 700][attempt] ?? 900 : 140
+            await sleepMs(gap)
+            if (attempt < maxAttempts - 1) continue
           }
           // После всех попыток "track ended" — это почти всегда занятая/сломанная камера или запрет драйвера.
           if (isEndedTrackError(err)) {
@@ -1845,7 +1872,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
       // 9. Локальные producers по тумблерам join — только после готовности recv + consume + обработчиков.
       // Ошибка камеры/микрофона не должна блокировать вход: заходим без устройства.
-      if (wantMic) {
+      // iOS: подряд открыть mic+cam часто даёт NotReadableError на камере; короткая пауза и сначала камера, потом микрофон.
+      const iosJoin = isIosLikeDevice()
+      if (iosJoin) {
+        await sleepMs(220)
+      }
+
+      const joinEnableMic = async () => {
         try {
           await ensureAudioProducer()
           setIsMuted(false)
@@ -1854,7 +1887,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           setIsMuted(true)
         }
       }
-      if (wantCam) {
+      const joinEnableCam = async () => {
         try {
           await ensureVideoProducer()
           setIsCamOff(false)
@@ -1862,6 +1895,17 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           if (isDevTraceEnabled()) console.warn('[join] video produce failed; join without camera', e)
           setIsCamOff(true)
         }
+      }
+
+      if (iosJoin && wantMic && wantCam) {
+        await joinEnableCam()
+        if (superseded()) return
+        await sleepMs(380)
+        await joinEnableMic()
+      } else {
+        if (wantMic) await joinEnableMic()
+        if (superseded()) return
+        if (wantCam) await joinEnableCam()
       }
 
       setStatus('connected')
