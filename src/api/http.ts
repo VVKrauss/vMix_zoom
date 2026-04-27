@@ -33,6 +33,16 @@ export function setAccessToken(token: string | null): void {
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => window.setTimeout(r, ms))
+}
+
+function clampInt(n: unknown, min: number, max: number, fallback: number): number {
+  const v = typeof n === 'number' ? n : Number(n)
+  if (!Number.isFinite(v)) return fallback
+  return Math.max(min, Math.min(max, Math.floor(v)))
+}
+
 async function safeReadJson(res: Response): Promise<unknown | undefined> {
   const ct = res.headers.get('content-type') ?? ''
   if (!ct.includes('application/json')) return undefined
@@ -73,7 +83,7 @@ async function refreshAccessToken(): Promise<string | null> {
 
 export async function fetchJson<T>(
   path: string,
-  init?: RequestInit & { auth?: boolean },
+  init?: RequestInit & { auth?: boolean; timeoutMs?: number; retry?: { retries?: number; baseDelayMs?: number } },
 ): Promise<ApiResult<T>> {
   const base = apiBase()
   const url = `${base}${path.startsWith('/') ? path : `/${path}`}`
@@ -91,11 +101,49 @@ export async function fetchJson<T>(
     if (token) headers.set('authorization', `Bearer ${token}`)
   }
 
-  let res: Response
-  try {
-    res = await fetch(url, { ...init, headers, credentials: 'include' })
-  } catch {
-    return { ok: false, error: { status: 0, message: 'Сеть или CORS' } }
+  const timeoutMs = init?.timeoutMs != null ? clampInt(init.timeoutMs, 300, 60_000, 12_000) : null
+  const retries = clampInt(init?.retry?.retries, 0, 5, 0)
+  const baseDelayMs = clampInt(init?.retry?.baseDelayMs, 50, 5_000, 300)
+
+  async function doFetch(): Promise<{ res: Response | null; errorMessage: string | null }> {
+    const controller = timeoutMs ? new AbortController() : null
+    const timer = timeoutMs ? window.setTimeout(() => controller?.abort(), timeoutMs) : null
+    try {
+      const res = await fetch(url, { ...init, headers, credentials: 'include', signal: controller?.signal })
+      return { res, errorMessage: null }
+    } catch (e) {
+      const msg =
+        e instanceof DOMException && e.name === 'AbortError'
+          ? 'timeout'
+          : e instanceof Error
+            ? e.message
+            : 'fetch_failed'
+      return { res: null, errorMessage: msg }
+    } finally {
+      if (timer != null) window.clearTimeout(timer)
+    }
+  }
+
+  let res: Response | null = null
+  let lastNetworkError: string | null = null
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    // eslint-disable-next-line no-await-in-loop
+    const r = await doFetch()
+    res = r.res
+    lastNetworkError = r.errorMessage
+    if (res) break
+    if (attempt < retries) {
+      const delay = baseDelayMs * (attempt + 1)
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(delay)
+    }
+  }
+
+  if (!res) {
+    return {
+      ok: false,
+      error: { status: 0, message: lastNetworkError === 'timeout' ? 'Таймаут сети' : 'Сеть или CORS', details: { error: lastNetworkError } },
+    }
   }
 
   // Авто-refresh: один раз при 401 для auth-запросов.
@@ -103,11 +151,14 @@ export async function fetchJson<T>(
     const token = await refreshAccessToken()
     if (token) {
       headers.set('authorization', `Bearer ${token}`)
-      try {
-        res = await fetch(url, { ...init, headers, credentials: 'include' })
-      } catch {
-        return { ok: false, error: { status: 0, message: 'Сеть или CORS' } }
+      const r2 = await doFetch()
+      if (!r2.res) {
+        return {
+          ok: false,
+          error: { status: 0, message: r2.errorMessage === 'timeout' ? 'Таймаут сети' : 'Сеть или CORS', details: { error: r2.errorMessage } },
+        }
       }
+      res = r2.res
     }
   }
 

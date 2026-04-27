@@ -6,6 +6,9 @@ export type V1ConversationLists = {
   channels: unknown[]
 }
 
+let cachedSelfDirectId: string | null = null
+let cachedSelfDirectAtMs = 0
+
 export async function v1ListMyGroups(): Promise<{ data: unknown[] | null; error: string | null }> {
   const r = await v1GetMyConversations()
   if (r.error || !r.data) return { data: null, error: r.error }
@@ -28,13 +31,25 @@ export async function v1GetMyConversations(): Promise<{ data: V1ConversationList
 }
 
 export async function v1EnsureSelfDirectConversation(): Promise<{ data: string | null; error: string | null }> {
+  // Cache to avoid repeated roundtrips on flaky networks (RU).
+  // Note: server guarantees the same conversation id for the user.
+  const now = Date.now()
+  if (cachedSelfDirectId && now - cachedSelfDirectAtMs < 10 * 60_000) {
+    return { data: cachedSelfDirectId, error: null }
+  }
   const r = await fetchJson<{ conversationId: string }>('/api/v1/me/conversations/self-direct', {
     method: 'POST',
     auth: true,
     body: JSON.stringify({}),
+    timeoutMs: 7_000,
+    retry: { retries: 2, baseDelayMs: 300 },
   })
   if (!r.ok) return { data: null, error: r.error.message }
   const id = typeof (r.data as any)?.conversationId === 'string' ? (r.data as any).conversationId : null
+  if (id) {
+    cachedSelfDirectId = id
+    cachedSelfDirectAtMs = now
+  }
   return { data: id, error: null }
 }
 
@@ -94,6 +109,8 @@ export async function v1AppendConversationMessage(args: {
       replyToMessageId: args.replyToMessageId ?? null,
       quoteToMessageId: args.quoteToMessageId ?? null,
     }),
+    timeoutMs: 7_000,
+    retry: { retries: 2, baseDelayMs: 300 },
   })
   if (!r.ok) return { data: null, error: r.error.message }
   return { data: (r.data as any)?.data ?? null, error: null }
