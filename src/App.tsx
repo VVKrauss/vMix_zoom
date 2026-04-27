@@ -41,11 +41,6 @@ const ForgotPasswordPage = lazy(async () => {
   return { default: mod.ForgotPasswordPage }
 })
 
-const ResetPasswordPage = lazy(async () => {
-  const mod = await import('./components/ResetPasswordPage')
-  return { default: mod.ResetPasswordPage }
-})
-
 const DashboardPage = lazy(async () => {
   const mod = await import('./components/DashboardPage')
   return { default: mod.DashboardPage }
@@ -164,7 +159,6 @@ export function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/auth/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/auth/email-confirmed" element={<EmailConfirmedPage />} />
-        <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path="/dashboard/chats" element={<ProtectedRoute><DashboardChatsPage /></ProtectedRoute>} />
         <Route path="/dashboard/chats/:conversationId" element={<ProtectedRoute><DashboardChatViewPage /></ProtectedRoute>} />

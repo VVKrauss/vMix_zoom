@@ -62,16 +62,6 @@ export async function authUpdateProfile(params: {
   return await fetchJson('/api/auth/profile', { method: 'PATCH', auth: true, body: JSON.stringify(params) })
 }
 
-export async function authRequestPasswordReset(params: {
-  email: string
-  redirectTo: string
-}): Promise<ApiResult<{ ok: true; devCode?: string | null }>> {
-  return await fetchJson('/api/auth/password/reset', {
-    method: 'POST',
-    body: JSON.stringify(params),
-  })
-}
-
 export async function authUpdatePassword(params: { password: string }): Promise<ApiResult<{ ok: true }>> {
   return await fetchJson('/api/auth/password/update', {
     method: 'POST',
@@ -80,12 +70,11 @@ export async function authUpdatePassword(params: { password: string }): Promise<
   })
 }
 
-export async function authConfirmPasswordReset(params: {
+export async function authResetPassword(params: {
   email: string
-  code: string
   newPassword: string
 }): Promise<ApiResult<{ ok: true }>> {
-  return await fetchJson('/api/auth/password/reset/confirm', {
+  return await fetchJson('/api/auth/password/reset', {
     method: 'POST',
     body: JSON.stringify(params),
   })
