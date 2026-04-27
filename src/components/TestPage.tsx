@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiBase, getAccessToken } from '../api/http'
+import { v1AppendConversationMessage, v1EnsureSelfDirectConversation, v1ListConversationMessagesPage } from '../api/messengerApi'
+import { realtime } from '../api/realtime'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import { ChevronLeftIcon } from './icons'
 
@@ -27,6 +29,10 @@ function safeStringify(x: unknown): string {
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => window.setTimeout(r, ms))
+}
+
 async function probeFetch(url: string, init?: RequestInit): Promise<{ ok: boolean; status: number; ms: number; bodyText?: string }> {
   const t0 = performance.now()
   try {
@@ -45,10 +51,14 @@ async function probeFetch(url: string, init?: RequestInit): Promise<{ ok: boolea
   }
 }
 
-async function probeWebSocket(url: string, timeoutMs = 5000): Promise<{ ok: boolean; ms: number; close?: { code: number; reason: string } }> {
+async function probeWebSocket(
+  url: string,
+  timeoutMs = 5000,
+): Promise<{ ok: boolean; ms: number; opened: boolean; close?: { code: number; reason: string } }> {
   const t0 = performance.now()
   return await new Promise((resolve) => {
     let done = false
+    let opened = false
     const ws = new WebSocket(url)
     const timer = window.setTimeout(() => {
       if (done) return
@@ -58,11 +68,12 @@ async function probeWebSocket(url: string, timeoutMs = 5000): Promise<{ ok: bool
       } catch {
         /* noop */
       }
-      resolve({ ok: false, ms: Math.round(performance.now() - t0), close: { code: 0, reason: 'timeout' } })
+      resolve({ ok: false, ms: Math.round(performance.now() - t0), close: { code: 0, reason: 'timeout' }, opened })
     }, timeoutMs)
 
     ws.onopen = () => {
       if (done) return
+      opened = true
       done = true
       window.clearTimeout(timer)
       try {
@@ -70,7 +81,7 @@ async function probeWebSocket(url: string, timeoutMs = 5000): Promise<{ ok: bool
       } catch {
         /* noop */
       }
-      resolve({ ok: true, ms: Math.round(performance.now() - t0) })
+      resolve({ ok: true, ms: Math.round(performance.now() - t0), opened: true })
     }
     ws.onerror = () => {
       // wait for close for details
@@ -79,7 +90,7 @@ async function probeWebSocket(url: string, timeoutMs = 5000): Promise<{ ok: bool
       if (done) return
       done = true
       window.clearTimeout(timer)
-      resolve({ ok: false, ms: Math.round(performance.now() - t0), close: { code: e.code, reason: e.reason || '' } })
+      resolve({ ok: false, ms: Math.round(performance.now() - t0), close: { code: e.code, reason: e.reason || '' }, opened })
     }
   })
 }
@@ -210,14 +221,23 @@ function buildReport(results: ProbeResult[]) {
   }
 }
 
+function reportFilename(r: { at?: string }) {
+  const raw = typeof r?.at === 'string' ? r.at : nowIso()
+  // Windows-safe and URL-safe: replace ":" and other separators
+  const safe = raw.replace(/[:.]/g, '-')
+  return `redflow-test-${safe}.json`
+}
+
 export function TestPage() {
   const [items, setItems] = useState<ProbeResult[]>(() => [
+    { id: 'chat-send-receive', title: 'Чат: отправить и получить сообщение (самый важный тест)', status: 'idle' },
     { id: 'env', title: 'Окружение (base URLs, токен)', status: 'idle' },
     { id: 'api-health', title: 'HTTPS: GET /api/health', status: 'idle' },
     { id: 'api-health-series', title: 'HTTPS: серия запросов /api/health (флап/тайминги)', status: 'idle' },
-    { id: 'asset-logo', title: 'Static asset (UI origin): /logo.png', status: 'idle' },
+    { id: 'wss-api-root', title: 'WSS: api2 / (без токена, диагностика блока по хосту)', status: 'idle' },
     { id: 'wss-no-token', title: 'WSS: /ws без токена (ожидаемо FAIL)', status: 'idle' },
     { id: 'wss-with-token', title: 'WSS: /ws с токеном (ожидаемо OK)', status: 'idle' },
+    { id: 'wss-api-random', title: 'WSS: api2 /__ws_probe__ (без токена, диагностика блока по path)', status: 'idle' },
     { id: 'signaling-origin', title: 'HTTPS: signaling origin (reachability)', status: 'idle' },
     { id: 'socketio-signaling', title: 'Socket.IO (signaling): websocket handshake', status: 'idle' },
     { id: 'resources', title: 'Какие хосты реально грузились (Resource Timing)', status: 'idle' },
@@ -236,6 +256,113 @@ export function TestPage() {
     const base = apiBase()
 
     try {
+      if (id === 'chat-send-receive') {
+        const token = getAccessToken()
+        if (!token) throw new Error('not_logged_in (no access token)')
+
+        const ensured = await v1EnsureSelfDirectConversation()
+        if (ensured.error || !ensured.data) throw new Error(`ensure_self_dm_failed: ${ensured.error || 'no_conversation_id'}`)
+        const conversationId = ensured.data
+
+        const nonce = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+        const body = `test ping ${nonce}`
+
+        const wsT0 = performance.now()
+        const ch = `dm-thread:${conversationId}`
+
+        const waitWs = new Promise<{ ok: boolean; ms: number; opened: boolean; match?: any; note?: string }>((resolve) => {
+          let done = false
+          let opened = false
+          let timer: number | null = null
+          const channel = realtime.channel(ch)
+          const off = channel.on((e) => {
+              if (done) return
+              if (e.type !== 'db_change') return
+              if (e.table !== 'chat_messages' || e.action !== 'INSERT') return
+              const row = (e as any).row ?? {}
+              const cid = typeof row?.conversation_id === 'string' ? row.conversation_id : ''
+              const b = typeof row?.body === 'string' ? row.body : ''
+              if (cid !== conversationId) return
+              if (b !== body) return
+              done = true
+              if (timer != null) window.clearTimeout(timer)
+              off()
+              resolve({
+                ok: true,
+                ms: Math.round(performance.now() - wsT0),
+                opened,
+                match: { rowPreview: { id: row?.id, created_at: row?.created_at } },
+              })
+            })
+
+          channel.subscribe()
+          opened = true
+
+          timer = window.setTimeout(() => {
+            if (done) return
+            done = true
+            try {
+              off()
+            } catch {
+              /* noop */
+            }
+            resolve({ ok: false, ms: Math.round(performance.now() - wsT0), opened, note: 'ws_timeout_waiting_for_db_change' })
+          }, 5500)
+        })
+
+        const sendT0 = performance.now()
+        const sent = await v1AppendConversationMessage({ conversationId, body, kind: 'text' })
+        const sendMs = Math.round(performance.now() - sendT0)
+        if (sent.error) throw new Error(`send_failed: ${sent.error}`)
+
+        const wsRes = await waitWs
+
+        // Fallback: if WS didn't confirm, check HTTP history quickly (sometimes WS is blocked but HTTP works).
+        let httpFound: { ok: boolean; ms: number; found: boolean } | null = null
+        if (!wsRes.ok) {
+          const httpT0 = performance.now()
+          let found = false
+          for (let i = 0; i < 6; i++) {
+            // eslint-disable-next-line no-await-in-loop
+            const page = await v1ListConversationMessagesPage({ conversationId, limit: 20 })
+            if (!page.error && page.data?.messages?.some((m: any) => String(m?.body ?? '') === body)) {
+              found = true
+              break
+            }
+            // eslint-disable-next-line no-await-in-loop
+            await sleep(350)
+          }
+          httpFound = { ok: found, ms: Math.round(performance.now() - httpT0), found }
+        }
+
+        const ok = wsRes.ok || httpFound?.found === true
+        setItems((prev) =>
+          prev.map((x) =>
+            x.id === id
+              ? {
+                  ...x,
+                  status: ok ? 'ok' : 'fail',
+                  finishedAt: nowIso(),
+                  details: {
+                    conversationId,
+                    channel: ch,
+                    sent: { ok: true, ms: sendMs },
+                    wsConfirm: wsRes,
+                    httpConfirm: httpFound,
+                    body,
+                    interpretation: wsRes.ok
+                      ? 'ok_via_ws'
+                      : httpFound?.found
+                        ? 'ws_maybe_blocked_but_http_ok'
+                        : 'send_ok_but_not_observed_back',
+                  },
+                }
+              : x,
+          ),
+        )
+        return
+      }
+
       if (id === 'env') {
         const token = getAccessToken()
         const details = {
@@ -251,7 +378,7 @@ export function TestPage() {
         return
       }
 
-      if (!base && (id === 'api-health' || id === 'api-cors' || id.startsWith('wss') || id === 'asset-logo')) {
+      if (!base && (id === 'api-health' || id === 'api-cors' || id.startsWith('wss'))) {
         throw new Error('apiBase is empty (VITE_API_BASE/VITE_SIGNALING_URL not set?)')
       }
 
@@ -276,11 +403,17 @@ export function TestPage() {
         return
       }
 
-      if (id === 'asset-logo') {
-        const origin = typeof window !== 'undefined' ? window.location.origin.replace(/\/$/, '') : base
-        const r = await probeFetch(`${origin}/logo.png`, { method: 'GET' })
+      if (id === 'wss-api-root') {
+        const u = new URL(base)
+        u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
+        u.pathname = '/'
+        u.search = ''
+        const r = await probeWebSocket(u.toString(), 5000)
+        // Any "not timeout" close suggests WSS reaches the host; timeout suggests network/DPI block.
         setItems((prev) =>
-          prev.map((x) => (x.id === id ? { ...x, status: r.ok ? 'ok' : 'fail', finishedAt: nowIso(), details: r } : x)),
+          prev.map((x) =>
+            x.id === id ? { ...x, status: r.close?.reason === 'timeout' ? 'fail' : 'ok', finishedAt: nowIso(), details: r } : x,
+          ),
         )
         return
       }
@@ -312,6 +445,20 @@ export function TestPage() {
         const r = await probeWebSocket(u.toString(), 5000)
         setItems((prev) =>
           prev.map((x) => (x.id === id ? { ...x, status: r.ok ? 'ok' : 'fail', finishedAt: nowIso(), details: r } : x)),
+        )
+        return
+      }
+
+      if (id === 'wss-api-random') {
+        const u = new URL(base)
+        u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
+        u.pathname = '/__ws_probe__'
+        u.search = ''
+        const r = await probeWebSocket(u.toString(), 5000)
+        setItems((prev) =>
+          prev.map((x) =>
+            x.id === id ? { ...x, status: r.close?.reason === 'timeout' ? 'fail' : 'ok', finishedAt: nowIso(), details: r } : x,
+          ),
         )
         return
       }
@@ -422,6 +569,18 @@ export function TestPage() {
     }
   }
 
+  const downloadReport = () => {
+    const text = safeStringify(report)
+    const blob = new Blob([text], { type: 'application/json;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = reportFilename(report)
+    a.rel = 'noopener'
+    a.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
   return (
     <div className="join-screen join-screen--themed news-page">
       <div className="news-page__inner">
@@ -444,8 +603,11 @@ export function TestPage() {
           <button className="join-btn join-btn--secondary" type="button" disabled={running} onClick={() => void runAll()}>
             {running ? 'Проверяем…' : 'Запустить всё заново'}
           </button>
-          <button className="join-btn join-btn--secondary" type="button" onClick={() => void copyReport()}>
+          <button className="join-btn join-btn--secondary" type="button" disabled={running} onClick={() => void copyReport()}>
             Скопировать отчёт
+          </button>
+          <button className="join-btn join-btn--secondary" type="button" disabled={running} onClick={() => downloadReport()}>
+            Скачать отчёт
           </button>
         </div>
 
