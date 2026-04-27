@@ -513,6 +513,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const recvTransportRef = useRef<Transport | null>(null)
   const audioProducerRef = useRef<Producer | null>(null)
   const videoProducerRef = useRef<Producer | null>(null)
+  const pendingIosJoinVideoTrackRef = useRef<MediaStreamTrack | null>(null)
   const screenProducerRef = useRef<Producer | null>(null)
   // Screen share: only video. We do not mix/replace outgoing audio.
   const studioPreviewVideoProducerRef = useRef<Producer | null>(null)
@@ -1102,6 +1103,15 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       }
       const preset = presetRef.current
       const camPref = readPreferredCameraId()
+      const pendingJoinTrack = pendingIosJoinVideoTrackRef.current
+      if (pendingJoinTrack) {
+        pendingIosJoinVideoTrackRef.current = null
+        await ensureTrackIsLiveSoon(pendingJoinTrack, 80)
+        const producer = await produceVideoFromTrack(device, sendTransport, pendingJoinTrack, preset)
+        videoProducerRef.current = producer
+        mergeTrackIntoLocalStream(pendingJoinTrack)
+        return
+      }
       const releaseLocalVideoTracks = () => {
         const stream = localStreamRef.current
         if (!stream) return
@@ -1237,6 +1247,24 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     }
 
     try {
+      // iOS Safari: getUserMedia often must happen inside the initial user gesture.
+      // If camera is requested, pre-capture immediately with the simplest constraints and produce later.
+      if (wantCam && isIosLikeDevice()) {
+        try {
+          const s = await navigator.mediaDevices.getUserMedia({ video: true })
+          const t = s.getVideoTracks()[0] ?? null
+          if (t) pendingIosJoinVideoTrackRef.current = t
+          // stop extra tracks if any (we only keep the first one)
+          for (const extra of s.getVideoTracks().slice(1)) {
+            try { extra.stop() } catch { /* noop */ }
+          }
+        } catch (e) {
+          pendingIosJoinVideoTrackRef.current = null
+          // Don't block join: we'll proceed without camera (existing logic).
+          if (isDevTraceEnabled()) console.warn('[join] iOS pre-capture camera failed', e)
+        }
+      }
+
       // 1. Единый слой локальных медиа: на этапе join не трогаем getUserMedia.
       // Создаём пустой поток; реальные захваты делаются через ensureAudioProducer/ensureVideoProducer
       // (тот же код, что toggleMute/toggleCam) уже после поднятия transports.
