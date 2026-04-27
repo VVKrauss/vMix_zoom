@@ -10,8 +10,8 @@ export type SiteNewsItem = {
   updated_at: string
 }
 
-export async function listSiteNews(): Promise<{ data: SiteNewsItem[] | null; error: string | null }> {
-  return await v1ListSiteNews()
+export async function listSiteNews(opts?: { limit?: number }): Promise<{ data: SiteNewsItem[] | null; error: string | null }> {
+  return await v1ListSiteNews(opts)
 }
 
 export async function insertSiteNews(row: {

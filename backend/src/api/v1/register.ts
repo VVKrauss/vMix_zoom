@@ -66,7 +66,6 @@ import { getMeProfile, getMyActivePlan, listMyGlobalRoles, patchMeProfile } from
 import { deleteSiteNews, insertSiteNews, listSiteNews, updateSiteNews } from '../../domain/siteNews.js'
 import { deletePushSubscription, pushSubscriptionExists, upsertPushSubscription } from '../../domain/pushSubscriptions.js'
 import { getWebPushConfigStatus, sendWebPushToUser } from '../../push/webPush.js'
-import { getAppVersion } from '../../domain/appVersion.js'
 import { getUserPublicProfileBySlug } from '../../domain/publicProfiles.js'
 import { setConversationNotificationsMuted } from '../../domain/conversationNotifications.js'
 import { listConversationMembersForMentions, markMyMentionsRead } from '../../domain/mentions.js'
@@ -1434,8 +1433,15 @@ export function registerApiV1(app: FastifyInstance, deps: ApiV1Deps): void {
   })
 
   // --- Site news ---
-  app.get('/api/v1/site-news', async () => {
-    const rows = await listSiteNews(deps.db.pool)
+  app.get('/api/v1/site-news', async (req) => {
+    const q = (req as any).query ?? {}
+    const limit =
+      typeof q?.limit === 'string' && q.limit.trim()
+        ? Number.parseInt(q.limit.trim(), 10)
+        : typeof q?.limit === 'number'
+          ? q.limit
+          : undefined
+    const rows = await listSiteNews(deps.db.pool, { limit })
     return { rows }
   })
 
@@ -1459,12 +1465,6 @@ export function registerApiV1(app: FastifyInstance, deps: ApiV1Deps): void {
     const ok = codes.has('superadmin') || codes.has('platform_admin') || codes.has('support_admin')
     if (!ok) throw Object.assign(new Error('forbidden'), { statusCode: 403 })
   }
-
-  // --- App version ---
-  app.get('/api/v1/app-version', async () => {
-    const version = await getAppVersion(deps.db.pool)
-    return { version }
-  })
 
   app.post('/api/v1/site-news', async (req) => {
     await assertStaff(req)

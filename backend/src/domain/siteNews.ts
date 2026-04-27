@@ -1,10 +1,15 @@
 import type { Pool } from 'pg'
 
-export async function listSiteNews(pool: Pool): Promise<unknown[]> {
+export async function listSiteNews(pool: Pool, opts?: { limit?: number }): Promise<unknown[]> {
+  const limitRaw = typeof opts?.limit === 'number' ? opts.limit : undefined
+  const limit = limitRaw && Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : null
+
   const r = await pool.query(
     `select id, published_at, title, body, image_url, created_at, updated_at
        from public.site_news
-      order by published_at desc, created_at desc`,
+      order by published_at desc, created_at desc
+      ${limit ? 'limit $1' : ''}`,
+    limit ? [limit] : [],
   )
   return r.rows
 }

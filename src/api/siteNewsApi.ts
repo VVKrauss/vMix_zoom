@@ -10,8 +10,11 @@ export type SiteNewsItem = {
   updated_at: string
 }
 
-export async function v1ListSiteNews(): Promise<{ data: SiteNewsItem[] | null; error: string | null }> {
-  const r = await fetchJson<{ rows: SiteNewsItem[] }>('/api/v1/site-news', { method: 'GET', auth: false })
+export async function v1ListSiteNews(opts?: { limit?: number }): Promise<{ data: SiteNewsItem[] | null; error: string | null }> {
+  const limitRaw = typeof opts?.limit === 'number' ? opts.limit : undefined
+  const limit = limitRaw && Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : null
+  const url = limit ? `/api/v1/site-news?limit=${encodeURIComponent(String(limit))}` : '/api/v1/site-news'
+  const r = await fetchJson<{ rows: SiteNewsItem[] }>(url, { method: 'GET', auth: false })
   if (!r.ok) return { data: null, error: r.error.message }
   const rows = Array.isArray((r.data as any)?.rows) ? ((r.data as any).rows as SiteNewsItem[]) : []
   return { data: rows, error: null }
