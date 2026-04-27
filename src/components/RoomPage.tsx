@@ -81,6 +81,7 @@ import { useProfile } from '../hooks/useProfile'
 import { useIsDbSpaceRoomHost } from '../hooks/useSpaceRoomHost'
 import { useVideoFrames } from '../hooks/useVideoFrames'
 import { useSpaceRoomSettings, type SpaceRoomAccessMode } from '../hooks/useSpaceRoomSettings'
+import { pickMyAvatarUrl } from '../utils/myAvatarUrl'
 import {
   isSessionHostFor,
   clearHostSessionIfMatches,
@@ -817,7 +818,7 @@ export function RoomPage({
       : 'Отправка сообщений недоступна в текущем режиме чата.'
     : null
 
-  const avatarUrl = user?.user_metadata?.avatar_url as string | undefined
+  const avatarUrl = pickMyAvatarUrl({ profile, user }) ?? undefined
   const messengerUnreadCount = useMessengerUnreadCount()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
@@ -1351,7 +1352,7 @@ export function RoomPage({
       name={name}
       isMuted={isMuted}
       isCamOff={isCamOff}
-      avatarUrl={user?.user_metadata?.avatar_url as string | undefined}
+      avatarUrl={avatarUrl}
       videoStyle={localCameraTileVideoStyle}
       showInfo={showInfo}
       showMeter={showMeter}

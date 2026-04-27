@@ -10,7 +10,9 @@ import { RoomJoinApprovalWaiting } from './RoomJoinApprovalWaiting'
 import type { VideoPreset } from '../types'
 import { replaceRoomInBrowserUrl } from '../utils/soloViewerParams'
 import { useAuth } from '../context/AuthContext'
+import { useProfile } from '../hooks/useProfile'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
+import { pickMyAvatarUrl } from '../utils/myAvatarUrl'
 import {
   clearHostSessionIfMatches,
   clearPendingHostClaim,
@@ -82,6 +84,7 @@ interface Props {
 export function RoomSession({ roomId }: Props) {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const { profile } = useProfile()
   const { allowed: canAccessAdminPanel } = useCanAccessAdminPanel()
   const [name, setName] = useState('')
   const [chatOpen, setChatOpen] = useState(false)
@@ -277,11 +280,11 @@ export function RoomSession({ roomId }: Props) {
     replaceRoomInBrowserUrl(rid, { removePeer: true })
     join(n, rid, preset, {
       ...media,
-      avatarUrl: (user?.user_metadata?.avatar_url as string | undefined) ?? null,
+      avatarUrl: pickMyAvatarUrl({ profile, user }),
       authUserId: user?.id ?? null,
       canManageRoom: isSessionHostFor(trimmedRid) || canAccessAdminPanel,
     })
-  }, [user, canAccessAdminPanel, join])
+  }, [profile, user, canAccessAdminPanel, join])
 
   /** Обработчик кнопки «Войти» на JoinPage. */
   const handleJoin = useCallback(
