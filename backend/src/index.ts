@@ -14,6 +14,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import crypto from 'node:crypto'
 import os from 'node:os'
 import { WebSocketServer } from 'ws'
+import { appendDirectMessage } from './domain/directMessageMutations.js'
 import { URL } from 'node:url'
 import { registerApiV1 } from './api/v1/register.js'
 import { ensureDbChangeTriggers, startDbChangeListener } from './realtime/dbChangeFeed.js'
@@ -913,6 +914,35 @@ function broadcastDbChange(channel: string, table: string, action: 'INSERT' | 'U
 
 const wss = new WebSocketServer({ noServer: true })
 
+// Dedup: (userId -> clientId -> ack payload) for short TTL.
+const wsAckCache = new Map<string, Map<string, { atMs: number; payload: any }>>()
+function cacheAck(userId: string, clientId: string, payload: any) {
+  const now = Date.now()
+  const perUser = wsAckCache.get(userId) ?? new Map()
+  perUser.set(clientId, { atMs: now, payload })
+  wsAckCache.set(userId, perUser)
+  // best-effort cleanup
+  for (const [cid, v] of perUser) {
+    if (now - v.atMs > 5 * 60_000) perUser.delete(cid)
+  }
+  if (perUser.size > 200) {
+    // trim oldest-ish
+    const entries = Array.from(perUser.entries()).sort((a, b) => a[1].atMs - b[1].atMs)
+    for (const [cid] of entries.slice(0, Math.max(0, entries.length - 200))) perUser.delete(cid)
+  }
+}
+function getCachedAck(userId: string, clientId: string): any | null {
+  const perUser = wsAckCache.get(userId)
+  if (!perUser) return null
+  const v = perUser.get(clientId)
+  if (!v) return null
+  if (Date.now() - v.atMs > 5 * 60_000) {
+    perUser.delete(clientId)
+    return null
+  }
+  return v.payload
+}
+
 wss.on('connection', (ws: any, req: any, client: WsClient) => {
   ws.on('message', (raw: any) => {
     let msg: any
@@ -938,6 +968,79 @@ wss.on('connection', (ws: any, req: any, client: WsClient) => {
       if (!ch || !ev) return
       // IMPORTANT: production must restrict who can broadcast where.
       broadcast(ch, ev, msg?.payload)
+      return
+    }
+
+    if (type === 'send_message') {
+      const clientId = String(msg?.clientId ?? '').trim()
+      const conversationId = String(msg?.conversationId ?? '').trim()
+      const body = typeof msg?.body === 'string' ? msg.body : ''
+      const kind = typeof msg?.kind === 'string' ? String(msg.kind) : 'text'
+      const meta = msg?.meta ?? null
+      const replyToMessageId = typeof msg?.replyToMessageId === 'string' ? msg.replyToMessageId : null
+      const quoteToMessageId = typeof msg?.quoteToMessageId === 'string' ? msg.quoteToMessageId : null
+
+      if (!clientId || clientId.length > 80) return
+      const cached = getCachedAck(client.userId, clientId)
+      if (cached) {
+        try {
+          ws.send(JSON.stringify(cached))
+        } catch {
+          /* noop */
+        }
+        return
+      }
+
+      if (!conversationId) {
+        const ack = { type: 'message_ack', clientId, ok: false, error: { message: 'conversation_required' } }
+        cacheAck(client.userId, clientId, ack)
+        try {
+          ws.send(JSON.stringify(ack))
+        } catch {
+          /* noop */
+        }
+        return
+      }
+      if (!body || body.length > 20_000) {
+        const ack = { type: 'message_ack', clientId, ok: false, error: { message: 'body_invalid' } }
+        cacheAck(client.userId, clientId, ack)
+        try {
+          ws.send(JSON.stringify(ack))
+        } catch {
+          /* noop */
+        }
+        return
+      }
+
+      void (async () => {
+        try {
+          const data = await appendDirectMessage(db.pool, {
+            userId: client.userId,
+            conversationId,
+            body,
+            kind: kind as any,
+            meta,
+            replyToMessageId,
+            quoteToMessageId,
+          })
+          const messageId = typeof (data as any)?.message_id === 'string' ? (data as any).message_id : (data as any)?.id
+          const ack = { type: 'message_ack', clientId, ok: true, messageId: messageId ?? null }
+          cacheAck(client.userId, clientId, ack)
+          try {
+            ws.send(JSON.stringify(ack))
+          } catch {
+            /* noop */
+          }
+        } catch (e: any) {
+          const ack = { type: 'message_ack', clientId, ok: false, error: { message: e?.message ?? 'send_failed' } }
+          cacheAck(client.userId, clientId, ack)
+          try {
+            ws.send(JSON.stringify(ack))
+          } catch {
+            /* noop */
+          }
+        }
+      })()
     }
   })
 })
