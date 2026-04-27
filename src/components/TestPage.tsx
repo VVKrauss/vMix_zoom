@@ -108,6 +108,15 @@ async function probeApiRaw(
   }
 }
 
+function safeParseJson(text: string | undefined): any {
+  if (!text) return null
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
 async function probeFetch(url: string, init?: RequestInit): Promise<{ ok: boolean; status: number; ms: number; bodyText?: string }> {
   const t0 = performance.now()
   try {
@@ -338,17 +347,25 @@ export function TestPage() {
         const token = getAccessToken()
         if (!token) throw new Error('not_logged_in (no access token)')
 
+        let conversationId: string | null = null
         const ensured = await v1EnsureSelfDirectConversation()
-        if (ensured.error || !ensured.data) {
-          const raw = await probeApiRaw('/api/v1/me/conversations/self-direct', {
+        if (!ensured.error && ensured.data) conversationId = ensured.data
+
+        // If fetchJson returned a generic network error, try raw and parse the id (this helps in RU where timing is unstable).
+        if (!conversationId) {
+          const rawSelf = await probeApiRaw('/api/v1/me/conversations/self-direct', {
             method: 'POST',
             auth: true,
             body: JSON.stringify({}),
             timeoutMs: 20_000,
           })
-          throw new Error(`ensure_self_dm_failed: ${raw.status || 0} ${raw.error || ''}`.trim())
+          const parsed = safeParseJson(rawSelf.bodyText)
+          const cid = typeof parsed?.conversationId === 'string' ? parsed.conversationId : null
+          if (!cid) throw new Error(`ensure_self_dm_failed: ${rawSelf.status || 0} ${rawSelf.error || ''}`.trim())
+          conversationId = cid
         }
-        const conversationId = ensured.data
+        if (!conversationId) throw new Error('ensure_self_dm_failed: no_conversation_id')
+
         const body = `raw test ${Date.now()}`
         const traceId = newTraceId()
         const raw = await probeApiRaw(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
