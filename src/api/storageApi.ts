@@ -14,12 +14,8 @@ export async function storageUpload(params: {
   form.set('path', params.path)
   form.set('upsert', params.upsert === false ? '0' : '1')
   form.set('file', params.file)
-  const res = await fetch(url, { method: 'POST', credentials: 'include', body: form })
-  if (!res.ok) {
-    const j = await res.json().catch(() => null)
-    return { ok: false, error: { status: res.status, message: String(j?.message ?? j?.error ?? res.statusText), details: j } }
-  }
-  return { ok: true, data: { ok: true } }
+  // Use fetchJson to attach Authorization header and support auto-refresh on 401.
+  return await fetchJson('/api/storage/upload', { method: 'POST', auth: true, body: form as any })
 }
 
 export async function storageGetPublicUrl(params: {
