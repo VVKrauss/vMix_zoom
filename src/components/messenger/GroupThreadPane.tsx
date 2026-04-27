@@ -7,7 +7,7 @@ import { useProfile } from '../../hooks/useProfile'
 import { useStableMobileMessenger } from '../../hooks/useStableMobileMessenger'
 import { useToast } from '../../context/ToastContext'
 import { fetchJson } from '../../api/http'
-import { rtChannel, rtRemoveChannel } from '../../api/realtimeCompat'
+import { subscribeThread } from '../../api/messengerRealtime'
 import { truncateMessengerReplySnippet } from '../../lib/messengerUi'
 import { buildQuotePreview } from '../../lib/messengerQuotePreview'
 import { MESSENGER_COMPOSER_EMOJIS } from '../../lib/messengerComposerEmojis'
@@ -441,12 +441,9 @@ export function GroupThreadPane({
   useEffect(() => {
     const cid = conversationId.trim()
     if (!cid || !user?.id || !canView) return
-    const channel = rtChannel(`group-thread:${cid}`)
-    const filter = `conversation_id=eq.${cid}`
-
-    channel
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter }, (payload: any) => {
-        const msg = mapDirectMessageFromRow(payload.new as Record<string, unknown>)
+    const off = subscribeThread(cid, (ev) => {
+      if (ev.type === 'message_created') {
+        const msg = ev.message as any as DirectMessage
         if (!msg.id) return
         if (msg.senderUserId === user.id && msg.kind !== 'reaction') return
         if (cidRef.current.trim() !== cid) return
@@ -462,21 +459,23 @@ export function GroupThreadPane({
             if (el) el.scrollTop = el.scrollHeight
           })
         }
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages', filter }, (payload: any) => {
-        const msg = mapDirectMessageFromRow(payload.new as Record<string, unknown>)
+        return
+      }
+      if (ev.type === 'message_updated') {
+        const msg = ev.message as any as DirectMessage
         if (!msg.id) return
         setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m)))
-      })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'chat_messages', filter }, (payload: any) => {
-        const id = chatMessageDeleteRowId(payload.old as Record<string, unknown>)
+        return
+      }
+      if (ev.type === 'message_deleted') {
+        const id = ev.messageId
         if (!id || cidRef.current.trim() !== cid) return
         removeMessageById(id)
-      })
-      .subscribe()
+      }
+    })
 
     return () => {
-      rtRemoveChannel(channel)
+      off()
     }
   }, [conversationId, user?.id, onTouchTail, removeMessageById, viewerOnly])
 
