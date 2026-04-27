@@ -1,15 +1,7 @@
 /**
- * URL SVG Twemoji (jsDelivr) для отображения эмодзи там, где системный шрифт даёт «тофу».
- * Логика упрощена: скалярные кодпоинты + ZWJ/fe0f как у имени файлов в twemoji/assets/svg.
+ * Раньше использовали внешний CDN (jsDelivr) для Twemoji SVG.
+ * Для устойчивости (в т.ч. в РФ без VPN) возвращаем `null` и рендерим системный emoji.
  */
-export function twemojiSvgUrl(emoji: string): string {
-  const out: string[] = []
-  for (let i = 0; i < emoji.length; ) {
-    const cp = emoji.codePointAt(i)!
-    const w = cp > 0xffff ? 2 : 1
-    out.push(cp.toString(16))
-    i += w
-  }
-  const name = out.join('-')
-  return `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${name}.svg`
+export function twemojiSvgUrl(_emoji: string): string | null {
+  return null
 }

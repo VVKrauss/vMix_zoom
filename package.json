@@ -10,6 +10,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1037.0",
     "@flaticon/flaticon-uicons": "^3.3.1",
+    "@fontsource/montserrat": "^5.2.8",
     "mediasoup-client": "^3.6.105",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
