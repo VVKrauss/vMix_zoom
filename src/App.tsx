@@ -91,6 +91,11 @@ const TestPage = lazy(async () => {
   return { default: mod.TestPage }
 })
 
+const Test2Page = lazy(async () => {
+  const mod = await import('./components/Test2Page')
+  return { default: mod.Test2Page }
+})
+
 const PublicUserPage = lazy(async () => {
   const mod = await import('./components/PublicUserPage')
   return { default: mod.PublicUserPage }
@@ -160,6 +165,7 @@ export function App() {
         <Route path="/" element={<HomeRoute />} />
         <Route path="/news" element={<NewsPage />} />
         <Route path="/test" element={<TestPage />} />
+        <Route path="/test2" element={<Test2Page />} />
         <Route path="/u/:slug" element={<PublicUserPage />} />
         <Route path="/g/:publicNick" element={<PublicGroupChannelPage />} />
         <Route path="/login" element={<LoginPage />} />

@@ -186,6 +186,16 @@ export function DashboardShell({
               <SettingsGearIcon />
             </Link>
           ) : null}
+          {unifiedCabinetNav && !chromeless ? (
+            <Link
+              to="/test2"
+              className="dashboard-topbar__circle-action"
+              title="Зеркало камеры"
+              aria-label="Зеркало камеры"
+            >
+              <FiRrIcon name="camera" />
+            </Link>
+          ) : null}
           {unifiedCabinetNav && active !== 'messenger' && !chromeless ? (
             <Link
               to="/dashboard/messenger"
@@ -386,6 +396,12 @@ export function DashboardShell({
                   <SettingsGearIcon />
                 </span>
                 <span className="dashboard-messenger-quick-menu__lbl">Тест сети</span>
+              </Link>
+              <Link to="/test2" className="dashboard-messenger-quick-menu__btn" onClick={closeCabinetMenu}>
+                <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                  <FiRrIcon name="camera" />
+                </span>
+                <span className="dashboard-messenger-quick-menu__lbl">Зеркало камеры</span>
               </Link>
               <button
                 type="button"
