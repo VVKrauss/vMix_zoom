@@ -87,7 +87,14 @@ export async function listMyGroupChats(pool: Pool, userId: string): Promise<unkn
         null::uuid as other_user_id,
         null::text as other_display_name,
         null::text as other_avatar_url,
-        0::int as unread_count
+        (
+          select count(*)::int
+            from public.chat_messages m
+           where m.conversation_id = c.id
+             and m.sender_user_id is distinct from $1
+             and m.kind in ('text','system','image','audio')
+             and m.created_at > coalesce(me.last_read_at, 'epoch'::timestamptz)
+        )::int as unread_count
         from public.chat_conversations c
         join public.chat_conversation_members me
           on me.conversation_id = c.id
@@ -125,7 +132,15 @@ export async function listMyChannels(pool: Pool, userId: string): Promise<unknow
         null::uuid as other_user_id,
         null::text as other_display_name,
         null::text as other_avatar_url,
-        0::int as unread_count
+        (
+          select count(*)::int
+            from public.chat_messages m
+           where m.conversation_id = c.id
+             and m.sender_user_id is distinct from $1
+             and m.reply_to_message_id is null
+             and m.kind in ('text','system','image','audio')
+             and m.created_at > coalesce(me.last_read_at, 'epoch'::timestamptz)
+        )::int as unread_count
         from public.chat_conversations c
         join public.chat_conversation_members me
           on me.conversation_id = c.id

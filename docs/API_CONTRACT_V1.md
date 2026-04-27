@@ -161,6 +161,7 @@
 | `GET` | `/api/v1/me/push-subscriptions/exists` | да | query: `endpoint` | `{ exists }` — **используется фронтом** (`src/lib/messengerWebPush.ts`) |
 | `POST` | `/api/v1/me/push-subscriptions` | да | `{ endpoint, subscription, user_agent? }` | `{ ok: true }` — **используется фронтом** (`src/lib/messengerWebPush.ts`) |
 | `DELETE` | `/api/v1/me/push-subscriptions` | да | query: `endpoint` | `{ ok: true }` — **используется фронтом** (`src/lib/messengerWebPush.ts`) |
+| `POST` | `/api/v1/me/push-test` | да | `{ title?, body?, url? }` | `{ ok: true, configured }` — ручной тест доставки push |
 
 Фронт переносим по доменам; как только модуль переведён — отмечаем в runbook шаг 3 🎆.
 

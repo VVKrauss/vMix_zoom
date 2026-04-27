@@ -934,6 +934,8 @@ await startDbChangeListener({
 
       // Per-user unread refresh: notify all members of the conversation.
       if (action === 'INSERT') {
+        const kind = typeof row.kind === 'string' ? row.kind.trim() : ''
+        const replyTo = typeof row.reply_to_message_id === 'string' ? row.reply_to_message_id.trim() : ''
         const senderId = typeof row.sender_user_id === 'string' ? row.sender_user_id.trim() : ''
         const mem = await db.pool.query(
           `select distinct user_id from public.chat_conversation_members where conversation_id=$1`,
@@ -943,13 +945,34 @@ await startDbChangeListener({
           const uid = typeof r.user_id === 'string' ? r.user_id.trim() : ''
           if (uid) broadcastDbChange(`messenger-unread:${uid}`, table, action, row)
           if (uid && uid !== senderId) {
-            void sendWebPushToUser(db.pool, uid, {
-              type: 'dm_message',
-              conversationId: cid,
-              title: 'Новое сообщение',
-              body: typeof row.body === 'string' ? String(row.body).slice(0, 180) : 'Сообщение',
-              createdAt: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
-            })
+            // Push: only for "real" messages (not reactions). For channels: only top-level posts, not comments.
+            if (kind && kind !== 'reaction' && (!replyTo || replyTo === 'null')) {
+              try {
+                const mute = await db.pool.query<{ muted: boolean }>(
+                  `select muted from public.chat_conversation_notification_mutes where user_id=$1 and conversation_id=$2 limit 1`,
+                  [uid, cid],
+                )
+                const muted = mute.rows[0]?.muted === true
+                if (!muted) {
+                  void sendWebPushToUser(
+                    db.pool,
+                    uid,
+                    {
+                      type: 'message',
+                      conversationId: cid,
+                      title: 'Новое сообщение',
+                      body: typeof row.body === 'string' ? String(row.body).slice(0, 180) : 'Сообщение',
+                      createdAt: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
+                      url: `/dashboard/messenger?chat=${encodeURIComponent(cid)}`,
+                      tag: `chat:${cid}`,
+                    },
+                    app.log,
+                  )
+                }
+              } catch (e) {
+                app.log.warn({ err: e, uid, cid }, 'push_mute_check_failed')
+              }
+            }
           }
         }
       }
@@ -970,13 +993,35 @@ await startDbChangeListener({
       if (uid) {
         broadcastDbChange(`mentions-${uid}`, table, action, row)
         if (action === 'INSERT') {
-          void sendWebPushToUser(db.pool, uid, {
-            type: 'mention',
-            conversationId: cid || null,
-            title: 'Вас упомянули',
-            body: 'Откройте чат, чтобы посмотреть',
-            createdAt: new Date().toISOString(),
-          })
+          // Mentions respect per-conversation mute when conversation_id is present.
+          let muted = false
+          if (cid) {
+            try {
+              const m = await db.pool.query<{ muted: boolean }>(
+                `select muted from public.chat_conversation_notification_mutes where user_id=$1 and conversation_id=$2 limit 1`,
+                [uid, cid],
+              )
+              muted = m.rows[0]?.muted === true
+            } catch (e) {
+              app.log.warn({ err: e, uid, cid }, 'mention_mute_check_failed')
+            }
+          }
+          if (!muted) {
+            void sendWebPushToUser(
+              db.pool,
+              uid,
+              {
+                type: 'mention',
+                conversationId: cid || null,
+                title: 'Вас упомянули',
+                body: 'Откройте чат, чтобы посмотреть',
+                createdAt: new Date().toISOString(),
+                url: cid ? `/dashboard/messenger?chat=${encodeURIComponent(cid)}` : '/dashboard/messenger',
+                tag: cid ? `mention:${cid}` : 'mention',
+              },
+              app.log,
+            )
+          }
         }
       }
     }

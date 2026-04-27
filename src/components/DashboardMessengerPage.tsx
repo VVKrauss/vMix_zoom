@@ -848,6 +848,7 @@ export function DashboardMessengerPage() {
     userId: user?.id,
     foregroundThreadConversationId,
     mutedConversationIdsRef,
+    itemsRef,
     setItems,
   })
 

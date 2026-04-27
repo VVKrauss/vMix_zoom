@@ -65,6 +65,7 @@ import { listUserPresencePublicByIds } from '../../domain/presenceMirror.js'
 import { getMeProfile, getMyActivePlan, listMyGlobalRoles, patchMeProfile } from '../../domain/meProfile.js'
 import { deleteSiteNews, insertSiteNews, listSiteNews, updateSiteNews } from '../../domain/siteNews.js'
 import { deletePushSubscription, pushSubscriptionExists, upsertPushSubscription } from '../../domain/pushSubscriptions.js'
+import { getWebPushConfigStatus, sendWebPushToUser } from '../../push/webPush.js'
 import { getAppVersion } from '../../domain/appVersion.js'
 import { getUserPublicProfileBySlug } from '../../domain/publicProfiles.js'
 import { setConversationNotificationsMuted } from '../../domain/conversationNotifications.js'
@@ -1529,6 +1530,34 @@ export function registerApiV1(app: FastifyInstance, deps: ApiV1Deps): void {
     const q = z.object({ endpoint: z.string().min(1) }).parse((req as any).query ?? {})
     await deletePushSubscription(deps.db.pool, { userId: a.userId, endpoint: q.endpoint })
     return { ok: true }
+  })
+
+  // --- Web Push: test delivery (self) ---
+  const pushTestBody = z
+    .object({
+      title: z.string().min(1).optional(),
+      body: z.string().min(1).optional(),
+      url: z.string().min(1).optional(),
+    })
+    .optional()
+
+  app.post('/api/v1/me/push-test', async (req) => {
+    const a = await deps.requireAuth(req)
+    const body = pushTestBody.parse((req as any).body ?? undefined) ?? {}
+    const status = getWebPushConfigStatus()
+    void sendWebPushToUser(
+      deps.db.pool,
+      a.userId,
+      {
+        type: 'test',
+        title: body.title ?? 'redflow.online',
+        body: body.body ?? 'Test push',
+        url: body.url ?? '/dashboard/messenger',
+        tag: 'test',
+      },
+      undefined,
+    )
+    return { ok: true, configured: status.configured }
   })
 
   // --- Public profiles ---
