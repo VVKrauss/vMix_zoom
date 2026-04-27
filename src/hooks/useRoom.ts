@@ -1244,9 +1244,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     }
 
     try {
-      // 1. Локальные медиа по тумблерам входа: один вызов getUserMedia до signaling — как в стабильной версии,
-      // жест пользователя («Войти») сохраняется для iOS/WebKit; при провале — пустой поток и поздний fallback ниже.
-      let deferredJoinMedia = false
+      // 1. Локальные медиа по тумблерам входа: один getUserMedia до signaling (жест «Войти»).
+      // Если не удалось — пустой поток; включить позже можно кнопками (ensure* только из toggle).
       let stream: MediaStream
 
       if (!wantMic && !wantCam) {
@@ -1285,7 +1284,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
                 : false,
             })
           } catch {
-            deferredJoinMedia = true
             stream = new MediaStream()
             setIsMuted(true)
             setIsCamOff(true)
@@ -1616,8 +1614,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
       if (superseded()) return
 
-      // 6. Produce локальных треков из потока шага 1 (как раньше: сразу после send transport, до recv).
-      if (!deferredJoinMedia && stream.getTracks().length > 0) {
+      // 6. Produce локальных треков из потока шага 1 (сразу после send transport, до recv).
+      if (stream.getTracks().length > 0) {
         for (const track of stream.getTracks()) {
           if (superseded()) return
           if (track.kind === 'video') {
@@ -1950,47 +1948,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
       if (superseded()) return
 
-      // 10. Fallback: ранний getUserMedia не удался или не все дорожки попали в producer — после recv (как поздний join).
-      const needDeferMic = wantMic && !audioProducerRef.current
-      const needDeferCam = wantCam && !videoProducerRef.current
-
-      if (needDeferMic || needDeferCam) {
-        const iosJoin = isIosLikeDevice()
-        if (iosJoin) {
-          await sleepMs(220)
-        }
-
-        const joinEnableMic = async () => {
-          try {
-            await ensureAudioProducer()
-            setIsMuted(false)
-          } catch (e) {
-            if (isDevTraceEnabled()) console.warn('[join] mic produce failed; join muted', e)
-            setIsMuted(true)
-          }
-        }
-        const joinEnableCam = async () => {
-          try {
-            await ensureVideoProducer()
-            setIsCamOff(false)
-          } catch (e) {
-            if (isDevTraceEnabled()) console.warn('[join] video produce failed; join without camera', e)
-            setIsCamOff(true)
-          }
-        }
-
-        if (iosJoin && needDeferMic && needDeferCam) {
-          await joinEnableCam()
-          if (superseded()) return
-          await sleepMs(380)
-          await joinEnableMic()
-        } else {
-          if (needDeferMic) await joinEnableMic()
-          if (superseded()) return
-          if (needDeferCam) await joinEnableCam()
-        }
-      }
-
       setStatus('connected')
     } catch (err) {
       if (gen !== joinGenerationRef.current) {
@@ -2026,7 +1983,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       socketRef.current = null
       if (s) disposeSignalingSocket(s)
     }
-  }, [consumeProducer, dropProducerById, releaseLocalMicCapture, ensureAudioProducer, ensureVideoProducer])
+  }, [consumeProducer, dropProducerById, releaseLocalMicCapture])
 
   // Поллинг дашборда — подтягивает srt[] после рестарта сервера и синхронизирует состав
   const activeRoomId = sessionMeta?.roomId
