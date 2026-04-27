@@ -49,8 +49,7 @@ app.setErrorHandler((err: any, req: any, reply: any) => {
   void reply.code(statusCode).send({ message })
 })
 
-type PasswordResetCode = { code: string; expiresAtMs: number }
-const passwordResetCodes = new Map<string, PasswordResetCode>()
+// Email-based password reset is intentionally removed.
 
 function resolveStorageTarget(logicalBucket: string, objectPath: string): { bucket: string; key: string } {
   const b = logicalBucket.trim()
@@ -82,6 +81,53 @@ function readClientIp(req: any): string | null {
   const xf = String(req.headers['x-forwarded-for'] ?? '').split(',')[0]?.trim()
   const ip = xf || String(req.ip ?? '').trim()
   return ip || null
+}
+
+function createSimpleRateLimiter(opts: {
+  max: number
+  timeWindowMs: number
+  maxKeys?: number
+}): { tryConsume: (key: string) => boolean } {
+  const maxKeys = Math.max(100, Math.floor(opts.maxKeys ?? 10_000))
+  const buckets = new Map<string, number[]>()
+
+  function pruneKey(now: number, key: string, arr: number[]): number[] {
+    const minTs = now - opts.timeWindowMs
+    let i = 0
+    while (i < arr.length && arr[i] < minTs) i++
+    const next = i > 0 ? arr.slice(i) : arr
+    if (next.length === 0) buckets.delete(key)
+    else buckets.set(key, next)
+    return next
+  }
+
+  function globalPruneIfNeeded(now: number) {
+    if (buckets.size <= maxKeys) return
+    for (const [key, arr] of buckets) {
+      pruneKey(now, key, arr)
+      if (buckets.size <= maxKeys) return
+    }
+    while (buckets.size > maxKeys) {
+      const k = buckets.keys().next().value as string | undefined
+      if (!k) break
+      buckets.delete(k)
+    }
+  }
+
+  return {
+    tryConsume: (key: string) => {
+      const k = key.trim()
+      if (!k) return true
+      const now = Date.now()
+      globalPruneIfNeeded(now)
+      const current = buckets.get(k) ?? []
+      const pruned = pruneKey(now, k, current)
+      if (pruned.length >= opts.max) return false
+      pruned.push(now)
+      buckets.set(k, pruned)
+      return true
+    },
+  }
 }
 
 await app.register(cors, {
@@ -483,58 +529,6 @@ app.post('/api/auth/login', async (req, reply) => {
   return { session: { accessToken, user: { id: u.id, email: u.email, displayName: u.display_name } } }
 })
 
-app.post('/api/auth/password/reset', async (req, reply) => {
-  const Body = z.object({
-    email: z.string().email(),
-    // kept for compatibility with supabase-like client API
-    redirectTo: z.string().min(1).optional(),
-  })
-  const body = Body.parse(req.body)
-  const email = body.email.toLowerCase()
-
-  // Always respond ok to avoid user enumeration.
-  const r = await db.pool.query<{ id: string }>(`select id from public.users where lower(email) = $1 limit 1`, [email])
-  const exists = Boolean(r.rows[0]?.id)
-  let code: string | null = null
-  if (exists) {
-    code = String(Math.floor(100000 + Math.random() * 900000))
-    const expiresAtMs = Date.now() + 15 * 60 * 1000
-    passwordResetCodes.set(email, { code, expiresAtMs })
-    app.log.warn({ email }, `Password reset code generated (15 min): ${code}`)
-  }
-
-  // DEV ergonomics: when called from localhost, return the code so we can simulate "email link" UX
-  // without integrating an email provider yet.
-  const origin = String(req.headers?.origin ?? '').trim()
-  const isLocalhost = origin === 'http://localhost:5173' || origin === 'http://127.0.0.1:5173' || origin === 'http://localhost:4173' || origin === 'http://127.0.0.1:4173'
-  const devCode = isLocalhost ? code : null
-
-  return reply.send({ ok: true, devCode })
-})
-
-app.post('/api/auth/password/reset/confirm', async (req, reply) => {
-  const Body = z.object({
-    email: z.string().email(),
-    code: z.string().min(4).max(32),
-    newPassword: z.string().min(6),
-  })
-  const body = Body.parse(req.body)
-  const email = body.email.toLowerCase()
-  const saved = passwordResetCodes.get(email)
-  if (!saved || saved.expiresAtMs < Date.now() || saved.code !== body.code.trim()) {
-    return reply.code(400).send({ message: 'Invalid reset code' })
-  }
-
-  const pwHash = await hashPassword(body.newPassword)
-  const upd = await db.pool.query(`update public.users set password_hash = $2, updated_at = now() where lower(email) = $1`, [
-    email,
-    pwHash,
-  ])
-  passwordResetCodes.delete(email)
-  if (!upd.rowCount) return reply.code(400).send({ message: 'User not found' })
-  return reply.send({ ok: true })
-})
-
 app.post('/api/auth/password/update', async (req, reply) => {
   const a = await requireAuth(req)
   const Body = z.object({ password: z.string().min(6) })
@@ -543,6 +537,40 @@ app.post('/api/auth/password/update', async (req, reply) => {
   await db.pool.query(`update public.users set password_hash = $2, updated_at = now() where id = $1`, [a.userId, pwHash])
   return reply.send({ ok: true })
 })
+
+// Forgot password flow without email confirmation:
+// user provides (email, newPassword), server updates password if user exists.
+// Response is always ok to avoid user enumeration.
+const passwordResetEmailLimiter = createSimpleRateLimiter({ max: 5, timeWindowMs: 15 * 60 * 1000 })
+
+app.post(
+  '/api/auth/password/reset',
+  {
+    config: {
+      rateLimit: {
+        max: 20,
+        timeWindow: '15 minutes',
+      },
+    },
+  },
+  async (req, reply) => {
+  const Body = z.object({
+    email: z.string().email(),
+    newPassword: z.string().min(6),
+  })
+  const body = Body.parse(req.body)
+  const email = body.email.toLowerCase()
+
+  // Extra limiter by email to reduce brute-force attempts across IPs.
+  if (!passwordResetEmailLimiter.tryConsume(email)) {
+    return reply.code(429).send({ message: 'Too Many Requests' })
+  }
+
+  const pwHash = await hashPassword(body.newPassword)
+  await db.pool.query(`update public.users set password_hash = $2, updated_at = now() where lower(email) = $1`, [email, pwHash])
+  return reply.send({ ok: true })
+},
+)
 
 app.post('/api/auth/refresh', async (req, reply) => {
   const refreshToken = String(req.cookies?.[env.REFRESH_COOKIE_NAME] ?? '')

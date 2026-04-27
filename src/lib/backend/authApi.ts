@@ -108,20 +108,4 @@ export async function backendPatchMe(patch: PatchMePayload): Promise<{ user: Bac
   return { user: res.data.user, error: null }
 }
 
-export async function backendForgotPassword(email: string): Promise<{ ok: boolean; error: string | null }> {
-  const res = await apiFetch<{ ok: boolean }>(
-    '/auth/forgot-password',
-    { method: 'POST', skipAuth: true, body: JSON.stringify({ email }) },
-  )
-  if (res.error || !res.data) return { ok: false, error: res.error ?? 'forgot_password_failed' }
-  return { ok: Boolean(res.data.ok), error: null }
-}
-
-export async function backendResetPassword(token: string, newPassword: string): Promise<{ ok: boolean; error: string | null }> {
-  const res = await apiFetch<{ ok: boolean }>(
-    '/auth/reset-password',
-    { method: 'POST', skipAuth: true, body: JSON.stringify({ token, newPassword }) },
-  )
-  if (res.error || !res.data) return { ok: false, error: res.error ?? 'reset_password_failed' }
-  return { ok: Boolean(res.data.ok), error: null }
-}
+// Password reset via email/token is intentionally removed (self-hosted auth).
