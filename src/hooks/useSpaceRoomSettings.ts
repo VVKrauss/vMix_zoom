@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
 import type { SpaceRoomChatVisibility } from '../lib/spaceRoom'
+import { fetchJson } from '../api/http'
+import { realtime } from '../api/realtime'
 
 export type SpaceRoomAccessMode = 'link' | 'approval' | 'invite_only'
 
@@ -58,21 +59,16 @@ export function useSpaceRoomSettings(roomSlug: string | undefined): {
       setLoading(false)
       return
     }
-    void supabase
-      .from('space_rooms')
-      .select('slug, host_user_id, chat_visibility, access_mode, status, room_admin_user_ids')
-      .eq('slug', slug)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (error) {
-          console.warn('useSpaceRoomSettings:', error.message)
-          setRow(null)
-          setLoading(false)
-          return
-        }
-        setRow(parseRow(data as Record<string, unknown>))
+    void fetchJson<{ row: Record<string, unknown> | null }>(`/api/v1/space-rooms/${encodeURIComponent(slug)}/settings`, { method: 'GET', auth: true }).then((r) => {
+      if (!r.ok) {
+        console.warn('useSpaceRoomSettings:', r.error.message)
+        setRow(null)
         setLoading(false)
-      })
+        return
+      }
+      setRow(parseRow(r.data.row ?? null))
+      setLoading(false)
+    })
   }, [slug])
 
   useEffect(() => {
@@ -87,21 +83,25 @@ export function useSpaceRoomSettings(roomSlug: string | undefined): {
 
   useEffect(() => {
     if (!slug) return
-    const ch = supabase
-      .channel(`space_room:${slug}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'space_rooms', filter: `slug=eq.${slug}` },
-        (payload) => {
-          const next = payload.new as Record<string, unknown> | undefined
-          if (next) setRow(parseRow(next))
-        },
-      )
-      .subscribe()
+    const ch = realtime.channel(`space_room:${slug}`)
+    const off = ch.on((e) => {
+      if (e.type !== 'db_change') return
+      if (e.table !== 'space_rooms') return
+      // backend может прислать row целиком; иначе делаем refresh().
+      if (e.action === 'DELETE') {
+        void refresh()
+        return
+      }
+      const raw = (e as any).row as Record<string, unknown> | undefined
+      if (raw) setRow(parseRow(raw))
+      else void refresh()
+    })
+    ch.subscribe()
     return () => {
-      void supabase.removeChannel(ch)
+      off()
+      ch.unsubscribe()
     }
-  }, [slug])
+  }, [slug, refresh])
 
   return { row, loading, refresh }
 }

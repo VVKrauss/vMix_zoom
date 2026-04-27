@@ -1,11 +1,10 @@
-import { supabase } from './supabase'
+import { v1GetAppVersion } from '../api/miscApi'
 
 export async function fetchAppVersion(): Promise<string | null> {
   try {
-    const { data, error } = await supabase.rpc('get_app_version')
-    if (error) return null
-    if (typeof data === 'string' && data.trim()) return data.trim()
-    return null
+    const r = await v1GetAppVersion()
+    const v = r.data
+    return typeof v === 'string' && v.trim() ? v.trim() : null
   } catch {
     return null
   }

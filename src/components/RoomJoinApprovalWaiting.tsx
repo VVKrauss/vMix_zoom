@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { rtChannel, rtRemoveChannel } from '../api/realtimeCompat'
 import { getSpaceRoomJoinStatus } from '../lib/spaceRoom'
 import { BrandLogoLoader } from './BrandLogoLoader'
 
@@ -46,9 +46,9 @@ export function RoomJoinApprovalWaiting({ roomId, userId, displayName, onApprove
     if (!slug) return
 
     const requestId = requestIdRef.current
-    const ch = supabase.channel(`room-mod:${slug}`)
+    const ch = rtChannel(`room-mod:${slug}`)
 
-    ch.on('broadcast', { event: 'join-approved' }, (msg) => {
+    ch.on('broadcast', { event: 'join-approved' }, (msg: any) => {
       const payload = msg.payload as { requestId?: string; userId?: string } | null
       const matchById = userId && payload?.userId === userId
       const matchByReq = payload?.requestId === requestId
@@ -57,7 +57,7 @@ export function RoomJoinApprovalWaiting({ roomId, userId, displayName, onApprove
       }
     })
 
-    ch.on('broadcast', { event: 'join-request-denied' }, (msg) => {
+    ch.on('broadcast', { event: 'join-request-denied' }, (msg: any) => {
       const payload = msg.payload as { requestId?: string; userId?: string } | null
       const matchById = userId && payload?.userId === userId
       const matchByReq = payload?.requestId === requestId
@@ -66,7 +66,7 @@ export function RoomJoinApprovalWaiting({ roomId, userId, displayName, onApprove
       }
     })
 
-    ch.subscribe((subStatus) => {
+    ch.subscribe((subStatus: any) => {
       if (subStatus !== 'SUBSCRIBED') return
       void ch.send({
         type: 'broadcast',
@@ -80,44 +80,10 @@ export function RoomJoinApprovalWaiting({ roomId, userId, displayName, onApprove
     })
 
     return () => {
-      void supabase.removeChannel(ch)
+      rtRemoveChannel(ch)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, userId, displayName])
-
-  // Дополнительно для авторизованных: postgres_changes на approved_joiners
-  useEffect(() => {
-    if (!userId) return
-    const slug = roomId.trim()
-    if (!slug) return
-
-    const ch = supabase
-      .channel(`room-approval-watch:${slug}:${userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'space_rooms',
-          filter: `slug=eq.${slug}`,
-        },
-        async () => {
-          setStatus('checking')
-          const { joinable } = await getSpaceRoomJoinStatus(slug, userId)
-          if (joinable) {
-            triggerApproved()
-          } else {
-            setStatus('pending')
-          }
-        },
-      )
-      .subscribe()
-
-    return () => {
-      void supabase.removeChannel(ch)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, userId])
 
   // Fallback-опрос каждые 20 с (только для авторизованных)
   useEffect(() => {

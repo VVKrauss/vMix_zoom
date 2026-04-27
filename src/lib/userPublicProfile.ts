@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { fetchJson } from '../api/http'
 
 /** PostgREST отдаёт timestamptz в JSON как строку; на всякий случай принимаем и число ms. */
 function parseRpcTimestamp(v: unknown): string | null {
@@ -36,20 +36,12 @@ export async function fetchPublicUserProfile(
   const id = userId.trim()
   if (!id) return { data: null, error: 'Не указан пользователь' }
 
-  const { data, error } = await supabase.rpc('get_user_profile_for_peek', {
-    p_target_user_id: id,
-  })
-
-  if (error) return { data: null, error: error.message }
-
-  const row = data as Record<string, unknown> | null
-  if (!row || row.error) {
-    const err = typeof row?.error === 'string' ? row.error : 'load_failed'
+  const r = await fetchJson<any>(`/api/v1/users/${encodeURIComponent(id)}/peek-profile`, { method: 'GET', auth: true })
+  if (!r.ok) return { data: null, error: r.error.message }
+  const row = r.data as Record<string, unknown> | null
+  if (!row || row.ok !== true) {
+    const err = typeof (row as any)?.error === 'string' ? String((row as any).error) : 'load_failed'
     return { data: null, error: err === 'not_found' ? 'Пользователь не найден' : err }
-  }
-
-  if (row.ok !== true) {
-    return { data: null, error: 'Некорректный ответ сервера' }
   }
 
   const rawActivity =

@@ -27,7 +27,14 @@ export async function readMessengerThreadTailCache(
   const row = await idbGet<MessengerThreadTailCacheRow>('messengerThreadTailV1', cacheKey(scope, cid))
   if (!row || row.v !== 1 || row.scope !== scope || row.conversationId.trim() !== cid) return null
   if (!Array.isArray(row.messages) || row.messages.length === 0) return null
-  return row.messages
+  // Normalize legacy cache entries: ensure unique ids and stable order.
+  const byId = new Map<string, DirectMessage>()
+  for (const m of row.messages) {
+    const id = (m?.id || '').trim()
+    if (!id) continue
+    if (!byId.has(id)) byId.set(id, m)
+  }
+  return [...byId.values()].sort(sortDirectMessagesChrono)
 }
 
 export async function writeMessengerThreadTailCache(
@@ -37,7 +44,14 @@ export async function writeMessengerThreadTailCache(
 ): Promise<void> {
   const cid = conversationId.trim()
   if (!cid || messages.length === 0) return
-  const tail = [...messages].sort(sortDirectMessagesChrono).slice(-MESSENGER_THREAD_TAIL_MAX)
+  // Guarantee: cache never stores duplicate message ids.
+  const byId = new Map<string, DirectMessage>()
+  for (const m of messages) {
+    const id = (m?.id || '').trim()
+    if (!id) continue
+    if (!byId.has(id)) byId.set(id, m)
+  }
+  const tail = [...byId.values()].sort(sortDirectMessagesChrono).slice(-MESSENGER_THREAD_TAIL_MAX)
   const payload: MessengerThreadTailCacheRow = {
     v: 1,
     scope,

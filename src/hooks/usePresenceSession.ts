@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { supabase } from '../lib/supabase'
+import { v1PresenceForegroundPulse, v1PresenceMarkBackground } from '../api/presenceApi'
 
 /**
  * Присутствие на сайте: пока вкладка на переднем плане — периодический пульс;
@@ -12,25 +12,10 @@ export function usePresenceSession() {
   useEffect(() => {
     if (!user?.id) return
 
-    let pulseRpc: 'presence_foreground_pulse' | 'touch_my_presence' = 'presence_foreground_pulse'
     const PULSE_MS = 10_000
 
     const callPulse = async () => {
-      const { error } = await supabase.rpc(pulseRpc)
-      if (!error) return
-
-      const msg = String(error.message ?? '')
-      const missingFn =
-        error.code === '42883' ||
-        msg.includes('does not exist') ||
-        msg.includes('schema cache') ||
-        msg.includes('function') ||
-        msg.includes('not found')
-
-      if (pulseRpc === 'presence_foreground_pulse' && missingFn) {
-        pulseRpc = 'touch_my_presence'
-        await supabase.rpc(pulseRpc)
-      }
+      await v1PresenceForegroundPulse()
     }
 
     const pulseForeground = () => {
@@ -39,7 +24,7 @@ export function usePresenceSession() {
     }
 
     const markBackground = () => {
-      void supabase.rpc('presence_mark_background')
+      void v1PresenceMarkBackground()
     }
 
     const onVisibility = () => {

@@ -112,27 +112,46 @@ export function DashboardContactsPage() {
     return () => window.clearTimeout(t)
   }, [query])
 
+  const uniqueItems = useMemo(() => {
+    const m = new Map<string, ContactCard>()
+    for (const it of items) {
+      const uid = String(it.targetUserId ?? '').trim()
+      if (!uid) continue
+      if (!m.has(uid)) m.set(uid, it)
+    }
+    return [...m.values()]
+  }, [items])
+
   const filtered = useMemo(() => {
     let q = query.trim().toLowerCase()
     while (q.startsWith('@')) q = q.slice(1).trim()
-    return items.filter((item) => {
+    return uniqueItems.filter((item) => {
       if (!matchesContactFilter(item, filter)) return false
       if (!q) return true
       const slug = (item.profileSlug ?? '').toLowerCase()
       return item.displayName.toLowerCase().includes(q) || slug.includes(q)
     })
-  }, [items, query, filter])
+  }, [uniqueItems, query, filter])
 
   const registryRows = useMemo(() => {
     const selfId = user?.id ?? ''
-    return registryHits.filter((h) => h.id && h.id !== selfId)
+    const out: RegisteredUserSearchHit[] = []
+    const seen = new Set<string>()
+    for (const h of registryHits) {
+      const id = String(h.id ?? '').trim()
+      if (!id || id === selfId) continue
+      if (seen.has(id)) continue
+      seen.add(id)
+      out.push(h)
+    }
+    return out
   }, [registryHits, user?.id])
 
   const contactByUserId = useMemo(() => {
     const m = new Map<string, ContactCard>()
-    for (const it of items) m.set(it.targetUserId, it)
+    for (const it of uniqueItems) m.set(it.targetUserId, it)
     return m
-  }, [items])
+  }, [uniqueItems])
 
   const togglePin = async (item: ContactCard) => {
     if (busyTarget) return

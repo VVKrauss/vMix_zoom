@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import type { ToastApi } from '../context/ToastContext'
 import type { UserProfile } from './useProfile'
-import { supabase } from '../lib/supabase'
+import { v1PatchMeProfile } from '../api/meProfileApi'
 import {
   readMessengerPinnedChatIds,
   resolveMessengerPinnedChatsForHydration,
@@ -44,17 +44,11 @@ export function useMessengerPinnedChatsSync(
     if (!userId || !remoteReadyRef.current) return
     const t = window.setTimeout(() => {
       void (async () => {
-        const { error } = await supabase
-          .from('users')
-          .update({
-            messenger_pinned_conversation_ids: pinnedChatIds,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', userId)
-        if (error) {
+        const r = await v1PatchMeProfile({ messenger_pinned_conversation_ids: pinnedChatIds })
+        if (r.error) {
           toast.push({
             tone: 'error',
-            message: `Не удалось сохранить закрепы: ${error.message}`,
+            message: `Не удалось сохранить закрепы: ${r.error}`,
             ms: 4200,
           })
         }

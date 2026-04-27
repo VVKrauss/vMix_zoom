@@ -9,9 +9,10 @@ import { ServerSettingsModal } from './ServerSettingsModal'
 import { TelegramNotificationsPanel } from './TelegramNotificationsPanel'
 import { AdminRoomChatsCleanupPanel } from './AdminRoomChatsCleanupPanel'
 import { AdminSiteNewsPanel } from './AdminSiteNewsPanel'
-import { ChatBubbleIcon } from './icons'
+import { AdminPanelIcon, ChatBubbleIcon, HomeIcon, LogOutIcon, SettingsGearIcon, FiRrIcon } from './icons'
+import { AdminVpsPanel } from './AdminVpsPanel'
 
-type AdminTab = 'dashboard' | 'users' | 'server' | 'notifications' | 'roomChats' | 'news'
+type AdminTab = 'dashboard' | 'users' | 'videoServer' | 'vps' | 'notifications' | 'roomChats' | 'news'
 
 export function AdminPage() {
   const { signOut } = useAuth()
@@ -26,19 +27,19 @@ export function AdminPage() {
           <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
         </Link>
         <nav className="dashboard-topbar__nav">
-          <Link to="/" className="dashboard-topbar__nav-link">
-            На главную
+          <Link to="/" className="dashboard-topbar__nav-link dashboard-topbar__nav-link--icon" title="На главную" aria-label="На главную">
+            <HomeIcon />
           </Link>
-          <Link to="/dashboard" className="dashboard-topbar__nav-link">
-            Личный кабинет
+          <Link to="/dashboard" className="dashboard-topbar__nav-link dashboard-topbar__nav-link--icon" title="Личный кабинет" aria-label="Личный кабинет">
+            <SettingsGearIcon />
           </Link>
           <Link
             to="/dashboard/messenger"
-            className="dashboard-topbar__nav-link dashboard-topbar__nav-link--inline-icon"
+            className="dashboard-topbar__nav-link dashboard-topbar__nav-link--icon"
             title="Мессенджер"
+            aria-label="Мессенджер"
           >
             <ChatBubbleIcon />
-            <span>Мессенджер</span>
             {messengerUnread > 0 ? (
               <span className="dashboard-topbar__nav-ms-badge">
                 {messengerUnread > 99 ? '99+' : messengerUnread}
@@ -47,10 +48,12 @@ export function AdminPage() {
           </Link>
           <button
             type="button"
-            className="dashboard-topbar__nav-link dashboard-topbar__nav-link--btn"
+            className="dashboard-topbar__nav-link dashboard-topbar__nav-link--btn dashboard-topbar__nav-link--icon"
             onClick={() => signOut()}
+            title="Выйти"
+            aria-label="Выйти"
           >
-            Выйти
+            <LogOutIcon />
           </button>
         </nav>
       </header>
@@ -75,10 +78,17 @@ export function AdminPage() {
             </button>
             <button
               type="button"
-              className={`admin-sidebar__link${tab === 'server' ? ' admin-sidebar__link--active' : ''}`}
-              onClick={() => setTab('server')}
+              className={`admin-sidebar__link${tab === 'videoServer' ? ' admin-sidebar__link--active' : ''}`}
+              onClick={() => setTab('videoServer')}
             >
-              Сервер
+              Сервер Видео
+            </button>
+            <button
+              type="button"
+              className={`admin-sidebar__link${tab === 'vps' ? ' admin-sidebar__link--active' : ''}`}
+              onClick={() => setTab('vps')}
+            >
+              VPS
             </button>
             <button
               type="button"
@@ -98,6 +108,69 @@ export function AdminPage() {
         </aside>
 
         <div className="admin-main">
+          <nav className="admin-tabs" aria-label="Вкладки админки">
+            <button
+              type="button"
+              className={`admin-tabs__tab${tab === 'dashboard' ? ' admin-tabs__tab--active' : ''}`}
+              onClick={() => setTab('dashboard')}
+              aria-label="Дашборд"
+              title="Дашборд"
+            >
+              <FiRrIcon name="apps" />
+              <span className="admin-tabs__text">Даш</span>
+            </button>
+            <button
+              type="button"
+              className={`admin-tabs__tab${tab === 'users' ? ' admin-tabs__tab--active' : ''}`}
+              onClick={() => setTab('users')}
+              aria-label="Пользователи"
+              title="Пользователи"
+            >
+              <FiRrIcon name="users" />
+              <span className="admin-tabs__text">Users</span>
+            </button>
+            <button
+              type="button"
+              className={`admin-tabs__tab${tab === 'videoServer' ? ' admin-tabs__tab--active' : ''}`}
+              onClick={() => setTab('videoServer')}
+              aria-label="Сервер видео"
+              title="Сервер видео"
+            >
+              <FiRrIcon name="video-camera" />
+              <span className="admin-tabs__text">Видео</span>
+            </button>
+            <button
+              type="button"
+              className={`admin-tabs__tab${tab === 'vps' ? ' admin-tabs__tab--active' : ''}`}
+              onClick={() => setTab('vps')}
+              aria-label="VPS"
+              title="VPS"
+            >
+              <FiRrIcon name="database" />
+              <span className="admin-tabs__text">VPS</span>
+            </button>
+            <button
+              type="button"
+              className={`admin-tabs__tab${tab === 'notifications' ? ' admin-tabs__tab--active' : ''}`}
+              onClick={() => setTab('notifications')}
+              aria-label="Telegram"
+              title="Telegram"
+            >
+              <FiRrIcon name="bell" />
+              <span className="admin-tabs__text">TG</span>
+            </button>
+            <button
+              type="button"
+              className={`admin-tabs__tab${tab === 'news' ? ' admin-tabs__tab--active' : ''}`}
+              onClick={() => setTab('news')}
+              aria-label="Новости"
+              title="Новости"
+            >
+              <AdminPanelIcon />
+              <span className="admin-tabs__text">News</span>
+            </button>
+          </nav>
+
           {tab === 'dashboard' ? <AdminDashboardPanel /> : null}
 
           {tab === 'users' ? (
@@ -107,7 +180,17 @@ export function AdminPage() {
             </section>
           ) : null}
 
-          {tab === 'server' ? <ServerSettingsModal variant="inline" open /> : null}
+          {tab === 'videoServer' ? <ServerSettingsModal variant="inline" open /> : null}
+
+          {tab === 'vps' ? (
+            <section className="dashboard-section">
+              <h2 className="dashboard-section__subtitle">VPS</h2>
+              <p className="dashboard-section__hint">
+                Эта вкладка — про API/БД/прокси на VPS (не про signaling/vMix).
+              </p>
+              <AdminVpsPanel />
+            </section>
+          ) : null}
 
           {tab === 'notifications' ? <TelegramNotificationsPanel /> : null}
 

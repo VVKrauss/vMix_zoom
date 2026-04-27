@@ -22,8 +22,34 @@ export function useMessengerSidebarMergedItems(
   mergedItemsRef: MutableRefObject<MessengerConversationSummary[]>
 } {
   const mergedItems = useMemo(() => {
-    const out = [...items]
-    const ids = new Set(items.map((i) => i.id))
+    // Invariant for the sidebar UI: one row per conversation id.
+    // If backend or async refresh briefly returns duplicates, normalize them here to avoid React key spam.
+    const byId = new Map<string, MessengerConversationSummary>()
+    const dupCounts = new Map<string, number>()
+    for (const it of items) {
+      const id = (it.id || '').trim()
+      if (!id) continue
+      const prev = byId.get(id)
+      if (!prev) {
+        byId.set(id, it)
+        dupCounts.set(id, 1)
+        continue
+      }
+      dupCounts.set(id, (dupCounts.get(id) ?? 1) + 1)
+      const prevTs = new Date(prev.lastMessageAt ?? prev.createdAt).getTime()
+      const nextTs = new Date(it.lastMessageAt ?? it.createdAt).getTime()
+      byId.set(id, Number.isFinite(nextTs) && (!Number.isFinite(prevTs) || nextTs >= prevTs) ? it : prev)
+    }
+    if (import.meta.env.DEV) {
+      const dups = Array.from(dupCounts.entries()).filter(([, n]) => n > 1)
+      if (dups.length > 0) {
+        // eslint-disable-next-line no-console
+        console.warn('messenger.sidebar: duplicate conversation ids from items', dups.slice(0, 10))
+      }
+    }
+
+    const out = Array.from(byId.values())
+    const ids = new Set(out.map((i) => i.id))
     for (const stub of Object.values(pendingJoinSidebarById)) {
       if (!ids.has(stub.id)) out.push(stub)
     }
