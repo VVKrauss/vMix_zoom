@@ -57,6 +57,17 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => window.setTimeout(r, ms))
 }
 
+function newTraceId(): string {
+  try {
+    // Safari 18 supports randomUUID, but keep safe fallback.
+    const v = (globalThis.crypto as any)?.randomUUID?.()
+    if (typeof v === 'string' && v) return v
+  } catch {
+    /* noop */
+  }
+  return `t_${Date.now()}_${Math.random().toString(16).slice(2)}`
+}
+
 async function probeApiRaw(
   path: string,
   init?: RequestInit & { auth?: boolean; timeoutMs?: number },
@@ -291,6 +302,7 @@ function reportFilename(r: { at?: string }) {
 
 export function TestPage() {
   const [items, setItems] = useState<ProbeResult[]>(() => [
+    { id: 'http-send-raw', title: 'HTTP: raw POST send message (status / network error)', status: 'idle' },
     { id: 'chat-send-receive', title: 'Чат: отправить и получить сообщение (самый важный тест)', status: 'idle' },
     { id: 'env', title: 'Окружение (base URLs, токен)', status: 'idle' },
     { id: 'api-health', title: 'HTTPS: GET /api/health', status: 'idle' },
@@ -319,6 +331,52 @@ export function TestPage() {
     const base = apiBase()
 
     try {
+      if (id === 'http-send-raw') {
+        const token = getAccessToken()
+        if (!token) throw new Error('not_logged_in (no access token)')
+
+        const ensured = await v1EnsureSelfDirectConversation()
+        if (ensured.error || !ensured.data) {
+          const raw = await probeApiRaw('/api/v1/me/conversations/self-direct', {
+            method: 'POST',
+            auth: true,
+            body: JSON.stringify({}),
+            timeoutMs: 20_000,
+          })
+          throw new Error(`ensure_self_dm_failed: ${raw.status || 0} ${raw.error || ''}`.trim())
+        }
+        const conversationId = ensured.data
+        const body = `raw test ${Date.now()}`
+        const traceId = newTraceId()
+        const raw = await probeApiRaw(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
+          method: 'POST',
+          auth: true,
+          headers: { 'x-trace-id': traceId },
+          body: JSON.stringify({ body, kind: 'text', meta: null, replyToMessageId: null, quoteToMessageId: null }),
+          timeoutMs: 25_000,
+        })
+        const ok = raw.ok
+        setItems((prev) =>
+          prev.map((x) =>
+            x.id === id
+              ? {
+                  ...x,
+                  status: ok ? 'ok' : 'fail',
+                  finishedAt: nowIso(),
+                  details: {
+                    conversationId,
+                    traceId,
+                    request: { method: 'POST', path: `/api/v1/conversations/${conversationId}/messages` },
+                    response: { ok: raw.ok, status: raw.status, ms: raw.ms, error: raw.error || null, url: raw.url },
+                    sample: (raw.bodyText ?? '').slice(0, 800),
+                  },
+                }
+              : x,
+          ),
+        )
+        return
+      }
+
       if (id === 'chat-send-receive') {
         const token = getAccessToken()
         if (!token) throw new Error('not_logged_in (no access token)')

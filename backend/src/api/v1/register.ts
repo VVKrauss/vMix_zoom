@@ -1104,7 +1104,18 @@ export function registerApiV1(app: FastifyInstance, deps: ApiV1Deps): void {
   app.post('/api/v1/conversations/:conversationId/messages', async (req) => {
     const a = await deps.requireAuth(req)
     const conversationId = String((req.params as any)?.conversationId ?? '').trim()
+    const traceId = String(((req as any).headers?.['x-trace-id'] ?? (req as any).headers?.['x-request-id'] ?? '') as any).trim()
     const body = appendMessageBody.parse((req as { body?: unknown }).body ?? {})
+    ;(app as any).log?.info?.(
+      {
+        traceId: traceId || undefined,
+        userId: a.userId,
+        conversationId,
+        kind: body.kind,
+        bodyLen: typeof body.body === 'string' ? body.body.length : null,
+      },
+      'v1_append_message',
+    )
     const data = await appendDirectMessage(deps.db.pool, {
       userId: a.userId,
       conversationId,
