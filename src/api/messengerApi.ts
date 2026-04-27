@@ -113,13 +113,14 @@ export async function v1AppendConversationMessage(args: {
       const off = realtime.onAny((msg) => {
         if (done) return
         if (!msg || typeof msg !== 'object') return
-        if (msg.type !== 'message_ack') return
-        if (String(msg.clientId ?? '') !== clientId) return
+        const t = String((msg as any).type ?? '')
+        if (t !== 'message_ack' && t !== 'ack') return
+        if (String((msg as any).clientId ?? '') !== clientId) return
         done = true
         window.clearTimeout(timer)
         off()
-        if (msg.ok === true) resolve({ data: msg, error: null })
-        else resolve({ data: msg, error: String(msg.error?.message ?? msg.error ?? 'send_failed') })
+        if ((msg as any).ok === true) resolve({ data: msg, error: null })
+        else resolve({ data: msg, error: String((msg as any).error?.message ?? (msg as any).error ?? 'send_failed') })
       })
       const timer = window.setTimeout(() => {
         if (done) return

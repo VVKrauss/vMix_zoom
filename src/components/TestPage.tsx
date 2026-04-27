@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { apiBase, getAccessToken } from '../api/http'
 import { v1AppendConversationMessage, v1EnsureSelfDirectConversation, v1ListConversationMessagesPage } from '../api/messengerApi'
 import { realtime } from '../api/realtime'
+import { subscribeThread } from '../api/messengerRealtime'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import { ChevronLeftIcon } from './icons'
 
@@ -316,6 +317,7 @@ export function TestPage() {
   const [items, setItems] = useState<ProbeResult[]>(() => [
     { id: 'http-send-raw', title: 'HTTP: raw POST send message (status / network error)', status: 'idle' },
     { id: 'ws-send-ack', title: 'WS: send_message + ack (без нового HTTP)', status: 'idle' },
+    { id: 'ws-userfeed', title: 'WS: user feed (bg_message + unread_invalidate)', status: 'idle' },
     { id: 'chat-send-receive', title: 'Чат: отправить и получить сообщение (самый важный тест)', status: 'idle' },
     { id: 'env', title: 'Окружение (base URLs, токен)', status: 'idle' },
     { id: 'api-health', title: 'HTTPS: GET /api/health', status: 'idle' },
@@ -420,8 +422,9 @@ export function TestPage() {
           const off = realtime.onAny((msg) => {
             if (done) return
             if (!msg || typeof msg !== 'object') return
-            if (msg.type !== 'message_ack') return
-            if (String(msg.clientId ?? '') !== clientId) return
+            const t = String((msg as any).type ?? '')
+            if (t !== 'message_ack' && t !== 'ack') return
+            if (String((msg as any).clientId ?? '') !== clientId) return
             done = true
             window.clearTimeout(timer)
             off()
@@ -472,6 +475,85 @@ export function TestPage() {
         return
       }
 
+      if (id === 'ws-userfeed') {
+        const token = getAccessToken()
+        if (!token) throw new Error('not_logged_in (no access token)')
+
+        const meRaw = await probeApiRaw('/api/v1/me', { method: 'GET', auth: true, timeoutMs: 12_000 })
+        const meJson = safeParseJson(meRaw.bodyText)
+        const userId =
+          (typeof meJson?.id === 'string' ? meJson.id : null) ??
+          (typeof meJson?.user?.id === 'string' ? meJson.user.id : null) ??
+          (typeof meJson?.data?.id === 'string' ? meJson.data.id : null) ??
+          (typeof meJson?.data?.user?.id === 'string' ? meJson.data.user.id : null)
+        if (!userId) throw new Error('me_failed: no_user_id')
+
+        const ensured = await v1EnsureSelfDirectConversation()
+        if (ensured.error || !ensured.data) throw new Error(`ensure_self_dm_failed: ${ensured.error || 'no_conversation_id'}`)
+        const conversationId = ensured.data
+
+        // ensure WS attempt
+        realtime.send({ type: 'ping', at: nowIso() })
+
+        const clientId = newTraceId()
+        const body = `ws userfeed test ${Date.now()}`
+        const timeoutMs = 8000
+        const t0 = performance.now()
+
+        const seen: any[] = []
+        const ok = await new Promise<boolean>((resolve) => {
+          let done = false
+          const off = realtime.onAny((msg) => {
+            if (done) return
+            if (!msg || typeof msg !== 'object') return
+            if (String((msg as any).type ?? '') !== 'broadcast') return
+            if (String((msg as any).channel ?? '') !== `messenger-user:${userId}`) return
+            const ev = String((msg as any).event ?? '')
+            if (ev !== 'bg_message' && ev !== 'unread_invalidate' && ev !== 'membership_changed') return
+            seen.push({ ev, payload: (msg as any).payload ?? null })
+            if (ev === 'bg_message') {
+              done = true
+              window.clearTimeout(timer)
+              off()
+              resolve(true)
+            }
+          })
+          const timer = window.setTimeout(() => {
+            if (done) return
+            done = true
+            off()
+            resolve(false)
+          }, timeoutMs)
+
+          realtime.send({
+            type: 'send_message',
+            conversationId,
+            body,
+            kind: 'text',
+            meta: null,
+            replyToMessageId: null,
+            quoteToMessageId: null,
+            clientId,
+            clientAtMs: Date.now(),
+          })
+        })
+
+        const ms = Math.round(performance.now() - t0)
+        setItems((prev) =>
+          prev.map((x) =>
+            x.id === id
+              ? {
+                  ...x,
+                  status: ok ? 'ok' : 'fail',
+                  finishedAt: nowIso(),
+                  details: { userId, conversationId, ms, timeoutMs, clientId, seen },
+                }
+              : x,
+          ),
+        )
+        return
+      }
+
       if (id === 'chat-send-receive') {
         const token = getAccessToken()
         if (!token) throw new Error('not_logged_in (no access token)')
@@ -509,46 +591,31 @@ export function TestPage() {
         const body = `test ping ${nonce}`
 
         const wsT0 = performance.now()
-        const ch = `dm-thread:${conversationId}`
 
-        // Step 2: subscribe and wait for db_change for our message (longer timeout, because RU can be slow)
-        const waitWs = new Promise<{ ok: boolean; ms: number; opened: boolean; match?: any; note?: string }>((resolve) => {
+        // Step 2: subscribe and wait for typed event message_created for our body
+        const waitWs = new Promise<{ ok: boolean; ms: number; match?: any; note?: string }>((resolve) => {
           let done = false
-          let opened = false
-          let timer: number | null = null
-          const channel = realtime.channel(ch)
-          const off = channel.on((e) => {
-              if (done) return
-              if (e.type !== 'db_change') return
-              if (e.table !== 'chat_messages' || e.action !== 'INSERT') return
-              const row = (e as any).row ?? {}
-              const cid = typeof row?.conversation_id === 'string' ? row.conversation_id : ''
-              const b = typeof row?.body === 'string' ? row.body : ''
-              if (cid !== conversationId) return
-              if (b !== body) return
-              done = true
-              if (timer != null) window.clearTimeout(timer)
-              off()
-              resolve({
-                ok: true,
-                ms: Math.round(performance.now() - wsT0),
-                opened,
-                match: { rowPreview: { id: row?.id, created_at: row?.created_at } },
-              })
+          const off = subscribeThread(conversationId, (ev) => {
+            if (done) return
+            if (ev.type !== 'message_created') return
+            const m = (ev as any).message ?? null
+            if (!m || typeof m !== 'object') return
+            if (String(m.conversationId ?? '') !== conversationId) return
+            if (String(m.body ?? '') !== body) return
+            done = true
+            window.clearTimeout(timer)
+            off()
+            resolve({
+              ok: true,
+              ms: Math.round(performance.now() - wsT0),
+              match: { messageId: String(m.id ?? ''), createdAt: String(m.createdAt ?? '') },
             })
-
-          channel.subscribe()
-          opened = true
-
-          timer = window.setTimeout(() => {
+          })
+          const timer = window.setTimeout(() => {
             if (done) return
             done = true
-            try {
-              off()
-            } catch {
-              /* noop */
-            }
-            resolve({ ok: false, ms: Math.round(performance.now() - wsT0), opened, note: 'ws_timeout_waiting_for_db_change' })
+            off()
+            resolve({ ok: false, ms: Math.round(performance.now() - wsT0), note: 'ws_timeout_waiting_for_message_created' })
           }, 15_000)
         })
 
@@ -608,7 +675,7 @@ export function TestPage() {
                   finishedAt: nowIso(),
                   details: {
                     conversationId,
-                    channel: ch,
+                    channel: `thread:${conversationId}`,
                     sent: { ok: true, ms: sendMs },
                     wsConfirm: wsRes,
                     httpConfirm: httpFound,

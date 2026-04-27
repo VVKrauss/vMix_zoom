@@ -13,11 +13,10 @@ import { ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import crypto from 'node:crypto'
 import os from 'node:os'
-import { WebSocketServer } from 'ws'
-import { appendDirectMessage } from './domain/directMessageMutations.js'
 import { URL } from 'node:url'
 import { registerApiV1 } from './api/v1/register.js'
 import { ensureDbChangeTriggers, startDbChangeListener } from './realtime/dbChangeFeed.js'
+import { createWsHub } from './realtime/wsHub.js'
 import { sendWebPushToUser } from './push/webPush.js'
 import { listMyChannels, listMyDirectConversations, listMyGroupChats } from './domain/messengerLists.js'
 import {
@@ -875,175 +874,13 @@ app.get('/public/:bucket/*', async (req, reply) => {
   return reply.redirect(signedUrl)
 })
 
-// --- WebSocket realtime (broadcast only, scaffold) ---
+// --- WebSocket realtime (/ws) ---
 // Protocol:
 // - wss://api2.redflow.online/ws?access_token=...
-// - {"type":"subscribe","channel":"room-mod:abc"}
-// - {"type":"broadcast","channel":"room-mod:abc","event":"join-request","payload":{...}}
-type WsClient = {
-  userId: string
-  ws: import('ws').WebSocket
-  channels: Set<string>
-}
-
-const wsClients = new Set<WsClient>()
-
-function broadcast(channel: string, event: string, payload: unknown): void {
-  const msg = JSON.stringify({ type: 'broadcast', channel, event, payload })
-  for (const c of wsClients) {
-    if (!c.channels.has(channel)) continue
-    try {
-      c.ws.send(msg)
-    } catch {
-      /* noop */
-    }
-  }
-}
-
-function broadcastDbChange(channel: string, table: string, action: 'INSERT' | 'UPDATE' | 'DELETE', row: unknown): void {
-  const msg = JSON.stringify({ type: 'db_change', channel, table, action, row })
-  for (const c of wsClients) {
-    if (!c.channels.has(channel)) continue
-    try {
-      c.ws.send(msg)
-    } catch {
-      /* noop */
-    }
-  }
-}
-
-const wss = new WebSocketServer({ noServer: true })
-
-// Dedup: (userId -> clientId -> ack payload) for short TTL.
-const wsAckCache = new Map<string, Map<string, { atMs: number; payload: any }>>()
-function cacheAck(userId: string, clientId: string, payload: any) {
-  const now = Date.now()
-  const perUser = wsAckCache.get(userId) ?? new Map()
-  perUser.set(clientId, { atMs: now, payload })
-  wsAckCache.set(userId, perUser)
-  // best-effort cleanup
-  for (const [cid, v] of perUser) {
-    if (now - v.atMs > 5 * 60_000) perUser.delete(cid)
-  }
-  if (perUser.size > 200) {
-    // trim oldest-ish
-    const entries = Array.from(perUser.entries()).sort((a, b) => a[1].atMs - b[1].atMs)
-    for (const [cid] of entries.slice(0, Math.max(0, entries.length - 200))) perUser.delete(cid)
-  }
-}
-function getCachedAck(userId: string, clientId: string): any | null {
-  const perUser = wsAckCache.get(userId)
-  if (!perUser) return null
-  const v = perUser.get(clientId)
-  if (!v) return null
-  if (Date.now() - v.atMs > 5 * 60_000) {
-    perUser.delete(clientId)
-    return null
-  }
-  return v.payload
-}
-
-wss.on('connection', (ws: any, req: any, client: WsClient) => {
-  ws.on('message', (raw: any) => {
-    let msg: any
-    try {
-      msg = JSON.parse(String(raw))
-    } catch {
-      return
-    }
-    const type = String(msg?.type ?? '')
-    if (type === 'subscribe') {
-      const ch = String(msg?.channel ?? '').trim()
-      if (ch) client.channels.add(ch)
-      return
-    }
-    if (type === 'unsubscribe') {
-      const ch = String(msg?.channel ?? '').trim()
-      if (ch) client.channels.delete(ch)
-      return
-    }
-    if (type === 'broadcast') {
-      const ch = String(msg?.channel ?? '').trim()
-      const ev = String(msg?.event ?? '').trim()
-      if (!ch || !ev) return
-      // IMPORTANT: production must restrict who can broadcast where.
-      broadcast(ch, ev, msg?.payload)
-      return
-    }
-
-    if (type === 'send_message') {
-      const clientId = String(msg?.clientId ?? '').trim()
-      const conversationId = String(msg?.conversationId ?? '').trim()
-      const body = typeof msg?.body === 'string' ? msg.body : ''
-      const kind = typeof msg?.kind === 'string' ? String(msg.kind) : 'text'
-      const meta = msg?.meta ?? null
-      const replyToMessageId = typeof msg?.replyToMessageId === 'string' ? msg.replyToMessageId : null
-      const quoteToMessageId = typeof msg?.quoteToMessageId === 'string' ? msg.quoteToMessageId : null
-
-      if (!clientId || clientId.length > 80) return
-      const cached = getCachedAck(client.userId, clientId)
-      if (cached) {
-        try {
-          ws.send(JSON.stringify(cached))
-        } catch {
-          /* noop */
-        }
-        return
-      }
-
-      if (!conversationId) {
-        const ack = { type: 'message_ack', clientId, ok: false, error: { message: 'conversation_required' } }
-        cacheAck(client.userId, clientId, ack)
-        try {
-          ws.send(JSON.stringify(ack))
-        } catch {
-          /* noop */
-        }
-        return
-      }
-      if (!body || body.length > 20_000) {
-        const ack = { type: 'message_ack', clientId, ok: false, error: { message: 'body_invalid' } }
-        cacheAck(client.userId, clientId, ack)
-        try {
-          ws.send(JSON.stringify(ack))
-        } catch {
-          /* noop */
-        }
-        return
-      }
-
-      void (async () => {
-        try {
-          const data = await appendDirectMessage(db.pool, {
-            userId: client.userId,
-            conversationId,
-            body,
-            kind: kind as any,
-            meta,
-            replyToMessageId,
-            quoteToMessageId,
-          })
-          const messageId = typeof (data as any)?.message_id === 'string' ? (data as any).message_id : (data as any)?.id
-          const ack = { type: 'message_ack', clientId, ok: true, messageId: messageId ?? null }
-          cacheAck(client.userId, clientId, ack)
-          try {
-            ws.send(JSON.stringify(ack))
-          } catch {
-            /* noop */
-          }
-        } catch (e: any) {
-          const ack = { type: 'message_ack', clientId, ok: false, error: { message: e?.message ?? 'send_failed' } }
-          cacheAck(client.userId, clientId, ack)
-          try {
-            ws.send(JSON.stringify(ack))
-          } catch {
-            /* noop */
-          }
-        }
-      })()
-    }
-  })
-})
+// - {"type":"subscribe","channel":"thread:<conversationId>"} for messenger threads
+// - {"type":"subscribe","channel":"messenger-user:<userId>"} for per-user feed (unread/tree invalidations)
+// - {"type":"send_message", ...} / {"type":"ack", ...} for WS-write
+const wsHub = createWsHub({ pool: db.pool, logger: app.log })
 
 await ensureDbChangeTriggers(db.pool)
 
@@ -1059,9 +896,29 @@ await startDbChangeListener({
     // Base routing: conversation scoped streams.
     const cid = typeof row.conversation_id === 'string' ? row.conversation_id.trim() : ''
     if (table === 'chat_messages' && cid) {
-      broadcastDbChange(`dm-thread:${cid}`, table, action, row)
-      broadcastDbChange(`group-thread:${cid}`, table, action, row)
-      broadcastDbChange(`channel-thread:${cid}`, table, action, row)
+      wsHub.broadcastDbChange(`dm-thread:${cid}`, table, action, row)
+      wsHub.broadcastDbChange(`group-thread:${cid}`, table, action, row)
+      wsHub.broadcastDbChange(`channel-thread:${cid}`, table, action, row)
+
+      // Typed thread events (WS-first messenger realtime)
+      const tCh = wsHub.threadChannel(cid)
+      if (action === 'INSERT') {
+        wsHub.broadcastTyped(tCh, 'message_created', { message: wsHub.mapMessageForClient(row) })
+        wsHub.broadcastTyped(tCh, 'thread_tail_updated', {
+          conversationId: cid,
+          lastMessageAt: typeof row.created_at === 'string' ? row.created_at : null,
+          lastMessagePreview: wsHub.previewForMessage(row),
+          messageCountDelta: 1,
+        })
+      } else if (action === 'UPDATE') {
+        wsHub.broadcastTyped(tCh, 'message_updated', { message: wsHub.mapMessageForClient(row) })
+      } else if (action === 'DELETE') {
+        wsHub.broadcastTyped(tCh, 'message_deleted', {
+          conversationId: cid,
+          messageId: typeof row.id === 'string' ? row.id : String(row.id ?? ''),
+        })
+        // tail update on delete is expensive (needs query); skip for now.
+      }
 
       // Per-user unread refresh: notify all members of the conversation.
       if (action === 'INSERT') {
@@ -1074,7 +931,18 @@ await startDbChangeListener({
         )
         for (const r of mem.rows) {
           const uid = typeof r.user_id === 'string' ? r.user_id.trim() : ''
-          if (uid) broadcastDbChange(`messenger-unread:${uid}`, table, action, row)
+          if (uid) wsHub.broadcastDbChange(`messenger-unread:${uid}`, table, action, row)
+          if (uid) {
+            wsHub.broadcastTyped(wsHub.userFeedChannel(uid), 'bg_message', {
+              conversationId: cid,
+              senderUserId: senderId || null,
+              kind: kind || 'text',
+              body: wsHub.previewForMessage(row),
+              createdAt: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
+              replyToMessageId: replyTo || null,
+            })
+            wsHub.broadcastTyped(wsHub.userFeedChannel(uid), 'unread_invalidate', { userId: uid })
+          }
           if (uid && uid !== senderId) {
             // Push: only for "real" messages (not reactions). For channels: only top-level posts, not comments.
             if (kind && kind !== 'reaction' && (!replyTo || replyTo === 'null')) {
@@ -1112,17 +980,23 @@ await startDbChangeListener({
     if (table === 'chat_conversation_members') {
       const uid = typeof row.user_id === 'string' ? row.user_id.trim() : ''
       if (uid) {
-        broadcastDbChange(`messenger-my-reads:${uid}`, table, action, row)
-        broadcastDbChange(`messenger-unread:${uid}`, table, action, row)
-        if (action === 'DELETE') broadcastDbChange(`messenger-member-self-delete:${uid}`, table, action, row)
+        wsHub.broadcastDbChange(`messenger-my-reads:${uid}`, table, action, row)
+        wsHub.broadcastDbChange(`messenger-unread:${uid}`, table, action, row)
+        wsHub.broadcastTyped(wsHub.userFeedChannel(uid), 'unread_invalidate', { userId: uid })
+        wsHub.broadcastTyped(wsHub.userFeedChannel(uid), 'membership_changed', {
+          userId: uid,
+          conversationId: typeof row.conversation_id === 'string' ? row.conversation_id : cid || null,
+          action,
+        })
+        if (action === 'DELETE') wsHub.broadcastDbChange(`messenger-member-self-delete:${uid}`, table, action, row)
       }
-      if (cid) broadcastDbChange(`dm-peer-read:${cid}`, table, action, row)
+      if (cid) wsHub.broadcastDbChange(`dm-peer-read:${cid}`, table, action, row)
     }
 
     if (table === 'chat_message_mentions') {
       const uid = typeof row.user_id === 'string' ? row.user_id.trim() : ''
       if (uid) {
-        broadcastDbChange(`mentions-${uid}`, table, action, row)
+        wsHub.broadcastDbChange(`mentions-${uid}`, table, action, row)
         if (action === 'INSERT') {
           // Mentions respect per-conversation mute when conversation_id is present.
           let muted = false
@@ -1160,7 +1034,7 @@ await startDbChangeListener({
     if (table === 'user_presence_public') {
       const uid = typeof row.user_id === 'string' ? row.user_id.trim() : ''
       if (uid) {
-        broadcastDbChange(`peer-presence:${uid}`, table, action, row)
+        wsHub.broadcastDbChange(`peer-presence:${uid}`, table, action, row)
       }
     }
   },
@@ -1177,13 +1051,7 @@ app.addHook('onReady', async () => {
         return
       }
       const claims = await verifyAccessToken(token)
-      const client: WsClient = { userId: claims.sub, ws: undefined as any, channels: new Set() }
-      wss.handleUpgrade(req, socket, head, (ws: any) => {
-        client.ws = ws
-        wsClients.add(client)
-        ws.on('close', () => wsClients.delete(client))
-        wss.emit('connection', ws, req, client)
-      })
+      wsHub.handleUpgrade(req, socket, head, claims.sub)
     } catch {
       socket.destroy()
     }

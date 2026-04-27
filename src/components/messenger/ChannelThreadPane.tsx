@@ -7,7 +7,7 @@ import { useToast } from '../../context/ToastContext'
 import { useStableMobileMessenger } from '../../hooks/useStableMobileMessenger'
 import { useMessengerPeerAliasesForMessages } from '../../hooks/useMessengerPeerAliasesForMessages'
 import { fetchJson } from '../../api/http'
-import { rtChannel, rtRemoveChannel } from '../../api/realtimeCompat'
+import { subscribeThread } from '../../api/messengerRealtime'
 import {
   mapDirectMessageFromRow,
   messengerConversationListTailPatch,
@@ -936,11 +936,9 @@ export function ChannelThreadPane({
   useEffect(() => {
     const cid = conversationId.trim()
     if (!cid || !user?.id || !canView) return
-    const channel = rtChannel(`channel-thread:${cid}`)
-    const filter = `conversation_id=eq.${cid}`
-    channel
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter }, (payload: any) => {
-        const msg = mapDirectMessageFromRow(payload.new as Record<string, unknown>)
+    const off = subscribeThread(cid, (ev) => {
+      if (ev.type === 'message_created') {
+        const msg = ev.message as any as DirectMessage
         if (!msg.id) return
         if (cidRef.current.trim() !== cid) return
         const selfId = user.id
@@ -969,27 +967,30 @@ export function ChannelThreadPane({
               channelFeedEndRef.current?.scrollIntoView({ block: 'end', inline: 'nearest' })
             })
           }
-        } else {
-          const postId = msg.replyToMessageId
-          if (seenChannelCommentIdsRef.current.has(msg.id)) return
-          seenChannelCommentIdsRef.current.add(msg.id)
-          setCommentCountByPostId((prev) => ({ ...prev, [postId]: (prev[postId] ?? 0) + 1 }))
-          setCommentsByPostId((prev) => {
-            const cur = prev[postId]
-            if (!cur) return prev
-            if (cur.some((c) => c.id === msg.id)) return prev
-            return { ...prev, [postId]: [...cur, msg].sort(sortChrono) }
-          })
-          if (commentsPinnedToBottomRef.current && commentsModalPostId?.trim() === postId.trim()) {
-            requestAnimationFrame(() => {
-              const el = commentsScrollRef.current
-              if (el) el.scrollTop = el.scrollHeight
-            })
-          }
+          return
         }
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages', filter }, (payload: any) => {
-        const msg = mapDirectMessageFromRow(payload.new as Record<string, unknown>)
+
+        const postId = msg.replyToMessageId
+        if (seenChannelCommentIdsRef.current.has(msg.id)) return
+        seenChannelCommentIdsRef.current.add(msg.id)
+        setCommentCountByPostId((prev) => ({ ...prev, [postId]: (prev[postId] ?? 0) + 1 }))
+        setCommentsByPostId((prev) => {
+          const cur = prev[postId]
+          if (!cur) return prev
+          if (cur.some((c) => c.id === msg.id)) return prev
+          return { ...prev, [postId]: [...cur, msg].sort(sortChrono) }
+        })
+        if (commentsPinnedToBottomRef.current && commentsModalPostId?.trim() === postId.trim()) {
+          requestAnimationFrame(() => {
+            const el = commentsScrollRef.current
+            if (el) el.scrollTop = el.scrollHeight
+          })
+        }
+        return
+      }
+
+      if (ev.type === 'message_updated') {
+        const msg = ev.message as any as DirectMessage
         if (!msg.id) return
         const patchOne = (m: DirectMessage): DirectMessage => (m.id === msg.id ? { ...m, ...msg } : m)
         if (msg.kind === 'reaction') {
@@ -1006,43 +1007,40 @@ export function ChannelThreadPane({
           if (!cur) return prev
           return { ...prev, [postId]: cur.map(patchOne) }
         })
-      })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'chat_messages', filter }, (payload: any) => {
-        const oldRow = payload.old as Record<string, unknown>
-        const id = chatMessageDeleteRowId(oldRow)
+        return
+      }
+
+      if (ev.type === 'message_deleted') {
+        const id = ev.messageId
         if (!id || cidRef.current.trim() !== cid) return
-        const kind = typeof oldRow.kind === 'string' ? oldRow.kind : ''
-        const replyToRaw = oldRow.reply_to_message_id
-        const replyTo = typeof replyToRaw === 'string' && replyToRaw.trim() ? replyToRaw.trim() : null
-
-        if (kind === 'reaction') {
-          removeReactionMessageEverywhere(id)
-          return
-        }
-
-        if (replyTo) {
-          setCommentsByPostId((prev) => {
-            const cur = prev[replyTo]
-            if (!cur?.some((c) => c.id === id)) return prev
-            setCommentCountByPostId((pc) => ({
-              ...pc,
-              [replyTo]: Math.max(0, (pc[replyTo] ?? 0) - 1),
-            }))
-            return { ...prev, [replyTo]: cur.filter((c) => c.id !== id) }
-          })
-          return
-        }
-
+        // We don't know kind/replyTo without oldRow. Best-effort:
+        removeReactionMessageEverywhere(id)
         setPosts((prev) => {
           const next = prev.filter((p) => p.id !== id)
           queueMicrotask(() => onTouchTail?.(messengerConversationListTailPatch(next)))
           return next
         })
-      })
-      .subscribe()
+        setCommentsByPostId((prev) => {
+          let touched = false
+          const next: any = { ...prev }
+          for (const k of Object.keys(next)) {
+            const arr = next[k]
+            if (!Array.isArray(arr)) continue
+            const before = arr.length
+            const after = arr.filter((c: any) => c?.id !== id)
+            if (after.length !== before) {
+              touched = true
+              next[k] = after
+              setCommentCountByPostId((pc) => ({ ...pc, [k]: Math.max(0, (pc as any)[k] - 1) }))
+            }
+          }
+          return touched ? next : prev
+        })
+      }
+    })
 
     return () => {
-      rtRemoveChannel(channel)
+      off()
     }
   }, [conversationId, user?.id, onTouchTail, removeReactionMessageEverywhere])
 

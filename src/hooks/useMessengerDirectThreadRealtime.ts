@@ -9,7 +9,7 @@ import {
 import type { MessengerConversationSummary } from '../lib/messengerConversations'
 import { DM_PAGE_SIZE, MARK_DIRECT_READ_DEBOUNCE_MS, sortDirectMessagesChrono } from '../lib/messengerDashboardUtils'
 import { playMessageSound } from '../lib/messengerSound'
-import { rtChannel, rtRemoveChannel } from '../api/realtimeCompat'
+import { subscribeThread } from '../api/messengerRealtime'
 import { optimisticMessageMatches } from '../lib/messengerOptimisticMatch'
 
 /**
@@ -91,19 +91,9 @@ export function useMessengerDirectThreadRealtime(opts: {
       )
     }
 
-    const channel = rtChannel(`dm-thread:${convId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `conversation_id=eq.${convId}`,
-        },
-        (payload: any) => {
-          const row = payload.new as Record<string, unknown>
-          if (!row?.id) return
-          const msg = mapDirectMessageFromRow(row)
+    const off = subscribeThread(convId, (ev) => {
+      if (ev.type === 'message_created') {
+        const msg = ev.message as any as DirectMessage
           const isOwn = msg.senderUserId === uid
           const skipSidebarBump =
             isOwn && (msg.kind === 'text' || msg.kind === 'reaction' || msg.kind === 'image' || msg.kind === 'audio')
@@ -141,20 +131,11 @@ export function useMessengerDirectThreadRealtime(opts: {
           ) {
             playMessageSound()
           }
-        },
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `conversation_id=eq.${convId}`,
-        },
-        (payload: any) => {
-          const oldRow = payload.old as Record<string, unknown>
-          const id = typeof oldRow?.id === 'string' ? oldRow.id : ''
-          if (!id) return
+        return
+      }
+      if (ev.type === 'message_deleted') {
+        const id = ev.messageId
+        if (!id) return
 
           setMessages((prev) => prev.filter((m) => m.id !== id))
 
@@ -175,41 +156,19 @@ export function useMessengerDirectThreadRealtime(opts: {
               ? { ...prev, messageCount: Math.max(0, prev.messageCount - 1) }
               : prev,
           )
-        },
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `conversation_id=eq.${convId}`,
-        },
-        (payload: any) => {
-          const row = payload.new as Record<string, unknown>
-          if (!row?.id) return
-          const msg = mapDirectMessageFromRow(row)
-          setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)))
-          queueMicrotask(() => bumpScrollIfPinned())
-        },
-      )
-      .subscribe((status: any) => {
-        if (status === 'SUBSCRIBED') {
-          sawSubscribed = true
-          return
-        }
-        if (!sawSubscribed || (status !== 'CHANNEL_ERROR' && status !== 'TIMED_OUT')) return
-        void (async () => {
-          const res = await listDirectMessagesPage(convId, { limit: DM_PAGE_SIZE })
-          if (res.error || !res.data?.length) return
-          mergeLatestPageIntoMessages(convId, res.data)
-          bumpScrollIfPinned()
-        })()
-      })
+        return
+      }
+      if (ev.type === 'message_updated') {
+        const msg = ev.message as any as DirectMessage
+        if (!msg?.id) return
+        setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)))
+        queueMicrotask(() => bumpScrollIfPinned())
+      }
+    })
 
     return () => {
       if (markReadDebounce != null) clearTimeout(markReadDebounce)
-      rtRemoveChannel(channel)
+      off()
     }
   }, [threadConversationId, listOnlyMobile, userId, bumpScrollIfPinned, mergeLatestPageIntoMessages])
 }
