@@ -215,12 +215,11 @@ export function TestPage() {
     { id: 'env', title: 'Окружение (base URLs, токен)', status: 'idle' },
     { id: 'api-health', title: 'HTTPS: GET /api/health', status: 'idle' },
     { id: 'api-health-series', title: 'HTTPS: серия запросов /api/health (флап/тайминги)', status: 'idle' },
-    { id: 'api-cors', title: 'CORS preflight: OPTIONS /api/health', status: 'idle' },
-    { id: 'asset-logo', title: 'Static asset: /logo.png', status: 'idle' },
+    { id: 'asset-logo', title: 'Static asset (UI origin): /logo.png', status: 'idle' },
     { id: 'wss-no-token', title: 'WSS: /ws без токена (ожидаемо FAIL)', status: 'idle' },
     { id: 'wss-with-token', title: 'WSS: /ws с токеном (ожидаемо OK)', status: 'idle' },
-    { id: 'signaling-origin', title: 'HTTPS: signaling origin (если задан)', status: 'idle' },
-    { id: 'wss-signaling', title: 'WSS: signaling (если отдельный домен)', status: 'idle' },
+    { id: 'signaling-origin', title: 'HTTPS: signaling origin (reachability)', status: 'idle' },
+    { id: 'socketio-signaling', title: 'Socket.IO (signaling): websocket handshake', status: 'idle' },
     { id: 'resources', title: 'Какие хосты реально грузились (Resource Timing)', status: 'idle' },
     { id: 'webrtc-ice', title: 'WebRTC ICE: STUN/TURN кандидаты (host/srflx/relay)', status: 'idle' },
   ])
@@ -277,22 +276,9 @@ export function TestPage() {
         return
       }
 
-      if (id === 'api-cors') {
-        const r = await probeFetch(`${base}/api/health`, {
-          method: 'OPTIONS',
-          headers: {
-            origin: typeof window !== 'undefined' ? window.location.origin : '',
-            'access-control-request-method': 'GET',
-          },
-        })
-        setItems((prev) =>
-          prev.map((x) => (x.id === id ? { ...x, status: r.ok ? 'ok' : 'fail', finishedAt: nowIso(), details: r } : x)),
-        )
-        return
-      }
-
       if (id === 'asset-logo') {
-        const r = await probeFetch(`${base}/logo.png`, { method: 'GET' })
+        const origin = typeof window !== 'undefined' ? window.location.origin.replace(/\/$/, '') : base
+        const r = await probeFetch(`${origin}/logo.png`, { method: 'GET' })
         setItems((prev) =>
           prev.map((x) => (x.id === id ? { ...x, status: r.ok ? 'ok' : 'fail', finishedAt: nowIso(), details: r } : x)),
         )
@@ -337,14 +323,19 @@ export function TestPage() {
           )
           return
         }
-        const r = await probeFetch(`${signalingUrl}/api/health`, { method: 'GET' })
+        const r = await probeFetch(`${signalingUrl}/`, { method: 'GET' })
         setItems((prev) =>
-          prev.map((x) => (x.id === id ? { ...x, status: r.ok ? 'ok' : 'fail', finishedAt: nowIso(), details: r } : x)),
+          // 200/3xx/4xx all mean "reachable"; only status=0 is network failure.
+          prev.map((x) =>
+            x.id === id
+              ? { ...x, status: r.status === 0 ? 'fail' : 'ok', finishedAt: nowIso(), details: r }
+              : x,
+          ),
         )
         return
       }
 
-      if (id === 'wss-signaling') {
+      if (id === 'socketio-signaling') {
         if (!signalingUrl) {
           setItems((prev) =>
             prev.map((x) => (x.id === id ? { ...x, status: 'ok', finishedAt: nowIso(), details: { skipped: true } } : x)),
@@ -353,11 +344,10 @@ export function TestPage() {
         }
         const su = new URL(signalingUrl)
         su.protocol = su.protocol === 'https:' ? 'wss:' : 'ws:'
-        // Socket.IO / custom signaling paths vary; we only test TCP+TLS reachability by attempting WS upgrade on "/".
-        // Many servers will close; still useful to detect immediate network failure vs server refusal.
-        su.pathname = '/'
-        su.search = ''
-        const r = await probeWebSocket(su.toString(), 5000)
+        su.pathname = '/socket.io/'
+        // Minimal Socket.IO v4 websocket transport handshake.
+        su.search = `?EIO=4&transport=websocket&t=${Date.now()}`
+        const r = await probeWebSocket(su.toString(), 6000)
         setItems((prev) =>
           prev.map((x) => (x.id === id ? { ...x, status: r.ok ? 'ok' : 'fail', finishedAt: nowIso(), details: r } : x)),
         )
