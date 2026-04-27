@@ -1136,6 +1136,18 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         setLocalStream(next)
       }
       const requestCamStream = async () => {
+        try {
+          return await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: {
+              width: { ideal: preset.width },
+              height: { ideal: preset.height },
+              frameRate: { ideal: preset.frameRate },
+            },
+          })
+        } catch {
+          /* fallback ниже */
+        }
         if (isIosLikeDevice()) {
           try {
             return await navigator.mediaDevices.getUserMedia({
@@ -1232,12 +1244,61 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     }
 
     try {
-      // 1. Единый слой локальных медиа: на этапе join не трогаем getUserMedia.
-      // Создаём пустой поток; реальные захваты делаются через ensureAudioProducer/ensureVideoProducer
-      // (тот же код, что toggleMute/toggleCam) уже после поднятия transports.
-      setIsMuted(!wantMic)
-      setIsCamOff(!wantCam)
-      const stream = new MediaStream()
+      // 1. Локальные медиа по тумблерам входа: один вызов getUserMedia до signaling — как в стабильной версии,
+      // жест пользователя («Войти») сохраняется для iOS/WebKit; при провале — пустой поток и поздний fallback ниже.
+      let deferredJoinMedia = false
+      let stream: MediaStream
+
+      if (!wantMic && !wantCam) {
+        setIsMuted(true)
+        setIsCamOff(true)
+        stream = new MediaStream()
+      } else {
+        setIsMuted(!wantMic)
+        setIsCamOff(!wantCam)
+        const camPref = readPreferredCameraId()
+        const micPref = readPreferredMicId()
+        const videoConstraints: MediaTrackConstraints | false = wantCam
+          ? {
+              ...(camPref && !isIosLikeDevice() ? { deviceId: { exact: camPref } as const } : {}),
+              width: { ideal: p.width },
+              height: { ideal: p.height },
+              frameRate: { ideal: p.frameRate },
+            }
+          : false
+
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: wantMic ? buildRoomMicTrackConstraints(!isIosLikeDevice() && micPref ? micPref : null) : false,
+            video: videoConstraints || false,
+          })
+        } catch {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              audio: wantMic ? buildRoomMicTrackConstraints(null) : false,
+              video: wantCam
+                ? {
+                    width: { ideal: p.width },
+                    height: { ideal: p.height },
+                    frameRate: { ideal: p.frameRate },
+                  }
+                : false,
+            })
+          } catch {
+            deferredJoinMedia = true
+            stream = new MediaStream()
+            setIsMuted(true)
+            setIsCamOff(true)
+          }
+        }
+      }
+
+      if (aborted()) {
+        stopStreamTracks(stream)
+        setStatus('idle')
+        return
+      }
+
       localStreamRef.current = stream
       setLocalStream(stream)
 
@@ -1553,7 +1614,26 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         })
       })
 
-      // 6. Recv transport
+      if (superseded()) return
+
+      // 6. Produce локальных треков из потока шага 1 (как раньше: сразу после send transport, до recv).
+      if (!deferredJoinMedia && stream.getTracks().length > 0) {
+        for (const track of stream.getTracks()) {
+          if (superseded()) return
+          if (track.kind === 'video') {
+            videoProducerRef.current = await produceVideoFromTrack(device, sendTransport, track, p)
+            uplinkLocalPrevRef.current = undefined
+            uplinkLocalEmaRef.current.delete('__local__')
+            lastVideoUplinkEmitAtRef.current = 0
+          } else if (track.kind === 'audio') {
+            audioProducerRef.current = await sendTransport.produce({ track })
+          }
+        }
+        if (wantMic && audioProducerRef.current) setIsMuted(false)
+        if (wantCam && videoProducerRef.current) setIsCamOff(false)
+      }
+
+      // 7. Recv transport
       const recvData = await new Promise<Record<string, unknown>>((res) => {
         socket.emit('createWebRtcTransport', { roomId }, res)
       })
@@ -1563,13 +1643,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
       bindConnect(recvTransport)
 
-      // 7. Consume existing producers
+      // 8. Consume existing producers
       for (const p of joinData.existingProducers ?? []) {
         await consumeProducer(p)
         if (superseded()) return
       }
 
-      // 8. Socket events
+      // 9. Socket events
       socket.on('newProducer', async (producer: ProducerDescriptor) => {
         if (isDevTraceEnabled()) console.log('[newProducer]', producer)
         if (
@@ -1870,42 +1950,45 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
       if (superseded()) return
 
-      // 9. Локальные producers по тумблерам join — только после готовности recv + consume + обработчиков.
-      // Ошибка камеры/микрофона не должна блокировать вход: заходим без устройства.
-      // iOS: подряд открыть mic+cam часто даёт NotReadableError на камере; короткая пауза и сначала камера, потом микрофон.
-      const iosJoin = isIosLikeDevice()
-      if (iosJoin) {
-        await sleepMs(220)
-      }
+      // 10. Fallback: ранний getUserMedia не удался или не все дорожки попали в producer — после recv (как поздний join).
+      const needDeferMic = wantMic && !audioProducerRef.current
+      const needDeferCam = wantCam && !videoProducerRef.current
 
-      const joinEnableMic = async () => {
-        try {
-          await ensureAudioProducer()
-          setIsMuted(false)
-        } catch (e) {
-          if (isDevTraceEnabled()) console.warn('[join] mic produce failed; join muted', e)
-          setIsMuted(true)
+      if (needDeferMic || needDeferCam) {
+        const iosJoin = isIosLikeDevice()
+        if (iosJoin) {
+          await sleepMs(220)
         }
-      }
-      const joinEnableCam = async () => {
-        try {
-          await ensureVideoProducer()
-          setIsCamOff(false)
-        } catch (e) {
-          if (isDevTraceEnabled()) console.warn('[join] video produce failed; join without camera', e)
-          setIsCamOff(true)
-        }
-      }
 
-      if (iosJoin && wantMic && wantCam) {
-        await joinEnableCam()
-        if (superseded()) return
-        await sleepMs(380)
-        await joinEnableMic()
-      } else {
-        if (wantMic) await joinEnableMic()
-        if (superseded()) return
-        if (wantCam) await joinEnableCam()
+        const joinEnableMic = async () => {
+          try {
+            await ensureAudioProducer()
+            setIsMuted(false)
+          } catch (e) {
+            if (isDevTraceEnabled()) console.warn('[join] mic produce failed; join muted', e)
+            setIsMuted(true)
+          }
+        }
+        const joinEnableCam = async () => {
+          try {
+            await ensureVideoProducer()
+            setIsCamOff(false)
+          } catch (e) {
+            if (isDevTraceEnabled()) console.warn('[join] video produce failed; join without camera', e)
+            setIsCamOff(true)
+          }
+        }
+
+        if (iosJoin && needDeferMic && needDeferCam) {
+          await joinEnableCam()
+          if (superseded()) return
+          await sleepMs(380)
+          await joinEnableMic()
+        } else {
+          if (needDeferMic) await joinEnableMic()
+          if (superseded()) return
+          if (needDeferCam) await joinEnableCam()
+        }
       }
 
       setStatus('connected')
