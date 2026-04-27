@@ -513,7 +513,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const recvTransportRef = useRef<Transport | null>(null)
   const audioProducerRef = useRef<Producer | null>(null)
   const videoProducerRef = useRef<Producer | null>(null)
-  const pendingIosJoinVideoTrackRef = useRef<MediaStreamTrack | null>(null)
   const screenProducerRef = useRef<Producer | null>(null)
   // Screen share: only video. We do not mix/replace outgoing audio.
   const studioPreviewVideoProducerRef = useRef<Producer | null>(null)
@@ -1102,16 +1101,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         throw new Error('no_webrtc_transport')
       }
       const preset = presetRef.current
-      const camPref = readPreferredCameraId()
-      const pendingJoinTrack = pendingIosJoinVideoTrackRef.current
-      if (pendingJoinTrack) {
-        pendingIosJoinVideoTrackRef.current = null
-        await ensureTrackIsLiveSoon(pendingJoinTrack, 80)
-        const producer = await produceVideoFromTrack(device, sendTransport, pendingJoinTrack, preset)
-        videoProducerRef.current = producer
-        mergeTrackIntoLocalStream(pendingJoinTrack)
-        return
-      }
       const releaseLocalVideoTracks = () => {
         const stream = localStreamRef.current
         if (!stream) return
@@ -1131,44 +1120,18 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         localStreamRef.current = next
         setLocalStream(next)
       }
-      const requestCamStream = async (mode: 'preferred' | 'no_exact' | 'facing_user' | 'simple') => {
-        if (mode === 'simple') {
-          return await navigator.mediaDevices.getUserMedia({ video: true })
-        }
-        if (mode === 'facing_user') {
-          // iOS Safari is often more stable with facingMode than with ideal width/height/fps.
-          return await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
-        }
-        const preferExact = mode === 'preferred'
-        try {
-          return await navigator.mediaDevices.getUserMedia({
-            video: {
-              ...(preferExact && camPref ? { deviceId: { exact: camPref } as const } : {}),
-              width: { ideal: preset.width },
-              height: { ideal: preset.height },
-              frameRate: { ideal: preset.frameRate },
-            },
-          })
-        } catch (e) {
-          // Fallback: без exact deviceId (устаревший id / системная замена устройства и т.п.)
-          if (preferExact) {
-            return await requestCamStream('no_exact')
-          }
-          throw e
-        }
+      const requestCamStream = async () => {
+        // максимально простой и максимально совместимый захват
+        return await navigator.mediaDevices.getUserMedia({ video: true })
       }
 
       // Некоторые браузеры/драйверы могут вернуть трек, который тут же завершится (ended).
       // В этом случае — один быстрый retry, затем отдаём ошибку наружу.
-      for (let attempt = 0; attempt < 4; attempt++) {
+      for (let attempt = 0; attempt < 2; attempt++) {
         let v: MediaStream | null = null
         try {
-          // iOS Safari can report NotReadableError when previous video tracks weren't fully released.
-          // Best-effort: stop/remove old local video tracks before attempting a new capture.
-          if (attempt > 0 || isIosLikeDevice()) releaseLocalVideoTracks()
-          const mode: 'preferred' | 'no_exact' | 'facing_user' | 'simple' =
-            attempt === 0 ? 'preferred' : attempt === 1 ? 'no_exact' : attempt === 2 ? 'facing_user' : 'simple'
-          v = await requestCamStream(mode)
+          releaseLocalVideoTracks()
+          v = await requestCamStream()
           const track = v.getVideoTracks()[0]
           if (!track) {
             v.getTracks().forEach((t) => t.stop())
@@ -1188,18 +1151,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           } catch {
             /* noop */
           }
-          const iosRetryable = isIosLikeDevice() && (isNotReadableCameraError(err) || isAbortCameraError(err))
-          if (isEndedTrackError(err) || iosRetryable) {
-            // Retry with a small delay; last attempt uses the simplest constraints ({ video: true }).
-            await sleepMs(attempt === 0 ? 140 : 90)
-            if (attempt < 3) continue
+          if (isEndedTrackError(err) || isNotReadableCameraError(err) || isAbortCameraError(err)) {
+            await sleepMs(140)
+            if (attempt < 1) continue
           }
           // После всех попыток "track ended" — это почти всегда занятая/сломанная камера или запрет драйвера.
           if (isEndedTrackError(err)) {
             throw new DOMException('Camera track ended immediately', 'NotReadableError')
-          }
-          if (iosRetryable) {
-            throw new DOMException('Camera capture failed (iOS Safari)', 'NotReadableError')
           }
           throw err
         }
@@ -1247,24 +1205,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     }
 
     try {
-      // iOS Safari: getUserMedia often must happen inside the initial user gesture.
-      // If camera is requested, pre-capture immediately with the simplest constraints and produce later.
-      if (wantCam && isIosLikeDevice()) {
-        try {
-          const s = await navigator.mediaDevices.getUserMedia({ video: true })
-          const t = s.getVideoTracks()[0] ?? null
-          if (t) pendingIosJoinVideoTrackRef.current = t
-          // stop extra tracks if any (we only keep the first one)
-          for (const extra of s.getVideoTracks().slice(1)) {
-            try { extra.stop() } catch { /* noop */ }
-          }
-        } catch (e) {
-          pendingIosJoinVideoTrackRef.current = null
-          // Don't block join: we'll proceed without camera (existing logic).
-          if (isDevTraceEnabled()) console.warn('[join] iOS pre-capture camera failed', e)
-        }
-      }
-
       // 1. Единый слой локальных медиа: на этапе join не трогаем getUserMedia.
       // Создаём пустой поток; реальные захваты делаются через ensureAudioProducer/ensureVideoProducer
       // (тот же код, что toggleMute/toggleCam) уже после поднятия transports.
