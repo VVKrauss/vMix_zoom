@@ -315,6 +315,7 @@ function reportFilename(r: { at?: string }) {
 export function TestPage() {
   const [items, setItems] = useState<ProbeResult[]>(() => [
     { id: 'http-send-raw', title: 'HTTP: raw POST send message (status / network error)', status: 'idle' },
+    { id: 'ws-send-ack', title: 'WS: send_message + ack (без нового HTTP)', status: 'idle' },
     { id: 'chat-send-receive', title: 'Чат: отправить и получить сообщение (самый важный тест)', status: 'idle' },
     { id: 'env', title: 'Окружение (base URLs, токен)', status: 'idle' },
     { id: 'api-health', title: 'HTTPS: GET /api/health', status: 'idle' },
@@ -389,6 +390,80 @@ export function TestPage() {
                     request: { method: 'POST', path: `/api/v1/conversations/${conversationId}/messages` },
                     response: { ok: raw.ok, status: raw.status, ms: raw.ms, error: raw.error || null, url: raw.url },
                     sample: (raw.bodyText ?? '').slice(0, 800),
+                  },
+                }
+              : x,
+          ),
+        )
+        return
+      }
+
+      if (id === 'ws-send-ack') {
+        const token = getAccessToken()
+        if (!token) throw new Error('not_logged_in (no access token)')
+
+        const ensured = await v1EnsureSelfDirectConversation()
+        if (ensured.error || !ensured.data) throw new Error(`ensure_self_dm_failed: ${ensured.error || 'no_conversation_id'}`)
+        const conversationId = ensured.data
+
+        // Ensure WS connection attempt (if not already).
+        realtime.send({ type: 'ping', at: nowIso() })
+        const isOpen = realtime.isOpen()
+
+        const clientId = newTraceId()
+        const body = `ws test ${Date.now()}`
+        const timeoutMs = 4000
+        const t0 = performance.now()
+
+        const ack = await new Promise<any>((resolve) => {
+          let done = false
+          const off = realtime.onAny((msg) => {
+            if (done) return
+            if (!msg || typeof msg !== 'object') return
+            if (msg.type !== 'message_ack') return
+            if (String(msg.clientId ?? '') !== clientId) return
+            done = true
+            window.clearTimeout(timer)
+            off()
+            resolve(msg)
+          })
+          const timer = window.setTimeout(() => {
+            if (done) return
+            done = true
+            off()
+            resolve({ ok: false, error: { message: 'ws_ack_timeout' } })
+          }, timeoutMs)
+
+          realtime.send({
+            type: 'send_message',
+            conversationId,
+            body,
+            kind: 'text',
+            meta: null,
+            replyToMessageId: null,
+            quoteToMessageId: null,
+            clientId,
+            clientAtMs: Date.now(),
+          })
+        })
+
+        const ms = Math.round(performance.now() - t0)
+        const ok = ack?.ok === true
+        setItems((prev) =>
+          prev.map((x) =>
+            x.id === id
+              ? {
+                  ...x,
+                  status: ok ? 'ok' : 'fail',
+                  finishedAt: nowIso(),
+                  details: {
+                    wsWasOpenAtStart: isOpen,
+                    timeoutMs,
+                    ms,
+                    conversationId,
+                    clientId,
+                    body,
+                    ack,
                   },
                 }
               : x,
