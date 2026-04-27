@@ -1121,9 +1121,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         localStreamRef.current = next
         setLocalStream(next)
       }
-      const requestCamStream = async (mode: 'preferred' | 'no_exact' | 'simple') => {
+      const requestCamStream = async (mode: 'preferred' | 'no_exact' | 'facing_user' | 'simple') => {
         if (mode === 'simple') {
           return await navigator.mediaDevices.getUserMedia({ video: true })
+        }
+        if (mode === 'facing_user') {
+          // iOS Safari is often more stable with facingMode than with ideal width/height/fps.
+          return await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
         }
         const preferExact = mode === 'preferred'
         try {
@@ -1146,14 +1150,14 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
       // Некоторые браузеры/драйверы могут вернуть трек, который тут же завершится (ended).
       // В этом случае — один быстрый retry, затем отдаём ошибку наружу.
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 4; attempt++) {
         let v: MediaStream | null = null
         try {
           // iOS Safari can report NotReadableError when previous video tracks weren't fully released.
           // Best-effort: stop/remove old local video tracks before attempting a new capture.
           if (attempt > 0 || isIosLikeDevice()) releaseLocalVideoTracks()
-          const mode: 'preferred' | 'no_exact' | 'simple' =
-            attempt === 0 ? 'preferred' : attempt === 1 ? 'no_exact' : 'simple'
+          const mode: 'preferred' | 'no_exact' | 'facing_user' | 'simple' =
+            attempt === 0 ? 'preferred' : attempt === 1 ? 'no_exact' : attempt === 2 ? 'facing_user' : 'simple'
           v = await requestCamStream(mode)
           const track = v.getVideoTracks()[0]
           if (!track) {
@@ -1178,7 +1182,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           if (isEndedTrackError(err) || iosRetryable) {
             // Retry with a small delay; last attempt uses the simplest constraints ({ video: true }).
             await sleepMs(attempt === 0 ? 140 : 90)
-            if (attempt < 2) continue
+            if (attempt < 3) continue
           }
           // После всех попыток "track ended" — это почти всегда занятая/сломанная камера или запрет драйвера.
           if (isEndedTrackError(err)) {
@@ -2037,7 +2041,10 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
               case 'NotFoundError':
                 return 'Камера не найдена. Подключите устройство или выберите другую камеру.'
               case 'NotReadableError':
-                return 'Камера занята другим приложением. Закройте его и попробуйте снова.'
+                return (
+                  'Не удалось включить камеру. Иногда Safari на iPhone показывает это даже когда камера не занята: ' +
+                  'перезагрузите страницу, закройте другие вкладки с камерой и попробуйте снова.'
+                )
               case 'OverconstrainedError':
                 return 'Камера не подходит по настройкам. Выберите другое устройство или пресет.'
               case 'SecurityError':
