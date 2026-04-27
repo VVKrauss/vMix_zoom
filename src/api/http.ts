@@ -80,7 +80,11 @@ export async function fetchJson<T>(
 
   const headers = new Headers(init?.headers ?? {})
   headers.set('accept', 'application/json')
-  if (init?.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
+  const body = init?.body as any
+  const isFormData =
+    typeof FormData !== 'undefined' && body && typeof body === 'object' && body instanceof FormData
+  // IMPORTANT: for FormData browser must set multipart boundary itself.
+  if (init?.body && !isFormData && !headers.has('content-type')) headers.set('content-type', 'application/json')
 
   if (init?.auth) {
     const token = getAccessToken()
@@ -107,14 +111,14 @@ export async function fetchJson<T>(
     }
   }
 
-  const body = await safeReadJson(res)
+  const parsed = await safeReadJson(res)
   if (!res.ok) {
     const message =
-      typeof body === 'object' && body
-        ? String((body as any).message ?? (body as any).error ?? res.statusText)
+      typeof parsed === 'object' && parsed
+        ? String((parsed as any).message ?? (parsed as any).error ?? res.statusText)
         : res.statusText
-    return { ok: false, error: { status: res.status, message, details: body } }
+    return { ok: false, error: { status: res.status, message, details: parsed } }
   }
-  return { ok: true, data: body as T }
+  return { ok: true, data: parsed as T }
 }
 
