@@ -5,10 +5,12 @@ export type RealtimeEvent =
   | { type: 'broadcast'; channel: string; event: string; payload: unknown }
 
 type Handler = (e: RealtimeEvent) => void
+type AnyHandler = (e: any) => void
 
 export class RealtimeClient {
   private ws: WebSocket | null = null
   private handlers = new Map<string, Set<Handler>>()
+  private anyHandlers = new Set<AnyHandler>()
   private getUrl: () => string
   private lastUrl: string | null = null
   private outbox: unknown[] = []
@@ -74,7 +76,8 @@ export class RealtimeClient {
     }
     this.ws.onmessage = (msg) => {
       try {
-        const parsed = JSON.parse(String(msg.data)) as { channel?: string } & RealtimeEvent
+        const parsed = JSON.parse(String(msg.data)) as any
+        for (const h of this.anyHandlers) h(parsed)
         const ch = String(parsed.channel ?? '')
         if (!ch) return
         const set = this.handlers.get(ch)
@@ -84,6 +87,22 @@ export class RealtimeClient {
         /* ignore */
       }
     }
+  }
+
+  onAny(handler: AnyHandler): RealtimeUnsubscribe {
+    this.anyHandlers.add(handler)
+    return () => {
+      this.anyHandlers.delete(handler)
+    }
+  }
+
+  send(payload: unknown): void {
+    this.connect()
+    this.safeSend(payload)
+  }
+
+  isOpen(): boolean {
+    return Boolean(this.ws && this.ws.readyState === WebSocket.OPEN)
   }
 
   broadcast(channel: string, event: string, payload: unknown): void {

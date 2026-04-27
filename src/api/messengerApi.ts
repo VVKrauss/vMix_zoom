@@ -1,4 +1,5 @@
 import { fetchJson } from './http'
+import { realtime } from './realtime'
 
 export type V1ConversationLists = {
   direct: unknown[]
@@ -99,6 +100,51 @@ export async function v1AppendConversationMessage(args: {
 }): Promise<{ data: unknown | null; error: string | null }> {
   const cid = args.conversationId.trim()
   if (!cid) return { data: null, error: 'conversation_required' }
+
+  // WS-first: avoids new HTTP requests on flaky networks (RU).
+  // Fallback to HTTP if WS is not open or ack doesn't arrive quickly.
+  if (realtime.isOpen()) {
+    const clientId =
+      (globalThis.crypto as any)?.randomUUID?.() ?? `c_${Date.now()}_${Math.random().toString(16).slice(2)}`
+    const startedAt = Date.now()
+    const timeoutMs = 2500
+    const p = new Promise<{ data: any | null; error: string | null }>((resolve) => {
+      let done = false
+      const off = realtime.onAny((msg) => {
+        if (done) return
+        if (!msg || typeof msg !== 'object') return
+        if (msg.type !== 'message_ack') return
+        if (String(msg.clientId ?? '') !== clientId) return
+        done = true
+        window.clearTimeout(timer)
+        off()
+        if (msg.ok === true) resolve({ data: msg, error: null })
+        else resolve({ data: msg, error: String(msg.error?.message ?? msg.error ?? 'send_failed') })
+      })
+      const timer = window.setTimeout(() => {
+        if (done) return
+        done = true
+        off()
+        resolve({ data: null, error: 'ws_ack_timeout' })
+      }, timeoutMs)
+
+      realtime.send({
+        type: 'send_message',
+        conversationId: cid,
+        body: args.body,
+        kind: args.kind,
+        meta: args.meta ?? null,
+        replyToMessageId: args.replyToMessageId ?? null,
+        quoteToMessageId: args.quoteToMessageId ?? null,
+        clientId,
+        clientAtMs: startedAt,
+      })
+    })
+    const ack = await p
+    if (!ack.error) return ack
+    // fall through to HTTP
+  }
+
   const r = await fetchJson<{ data: unknown }>(`/api/v1/conversations/${encodeURIComponent(cid)}/messages`, {
     method: 'POST',
     auth: true,
