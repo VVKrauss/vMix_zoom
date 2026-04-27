@@ -1218,6 +1218,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       // Сначала long-polling — стабильнее через Vite proxy; затем upgrade до WebSocket.
       const socket = io(signalingSocketUrl(), { transports: ['polling', 'websocket'] })
       socketRef.current = socket
+      /** leave() или новый join сменили поколение / сокет — не продолжаем и не трогаем ref'ы поверх cleanup. */
+      const superseded = () => aborted() || socketRef.current !== socket
 
       await new Promise<void>((resolve, reject) => {
         const onConnect = () => {
@@ -1524,28 +1526,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         })
       })
 
-      // 6. Enable local producers based on join toggles.
-      // Ошибка камеры/микрофона не должна блокировать вход: заходим без устройства.
-      if (wantMic) {
-        try {
-          await ensureAudioProducer()
-          setIsMuted(false)
-        } catch (e) {
-          if (isDevTraceEnabled()) console.warn('[join] mic produce failed; join muted', e)
-          setIsMuted(true)
-        }
-      }
-      if (wantCam) {
-        try {
-          await ensureVideoProducer()
-          setIsCamOff(false)
-        } catch (e) {
-          if (isDevTraceEnabled()) console.warn('[join] video produce failed; join without camera', e)
-          setIsCamOff(true)
-        }
-      }
-
-      // 7. Recv transport
+      // 6. Recv transport
       const recvData = await new Promise<Record<string, unknown>>((res) => {
         socket.emit('createWebRtcTransport', { roomId }, res)
       })
@@ -1555,12 +1536,13 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
       bindConnect(recvTransport)
 
-      // 8. Consume existing producers
+      // 7. Consume existing producers
       for (const p of joinData.existingProducers ?? []) {
         await consumeProducer(p)
+        if (superseded()) return
       }
 
-      // 9. Socket events
+      // 8. Socket events
       socket.on('newProducer', async (producer: ProducerDescriptor) => {
         if (isDevTraceEnabled()) console.log('[newProducer]', producer)
         if (
@@ -1858,6 +1840,29 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           appendStudioServerLogRef.current(stringifyStudioServerSocketPayload('studioBroadcastLog', raw))
         }
       })
+
+      if (superseded()) return
+
+      // 9. Локальные producers по тумблерам join — только после готовности recv + consume + обработчиков.
+      // Ошибка камеры/микрофона не должна блокировать вход: заходим без устройства.
+      if (wantMic) {
+        try {
+          await ensureAudioProducer()
+          setIsMuted(false)
+        } catch (e) {
+          if (isDevTraceEnabled()) console.warn('[join] mic produce failed; join muted', e)
+          setIsMuted(true)
+        }
+      }
+      if (wantCam) {
+        try {
+          await ensureVideoProducer()
+          setIsCamOff(false)
+        } catch (e) {
+          if (isDevTraceEnabled()) console.warn('[join] video produce failed; join without camera', e)
+          setIsCamOff(true)
+        }
+      }
 
       setStatus('connected')
     } catch (err) {
