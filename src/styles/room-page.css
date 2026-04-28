@@ -8474,6 +8474,101 @@ html[data-theme="light"] .room-chat-preview-toast__text {
   transform: translateX(18px);
 }
 
+/* Трёхпозиционный тумблер (off / auto / on) в стиле pill-toggle */
+.pill-toggle--tri {
+  gap: 0;
+}
+
+.pill-toggle__switch--tri {
+  width: 64px;
+}
+
+.pill-toggle__tri-auto-label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  pointer-events: none;
+  user-select: none;
+  text-transform: uppercase;
+}
+
+.pill-toggle__switch--tri-auto .pill-toggle__tri-auto-label {
+  color: var(--text);
+  text-shadow: 0 0 12px rgba(168, 85, 247, 0.45);
+}
+
+.pill-toggle__thumb--tri {
+  transition: transform 0.2s ease, background 0.2s, box-shadow 0.2s;
+}
+
+.pill-toggle__thumb--tri-off {
+  transform: translateX(0px);
+}
+
+.pill-toggle__thumb--tri-auto {
+  transform: translateX(20px);
+  background: linear-gradient(180deg, #f6f1ff 0%, #d7c9ff 100%);
+  box-shadow:
+    0 0 10px rgba(168, 85, 247, 0.35),
+    0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.pill-toggle__thumb--tri-on {
+  transform: translateX(40px);
+}
+
+.pill-toggle__switch--tri-on {
+  background: var(--btn-red-grad);
+  border-color: rgba(210, 80, 80, 0.55);
+  box-shadow:
+    0 0 12px rgba(210, 0, 0, 0.45),
+    0 0 18px rgba(136, 25, 25, 0.22),
+    inset 0 0 8px rgba(0, 0, 0, 0.2);
+}
+
+.pill-toggle__switch--tri-on .pill-toggle__thumb {
+  background: linear-gradient(180deg, #fff8f8 0%, #ffcdd2 100%);
+  box-shadow:
+    0 0 8px rgba(229, 57, 53, 0.55),
+    0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.pill-toggle__switch--tri-auto {
+  border-color: rgba(168, 85, 247, 0.45);
+  box-shadow:
+    0 0 10px rgba(168, 85, 247, 0.22),
+    inset 0 0 8px rgba(0, 0, 0, 0.14);
+}
+
+/* Лампочка статуса сети */
+.dashboard-network-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+}
+
+.dashboard-network-dot--ok {
+  background: #69f0ae;
+  box-shadow:
+    0 0 10px rgba(105, 240, 174, 0.45),
+    0 0 0 1px rgba(0, 0, 0, 0.22) inset;
+}
+
+.dashboard-network-dot--bad {
+  background: #ef9a9a;
+  box-shadow:
+    0 0 10px rgba(239, 154, 154, 0.35),
+    0 0 0 1px rgba(0, 0, 0, 0.22) inset;
+}
+
 /* Неон: верхний chrome (шапка + полоса вида) в режиме стримера */
 .room-page--streamer-mode .room-page__top-chrome {
   border-bottom-color: rgba(0, 255, 255, 0.22);

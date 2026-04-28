@@ -24,6 +24,8 @@ import { DashboardContactsIncomingModal } from './DashboardContactsIncomingModal
 import { DashboardLayoutPicker } from './DashboardLayoutPicker'
 import { PillToggle } from './PillToggle'
 import { type ApiRouteMode, readApiRouteMode, writeApiRouteMode } from '../config/apiRouteMode'
+import { resolveApiBase } from '../api/endpointResolver'
+import { TriPillToggle, type TriPillValue } from './TriPillToggle'
 import { DashboardShell } from './DashboardShell'
 import { ConfirmDialog } from './ConfirmDialog'
 import { DashboardRoomRow } from './DashboardRoomRow'
@@ -142,6 +144,7 @@ export function DashboardPage() {
   const [contactsTick, setContactsTick] = useState(0)
 
   const [apiRouteMode, setApiRouteMode] = useState<ApiRouteMode | null>(() => readApiRouteMode())
+  const [apiHealthOk, setApiHealthOk] = useState<boolean | null>(null)
   const [peerTop, setPeerTop] = useState<
     { userId: string; messageCount: number; avatarUrl: string | null; lastMessageAt: string | null }[]
   >([])
@@ -168,6 +171,35 @@ export function DashboardPage() {
   useEffect(() => {
     refreshHiddenIncoming()
   }, [refreshHiddenIncoming, contactsTick])
+
+  useEffect(() => {
+    let alive = true
+    const controller = new AbortController()
+    const t = window.setTimeout(() => controller.abort(), 2500)
+    void (async () => {
+      try {
+        const base = await resolveApiBase()
+        const res = await fetch(`${base}/api/health`, {
+          method: 'GET',
+          credentials: 'include',
+          headers: { accept: 'application/json' },
+          signal: controller.signal,
+        })
+        if (!alive) return
+        setApiHealthOk(res.ok)
+      } catch {
+        if (!alive) return
+        setApiHealthOk(false)
+      } finally {
+        window.clearTimeout(t)
+      }
+    })()
+    return () => {
+      alive = false
+      controller.abort()
+      window.clearTimeout(t)
+    }
+  }, [])
 
   useEffect(() => {
     if (!profile) return
@@ -740,32 +772,27 @@ export function DashboardPage() {
         <section className="dashboard-tile dashboard-tile--network">
           <h2 className="dashboard-tile__title">Сеть</h2>
           <div className="dashboard-form dashboard-form--compact">
-            <p className="dashboard-field__hint" style={{ marginTop: 0 }}>
-              По умолчанию используется прямое подключение. Если сеть/провайдер режет доступ, приложение автоматически
-              переключится на прокси. Можно также принудительно выбрать режим.
-            </p>
             <div className="dashboard-field">
               <div className="dashboard-field__inline dashboard-field__inline--toggle">
-                <span className="dashboard-field__label">Маршрутизация API</span>
-                <select
-                  value={apiRouteMode ?? 'auto'}
-                  onChange={(e) => {
-                    const v = e.currentTarget.value
-                    const next: ApiRouteMode | null = v === 'auto' ? null : (v as ApiRouteMode)
+                <span className="dashboard-field__label">Включить прокси</span>
+                <span
+                  className={`dashboard-network-dot${
+                    apiHealthOk == null ? '' : apiHealthOk ? ' dashboard-network-dot--ok' : ' dashboard-network-dot--bad'
+                  }`}
+                  title={apiHealthOk == null ? 'Проверяем…' : apiHealthOk ? 'Связь с сервером есть' : 'Нет связи с сервером'}
+                />
+                <TriPillToggle
+                  value={(apiRouteMode === 'proxy' ? 'on' : apiRouteMode === 'direct' ? 'off' : 'auto') satisfies TriPillValue}
+                  onChange={(v) => {
+                    const next: ApiRouteMode | null = v === 'auto' ? null : v === 'on' ? 'proxy' : 'direct'
                     setApiRouteMode(next)
                     writeApiRouteMode(next)
                     window.location.reload()
                   }}
-                  aria-label="Маршрутизация API"
-                >
-                  <option value="auto">Авто (direct → proxy при ошибке)</option>
-                  <option value="direct">Напрямую (direct)</option>
-                  <option value="proxy">Через прокси (proxy)</option>
-                </select>
+                  ariaLabel="Включить прокси: direct / auto / proxy"
+                  autoLabel="Авто"
+                />
               </div>
-              <p className="dashboard-field__note" style={{ marginTop: 8 }}>
-                Сейчас: {apiRouteMode === 'proxy' ? 'через прокси' : apiRouteMode === 'direct' ? 'напрямую' : 'авто'}.
-              </p>
             </div>
           </div>
         </section>
