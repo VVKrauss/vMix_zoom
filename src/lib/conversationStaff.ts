@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { v1ListConversationStaffMembers, v1SetConversationMemberStaffRole } from '../api/conversationAdminApi'
 
 export type ConversationStaffMember = {
   user_id: string
@@ -11,11 +11,9 @@ export type ConversationStaffRole = 'member' | 'moderator' | 'admin'
 export async function listConversationStaffMembers(
   conversationId: string,
 ): Promise<{ data: ConversationStaffMember[] | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('list_conversation_staff_members', {
-    p_conversation_id: conversationId.trim(),
-  })
-  if (error) return { data: null, error: error.message }
-  const rows = Array.isArray(data) ? data : []
+  const r = await v1ListConversationStaffMembers(conversationId)
+  if (r.error) return { data: null, error: r.error }
+  const rows = Array.isArray(r.data) ? r.data : []
   const out: ConversationStaffMember[] = rows
     .map((r) => {
       const row = r as Record<string, unknown>
@@ -34,17 +32,8 @@ export async function setConversationMemberStaffRole(
   targetUserId: string,
   newRole: ConversationStaffRole,
 ): Promise<{ error: string | null; code: string | null }> {
-  const { data, error } = await supabase.rpc('set_conversation_member_staff_role', {
-    p_conversation_id: conversationId.trim(),
-    p_target_user_id: targetUserId.trim(),
-    p_new_role: newRole,
-  })
-  if (error) return { error: error.message, code: null }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) {
-    const code = typeof row?.error === 'string' ? row.error : 'unknown'
-    return { error: staffRoleErrorMessage(code), code }
-  }
+  const r = await v1SetConversationMemberStaffRole(conversationId, targetUserId, newRole)
+  if (r.error) return { error: staffRoleErrorMessage(r.code ?? 'unknown'), code: r.code }
   return { error: null, code: null }
 }
 

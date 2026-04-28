@@ -6,7 +6,8 @@ import { useAuth } from '../../context/AuthContext'
 import { useProfile } from '../../hooks/useProfile'
 import { useStableMobileMessenger } from '../../hooks/useStableMobileMessenger'
 import { useToast } from '../../context/ToastContext'
-import { supabase } from '../../lib/supabase'
+import { fetchJson } from '../../api/http'
+import { subscribeThread } from '../../api/messengerRealtime'
 import { truncateMessengerReplySnippet } from '../../lib/messengerUi'
 import { buildQuotePreview } from '../../lib/messengerQuotePreview'
 import { MESSENGER_COMPOSER_EMOJIS } from '../../lib/messengerComposerEmojis'
@@ -198,10 +199,38 @@ export function GroupThreadPane({
 
   const peerAliasByUserId = useMessengerPeerAliasesForMessages(user?.id, messages, canView)
 
-  const groupLastSignificantMessageId = useMemo(() => {
-    const sig = messages.filter((m) => m.kind !== 'reaction')
-    return sig[sig.length - 1]?.id ?? null
+  const timelineMessages = useMemo(() => {
+    const byId = new Map<string, DirectMessage>()
+    const dupCounts = new Map<string, number>()
+    for (const m of messages) {
+      if (m.kind === 'reaction') continue
+      const id = (m.id || '').trim()
+      if (!id) continue
+      const prev = byId.get(id)
+      if (!prev) {
+        byId.set(id, m)
+        dupCounts.set(id, 1)
+        continue
+      }
+      dupCounts.set(id, (dupCounts.get(id) ?? 1) + 1)
+      const pt = new Date(prev.createdAt).getTime()
+      const nt = new Date(m.createdAt).getTime()
+      byId.set(id, Number.isFinite(nt) && (!Number.isFinite(pt) || nt >= pt) ? m : prev)
+    }
+    if (import.meta.env.DEV) {
+      const dups = Array.from(dupCounts.entries()).filter(([, n]) => n > 1)
+      if (dups.length > 0) {
+        // eslint-disable-next-line no-console
+        console.warn('messenger.group: duplicate message ids from state', dups.slice(0, 10))
+      }
+    }
+    return Array.from(byId.values()).sort(sortChrono)
   }, [messages])
+
+  const groupLastSignificantMessageId = useMemo(
+    () => timelineMessages[timelineMessages.length - 1]?.id ?? null,
+    [timelineMessages],
+  )
 
   useMessengerThreadReadCoordinator({
     conversationId: conversationId.trim(),
@@ -224,7 +253,7 @@ export function GroupThreadPane({
   const { showJump: showGroupJump, jumpToBottom: jumpGroupBottom } = useMessengerJumpToBottom(
     messagesScrollRef,
     conversationId || '',
-    messages.length,
+    timelineMessages.length,
   )
 
   useEffect(() => {
@@ -234,21 +263,16 @@ export function GroupThreadPane({
       setMyGroupMemberRole(null)
       return
     }
-    void supabase
-      .from('chat_conversation_members')
-      .select('role')
-      .eq('conversation_id', cid)
-      .eq('user_id', user.id)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (cancelled) return
-        if (error || !data) {
-          setMyGroupMemberRole(null)
-          return
-        }
-        const r = typeof (data as { role?: unknown }).role === 'string' ? (data as { role: string }).role.trim() : null
-        setMyGroupMemberRole(r)
-      })
+    void (async () => {
+      const r = await fetchJson<{ row: any | null }>(`/api/v1/me/conversations/${encodeURIComponent(cid)}/membership`, { method: 'GET', auth: true })
+      if (cancelled) return
+      if (!r.ok || !r.data?.row) {
+        setMyGroupMemberRole(null)
+        return
+      }
+      const role = typeof (r.data.row as any)?.role === 'string' ? String((r.data.row as any).role).trim() : null
+      setMyGroupMemberRole(role)
+    })()
     return () => {
       cancelled = true
     }
@@ -417,12 +441,11 @@ export function GroupThreadPane({
   useEffect(() => {
     const cid = conversationId.trim()
     if (!cid || !user?.id || !canView) return
-    const channel = supabase.channel(`group-thread:${cid}`)
-    const filter = `conversation_id=eq.${cid}`
-
-    channel
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter }, (payload) => {
-        const msg = mapDirectMessageFromRow(payload.new as Record<string, unknown>)
+    const disableWs = String(import.meta.env.VITE_MESSENGER_DISABLE_WS ?? '').trim() === '1'
+    if (disableWs) return
+    const off = subscribeThread(cid, (ev) => {
+      if (ev.type === 'message_created') {
+        const msg = ev.message as any as DirectMessage
         if (!msg.id) return
         if (msg.senderUserId === user.id && msg.kind !== 'reaction') return
         if (cidRef.current.trim() !== cid) return
@@ -438,23 +461,68 @@ export function GroupThreadPane({
             if (el) el.scrollTop = el.scrollHeight
           })
         }
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages', filter }, (payload) => {
-        const msg = mapDirectMessageFromRow(payload.new as Record<string, unknown>)
+        return
+      }
+      if (ev.type === 'message_updated') {
+        const msg = ev.message as any as DirectMessage
         if (!msg.id) return
         setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m)))
-      })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'chat_messages', filter }, (payload) => {
-        const id = chatMessageDeleteRowId(payload.old as Record<string, unknown>)
+        return
+      }
+      if (ev.type === 'message_deleted') {
+        const id = ev.messageId
         if (!id || cidRef.current.trim() !== cid) return
         removeMessageById(id)
-      })
-      .subscribe()
+      }
+    })
 
     return () => {
-      supabase.removeChannel(channel)
+      off()
     }
   }, [conversationId, user?.id, onTouchTail, removeMessageById, viewerOnly])
+
+  // HTTP polling fallback for groups (when WS is disabled).
+  useEffect(() => {
+    const disableWs = String(import.meta.env.VITE_MESSENGER_DISABLE_WS ?? '').trim() === '1'
+    if (!disableWs) return
+    const cid = conversationId.trim()
+    if (!cid || !user?.id || !canView || !messengerOnline) return
+
+    let destroyed = false
+    let inFlight = false
+
+    const mergeIncoming = (incoming: DirectMessage[]) => {
+      setMessages((prev) => {
+        if (!incoming.length) return prev
+        const byId = new Map<string, DirectMessage>()
+        for (const m of prev) if (m?.id) byId.set(m.id, m)
+        for (const m of incoming) if (m?.id) byId.set(m.id, m)
+        const merged = Array.from(byId.values()).sort(sortChrono)
+        queueMicrotask(() => onTouchTail?.(messengerConversationListTailPatch(merged)))
+        return merged
+      })
+    }
+
+    const pollOnce = async () => {
+      if (destroyed || inFlight) return
+      inFlight = true
+      try {
+        const res = await listGroupMessagesPage(cid, { limit: 60 })
+        if (destroyed) return
+        if (res.error || !res.data) return
+        mergeIncoming(res.data)
+      } finally {
+        inFlight = false
+      }
+    }
+
+    void pollOnce()
+    const id = window.setInterval(() => void pollOnce(), 4000)
+    return () => {
+      destroyed = true
+      window.clearInterval(id)
+    }
+  }, [conversationId, user?.id, canView, messengerOnline, onTouchTail])
 
   const reactionsByTargetId = useMemo(() => {
     const map = new Map<string, DirectMessage[]>()
@@ -626,7 +694,11 @@ export function GroupThreadPane({
       setReplyTo(null)
       setPhotoUploading(false)
       setSending(false)
-      setMessages((prev) => [...prev, newMsg].sort(sortChrono))
+      setMessages((prev) => {
+        const id = (newMsg.id || '').trim()
+        const base = id ? prev.filter((m) => m.id !== id) : prev
+        return [...base, newMsg].sort(sortChrono)
+      })
       onTouchTail?.({ lastMessageAt: createdAt, lastMessagePreview: preview })
       return
     }
@@ -663,11 +735,17 @@ export function GroupThreadPane({
     }
     const finalId = res.data?.messageId ?? optimistic.id
     const finalAt = res.data?.createdAt ?? optimistic.createdAt
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === optimistic.id ? { ...optimistic, id: finalId, createdAt: finalAt, meta: linkMetaRecord ?? optimistic.meta } : m,
-      ),
-    )
+    setMessages((prev) => {
+      const next = prev
+        // If realtime already inserted the final row, drop it and keep the optimistic->final swap.
+        .filter((m) => m.id !== finalId)
+        .map((m) =>
+          m.id === optimistic.id
+            ? { ...optimistic, id: finalId, createdAt: finalAt, meta: linkMetaRecord ?? optimistic.meta }
+            : m,
+        )
+      return next
+    })
     onTouchTail?.({ lastMessageAt: finalAt, lastMessagePreview: body })
     setSending(false)
   }, [
@@ -733,7 +811,11 @@ export function GroupThreadPane({
       setReplyTo(null)
       setVoiceUploading(false)
       setSending(false)
-      setMessages((prev) => [...prev, newMsg].sort(sortChrono))
+      setMessages((prev) => {
+        const id = (newMsg.id || '').trim()
+        const base = id ? prev.filter((m) => m.id !== id) : prev
+        return [...base, newMsg].sort(sortChrono)
+      })
       onTouchTail?.({ lastMessageAt: createdAt, lastMessagePreview: preview })
     },
     [
@@ -932,7 +1014,7 @@ export function GroupThreadPane({
                 </div>
               </div>
             )
-          ) : messages.filter((m) => m.kind !== 'reaction').length === 0 ? (
+          ) : timelineMessages.length === 0 ? (
             viewerOnly && publicJoinCta ? (
               <div className="messenger-viewer-join-empty">
                 <button
@@ -952,8 +1034,7 @@ export function GroupThreadPane({
               {(() => {
                 const nodes: React.ReactNode[] = []
                 let prevDayKey: string | null = null
-                for (const m of messages) {
-                  if (m.kind === 'reaction') continue
+                for (const m of timelineMessages) {
                   const dt = new Date(m.createdAt)
                   const dayKey = Number.isNaN(dt.getTime()) ? null : `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`
                   if (prevDayKey && dayKey && dayKey !== prevDayKey) {
@@ -969,7 +1050,7 @@ export function GroupThreadPane({
                   const isOwn = Boolean(user?.id && m.senderUserId === user.id)
                   const { preview: replyPreview, scrollTargetId: replyScrollTargetId } = buildQuotePreview({
                     quotedMessageId: m.quoteToMessageId?.trim() || m.replyToMessageId?.trim() || null,
-                    messageById: (id) => messages.find((x) => x.id === id),
+                    messageById: (id) => timelineMessages.find((x) => x.id === id),
                     resolveQuotedAvatarUrl: () => null,
                     viewerUserId: user?.id ?? null,
                     peerAliasByUserId,

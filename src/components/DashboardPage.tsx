@@ -17,7 +17,7 @@ import { listMessengerPeersByMessageCount } from '../lib/messenger'
 import type { ContactCard } from '../lib/socialGraph'
 import { listMyContacts } from '../lib/socialGraph'
 import { fetchPersistentSpaceRoomsForUser, type PersistentSpaceRoomRow } from '../lib/spaceRoom'
-import { supabase } from '../lib/supabase'
+import { v1GetMeProfile, v1PatchMeProfile } from '../api/meProfileApi'
 import type { StoredLayoutMode } from '../config/roomUiStorage'
 import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
 import { DashboardContactsIncomingModal } from './DashboardContactsIncomingModal'
@@ -295,19 +295,14 @@ export function DashboardPage() {
     setRoomSaveMsg(null)
     setRoomSaveErr(null)
 
-    const { data, error: fetchErr } = await supabase
-      .from('users')
-      .select('room_ui_preferences')
-      .eq('id', user.id)
-      .single()
-
-    if (fetchErr) {
+    const fetchRes = await v1GetMeProfile()
+    if (fetchRes.error) {
       setRoomSaving(false)
-      setRoomSaveErr(fetchErr.message)
+      setRoomSaveErr(fetchRes.error)
       return
     }
 
-    const merged = mergeRoomUiPrefs(data?.room_ui_preferences)
+    const merged = mergeRoomUiPrefs((fetchRes.data as any)?.room_ui_preferences)
     const next = {
       layout_mode: roomLayout,
       show_layout_toggle: roomShowLayoutToggle,
@@ -315,23 +310,60 @@ export function DashboardPage() {
       ...(merged.pip ? { pip: { pos: merged.pip.pos, size: merged.pip.size } } : {}),
     }
 
-    const { error: upErr } = await supabase
-      .from('users')
-      .update({ room_ui_preferences: next, updated_at: new Date().toISOString() })
-      .eq('id', user.id)
+    const upRes = await v1PatchMeProfile({ room_ui_preferences: next })
 
     setRoomSaving(false)
-    if (upErr) setRoomSaveErr(upErr.message)
+    if (upRes.error) setRoomSaveErr(upRes.error)
     else setRoomSaveMsg('Сохранено')
   }
 
-  const persistentSlugs = useMemo(() => new Set(myRooms.map((r) => r.slug)), [myRooms])
-  const persistentPreview = useMemo(() => myRooms.slice(0, 3), [myRooms])
+  const uniqueMyRooms = useMemo(() => {
+    const m = new Map<string, any>()
+    for (const r of myRooms) {
+      const slug = String((r as any)?.slug ?? '').trim()
+      if (!slug) continue
+      if (!m.has(slug)) m.set(slug, r)
+    }
+    return [...m.values()]
+  }, [myRooms])
+
+  const uniqueRoomArchiveItems = useMemo(() => {
+    const m = new Map<string, any>()
+    for (const it of roomArchiveItems) {
+      const id = String((it as any)?.id ?? '').trim()
+      if (!id) continue
+      if (!m.has(id)) m.set(id, it)
+    }
+    return [...m.values()]
+  }, [roomArchiveItems])
+
+  const persistentSlugs = useMemo(() => new Set(uniqueMyRooms.map((r) => r.slug)), [uniqueMyRooms])
+  const persistentPreview = useMemo(() => uniqueMyRooms.slice(0, 3), [uniqueMyRooms])
   const temporaryPreview = useMemo(() => {
-    return roomArchiveItems
+    return uniqueRoomArchiveItems
       .filter((it) => it.roomSlug && !persistentSlugs.has(it.roomSlug))
       .slice(0, 6)
-  }, [roomArchiveItems, persistentSlugs])
+  }, [uniqueRoomArchiveItems, persistentSlugs])
+
+  const uniqueGlobalRoles = useMemo(() => {
+    const m = new Map<string, { code: string; title?: string | null }>()
+    for (const r of profile?.global_roles ?? []) {
+      const code = String((r as any)?.code ?? '').trim()
+      if (!code) continue
+      if (!m.has(code)) m.set(code, r as any)
+    }
+    return [...m.values()]
+  }, [profile?.global_roles])
+
+  const uniquePeerTop = useMemo(() => {
+    const m = new Map<string, { userId: string; messageCount: number; avatarUrl: string | null; lastMessageAt: string | null }>()
+    for (const p of peerTop) {
+      const uid = String(p.userId ?? '').trim()
+      if (!uid) continue
+      if (!m.has(uid)) m.set(uid, p)
+    }
+    return [...m.values()]
+  }, [peerTop])
 
   const joinableSlugs = useMemo(() => {
     const s = new Set<string>()
@@ -527,7 +559,7 @@ export function DashboardPage() {
                 </span>
                 {profile.global_roles.length > 0 ? (
                   <div className="dashboard-role-badges">
-                    {profile.global_roles.map((role) => (
+                    {uniqueGlobalRoles.map((role) => (
                       <span
                         key={role.code}
                         className={globalRoleBadgeClass(role.code)}
@@ -785,10 +817,10 @@ export function DashboardPage() {
             </button>
           </div>
           <div className="dashboard-tile-friends__grid" aria-label="Чаще всего в личных сообщениях">
-            {peerTop.length === 0 ? (
+            {uniquePeerTop.length === 0 ? (
               <p className="dashboard-tile__hint dashboard-tile-friends__grid-empty">Нет данных по перепискам.</p>
             ) : (
-              peerTop.map((p) => {
+              uniquePeerTop.map((p) => {
                 const name = contacts.find((c) => c.targetUserId === p.userId)?.displayName ?? 'Гость'
                 const msgSp = new URLSearchParams()
                 msgSp.set('with', p.userId)

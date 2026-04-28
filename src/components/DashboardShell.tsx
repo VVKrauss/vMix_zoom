@@ -17,6 +17,7 @@ import {
   MenuBurgerIcon,
   ParticipantsBadgeIcon,
   RoomsIcon,
+  SettingsGearIcon,
 } from './icons'
 
 type DashboardShellTab = 'cabinet' | 'chats' | 'messenger' | 'contacts'
@@ -175,6 +176,26 @@ export function DashboardShell({
 
         <div className="dashboard-topbar__actions">
           {!unifiedCabinetNav ? headerExtra : null}
+          {unifiedCabinetNav && !chromeless ? (
+            <Link
+              to="/test"
+              className="dashboard-topbar__circle-action"
+              title="Тест сети"
+              aria-label="Тест сети"
+            >
+              <SettingsGearIcon />
+            </Link>
+          ) : null}
+          {unifiedCabinetNav && !chromeless ? (
+            <Link
+              to="/test2"
+              className="dashboard-topbar__circle-action"
+              title="Зеркало камеры"
+              aria-label="Зеркало камеры"
+            >
+              <FiRrIcon name="camera" />
+            </Link>
+          ) : null}
           {unifiedCabinetNav && active !== 'messenger' && !chromeless ? (
             <Link
               to="/dashboard/messenger"
@@ -370,6 +391,18 @@ export function DashboardShell({
                   <span className="dashboard-messenger-quick-menu__lbl">Админка</span>
                 </Link>
               ) : null}
+              <Link to="/test" className="dashboard-messenger-quick-menu__btn" onClick={closeCabinetMenu}>
+                <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                  <SettingsGearIcon />
+                </span>
+                <span className="dashboard-messenger-quick-menu__lbl">Тест сети</span>
+              </Link>
+              <Link to="/test2" className="dashboard-messenger-quick-menu__btn" onClick={closeCabinetMenu}>
+                <span className="dashboard-messenger-quick-menu__ico" aria-hidden>
+                  <FiRrIcon name="camera" />
+                </span>
+                <span className="dashboard-messenger-quick-menu__lbl">Зеркало камеры</span>
+              </Link>
               <button
                 type="button"
                 className="dashboard-messenger-quick-menu__btn dashboard-messenger-quick-menu__btn--danger dashboard-messenger-quick-menu__btn--span"

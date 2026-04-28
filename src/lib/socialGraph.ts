@@ -1,4 +1,14 @@
-import { supabase } from './supabase'
+import {
+  v1GetContactStatuses,
+  v1HideContactFromMyList,
+  v1ListMyContactAliases,
+  v1ListMyContacts,
+  v1SearchRegisteredUsers,
+  v1SetMyContactAlias,
+  v1SetMyContactDisplayAvatar,
+  v1SetContactPin,
+  v1SetUserBlocked,
+} from '../api/meApi'
 
 /** Контакты (user_favorites): я добавил / меня добавили / взаимно. */
 export type ContactStatus = {
@@ -35,18 +45,15 @@ export async function listMyContactDisplayOverrides(
 ): Promise<{ data: Record<string, MyContactDisplayOverride> | null; error: string | null }> {
   const ids = Array.from(new Set(contactUserIds.map((x) => x.trim()).filter(Boolean)))
   if (ids.length === 0) return { data: {}, error: null }
-  const { data, error } = await supabase.rpc('list_my_contact_aliases', {
-    p_contact_user_ids: ids,
-  })
-  if (error) return { data: null, error: error.message }
+  const { data, error } = await v1ListMyContactAliases(ids)
+  if (error || !data) return { data: null, error }
   const out: Record<string, MyContactDisplayOverride> = {}
-  for (const row of Array.isArray(data) ? data : []) {
-    const r = row as Record<string, unknown>
-    const uid = typeof r.contact_user_id === 'string' ? r.contact_user_id.trim() : String(r.contact_user_id ?? '').trim()
+  for (const r of Array.isArray(data) ? data : []) {
+    const uid = typeof r.contact_user_id === 'string' ? r.contact_user_id.trim() : String((r as any)?.contact_user_id ?? '').trim()
     if (!uid) continue
-    const aliasRaw = r.alias
+    const aliasRaw = (r as any).alias
     const alias = typeof aliasRaw === 'string' ? aliasRaw.trim() : aliasRaw != null ? String(aliasRaw).trim() : ''
-    const avRaw = r.display_avatar_url ?? r.displayAvatarUrl
+    const avRaw = (r as any).display_avatar_url ?? (r as any).displayAvatarUrl
     const displayAvatarUrl =
       typeof avRaw === 'string' && avRaw.trim() ? avRaw.trim() : null
     out[uid] = { alias, displayAvatarUrl }
@@ -73,11 +80,8 @@ export async function setMyContactDisplayAvatar(
 ): Promise<{ data: string | null; error: string | null }> {
   const id = contactUserId.trim()
   if (!id) return { data: null, error: 'Не выбран пользователь' }
-  const { data, error } = await supabase.rpc('set_my_contact_display_avatar', {
-    p_contact_user_id: id,
-    p_display_avatar_url: displayAvatarUrl,
-  })
-  if (error) return { data: null, error: error.message }
+  const { data, error } = await v1SetMyContactDisplayAvatar(id, displayAvatarUrl)
+  if (error) return { data: null, error }
   const row = data as Record<string, unknown> | null
   if (!row || row.ok !== true) return { data: null, error: typeof row?.error === 'string' ? row.error : 'request_failed' }
   const u = typeof row.display_avatar_url === 'string' && row.display_avatar_url.trim() ? row.display_avatar_url.trim() : null
@@ -90,11 +94,8 @@ export async function setMyContactAlias(
 ): Promise<{ data: string | null; error: string | null }> {
   const id = contactUserId.trim()
   if (!id) return { data: null, error: 'Не выбран пользователь' }
-  const { data, error } = await supabase.rpc('set_my_contact_alias', {
-    p_contact_user_id: id,
-    p_alias: alias,
-  })
-  if (error) return { data: null, error: error.message }
+  const { data, error } = await v1SetMyContactAlias(id, alias)
+  if (error) return { data: null, error }
   const row = data as Record<string, unknown> | null
   if (!row || row.ok !== true) return { data: null, error: typeof row?.error === 'string' ? row.error : 'request_failed' }
   const a = typeof row.alias === 'string' && row.alias.trim() ? row.alias.trim() : null
@@ -150,8 +151,8 @@ function mapContactCardRow(row: Record<string, unknown>): ContactCard {
 }
 
 export async function listMyContacts(): Promise<{ data: ContactCard[] | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('list_my_contacts')
-  if (error) return { data: null, error: error.message }
+  const { data, error } = await v1ListMyContacts()
+  if (error || !data) return { data: null, error }
   return {
     data: Array.isArray(data) ? data.map((row) => mapContactCardRow(row as Record<string, unknown>)) : [],
     error: null,
@@ -170,10 +171,8 @@ export async function getContactStatuses(
   )
   if (ids.length === 0) return { data: {}, error: null }
 
-  const { data, error } = await supabase.rpc('get_contact_statuses', {
-    p_target_user_ids: ids,
-  })
-  if (error) return { data: null, error: error.message }
+  const { data, error } = await v1GetContactStatuses(ids)
+  if (error || !data) return { data: null, error }
 
   const mapped: Record<string, ContactStatus> = {}
   for (const row of Array.isArray(data) ? data : []) {
@@ -190,11 +189,8 @@ export async function setContactPin(
 ): Promise<{ data: ContactStatus | null; error: string | null }> {
   const trimmed = targetUserId.trim()
   if (!trimmed) return { data: null, error: 'Не выбран пользователь' }
-  const { data, error } = await supabase.rpc('set_user_favorite', {
-    p_target_user_id: trimmed,
-    p_favorite: pinned,
-  })
-  if (error) return { data: null, error: error.message }
+  const { data, error } = await v1SetContactPin(trimmed, pinned)
+  if (error) return { data: null, error }
   if (!data || typeof data !== 'object') return { data: null, error: 'Пустой ответ сервера' }
   return { data: mapContactStatusRow(data as Record<string, unknown>), error: null }
 }
@@ -204,14 +200,10 @@ export async function hideContactFromMyList(
 ): Promise<{ error: string | null }> {
   const id = hiddenUserId.trim()
   if (!id) return { error: 'Не указан пользователь' }
-  const { data, error } = await supabase.rpc('hide_contact_from_my_list', {
-    p_hidden_user_id: id,
-  })
-  if (error) return { error: error.message }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) {
-    return { error: typeof row?.error === 'string' ? row.error : 'request_failed' }
-  }
+  const { data, error } = await v1HideContactFromMyList(id)
+  if (error || !data || typeof data !== 'object') return { error: error ?? 'request_failed' }
+  const row = data as Record<string, unknown>
+  if (row.ok !== true) return { error: typeof row.error === 'string' ? (row.error as string) : 'request_failed' }
   return { error: null }
 }
 
@@ -221,11 +213,8 @@ export async function setUserBlocked(
 ): Promise<{ data: Pick<ContactStatus, 'targetUserId' | 'blockedByMe' | 'blockedMe'> | null; error: string | null }> {
   const trimmed = targetUserId.trim()
   if (!trimmed) return { data: null, error: 'Не выбран пользователь' }
-  const { data, error } = await supabase.rpc('set_user_block', {
-    p_target_user_id: trimmed,
-    p_block: blocked,
-  })
-  if (error) return { data: null, error: error.message }
+  const { data, error } = await v1SetUserBlocked(trimmed, blocked)
+  if (error) return { data: null, error }
   if (!data || typeof data !== 'object') return { data: null, error: 'Пустой ответ сервера' }
   const row = data as Record<string, unknown>
   return {
@@ -245,11 +234,8 @@ export async function searchRegisteredUsers(
   let q = query.trim()
   while (q.startsWith('@')) q = q.slice(1).trim()
   if (q.length < 2) return { data: [], error: null }
-  const { data, error } = await supabase.rpc('search_registered_users', {
-    p_query: q,
-    p_limit: limit,
-  })
-  if (error) return { data: null, error: error.message }
+  const { data, error } = await v1SearchRegisteredUsers(q, limit)
+  if (error || !data) return { data: null, error }
   const rows = Array.isArray(data) ? data : []
   const mapped: RegisteredUserSearchHit[] = rows.map((row) => {
     const r = row as Record<string, unknown>

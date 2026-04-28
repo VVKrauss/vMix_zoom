@@ -15,7 +15,7 @@ export function AdminSiteNewsPanel() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const r = await listSiteNews()
+    const r = await listSiteNews({ limit: 200 })
     setLoading(false)
     if (r.error) {
       setError(r.error)

@@ -1,0 +1,38 @@
+#cloud-config
+package_update: true
+packages:
+  - docker.io
+  - curl
+  - jq
+
+write_files:
+  - path: /etc/systemd/system/redflow-stack.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=RedFlow stack (Caddy + API + Postgres)
+      After=docker.service
+      Wants=docker.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      WorkingDirectory=/opt/redflow/current/deploy
+      EnvironmentFile=/opt/redflow/shared/stack.env
+      ExecStart=/usr/local/lib/docker/cli-plugins/docker-compose -f /opt/redflow/current/deploy/docker-compose.vps.yml --env-file /opt/redflow/shared/stack.env up -d --remove-orphans
+      ExecStop=/usr/local/lib/docker/cli-plugins/docker-compose -f /opt/redflow/current/deploy/docker-compose.vps.yml --env-file /opt/redflow/shared/stack.env down
+      TimeoutStartSec=0
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - [ bash, -lc, "systemctl daemon-reload" ]
+  - [ bash, -lc, "systemctl enable --now docker" ]
+  - [ bash, -lc, "mkdir -p /opt/redflow/{releases,shared}" ]
+  - [ bash, -lc, "touch /opt/redflow/shared/stack.env" ]
+  - [ bash, -lc, "arch=$(uname -m); case \"$arch\" in x86_64|amd64) bin=docker-compose-linux-x86_64 ;; aarch64|arm64) bin=docker-compose-linux-aarch64 ;; *) echo \"unsupported arch: $arch\"; exit 1 ;; esac; ver=v2.29.2; mkdir -p /usr/local/lib/docker/cli-plugins; curl -fsSL \"https://github.com/docker/compose/releases/download/${ver}/${bin}\" -o /usr/local/lib/docker/cli-plugins/docker-compose; chmod +x /usr/local/lib/docker/cli-plugins/docker-compose; /usr/local/lib/docker/cli-plugins/docker-compose version" ]
+  - [ bash, -lc, "echo 'cloud-init ready' > /opt/redflow/shared/BOOTSTRAPPED" ]
+
+final_message: "cloud-init: docker installed. Upload release tar via scp to /opt/redflow/releases/<ts>/, set /opt/redflow/shared/stack.env and enable redflow-stack.service."
+

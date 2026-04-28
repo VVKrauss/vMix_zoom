@@ -24,6 +24,7 @@ export function MessengerUnreadProvider({ children }: { children: ReactNode }) {
   const [count, setCount] = useState(0)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const activeRef = useRef(true)
+  const disableWs = String(import.meta.env.VITE_MESSENGER_DISABLE_WS ?? '').trim() === '1'
 
   const refresh = useCallback(async () => {
     if (!activeRef.current) return
@@ -62,7 +63,7 @@ export function MessengerUnreadProvider({ children }: { children: ReactNode }) {
     window.addEventListener(MESSENGER_UNREAD_REFRESH_EVENT, onImmediate)
 
     const uid = user?.id
-    const unsub = uid ? subscribeMessengerUnreadRealtime(uid, scheduleRefresh) : null
+    const unsub = !disableWs && uid ? subscribeMessengerUnreadRealtime(uid, scheduleRefresh) : null
 
     return () => {
       activeRef.current = false
@@ -72,7 +73,7 @@ export function MessengerUnreadProvider({ children }: { children: ReactNode }) {
       window.removeEventListener(MESSENGER_UNREAD_REFRESH_EVENT, onImmediate)
       unsub?.()
     }
-  }, [user?.id, refresh])
+  }, [user?.id, refresh, disableWs])
 
   return (
     <MessengerUnreadContext.Provider value={{ count }}>

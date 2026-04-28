@@ -139,7 +139,8 @@ import {
   leaveDirectConversationClient,
   leaveGroupOrChannelClient,
 } from '../lib/messengerConversationLifecycle'
-import { supabase } from '../lib/supabase'
+import { fetchJson } from '../api/http'
+import { rtChannel, rtRemoveChannel } from '../api/realtimeCompat'
 import { fetchPublicUserProfile } from '../lib/userPublicProfile'
 import { writeMessengerThreadTailCache } from '../lib/messengerThreadTailCache'
 import { newRoomId } from '../utils/roomId'
@@ -582,8 +583,7 @@ export function DashboardMessengerPage() {
   useEffect(() => {
     const uid = user?.id?.trim() ?? ''
     if (!uid) return
-    const channel = supabase
-      .channel(`mentions-${uid}`)
+    const channel = rtChannel(`mentions-${uid}`)
       .on(
         'postgres_changes',
         {
@@ -592,7 +592,7 @@ export function DashboardMessengerPage() {
           table: 'chat_message_mentions',
           filter: `user_id=eq.${uid}`,
         },
-        (payload) => {
+        (payload: any) => {
           const row = payload.new as Record<string, unknown>
           const cid = typeof row.conversation_id === 'string' ? row.conversation_id.trim() : ''
           if (!cid) return
@@ -604,7 +604,7 @@ export function DashboardMessengerPage() {
       )
       .subscribe()
     return () => {
-      void supabase.removeChannel(channel)
+      rtRemoveChannel(channel)
     }
   }, [toast, user?.id])
 
@@ -714,8 +714,7 @@ export function DashboardMessengerPage() {
   useEffect(() => {
     const cid = activeConversationId.trim()
     if (!cid || !user?.id || activeOpenThreadKind !== 'direct') return
-    const channel = supabase
-      .channel(`dm-peer-read:${cid}`)
+    const channel = rtChannel(`dm-peer-read:${cid}`)
       .on(
         'postgres_changes',
         {
@@ -724,7 +723,7 @@ export function DashboardMessengerPage() {
           table: 'chat_conversation_members',
           filter: `conversation_id=eq.${cid}`,
         },
-        (payload) => {
+        (payload: any) => {
           const row = payload.new as { user_id?: string; last_read_at?: unknown }
           const raw = row.last_read_at
           if (!row.user_id || row.user_id === user.id || raw == null) return
@@ -740,7 +739,7 @@ export function DashboardMessengerPage() {
       )
       .subscribe()
     return () => {
-      void supabase.removeChannel(channel)
+      rtRemoveChannel(channel)
     }
   }, [activeConversationId, activeOpenThreadKind, user?.id])
 
@@ -752,8 +751,7 @@ export function DashboardMessengerPage() {
   useEffect(() => {
     const uid = user?.id?.trim() ?? ''
     if (!uid) return
-    const channel = supabase
-      .channel(`messenger-my-reads:${uid}`)
+    const channel = rtChannel(`messenger-my-reads:${uid}`)
       .on(
         'postgres_changes',
         {
@@ -762,7 +760,7 @@ export function DashboardMessengerPage() {
           table: 'chat_conversation_members',
           filter: `user_id=eq.${uid}`,
         },
-        (payload) => {
+        (payload: any) => {
           const row = payload.new as Record<string, unknown>
           const cidRaw = row?.conversation_id
           const cid =
@@ -777,7 +775,7 @@ export function DashboardMessengerPage() {
       )
       .subscribe()
     return () => {
-      void supabase.removeChannel(channel)
+      rtRemoveChannel(channel)
     }
   }, [user?.id])
 
@@ -850,6 +848,7 @@ export function DashboardMessengerPage() {
     userId: user?.id,
     foregroundThreadConversationId,
     mutedConversationIdsRef,
+    itemsRef,
     setItems,
   })
 
@@ -1102,8 +1101,10 @@ export function DashboardMessengerPage() {
         meta: imageMeta,
       }
       setMessages((prev) => {
+        const id = (newMsg.id || '').trim()
         if (prev.some((m) => m.id === newMsg.id)) return prev
-        return [...prev, newMsg].sort(sortDirectMessagesChrono)
+        const base = id ? prev.filter((m) => m.id !== id) : prev
+        return [...base, newMsg].sort(sortDirectMessagesChrono)
       })
       setItems((prev) =>
         prev.map((item) =>
@@ -1175,20 +1176,23 @@ export function DashboardMessengerPage() {
     const snap = profile?.display_name?.trim() || 'Вы'
     const finalId = res.data?.messageId ?? optimistic.id
     const finalAt = res.data?.createdAt ?? optimistic.createdAt
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === optimistic.id
-          ? {
-              ...optimistic,
-              id: finalId,
-              createdAt: finalAt,
-              senderNameSnapshot: snap,
-              replyToMessageId: replyId,
-              meta: linkMetaRecord ?? optimistic.meta,
-            }
-          : m,
-      ),
-    )
+    setMessages((prev) => {
+      const next = prev
+        .filter((m) => m.id !== finalId)
+        .map((m) =>
+          m.id === optimistic.id
+            ? {
+                ...optimistic,
+                id: finalId,
+                createdAt: finalAt,
+                senderNameSnapshot: snap,
+                replyToMessageId: replyId,
+                meta: linkMetaRecord ?? optimistic.meta,
+              }
+            : m,
+        )
+      return next
+    })
 
     setItems((prev) =>
       prev.map((item) =>
@@ -1281,8 +1285,10 @@ export function DashboardMessengerPage() {
         meta: audioMeta,
       }
       setMessages((prev) => {
+        const id = (newMsg.id || '').trim()
         if (prev.some((m) => m.id === newMsg.id)) return prev
-        return [...prev, newMsg].sort(sortDirectMessagesChrono)
+        const base = id ? prev.filter((m) => m.id !== id) : prev
+        return [...base, newMsg].sort(sortDirectMessagesChrono)
       })
       setItems((prev) =>
         prev.map((item) =>
@@ -1831,16 +1837,15 @@ export function DashboardMessengerPage() {
       const slug = normalizeProfileSlug(rawSlug)
       if (!slug) return
       /** Не `search_registered_users`: там исключён текущий пользователь — клик по своему @slug в «Сохранённом» давал «не найден». */
-      const { data, error: rpcErr } = await supabase.rpc('get_user_public_profile_by_slug', {
-        p_profile_slug: slug,
-      })
-      if (rpcErr) {
-        toast.push({ tone: 'error', message: rpcErr.message, ms: 2600 })
+      const { v1GetUserPublicProfileBySlug } = await import('../api/publicProfilesApi')
+      const r = await v1GetUserPublicProfileBySlug(slug)
+      if (r.error) {
+        toast.push({ tone: 'error', message: r.error, ms: 2600 })
         return
       }
-      const row = data as Record<string, unknown> | null
+      const row = ((r.data as any)?.profile ?? r.data) as Record<string, unknown> | null
       if (!row || row.ok !== true) {
-        const code = typeof row?.error === 'string' ? row.error : ''
+        const code = typeof row?.error === 'string' ? row.error : typeof (r.data as any)?.error === 'string' ? (r.data as any).error : ''
         toast.push({
           tone: 'error',
           message:
@@ -1878,10 +1883,33 @@ export function DashboardMessengerPage() {
     [mergedItems, foregroundThreadConversationId],
   )
 
-  const timelineMessages = useMemo(
-    () => messages.filter((m) => m.kind !== 'reaction'),
-    [messages],
-  )
+  const timelineMessages = useMemo(() => {
+    const byId = new Map<string, DirectMessage>()
+    const dupCounts = new Map<string, number>()
+    for (const m of messages) {
+      if (m.kind === 'reaction') continue
+      const id = (m.id || '').trim()
+      if (!id) continue
+      const prev = byId.get(id)
+      if (!prev) {
+        byId.set(id, m)
+        dupCounts.set(id, 1)
+        continue
+      }
+      dupCounts.set(id, (dupCounts.get(id) ?? 1) + 1)
+      const pt = new Date(prev.createdAt).getTime()
+      const nt = new Date(m.createdAt).getTime()
+      byId.set(id, Number.isFinite(nt) && (!Number.isFinite(pt) || nt >= pt) ? m : prev)
+    }
+    if (import.meta.env.DEV) {
+      const dups = Array.from(dupCounts.entries()).filter(([, n]) => n > 1)
+      if (dups.length > 0) {
+        // eslint-disable-next-line no-console
+        console.warn('messenger.thread: duplicate message ids from state', dups.slice(0, 10))
+      }
+    }
+    return Array.from(byId.values())
+  }, [messages])
 
   const dmLastSignificantMessageId = useMemo(() => {
     const last = timelineMessages[timelineMessages.length - 1]
@@ -2354,21 +2382,18 @@ export function DashboardMessengerPage() {
         return
       }
 
-      const { data, error } = await supabase
-        .from('chat_conversation_members')
-        .select('role')
-        .eq('conversation_id', cid)
-        .eq('user_id', user.id)
-        .maybeSingle()
-
-      if (error || !data) {
+      const memRes = await fetchJson<{ row: any | null }>(`/api/v1/me/conversations/${encodeURIComponent(cid)}/membership`, {
+        method: 'GET',
+        auth: true,
+      })
+      if (!memRes.ok || !memRes.data?.row) {
         toast.push({ tone: 'error', message: 'Не удалось проверить роль в чате.', ms: 3200 })
         setDeleteFlowConversationId(null)
         return
       }
       const role =
-        typeof (data as { role?: unknown }).role === 'string'
-          ? String((data as { role: string }).role).trim()
+        typeof (memRes.data.row as { role?: unknown }).role === 'string'
+          ? String((memRes.data.row as { role: string }).role).trim()
           : null
       if (!role) {
         toast.push({ tone: 'error', message: 'Вы не участник этого чата.', ms: 3200 })
@@ -2634,17 +2659,15 @@ export function DashboardMessengerPage() {
       setConversationInfoLoading(true)
       setConversationInfoRole(null)
       try {
-        const { data, error } = await supabase
-          .from('chat_conversation_members')
-          .select('role')
-          .eq('conversation_id', id)
-          .eq('user_id', user.id)
-          .maybeSingle()
-        if (error) {
-          setConversationInfoRole(null)
-        } else {
-          const role = typeof (data as any)?.role === 'string' ? String((data as any).role) : null
+        const r = await fetchJson<{ row: any | null }>(`/api/v1/me/conversations/${encodeURIComponent(id)}/membership`, {
+          method: 'GET',
+          auth: true,
+        })
+        if (r.ok && r.data?.row) {
+          const role = typeof (r.data.row as any)?.role === 'string' ? String((r.data.row as any).role) : null
           setConversationInfoRole(role)
+        } else {
+          setConversationInfoRole(null)
         }
       } finally {
         setConversationInfoLoading(false)
