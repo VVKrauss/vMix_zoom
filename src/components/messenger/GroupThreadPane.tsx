@@ -441,6 +441,8 @@ export function GroupThreadPane({
   useEffect(() => {
     const cid = conversationId.trim()
     if (!cid || !user?.id || !canView) return
+    const disableWs = String(import.meta.env.VITE_MESSENGER_DISABLE_WS ?? '').trim() === '1'
+    if (disableWs) return
     const off = subscribeThread(cid, (ev) => {
       if (ev.type === 'message_created') {
         const msg = ev.message as any as DirectMessage
@@ -478,6 +480,49 @@ export function GroupThreadPane({
       off()
     }
   }, [conversationId, user?.id, onTouchTail, removeMessageById, viewerOnly])
+
+  // HTTP polling fallback for groups (when WS is disabled).
+  useEffect(() => {
+    const disableWs = String(import.meta.env.VITE_MESSENGER_DISABLE_WS ?? '').trim() === '1'
+    if (!disableWs) return
+    const cid = conversationId.trim()
+    if (!cid || !user?.id || !canView || !messengerOnline) return
+
+    let destroyed = false
+    let inFlight = false
+
+    const mergeIncoming = (incoming: DirectMessage[]) => {
+      setMessages((prev) => {
+        if (!incoming.length) return prev
+        const byId = new Map<string, DirectMessage>()
+        for (const m of prev) if (m?.id) byId.set(m.id, m)
+        for (const m of incoming) if (m?.id) byId.set(m.id, m)
+        const merged = Array.from(byId.values()).sort(sortChrono)
+        queueMicrotask(() => onTouchTail?.(messengerConversationListTailPatch(merged)))
+        return merged
+      })
+    }
+
+    const pollOnce = async () => {
+      if (destroyed || inFlight) return
+      inFlight = true
+      try {
+        const res = await listGroupMessagesPage(cid, { limit: 60 })
+        if (destroyed) return
+        if (res.error || !res.data) return
+        mergeIncoming(res.data)
+      } finally {
+        inFlight = false
+      }
+    }
+
+    void pollOnce()
+    const id = window.setInterval(() => void pollOnce(), 4000)
+    return () => {
+      destroyed = true
+      window.clearInterval(id)
+    }
+  }, [conversationId, user?.id, canView, messengerOnline, onTouchTail])
 
   const reactionsByTargetId = useMemo(() => {
     const map = new Map<string, DirectMessage[]>()
