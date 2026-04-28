@@ -101,9 +101,11 @@ export async function v1AppendConversationMessage(args: {
   const cid = args.conversationId.trim()
   if (!cid) return { data: null, error: 'conversation_required' }
 
+  const disableWs = String(import.meta.env.VITE_MESSENGER_DISABLE_WS ?? '').trim() === '1'
+
   // WS-first: avoids new HTTP requests on flaky networks (RU).
   // Fallback to HTTP if WS is not open or ack doesn't arrive quickly.
-  if (realtime.isOpen()) {
+  if (!disableWs && realtime.isOpen()) {
     const clientId =
       (globalThis.crypto as any)?.randomUUID?.() ?? `c_${Date.now()}_${Math.random().toString(16).slice(2)}`
     const startedAt = Date.now()
