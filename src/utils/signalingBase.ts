@@ -16,6 +16,22 @@ function trimOrigin(s: unknown): string {
  * Зачем: когда прямой доступ к основному API режется (DPI), можно прогнать и HTTP, и Socket.IO через proxy VPS.
  */
 function pickBase(): string {
+  // UI override (личный кабинет): force proxy/direct without probes.
+  // Direct explicitly ignores VITE_API_FALLBACK.
+  try {
+    const mode = globalThis.localStorage?.getItem('rf_api_route_mode')
+    if (mode === 'proxy') {
+      const forcedProxy = trimOrigin(import.meta.env.VITE_API_FALLBACK) || 'https://proxy.redflow.online'
+      return forcedProxy
+    }
+    if (mode === 'direct') {
+      const forcedDirect = trimOrigin(import.meta.env.VITE_API_BASE) || trimOrigin(import.meta.env.VITE_SIGNALING_URL)
+      return forcedDirect
+    }
+  } catch {
+    // ignore
+  }
+
   const fallback = trimOrigin(import.meta.env.VITE_API_FALLBACK)
   if (fallback) return fallback
   const primary = trimOrigin(import.meta.env.VITE_API_BASE)
