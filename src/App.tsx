@@ -10,6 +10,7 @@ import {
 import { AdminProtectedRoute } from './components/AdminProtectedRoute'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { useVisualViewport } from './hooks/useVisualViewport'
+import { useApiReady } from './hooks/useApiReady'
 
 function VisualViewportSync() {
   useVisualViewport()
@@ -157,6 +158,12 @@ function RoomRoute() {
 }
 
 export function App() {
+  const { ready } = useApiReady()
+
+  if (!ready) {
+    return <RouteLoadingFallback />
+  }
+
   return (
     <>
       <VisualViewportSync />
