@@ -103,6 +103,10 @@ export function getCachedApiBase(): string {
   if (mode === 'proxy') return envFallbackApi() || envPrimaryApi()
   if (mode === 'direct') return envPrimaryApi()
 
+  // If fallback is configured at build time, always prefer it (DPI-safe default).
+  const fallback = envFallbackApi()
+  if (fallback) return fallback
+
   return loadCache() ?? envPrimaryApi()
 }
 
@@ -128,6 +132,13 @@ export async function resolveApiBase(): Promise<string> {
     const picked = envPrimaryApi()
     if (picked) saveCache(picked)
     return picked
+  }
+
+  // If fallback is configured at build time, always prefer it (DPI-safe default).
+  const forcedFallback = envFallbackApi()
+  if (forcedFallback) {
+    saveCache(forcedFallback)
+    return forcedFallback
   }
 
   const cached = loadCache()
