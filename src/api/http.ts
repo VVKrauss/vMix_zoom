@@ -6,14 +6,31 @@ export type ApiError = {
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiError }
 
+function trimOrigin(s: string): string {
+  return String(s ?? '').trim().replace(/\/$/, '')
+}
+
+function defaultBase(): string {
+  // In dev we may use origin (vite proxy), in prod usually explicit base.
+  const raw = trimOrigin(String(import.meta.env.VITE_API_BASE ?? ''))
+  const fallback = trimOrigin(String(import.meta.env.VITE_SIGNALING_URL ?? ''))
+  return raw || fallback || ''
+}
+
+export function apiBaseForPath(path: string): string {
+  const p = String(path ?? '')
+  // Legacy Supabase gateway lives on signaling host (s.redflow.online):
+  // /api/db/* and /api/db/rpc/* should go there even if auth lives on api2/proxy.
+  if (p.startsWith('/api/db/')) {
+    const dbBase = trimOrigin(String(import.meta.env.VITE_DB_API_BASE ?? ''))
+    if (dbBase) return dbBase
+    return trimOrigin(String(import.meta.env.VITE_SIGNALING_URL ?? '')) || defaultBase()
+  }
+  return defaultBase()
+}
+
 export function apiBase(): string {
-  // В dev по умолчанию используем origin (vite proxy может прокидывать /api).
-  // В prod — явно заданный base.
-  const raw = String(import.meta.env.VITE_API_BASE ?? '').trim().replace(/\/$/, '')
-  // По умолчанию: тот же origin, что и signaling (например https://api2.redflow.online).
-  const fallback = String(import.meta.env.VITE_SIGNALING_URL ?? '').trim().replace(/\/$/, '')
-  const picked = raw || fallback
-  return picked || ''
+  return apiBaseForPath('/api/health')
 }
 
 export function getAccessToken(): string | null {
@@ -49,7 +66,7 @@ async function refreshAccessToken(): Promise<string | null> {
   if (refreshInFlight) return refreshInFlight
   refreshInFlight = (async () => {
     // refresh-token ожидается в httpOnly cookie; поэтому credentials обязательны.
-    const base = apiBase()
+    const base = apiBaseForPath('/api/auth/refresh')
     const url = `${base}/api/auth/refresh`
     try {
       const res = await fetch(url, {
@@ -75,7 +92,7 @@ export async function fetchJson<T>(
   path: string,
   init?: RequestInit & { auth?: boolean },
 ): Promise<ApiResult<T>> {
-  const base = apiBase()
+  const base = apiBaseForPath(path)
   const url = `${base}${path.startsWith('/') ? path : `/${path}`}`
 
   const headers = new Headers(init?.headers ?? {})
