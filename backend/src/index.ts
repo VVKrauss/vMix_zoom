@@ -134,6 +134,14 @@ await app.register(cors, {
   origin: (origin, cb) => {
     if (!origin) return cb(null, true)
     if (origin === env.PUBLIC_ORIGIN) return cb(null, true)
+    // Timeweb App Platform технические домены (для стендов/проверок).
+    // Нужны для CORS, иначе фронт на *.twc1.net не может ходить к API/прокси.
+    try {
+      const u = new URL(origin)
+      if (u.hostname.endsWith('.twc1.net')) return cb(null, true)
+    } catch {
+      /* ignore */
+    }
     // Local dev (Vite)
     if (origin === 'http://localhost:5173') return cb(null, true)
     if (origin === 'http://127.0.0.1:5173') return cb(null, true)
