@@ -5,12 +5,10 @@
 .cursor
 .cursor/**
 
-# Local env / secrets
+
 .env
 .env.*
 deploy/api.env
-
-# Dependencies / build outputs
 node_modules
 node_modules/**
 node_modules_ci_test
