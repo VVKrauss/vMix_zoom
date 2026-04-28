@@ -1,0 +1,30 @@
+**/.git
+**/.github
+**/.cursor
+
+# Local env / secrets
+**/.env
+**/.env.*
+**/deploy/api.env
+
+# Dependencies / build outputs
+**/node_modules
+**/node_modules_ci_test
+**/dist
+**/build
+**/.vite
+**/.turbo
+**/.cache
+
+# Big local artifacts
+dump*.sql
+dump*.sql.*
+dump2
+dump2/**
+release-clean-*.tgz
+*.tgz
+
+# OS/editor noise
+**/.DS_Store
+**/Thumbs.db
+**/*.log
