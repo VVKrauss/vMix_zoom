@@ -4,6 +4,7 @@ import { apiBase, getAccessToken } from '../api/http'
 import { v1AppendConversationMessage, v1EnsureSelfDirectConversation, v1ListConversationMessagesPage } from '../api/messengerApi'
 import { realtime } from '../api/realtime'
 import { subscribeThread } from '../api/messengerRealtime'
+import { resolveApiBase, resetApiBaseCache } from '../api/endpointResolver'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import { ChevronLeftIcon } from './icons'
 
@@ -96,6 +97,46 @@ async function probeApiRaw(
   headers.set('accept', 'application/json')
   const body = init?.body as any
   // For JSON string bodies ensure proper content-type; otherwise Fastify may treat it as plain text.
+  if (typeof body === 'string' && body && !headers.has('content-type')) headers.set('content-type', 'application/json')
+  if (init?.auth) {
+    const token = getAccessToken()
+    if (token) headers.set('authorization', `Bearer ${token}`)
+  }
+
+  const ac = new AbortController()
+  const t0 = performance.now()
+  const timer = window.setTimeout(() => ac.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, { ...init, headers, credentials: 'include', signal: ac.signal })
+    const ms = Math.round(performance.now() - t0)
+    let bodyText: string | undefined
+    try {
+      bodyText = await res.text()
+    } catch {
+      bodyText = undefined
+    }
+    return { ok: res.ok, status: res.status, ms, bodyText, url }
+  } catch (e) {
+    const ms = Math.round(performance.now() - t0)
+    const msg = e instanceof DOMException && e.name === 'AbortError' ? 'timeout' : e instanceof Error ? e.message : 'fetch_failed'
+    return { ok: false, status: 0, ms, error: msg, url }
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
+async function probeApiRawAtBase(
+  base: string,
+  path: string,
+  init?: RequestInit & { auth?: boolean; timeoutMs?: number },
+): Promise<{ ok: boolean; status: number; ms: number; bodyText?: string; error?: string; url?: string }> {
+  const cleanBase = String(base ?? '').trim().replace(/\/$/, '')
+  const url = `${cleanBase}${path.startsWith('/') ? path : `/${path}`}`
+  const timeoutMs = Math.max(500, Math.min(60_000, Math.floor(init?.timeoutMs ?? 15_000)))
+
+  const headers = new Headers(init?.headers ?? {})
+  headers.set('accept', 'application/json')
+  const body = init?.body as any
   if (typeof body === 'string' && body && !headers.has('content-type')) headers.set('content-type', 'application/json')
   if (init?.auth) {
     const token = getAccessToken()
@@ -316,6 +357,20 @@ function buildReport(results: ProbeResult[]) {
     apiBase: apiBase(),
     signalingUrl: String(import.meta.env.VITE_SIGNALING_URL ?? ''),
     hasAccessToken: Boolean(getAccessToken()),
+    routeMode: (() => {
+      try {
+        return localStorage.getItem('rf_api_route_mode')
+      } catch {
+        return null
+      }
+    })(),
+    apiBaseCache: (() => {
+      try {
+        return localStorage.getItem('rf_api_base')
+      } catch {
+        return null
+      }
+    })(),
     resourceHosts: resourceHostsSnapshot(),
     results,
   }
@@ -330,21 +385,16 @@ function reportFilename(r: { at?: string }) {
 
 export function TestPage() {
   const [items, setItems] = useState<ProbeResult[]>(() => [
-    { id: 'http-send-raw', title: 'HTTP: raw POST send message (status / network error)', status: 'idle' },
-    { id: 'ws-send-ack', title: 'WS: send_message + ack (без нового HTTP)', status: 'idle' },
-    { id: 'ws-userfeed', title: 'WS: user feed (bg_message + unread_invalidate)', status: 'idle' },
-    { id: 'chat-send-receive', title: 'Чат: отправить и получить сообщение (самый важный тест)', status: 'idle' },
-    { id: 'env', title: 'Окружение (base URLs, токен)', status: 'idle' },
+    // Оставляем только DPI/прокси-зависимые проверки: HTTP к API, WSS/Socket.IO, и загрузка данных чата.
+    { id: 'env', title: 'Окружение (mode/base/cache/token)', status: 'idle' },
     { id: 'api-health', title: 'HTTPS: GET /api/health', status: 'idle' },
-    { id: 'api-health-series', title: 'HTTPS: серия запросов /api/health (флап/тайминги)', status: 'idle' },
-    { id: 'wss-api-root', title: 'WSS: api2 / (без токена, диагностика блока по хосту)', status: 'idle' },
-    { id: 'wss-no-token', title: 'WSS: /ws без токена (ожидаемо FAIL)', status: 'idle' },
-    { id: 'wss-with-token', title: 'WSS: /ws с токеном (ожидаемо OK)', status: 'idle' },
-    { id: 'wss-api-random', title: 'WSS: api2 /__ws_probe__ (без токена, диагностика блока по path)', status: 'idle' },
-    { id: 'signaling-origin', title: 'HTTPS: signaling origin (reachability)', status: 'idle' },
+    { id: 'api-health-series', title: 'HTTPS: серия /api/health (флап/тайминги)', status: 'idle' },
+    { id: 'wss-with-token', title: 'WSS: /ws с токеном (должно OK)', status: 'idle' },
     { id: 'socketio-signaling', title: 'Socket.IO (signaling): websocket handshake', status: 'idle' },
+    { id: 'chat-bootstrap-auto', title: 'Чат (AUTO): ключевые запросы первого экрана', status: 'idle' },
+    { id: 'chat-bootstrap-direct', title: 'Чат (DIRECT): ключевые запросы первого экрана', status: 'idle' },
+    { id: 'chat-bootstrap-proxy', title: 'Чат (PROXY): ключевые запросы первого экрана', status: 'idle' },
     { id: 'resources', title: 'Какие хосты реально грузились (Resource Timing)', status: 'idle' },
-    { id: 'webrtc-ice', title: 'WebRTC ICE: STUN/TURN кандидаты (host/srflx/relay)', status: 'idle' },
   ])
   const [running, setRunning] = useState(false)
   const [runStartedAt, setRunStartedAt] = useState<string | null>(null)
@@ -717,6 +767,20 @@ export function TestPage() {
           accessTokenKey: 'vmix_access_token',
           hasAccessToken: Boolean(token),
           accessTokenPreview: token ? `${token.slice(0, 16)}…${token.slice(-10)}` : null,
+          routeMode: (() => {
+            try {
+              return localStorage.getItem('rf_api_route_mode')
+            } catch {
+              return null
+            }
+          })(),
+          apiBaseCache: (() => {
+            try {
+              return localStorage.getItem('rf_api_base')
+            } catch {
+              return null
+            }
+          })(),
         }
         setItems((prev) =>
           prev.map((x) => (x.id === id ? { ...x, status: 'ok', finishedAt: nowIso(), details } : x)),
@@ -724,7 +788,7 @@ export function TestPage() {
         return
       }
 
-      if (!base && (id === 'api-health' || id === 'api-cors' || id.startsWith('wss'))) {
+      if (!base && (id === 'api-health' || id === 'api-health-series' || id.startsWith('wss') || id === 'socketio-signaling')) {
         throw new Error('apiBase is empty (VITE_API_BASE/VITE_SIGNALING_URL not set?)')
       }
 
@@ -741,42 +805,10 @@ export function TestPage() {
       }
 
       if (id === 'api-health-series') {
-        const series = await probeHealthSeries(`${base}/api/health`, 10)
+        const series = await probeHealthSeries(`${base}/api/health`, 6)
         const ok = series.failCount === 0
         setItems((prev) =>
           prev.map((x) => (x.id === id ? { ...x, status: ok ? 'ok' : 'fail', finishedAt: nowIso(), details: series } : x)),
-        )
-        return
-      }
-
-      if (id === 'wss-api-root') {
-        const u = new URL(base)
-        u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
-        u.pathname = '/'
-        u.search = ''
-        const r = await probeWebSocket(u.toString(), 5000)
-        // Any "not timeout" close suggests WSS reaches the host; timeout suggests network/DPI block.
-        setItems((prev) =>
-          prev.map((x) =>
-            x.id === id ? { ...x, status: r.close?.reason === 'timeout' ? 'fail' : 'ok', finishedAt: nowIso(), details: r } : x,
-          ),
-        )
-        return
-      }
-
-      if (id === 'wss-no-token') {
-        const u = new URL(base)
-        u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
-        u.pathname = '/ws'
-        u.search = ''
-        const r = await probeWebSocket(u.toString(), 5000)
-        // expected to FAIL (server destroys socket without token)
-        setItems((prev) =>
-          prev.map((x) =>
-            x.id === id
-              ? { ...x, status: !r.ok ? 'ok' : 'fail', finishedAt: nowIso(), details: { ...r, expected: 'fail' } }
-              : x,
-          ),
         )
         return
       }
@@ -791,39 +823,6 @@ export function TestPage() {
         const r = await probeWebSocket(u.toString(), 5000)
         setItems((prev) =>
           prev.map((x) => (x.id === id ? { ...x, status: r.ok ? 'ok' : 'fail', finishedAt: nowIso(), details: r } : x)),
-        )
-        return
-      }
-
-      if (id === 'wss-api-random') {
-        const u = new URL(base)
-        u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
-        u.pathname = '/__ws_probe__'
-        u.search = ''
-        const r = await probeWebSocket(u.toString(), 5000)
-        setItems((prev) =>
-          prev.map((x) =>
-            x.id === id ? { ...x, status: r.close?.reason === 'timeout' ? 'fail' : 'ok', finishedAt: nowIso(), details: r } : x,
-          ),
-        )
-        return
-      }
-
-      if (id === 'signaling-origin') {
-        if (!signalingUrl) {
-          setItems((prev) =>
-            prev.map((x) => (x.id === id ? { ...x, status: 'ok', finishedAt: nowIso(), details: { skipped: true } } : x)),
-          )
-          return
-        }
-        const r = await probeFetch(`${signalingUrl}/`, { method: 'GET' })
-        setItems((prev) =>
-          // 200/3xx/4xx all mean "reachable"; only status=0 is network failure.
-          prev.map((x) =>
-            x.id === id
-              ? { ...x, status: r.status === 0 ? 'fail' : 'ok', finishedAt: nowIso(), details: r }
-              : x,
-          ),
         )
         return
       }
@@ -847,30 +846,77 @@ export function TestPage() {
         return
       }
 
+      if (id === 'chat-bootstrap-auto' || id === 'chat-bootstrap-direct' || id === 'chat-bootstrap-proxy') {
+        const token = getAccessToken()
+        if (!token) throw new Error('not_logged_in (no access token)')
+
+        const forcedMode: 'auto' | 'direct' | 'proxy' =
+          id === 'chat-bootstrap-direct' ? 'direct' : id === 'chat-bootstrap-proxy' ? 'proxy' : 'auto'
+
+        // Force mode for this scenario without reload.
+        try {
+          if (forcedMode === 'auto') localStorage.removeItem('rf_api_route_mode')
+          else localStorage.setItem('rf_api_route_mode', forcedMode)
+        } catch {
+          /* ignore */
+        }
+
+        resetApiBaseCache()
+        const pickedBase = await resolveApiBase()
+
+        const endpoints = [
+          { id: 'me', path: '/api/v1/me', title: 'GET /api/v1/me' },
+          { id: 'profile', path: '/api/v1/me/profile', title: 'GET /api/v1/me/profile' },
+          { id: 'contacts', path: '/api/v1/me/contacts', title: 'GET /api/v1/me/contacts' },
+          { id: 'conversations', path: '/api/v1/me/conversations', title: 'GET /api/v1/me/conversations' },
+          { id: 'roomChats', path: '/api/v1/me/room-chat-conversations?limit=10&offset=0', title: 'GET /api/v1/me/room-chat-conversations' },
+        ]
+
+        const results: any[] = []
+        for (const ep of endpoints) {
+          // eslint-disable-next-line no-await-in-loop
+          const r = await probeApiRawAtBase(pickedBase, ep.path, { method: 'GET', auth: true, timeoutMs: 12_000 })
+          results.push({
+            id: ep.id,
+            title: ep.title,
+            ok: r.ok,
+            status: r.status,
+            ms: r.ms,
+            error: r.error ?? null,
+            sample: (r.bodyText ?? '').slice(0, 280),
+            url: r.url,
+          })
+          // small gap so we can see flaps clearer and not self-DDOS on bad networks
+          // eslint-disable-next-line no-await-in-loop
+          await sleep(120)
+        }
+
+        const ok = results.every((r) => r.ok)
+        setItems((prev) =>
+          prev.map((x) =>
+            x.id === id
+              ? {
+                  ...x,
+                  status: ok ? 'ok' : 'fail',
+                  finishedAt: nowIso(),
+                  details: {
+                    forcedMode,
+                    pickedBase,
+                    results,
+                    interpretation: ok ? 'chat_bootstrap_ok' : 'chat_bootstrap_has_failures',
+                  },
+                }
+              : x,
+          ),
+        )
+        return
+      }
+
       if (id === 'resources') {
         const snap = resourceHostsSnapshot()
         const ok = snap.hosts.length > 0
         setItems((prev) =>
           prev.map((x) => (x.id === id ? { ...x, status: ok ? 'ok' : 'fail', finishedAt: nowIso(), details: snap } : x)),
-        )
-        return
-      }
-
-      if (id === 'webrtc-ice') {
-        const stunUrls: string[] = []
-        // We only test our configured TURN. If TURN is missing, we still run and report only host candidates.
-        const turnUrls = turnUrl ? [turnUrl] : []
-        const r = await probeWebRtcIce({
-          stunUrls,
-          turnUrls,
-          turnUsername: turnUsername || undefined,
-          turnPassword: turnPassword || undefined,
-          timeoutMs: 12_000,
-        })
-        const kinds = Array.isArray(r?.kinds) ? (r.kinds as string[]) : []
-        const ok = kinds.includes('srflx') || kinds.includes('relay') || kinds.includes('host')
-        setItems((prev) =>
-          prev.map((x) => (x.id === id ? { ...x, status: ok ? 'ok' : 'fail', finishedAt: nowIso(), details: r } : x)),
         )
         return
       }
