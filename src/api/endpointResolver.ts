@@ -1,5 +1,6 @@
 const CACHE_KEY = 'rf_api_base'
 const CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
+const ROUTE_MODE_KEY = 'rf_api_route_mode' // 'proxy' | 'direct'
 
 const PROBE_PATH = '/api/health'
 const PROBE_TIMEOUT_MS = 3000
@@ -37,6 +38,11 @@ function safeLocalStorageRemove(key: string): void {
 }
 
 type Cached = { base: string; ts: number }
+
+function readRouteMode(): 'proxy' | 'direct' | null {
+  const v = safeLocalStorageGet(ROUTE_MODE_KEY)
+  return v === 'proxy' || v === 'direct' ? v : null
+}
 
 function loadCache(): string | null {
   const raw = safeLocalStorageGet(CACHE_KEY)
@@ -92,6 +98,11 @@ function envFallbackApi(): string {
 let inFlight: Promise<string> | null = null
 
 export function getCachedApiBase(): string {
+  // UI override (личный кабинет): force proxy/direct without probes and without relying on cache.
+  const mode = readRouteMode()
+  if (mode === 'proxy') return envFallbackApi() || envPrimaryApi()
+  if (mode === 'direct') return envPrimaryApi()
+
   return loadCache() ?? envPrimaryApi()
 }
 
@@ -106,6 +117,19 @@ export function resetApiBaseCache(): void {
  * - Otherwise probes PRIMARY with a short timeout and falls back to proxy on failure.
  */
 export async function resolveApiBase(): Promise<string> {
+  // UI override (личный кабинет): force proxy/direct without probes and without relying on cache.
+  const mode = readRouteMode()
+  if (mode === 'proxy') {
+    const picked = envFallbackApi() || envPrimaryApi()
+    if (picked) saveCache(picked)
+    return picked
+  }
+  if (mode === 'direct') {
+    const picked = envPrimaryApi()
+    if (picked) saveCache(picked)
+    return picked
+  }
+
   const cached = loadCache()
   if (cached) return cached
 
