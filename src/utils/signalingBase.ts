@@ -5,9 +5,27 @@
  *   (иначе с localhost при `CORS_ORIGIN=https://redflow.online` handshake Socket.IO режется).
  * - **production**: полный URL из `VITE_SIGNALING_URL`.
  */
+function trimOrigin(s: unknown): string {
+  return String(s ?? '').trim().replace(/\/$/, '')
+}
+
+/**
+ * Единая точка выбора базового URL.
+ * Приоритет: VITE_API_FALLBACK → VITE_API_BASE → VITE_SIGNALING_URL.
+ *
+ * Зачем: когда прямой доступ к основному API режется (DPI), можно прогнать и HTTP, и Socket.IO через proxy VPS.
+ */
+function pickBase(): string {
+  const fallback = trimOrigin(import.meta.env.VITE_API_FALLBACK)
+  if (fallback) return fallback
+  const primary = trimOrigin(import.meta.env.VITE_API_BASE)
+  if (primary) return primary
+  return trimOrigin(import.meta.env.VITE_SIGNALING_URL)
+}
+
 export function signalingSocketUrl(): string | undefined {
   if (import.meta.env.DEV) return undefined
-  const s = String(import.meta.env.VITE_SIGNALING_URL ?? '').trim().replace(/\/$/, '')
+  const s = pickBase()
   return s || undefined
 }
 

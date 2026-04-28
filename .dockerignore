@@ -15,8 +15,14 @@ node_modules
 node_modules/**
 node_modules_ci_test
 node_modules_ci_test/**
+backend/node_modules
+backend/node_modules/**
 dist
 dist/**
+backend/dist
+backend/dist/**
+build
+build/**
 .vite
 .vite/**
 .turbo
