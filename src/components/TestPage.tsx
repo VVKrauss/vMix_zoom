@@ -18,6 +18,21 @@ type ProbeResult = {
   details?: any
 }
 
+function statusDotStyle(status: ProbeStatus): React.CSSProperties {
+  const base: React.CSSProperties = {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    display: 'inline-block',
+    border: '1px solid rgba(255,255,255,0.22)',
+    boxShadow: '0 0 0 1px rgba(0,0,0,0.25) inset',
+  }
+  if (status === 'ok') return { ...base, background: 'rgba(0, 200, 80, 0.95)' }
+  if (status === 'fail') return { ...base, background: 'rgba(220, 60, 60, 0.95)' }
+  if (status === 'running') return { ...base, background: 'rgba(255, 190, 60, 0.95)', boxShadow: '0 0 10px rgba(255, 190, 60, 0.55)' }
+  return { ...base, background: 'rgba(160, 160, 160, 0.6)' }
+}
+
 function nowIso() {
   return new Date().toISOString()
 }
@@ -983,23 +998,30 @@ export function TestPage() {
                 <span style={{ fontSize: 12, opacity: 0.8, whiteSpace: 'nowrap' }}>
                   {formatDuration(durationMs(x.startedAt, x.finishedAt))}
                 </span>
-                <span
-                  style={{
-                    fontSize: 12,
-                    padding: '4px 8px',
-                    borderRadius: 999,
-                    border: '1px solid var(--border)',
-                    color:
-                      x.status === 'ok' ? 'var(--text)' : x.status === 'running' ? 'var(--text-dim)' : 'var(--text-dim)',
-                    background:
-                      x.status === 'ok'
-                        ? 'rgba(0, 160, 60, 0.18)'
-                        : x.status === 'fail'
-                          ? 'rgba(180, 40, 40, 0.18)'
-                          : 'rgba(120, 120, 120, 0.12)',
-                  }}
-                >
-                  {x.status}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <span aria-hidden style={statusDotStyle(x.status)} />
+                  <span
+                    style={{
+                      fontSize: 12,
+                      padding: '4px 8px',
+                      borderRadius: 999,
+                      border: '1px solid var(--border)',
+                      color:
+                        x.status === 'ok'
+                          ? 'var(--text)'
+                          : x.status === 'running'
+                            ? 'var(--text-dim)'
+                            : 'var(--text-dim)',
+                      background:
+                        x.status === 'ok'
+                          ? 'rgba(0, 160, 60, 0.18)'
+                          : x.status === 'fail'
+                            ? 'rgba(180, 40, 40, 0.18)'
+                            : 'rgba(120, 120, 120, 0.12)',
+                    }}
+                  >
+                    {x.status}
+                  </span>
                 </span>
               </div>
               <div className="news-page__item-body" style={{ marginTop: 10 }}>
