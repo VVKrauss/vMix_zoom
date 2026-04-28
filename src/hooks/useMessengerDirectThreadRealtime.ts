@@ -50,6 +50,8 @@ export function useMessengerDirectThreadRealtime(opts: {
     const kind = itemsRef.current.find((i) => i.id === convId)?.kind ?? 'direct'
     if (kind !== 'direct') return
 
+    const disableWs = String(import.meta.env.VITE_MESSENGER_DISABLE_WS ?? '').trim() === '1'
+
     let sawSubscribed = false
     let markReadDebounce: ReturnType<typeof setTimeout> | null = null
     const scheduleMarkRead = () => {
@@ -89,6 +91,58 @@ export function useMessengerDirectThreadRealtime(opts: {
             }
           : prev,
       )
+    }
+
+    if (disableWs) {
+      // HTTP polling fallback: periodically fetch latest page and merge into local state.
+      let destroyed = false
+      let pollInFlight = false
+
+      const pollOnce = async () => {
+        if (destroyed || pollInFlight) return
+        pollInFlight = true
+        try {
+          const page = await listDirectMessagesPage(convId, { limit: DM_PAGE_SIZE })
+          if (destroyed) return
+          if (page.error || !page.data) return
+          const nextPage = page.data
+
+          setMessages((prev) => {
+            const seen = new Set(prev.map((m) => m.id))
+            const appended = nextPage.filter((m) => !seen.has(m.id))
+            if (appended.length === 0) return prev
+            const next = [...prev, ...appended]
+            next.sort(sortDirectMessagesChrono)
+
+            // Best-effort sidebar + notifications based on new tail messages.
+            for (const m of appended) {
+              const isOwn = m.senderUserId === uid
+              const skipSidebarBump =
+                isOwn && (m.kind === 'text' || m.kind === 'image' || m.kind === 'audio')
+              if (!skipSidebarBump) bumpSidebarForInsert(m)
+              if (!isOwn) scheduleMarkRead()
+              if (!isOwn && document.hidden && !mutedConversationIdsRef.current.has(convId)) {
+                playMessageSound()
+              }
+            }
+
+            queueMicrotask(() => bumpScrollIfPinned())
+            return next
+          })
+        } finally {
+          pollInFlight = false
+        }
+      }
+
+      // Fast first run then steady polling.
+      void pollOnce()
+      const id = window.setInterval(() => void pollOnce(), 3000)
+
+      return () => {
+        destroyed = true
+        if (markReadDebounce != null) clearTimeout(markReadDebounce)
+        window.clearInterval(id)
+      }
     }
 
     const off = subscribeThread(convId, (ev) => {

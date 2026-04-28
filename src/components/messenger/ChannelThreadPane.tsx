@@ -936,6 +936,8 @@ export function ChannelThreadPane({
   useEffect(() => {
     const cid = conversationId.trim()
     if (!cid || !user?.id || !canView) return
+    const disableWs = String(import.meta.env.VITE_MESSENGER_DISABLE_WS ?? '').trim() === '1'
+    if (disableWs) return
     const off = subscribeThread(cid, (ev) => {
       if (ev.type === 'message_created') {
         const msg = ev.message as any as DirectMessage
@@ -1042,7 +1044,54 @@ export function ChannelThreadPane({
     return () => {
       off()
     }
-  }, [conversationId, user?.id, onTouchTail, removeReactionMessageEverywhere])
+  }, [conversationId, user?.id, canView, onTouchTail, removeReactionMessageEverywhere])
+
+  // HTTP polling fallback for channels (when WS is disabled):
+  // - periodically reload posts feed
+  // - if comments modal is open, periodically refresh comments for that post
+  useEffect(() => {
+    const disableWs = String(import.meta.env.VITE_MESSENGER_DISABLE_WS ?? '').trim() === '1'
+    if (!disableWs) return
+    const cid = conversationId.trim()
+    if (!cid || !user?.id || !canView || !messengerOnline) return
+
+    let destroyed = false
+    let commentsInFlight = false
+
+    const pollPosts = () => {
+      if (destroyed) return
+      reloadPosts()
+    }
+
+    const pollComments = async () => {
+      const postId = commentsModalPostId?.trim() ?? ''
+      if (!postId) return
+      if (destroyed || commentsInFlight) return
+      commentsInFlight = true
+      try {
+        const res = await listChannelCommentsPage(cid, postId, { limit: 60 })
+        if (destroyed) return
+        if (res.error || !res.data) return
+        const rows = res.data ?? []
+        setCommentsByPostId((prev) => ({ ...prev, [postId]: rows }))
+        const nonR = rows.filter((m) => m.kind !== 'reaction')
+        setCommentCountHasMoreByPostId((prev) => ({ ...prev, [postId]: res.hasMoreOlder }))
+        setCommentCountByPostId((prev) => ({ ...prev, [postId]: Math.max(prev[postId] ?? 0, nonR.length) }))
+      } finally {
+        commentsInFlight = false
+      }
+    }
+
+    pollPosts()
+    void pollComments()
+    const postsTimer = window.setInterval(pollPosts, 5000)
+    const commentsTimer = window.setInterval(() => void pollComments(), 5000)
+    return () => {
+      destroyed = true
+      window.clearInterval(postsTimer)
+      window.clearInterval(commentsTimer)
+    }
+  }, [conversationId, user?.id, canView, messengerOnline, reloadPosts, commentsModalPostId])
 
   const reactionFetchTargets = useMemo(() => {
     const postIds = posts.filter((p) => p.kind !== 'reaction').map((p) => p.id)
