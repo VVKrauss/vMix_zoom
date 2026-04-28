@@ -23,7 +23,7 @@ import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
 import { DashboardContactsIncomingModal } from './DashboardContactsIncomingModal'
 import { DashboardLayoutPicker } from './DashboardLayoutPicker'
 import { PillToggle } from './PillToggle'
-import { readApiRouteMode, writeApiRouteMode } from '../config/apiRouteMode'
+import { type ApiRouteMode, readApiRouteMode, writeApiRouteMode } from '../config/apiRouteMode'
 import { DashboardShell } from './DashboardShell'
 import { ConfirmDialog } from './ConfirmDialog'
 import { DashboardRoomRow } from './DashboardRoomRow'
@@ -141,7 +141,7 @@ export function DashboardPage() {
   const [contacts, setContacts] = useState<ContactCard[]>([])
   const [contactsTick, setContactsTick] = useState(0)
 
-  const [forceProxy, setForceProxy] = useState(() => readApiRouteMode() === 'proxy')
+  const [apiRouteMode, setApiRouteMode] = useState<ApiRouteMode | null>(() => readApiRouteMode())
   const [peerTop, setPeerTop] = useState<
     { userId: string; messageCount: number; avatarUrl: string | null; lastMessageAt: string | null }[]
   >([])
@@ -741,24 +741,30 @@ export function DashboardPage() {
           <h2 className="dashboard-tile__title">Сеть</h2>
           <div className="dashboard-form dashboard-form--compact">
             <p className="dashboard-field__hint" style={{ marginTop: 0 }}>
-              Если прямой доступ к API режется сетью, можно принудительно отправлять трафик через прокси.
-              Переключение применяется после перезагрузки страницы.
+              По умолчанию используется прямое подключение. Если сеть/провайдер режет доступ, приложение автоматически
+              переключится на прокси. Можно также принудительно выбрать режим.
             </p>
             <div className="dashboard-field">
               <div className="dashboard-field__inline dashboard-field__inline--toggle">
-                <span className="dashboard-field__label">Перенаправлять через прокси</span>
-                <PillToggle
-                  checked={forceProxy}
-                  onCheckedChange={(next) => {
-                    setForceProxy(next)
-                    writeApiRouteMode(next ? 'proxy' : 'direct')
+                <span className="dashboard-field__label">Маршрутизация API</span>
+                <select
+                  value={apiRouteMode ?? 'auto'}
+                  onChange={(e) => {
+                    const v = e.currentTarget.value
+                    const next: ApiRouteMode | null = v === 'auto' ? null : (v as ApiRouteMode)
+                    setApiRouteMode(next)
+                    writeApiRouteMode(next)
                     window.location.reload()
                   }}
-                  ariaLabel="Перенаправлять трафик через прокси"
-                />
+                  aria-label="Маршрутизация API"
+                >
+                  <option value="auto">Авто (direct → proxy при ошибке)</option>
+                  <option value="direct">Напрямую (direct)</option>
+                  <option value="proxy">Через прокси (proxy)</option>
+                </select>
               </div>
               <p className="dashboard-field__note" style={{ marginTop: 8 }}>
-                Сейчас: {forceProxy ? 'через прокси' : 'напрямую'}.
+                Сейчас: {apiRouteMode === 'proxy' ? 'через прокси' : apiRouteMode === 'direct' ? 'напрямую' : 'авто'}.
               </p>
             </div>
           </div>
