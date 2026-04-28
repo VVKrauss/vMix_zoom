@@ -177,6 +177,10 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5173,
+      fs: {
+        // Local artifact from prior CI/debug runs; can break import analysis in dev.
+        deny: ['**/node_modules_ci_test/**'],
+      },
       proxy: {
         '/socket.io': {
           target,
