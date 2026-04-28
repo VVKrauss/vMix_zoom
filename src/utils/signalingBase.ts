@@ -32,8 +32,19 @@ function pickBase(): string {
     // ignore
   }
 
-  const fallback = trimOrigin(import.meta.env.VITE_API_FALLBACK)
-  if (fallback) return fallback
+  // If API base was already resolved (probe+cache), reuse it for Socket.IO too.
+  // This keeps WS in sync with HTTP when fallback is selected automatically.
+  try {
+    const raw = globalThis.localStorage?.getItem('rf_api_base')
+    if (raw) {
+      const parsed = JSON.parse(raw) as { base?: unknown } | null
+      const cached = trimOrigin((parsed as any)?.base)
+      if (cached) return cached
+    }
+  } catch {
+    // ignore
+  }
+
   const primary = trimOrigin(import.meta.env.VITE_API_BASE)
   if (primary) return primary
   return trimOrigin(import.meta.env.VITE_SIGNALING_URL)
