@@ -62,7 +62,6 @@ import { formatMediaJoinError, formatStudioProgramError } from '../utils/formatM
 import { isIosLikeDevice } from '../utils/iosLikeDevice'
 import { buildRoomMicTrackConstraints } from '../utils/roomMicCapture'
 import { sleepMs } from '../utils/sleepMs'
-import { captureJoinLocalMediaStream } from './roomJoin/roomJoinLocalMedia'
 import type { StudioOutputPreset } from '../types/studio'
 
 const SIGNALING_HTTP = signalingHttpBase()
@@ -329,6 +328,14 @@ function isEndedTrackError(err: unknown): boolean {
   return false
 }
 
+function isNotReadableCameraError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'NotReadableError'
+}
+
+function isAbortCameraError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'AbortError'
+}
+
 async function ensureTrackIsLiveSoon(track: MediaStreamTrack, ms: number): Promise<void> {
   const rs0 = String(track.readyState)
   if (rs0 !== 'live') throw new Error('track ended')
@@ -403,6 +410,21 @@ async function produceVideoFromTrack(
       codecOptions,
       ...(forceCodec && preferredCodec ? { codec: preferredCodec } : {}),
     })
+  }
+
+  // iOS (WebKit — Safari, Chrome и др.): исходящий simulcast часто нестабилен; сначала один слой.
+  if (isIosLikeDevice()) {
+    try {
+      return await tryProduce(singleEncodings, true)
+    } catch (errIos1) {
+      try {
+        return await tryProduce(singleEncodings, false)
+      } catch {
+        if (isDevTraceEnabled()) {
+          console.warn('[produce] ios single encoding failed, try simulcast path', errIos1)
+        }
+      }
+    }
   }
 
   // 1) Prefer simulcast. If forcing codec breaks (router mismatch / browser quirk), retry without forcing codec.
@@ -1042,6 +1064,149 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     }
   }, [])
 
+  const mergeTrackIntoLocalStream = (track: MediaStreamTrack) => {
+    const prev = localStreamRef.current
+    const kind = track.kind
+    let next: MediaStream
+    if (!prev) {
+      next = new MediaStream([track])
+    } else {
+      const existing = kind === 'audio' ? prev.getAudioTracks() : prev.getVideoTracks()
+      existing.forEach((t) => { t.stop(); prev.removeTrack(t) })
+      prev.addTrack(track)
+      next = new MediaStream(prev.getTracks())
+    }
+    localStreamRef.current = next
+    setLocalStream(next)
+  }
+
+  const ensureAudioProducer = useCallback(async () => {
+    const sendTransport = sendTransportRef.current
+    if (!sendTransport || audioProducerRef.current) return
+    const micPref = readPreferredMicId()
+    let a: MediaStream
+    try {
+      // Сначала пробуем сохранённый mic deviceId, чтобы при повторном включении
+      // (и после реконнекта) использовался последний выбранный источник.
+      a = await navigator.mediaDevices.getUserMedia({
+        audio: buildRoomMicTrackConstraints(!isIosLikeDevice() && micPref ? micPref : null),
+      })
+    } catch {
+      try {
+        // Fallback: дефолтный микрофон без exact deviceId (устаревший deviceId и т.п.)
+        a = await navigator.mediaDevices.getUserMedia({
+          audio: buildRoomMicTrackConstraints(null),
+        })
+      } catch {
+        a = await navigator.mediaDevices.getUserMedia({ audio: true })
+      }
+    }
+    const track = a.getAudioTracks()[0]
+    if (!track) { a.getTracks().forEach((t) => t.stop()); return }
+    mergeTrackIntoLocalStream(track)
+    audioProducerRef.current = await sendTransport.produce({ track })
+  }, [])
+
+  const ensureVideoProducer = useCallback(async () => {
+    await runCameraOpExclusive('enable_video_producer', async () => {
+      const device = deviceRef.current
+      const sendTransport = sendTransportRef.current
+      if (videoProducerRef.current) return
+      if (!device || !sendTransport) {
+        throw new Error('no_webrtc_transport')
+      }
+      const preset = presetRef.current
+      const releaseLocalVideoTracks = () => {
+        const stream = localStreamRef.current
+        if (!stream) return
+        for (const t of [...stream.getVideoTracks()]) {
+          try {
+            t.stop()
+          } catch {
+            /* noop */
+          }
+          try {
+            stream.removeTrack(t)
+          } catch {
+            /* noop */
+          }
+        }
+        const next = new MediaStream([...stream.getTracks()])
+        localStreamRef.current = next
+        setLocalStream(next)
+      }
+      const requestCamStream = async () => {
+        try {
+          return await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: {
+              width: { ideal: preset.width },
+              height: { ideal: preset.height },
+              frameRate: { ideal: preset.frameRate },
+            },
+          })
+        } catch {
+          /* fallback ниже */
+        }
+        if (isIosLikeDevice()) {
+          try {
+            return await navigator.mediaDevices.getUserMedia({
+              audio: false,
+              video: { facingMode: { ideal: 'user' } },
+            })
+          } catch {
+            /* fallback ниже */
+          }
+        }
+        return await navigator.mediaDevices.getUserMedia({ video: true })
+      }
+
+      const maxAttempts = isIosLikeDevice() ? 4 : 2
+
+      // Некоторые браузеры/драйверы могут вернуть трек, который тут же завершится (ended).
+      // На iOS второй подряд getUserMedia сразу после stop часто даёт NotReadableError — больше попыток и паузы.
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        let v: MediaStream | null = null
+        try {
+          releaseLocalVideoTracks()
+          v = await requestCamStream()
+          const track = v.getVideoTracks()[0]
+          if (!track) {
+            v.getTracks().forEach((t) => t.stop())
+            return
+          }
+          // Некоторые драйверы возвращают "живой" трек, который завершается через пару тиков.
+          // Считаем это same-as ended и ретраим с более простыми constraints.
+          await ensureTrackIsLiveSoon(track, attempt === 0 ? 140 : 80)
+
+          const producer = await produceVideoFromTrack(device, sendTransport, track, preset)
+          videoProducerRef.current = producer
+          mergeTrackIntoLocalStream(track)
+          break
+        } catch (err) {
+          try {
+            v?.getTracks().forEach((t) => t.stop())
+          } catch {
+            /* noop */
+          }
+          if (isEndedTrackError(err) || isNotReadableCameraError(err) || isAbortCameraError(err)) {
+            const gap = isIosLikeDevice() ? [200, 450, 700][attempt] ?? 900 : 140
+            await sleepMs(gap)
+            if (attempt < maxAttempts - 1) continue
+          }
+          // После всех попыток "track ended" — это почти всегда занятая/сломанная камера или запрет драйвера.
+          if (isEndedTrackError(err)) {
+            throw new DOMException('Camera track ended immediately', 'NotReadableError')
+          }
+          throw err
+        }
+      }
+      uplinkLocalPrevRef.current = undefined
+      uplinkLocalEmaRef.current.delete('__local__')
+      lastVideoUplinkEmitAtRef.current = 0
+    })
+  }, [runCameraOpExclusive])
+
   // ─── Join ────────────────────────────────────────────────────────────────
 
   const join = useCallback(async (
@@ -1079,18 +1244,59 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     }
 
     try {
-      // 1. Локальные медиа (вынесено в roomJoinLocalMedia.ts). Дальше по шагам: socket → joinRoom ack → mediasoup → consume → обработчики.
-      const stream = await captureJoinLocalMediaStream({
-        wantMic,
-        wantCam,
-        preset: p,
-        aborted,
-        stopStreamTracks,
-        setIsMuted,
-        setIsCamOff,
-        setStatus,
-      })
-      if (!stream) return
+      // 1. Локальные медиа по тумблерам входа: один getUserMedia до signaling (жест «Войти»).
+      // Если не удалось — пустой поток; включить позже можно кнопками (ensure* только из toggle).
+      let stream: MediaStream
+
+      if (!wantMic && !wantCam) {
+        setIsMuted(true)
+        setIsCamOff(true)
+        stream = new MediaStream()
+      } else {
+        setIsMuted(!wantMic)
+        setIsCamOff(!wantCam)
+        const camPref = readPreferredCameraId()
+        const micPref = readPreferredMicId()
+        const videoConstraints: MediaTrackConstraints | false = wantCam
+          ? {
+              ...(camPref && !isIosLikeDevice() ? { deviceId: { exact: camPref } as const } : {}),
+              width: { ideal: p.width },
+              height: { ideal: p.height },
+              frameRate: { ideal: p.frameRate },
+            }
+          : false
+
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: wantMic ? buildRoomMicTrackConstraints(!isIosLikeDevice() && micPref ? micPref : null) : false,
+            video: videoConstraints || false,
+          })
+        } catch {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              audio: wantMic ? buildRoomMicTrackConstraints(null) : false,
+              video: wantCam
+                ? {
+                    width: { ideal: p.width },
+                    height: { ideal: p.height },
+                    frameRate: { ideal: p.frameRate },
+                  }
+                : false,
+            })
+          } catch {
+            stream = new MediaStream()
+            setIsMuted(true)
+            setIsCamOff(true)
+          }
+        }
+      }
+
+      if (aborted()) {
+        stopStreamTracks(stream)
+        setStatus('idle')
+        return
+      }
+
       localStreamRef.current = stream
       setLocalStream(stream)
 
@@ -1098,6 +1304,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       // Сначала long-polling — стабильнее через Vite proxy; затем upgrade до WebSocket.
       const socket = io(signalingSocketUrl(), { transports: ['polling', 'websocket'] })
       socketRef.current = socket
+      /** leave() или новый join сменили поколение / сокет — не продолжаем и не трогаем ref'ы поверх cleanup. */
+      const superseded = () => aborted() || socketRef.current !== socket
 
       await new Promise<void>((resolve, reject) => {
         const onConnect = () => {
@@ -1404,28 +1612,23 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         })
       })
 
-      // 6. Produce tracks (без треков — только приём чужих потоков)
-      for (const track of stream.getTracks()) {
-        if (track.kind === 'video') {
-          try {
+      if (superseded()) return
+
+      // 6. Produce локальных треков из потока шага 1 (сразу после send transport, до recv).
+      if (stream.getTracks().length > 0) {
+        for (const track of stream.getTracks()) {
+          if (superseded()) return
+          if (track.kind === 'video') {
             videoProducerRef.current = await produceVideoFromTrack(device, sendTransport, track, p)
-            setIsCamOff(false)
-          } catch (e) {
-            // Не блокируем вход из-за проблем с камерой/кодеком: заходим без видео.
-            if (isDevTraceEnabled()) {
-              console.warn('[join] video produce failed; join without camera', e)
-            }
-            try { track.stop() } catch { /* noop */ }
-            try { stream.removeTrack(track) } catch { /* noop */ }
-            const next = new MediaStream(stream.getTracks())
-            localStreamRef.current = next
-            setLocalStream(next)
-            setIsCamOff(true)
+            uplinkLocalPrevRef.current = undefined
+            uplinkLocalEmaRef.current.delete('__local__')
+            lastVideoUplinkEmitAtRef.current = 0
+          } else if (track.kind === 'audio') {
+            audioProducerRef.current = await sendTransport.produce({ track })
           }
-        } else {
-          const producer = await sendTransport.produce({ track })
-          audioProducerRef.current = producer
         }
+        if (wantMic && audioProducerRef.current) setIsMuted(false)
+        if (wantCam && videoProducerRef.current) setIsCamOff(false)
       }
 
       // 7. Recv transport
@@ -1441,6 +1644,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       // 8. Consume existing producers
       for (const p of joinData.existingProducers ?? []) {
         await consumeProducer(p)
+        if (superseded()) return
       }
 
       // 9. Socket events
@@ -1742,6 +1946,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         }
       })
 
+      if (superseded()) return
+
       setStatus('connected')
     } catch (err) {
       if (gen !== joinGenerationRef.current) {
@@ -1778,127 +1984,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       if (s) disposeSignalingSocket(s)
     }
   }, [consumeProducer, dropProducerById, releaseLocalMicCapture])
-
-  const mergeTrackIntoLocalStream = (track: MediaStreamTrack) => {
-    const prev = localStreamRef.current
-    const kind = track.kind
-    let next: MediaStream
-    if (!prev) {
-      next = new MediaStream([track])
-    } else {
-      const existing = kind === 'audio' ? prev.getAudioTracks() : prev.getVideoTracks()
-      existing.forEach((t) => { t.stop(); prev.removeTrack(t) })
-      prev.addTrack(track)
-      next = new MediaStream(prev.getTracks())
-    }
-    localStreamRef.current = next
-    setLocalStream(next)
-  }
-
-  const ensureAudioProducer = useCallback(async () => {
-    const sendTransport = sendTransportRef.current
-    if (!sendTransport || audioProducerRef.current) return
-    const micPref = readPreferredMicId()
-    let a: MediaStream
-    try {
-      // Сначала пробуем сохранённый mic deviceId, чтобы при повторном включении
-      // (и после реконнекта) использовался последний выбранный источник.
-      a = await navigator.mediaDevices.getUserMedia({
-        audio: buildRoomMicTrackConstraints(!isIosLikeDevice() && micPref ? micPref : null),
-      })
-    } catch {
-      try {
-        // Fallback: дефолтный микрофон без exact deviceId (устаревший deviceId и т.п.)
-        a = await navigator.mediaDevices.getUserMedia({
-          audio: buildRoomMicTrackConstraints(null),
-        })
-      } catch {
-        a = await navigator.mediaDevices.getUserMedia({ audio: true })
-      }
-    }
-    const track = a.getAudioTracks()[0]
-    if (!track) { a.getTracks().forEach((t) => t.stop()); return }
-    mergeTrackIntoLocalStream(track)
-    audioProducerRef.current = await sendTransport.produce({ track })
-  }, [])
-
-  const ensureVideoProducer = useCallback(async () => {
-    await runCameraOpExclusive('enable_video_producer', async () => {
-      const device = deviceRef.current
-      const sendTransport = sendTransportRef.current
-      if (videoProducerRef.current) return
-      if (!device || !sendTransport) {
-        throw new Error('no_webrtc_transport')
-      }
-      const preset = presetRef.current
-      const camPref = readPreferredCameraId()
-      const requestCamStream = async (mode: 'preferred' | 'no_exact' | 'simple') => {
-        if (mode === 'simple') {
-          return await navigator.mediaDevices.getUserMedia({ video: true })
-        }
-        const preferExact = mode === 'preferred'
-        try {
-          return await navigator.mediaDevices.getUserMedia({
-            video: {
-              ...(preferExact && camPref ? { deviceId: { exact: camPref } as const } : {}),
-              width: { ideal: preset.width },
-              height: { ideal: preset.height },
-              frameRate: { ideal: preset.frameRate },
-            },
-          })
-        } catch (e) {
-          // Fallback: без exact deviceId (устаревший id / системная замена устройства и т.п.)
-          if (preferExact) {
-            return await requestCamStream('no_exact')
-          }
-          throw e
-        }
-      }
-
-      // Некоторые браузеры/драйверы могут вернуть трек, который тут же завершится (ended).
-      // В этом случае — один быстрый retry, затем отдаём ошибку наружу.
-      for (let attempt = 0; attempt < 3; attempt++) {
-        let v: MediaStream | null = null
-        try {
-          const mode: 'preferred' | 'no_exact' | 'simple' =
-            attempt === 0 ? 'preferred' : attempt === 1 ? 'no_exact' : 'simple'
-          v = await requestCamStream(mode)
-          const track = v.getVideoTracks()[0]
-          if (!track) {
-            v.getTracks().forEach((t) => t.stop())
-            return
-          }
-          // Некоторые драйверы возвращают "живой" трек, который завершается через пару тиков.
-          // Считаем это same-as ended и ретраим с более простыми constraints.
-          await ensureTrackIsLiveSoon(track, attempt === 0 ? 140 : 80)
-
-          const producer = await produceVideoFromTrack(device, sendTransport, track, preset)
-          videoProducerRef.current = producer
-          mergeTrackIntoLocalStream(track)
-          break
-        } catch (err) {
-          try {
-            v?.getTracks().forEach((t) => t.stop())
-          } catch {
-            /* noop */
-          }
-          if (isEndedTrackError(err)) {
-            // Retry with a small delay; last attempt uses the simplest constraints ({ video: true }).
-            await sleepMs(attempt === 0 ? 80 : 40)
-            if (attempt < 2) continue
-          }
-          // После всех попыток "track ended" — это почти всегда занятая/сломанная камера или запрет драйвера.
-          if (isEndedTrackError(err)) {
-            throw new DOMException('Camera track ended immediately', 'NotReadableError')
-          }
-          throw err
-        }
-      }
-      uplinkLocalPrevRef.current = undefined
-      uplinkLocalEmaRef.current.delete('__local__')
-      lastVideoUplinkEmitAtRef.current = 0
-    })
-  }, [runCameraOpExclusive])
 
   // Поллинг дашборда — подтягивает srt[] после рестарта сервера и синхронизирует состав
   const activeRoomId = sessionMeta?.roomId
@@ -2013,7 +2098,11 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
               case 'NotFoundError':
                 return 'Камера не найдена. Подключите устройство или выберите другую камеру.'
               case 'NotReadableError':
-                return 'Камера занята другим приложением. Закройте его и попробуйте снова.'
+                return (
+                  'Не удалось включить камеру. На iPhone все браузеры используют один движок (WebKit): в настройках может быть «доступ разрешён», ' +
+                  'а захват всё равно временно недоступен (камера занята, недавний stop потока, гонка после другой вкладки). ' +
+                  'Подождите несколько секунд, перезагрузите страницу или войдите без камеры и включите её кнопкой уже в комнате.'
+                )
               case 'OverconstrainedError':
                 return 'Камера не подходит по настройкам. Выберите другое устройство или пресет.'
               case 'SecurityError':
