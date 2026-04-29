@@ -177,6 +177,9 @@ export function DashboardPage() {
   const [deleteRoomFromListTarget, setDeleteRoomFromListTarget] = useState<RoomChatConversationSummary | null>(null)
   const [deleteRoomFromListBusy, setDeleteRoomFromListBusy] = useState(false)
   const [roomArchiveActionErr, setRoomArchiveActionErr] = useState<string | null>(null)
+  const [supabaseUseProxy] = useState(() => getSupabaseUseProxy())
+  const [dbDirectReachable, setDbDirectReachable] = useState<'unknown' | 'yes' | 'no'>('unknown')
+  const [dbViaProxyReachable, setDbViaProxyReachable] = useState<'unknown' | 'yes' | 'no'>('unknown')
   const [settingsScreen, setSettingsScreen] = useState<SettingsScreen>('root')
   const [expandedSettingsSection, setExpandedSettingsSection] = useState<SettingsScreen | null>(null)
   const isDesktopSettings = useMediaQuery('(min-width: 901px)')
@@ -390,28 +393,8 @@ export function DashboardPage() {
     return () => window.clearTimeout(t)
   }, [profile, user, roomLayout, roomShowLayoutToggle, roomHideVideoLetterboxing])
 
-  const uniqueMyRooms = useMemo(() => {
-    const m = new Map<string, any>()
-    for (const r of myRooms) {
-      const slug = String((r as any)?.slug ?? '').trim()
-      if (!slug) continue
-      if (!m.has(slug)) m.set(slug, r)
-    }
-    return [...m.values()]
-  }, [myRooms])
-
-  const uniqueRoomArchiveItems = useMemo(() => {
-    const m = new Map<string, any>()
-    for (const it of roomArchiveItems) {
-      const id = String((it as any)?.id ?? '').trim()
-      if (!id) continue
-      if (!m.has(id)) m.set(id, it)
-    }
-    return [...m.values()]
-  }, [roomArchiveItems])
-
-  const persistentSlugs = useMemo(() => new Set(uniqueMyRooms.map((r) => r.slug)), [uniqueMyRooms])
-  const persistentPreview = useMemo(() => uniqueMyRooms.slice(0, 3), [uniqueMyRooms])
+  const persistentSlugs = useMemo(() => new Set(myRooms.map((r) => r.slug)), [myRooms])
+  const persistentPreview = useMemo(() => myRooms.slice(0, 3), [myRooms])
   const temporaryPreview = useMemo(() => {
     return uniqueRoomArchiveItems
       .filter((it) => it.roomSlug && !persistentSlugs.has(it.roomSlug))
@@ -709,8 +692,58 @@ export function DashboardPage() {
                     }
                   }}
                 >
-                  {profile.avatar_url ? <img src={profile.avatar_url} alt={profile.display_name} /> : <span className="dashboard-tile-profile__initials">{initials}</span>}
+                  {profile.avatar_url ? (
+                    <img src={profile.avatar_url} alt={profile.display_name} />
+                  ) : (
+                    <span className="dashboard-tile-profile__initials">{initials}</span>
+                  )}
                 </button>
+                <div className="dashboard-tile-profile__main">
+                  <div className="dashboard-tile-profile__line">
+                    <span className="dashboard-tile-profile__name">{profile.display_name}</span>
+                    <button
+                      type="button"
+                      className="dashboard-tile-profile__settings"
+                      title="Настройки профиля"
+                      aria-label="Настройки профиля"
+                      onClick={() => openProfileEdit()}
+                    >
+                      <SettingsGearIcon />
+                    </button>
+                  </div>
+                  {profile.profile_slug ? <span className="dashboard-tile-profile__nick">@{profile.profile_slug}</span> : null}
+                  <span className="dashboard-tile-profile__email" title={profile.email ?? undefined}>
+                    {profile.email ?? '—'}
+                  </span>
+                  <div className="dashboard-tile-profile__badges">
+                    <span className={`dashboard-badge ${STATUS_CLASS[profile.status] ?? ''}`}>
+                      {STATUS_LABEL[profile.status] ?? profile.status}
+                    </span>
+                    {profile.global_roles.length > 0 ? (
+                      <div className="dashboard-role-badges">
+                        {profile.global_roles.map((role) => (
+                          <span
+                            key={role.code}
+                            className={globalRoleBadgeClass(role.code)}
+                            title={role.title ? `${role.title} (${role.code})` : role.code}
+                          >
+                            {GLOBAL_ROLE_LABEL[role.code] ?? role.title ?? role.code}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    <span className="dashboard-plan dashboard-plan--inline">
+                      <span className="dashboard-plan__name">{plan?.plan_name ?? 'Free'}</span>
+                      {plan?.sub_status ? <span className="dashboard-badge dashboard-badge--active">{plan.sub_status}</span> : null}
+                    </span>
+                  </div>
+                  <button type="button" className="dashboard-tile-profile__logout" onClick={() => signOut()}>
+                    <LogOutIcon />
+                    Выход
+                  </button>
+                </div>
+              </div>
+            </section>
 
                 <div className="dashboard-tile-profile__main">
                   <div className="dashboard-tile-profile__line">
@@ -759,6 +792,26 @@ export function DashboardPage() {
                 </div>
               </div>
             </section>
+
+            <div className="dashboard-settings-quick-between" aria-label="Быстрые разделы">
+              <div className="dashboard-settings-quick-grid">
+                <Link to="/dashboard/contacts" className="dashboard-settings-quick-tile">
+                  <FiRrIcon name="users" className="dashboard-settings-quick-tile__icon" />
+                  <span>Контакты</span>
+                  {visibleIncomingCount > 0 ? (
+                    <span className="dashboard-settings-quick-tile__badge">
+                      {visibleIncomingCount > 99 ? '99+' : visibleIncomingCount}
+                    </span>
+                  ) : null}
+                </Link>
+                <Link to="/dashboard/chats" className="dashboard-settings-quick-tile">
+                  <RoomsIcon />
+                  <span>Комнаты</span>
+                </Link>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
             <div className="dashboard-settings-quick-between" aria-label="Быстрые разделы">
               <div className="dashboard-settings-quick-grid">
