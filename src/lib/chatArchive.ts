@@ -1,4 +1,7 @@
-import { supabase } from './supabase'
+import { listMyRoomChatConversations } from '../api/roomChatApi'
+import { listConversationMembersBasic } from '../api/conversationMembersApi'
+import { fetchJson } from '../api/http'
+import { v1ListConversationMessagesPage } from '../api/messengerApi'
 
 export const ROOM_CHAT_PAGE_SIZE = 10
 
@@ -60,23 +63,16 @@ export async function listRoomChatConversationsForUser(
   const limit = Math.min(Math.max(options?.limit ?? ROOM_CHAT_PAGE_SIZE, 1), 100)
   const offset = Math.max(options?.offset ?? 0, 0)
 
-  const { data, error } = await supabase
-    .from('chat_conversations')
-    .select(
-      'id, kind, space_room_slug, title, created_at, closed_at, last_message_at, last_message_preview, message_count, chat_conversation_members!inner(user_id)',
-    )
-    .eq('chat_conversation_members.user_id', userId)
-    .eq('kind', 'room')
-    .order('last_message_at', { ascending: false, nullsFirst: false })
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1)
-
-  if (error) return { data: null, error: error.message, hasMore: false }
-  const rows = (data ?? []).map((row) => mapConversationRow(row as Record<string, unknown>))
+  // userId оставлен в сигнатуре для совместимости (функция используется UI-кодом как раньше),
+  // но в новой архитектуре список определяется по auth-сессии.
+  void userId
+  const r = await listMyRoomChatConversations({ limit, offset })
+  if (!r.ok) return { data: null, error: r.error.message, hasMore: false }
+  const rows = (r.data.rows ?? []).map((row: any) => mapConversationRow(row as Record<string, unknown>))
   return {
     data: rows,
     error: null,
-    hasMore: rows.length === limit,
+    hasMore: r.data.hasMore === true,
   }
 }
 
@@ -87,33 +83,24 @@ export async function leaveRoomChatArchiveEntry(
   const id = conversationId.trim()
   if (!id) return { ok: false, removedConversation: false, error: 'Нет id' }
 
-  const { data, error } = await supabase.rpc('leave_room_chat_archive_entry', {
-    p_conversation_id: id,
-  })
-
-  if (error) return { ok: false, removedConversation: false, error: error.message }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) {
-    const err = typeof row?.error === 'string' ? row.error : 'request_failed'
-    return { ok: false, removedConversation: false, error: err }
-  }
-  return {
-    ok: true,
-    removedConversation: row.removed_conversation === true,
-    error: null,
-  }
+  const r = await fetchJson<{ ok: boolean; removedConversation?: boolean; error?: string }>(
+    `/api/v1/me/room-chat-conversations/${encodeURIComponent(id)}/leave`,
+    { method: 'POST', auth: true, body: '{}' },
+  )
+  if (!r.ok) return { ok: false, removedConversation: false, error: r.error.message }
+  if (r.data.ok !== true) return { ok: false, removedConversation: false, error: r.data.error ?? 'request_failed' }
+  return { ok: true, removedConversation: r.data.removedConversation === true, error: null }
 }
 
 /** Админ: удалить room-чаты без сообщений или без участников. */
 export async function adminPurgeStaleRoomChats(): Promise<{ deleted: number; error: string | null }> {
-  const { data, error } = await supabase.rpc('admin_purge_stale_room_chats')
-  if (error) return { deleted: 0, error: error.message }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) {
-    const err = typeof row?.error === 'string' ? row.error : 'request_failed'
-    return { deleted: 0, error: err }
-  }
-  const n = typeof row.deleted === 'number' ? row.deleted : Number(row.deleted ?? 0) || 0
+  const r = await fetchJson<{ ok: boolean; deleted?: number }>(`/api/v1/admin/room-chats/purge-stale`, {
+    method: 'POST',
+    auth: true,
+    body: '{}',
+  })
+  if (!r.ok) return { deleted: 0, error: r.error.message }
+  const n = typeof r.data.deleted === 'number' ? r.data.deleted : Number(r.data.deleted ?? 0) || 0
   return { deleted: n, error: null }
 }
 
@@ -126,43 +113,26 @@ export async function listRoomChatMembersForUser(
   if (convo.error) return { data: null, error: convo.error }
   if (!convo.data) return { data: null, error: 'Чат не найден' }
 
-  const { data: mems, error: mErr } = await supabase
-    .from('chat_conversation_members')
-    .select('user_id')
-    .eq('conversation_id', conversationId)
-
-  if (mErr) return { data: null, error: mErr.message }
-  const ids = Array.from(
-    new Set(
-      (mems ?? [])
-        .map((row) => (typeof row.user_id === 'string' ? row.user_id.trim() : ''))
-        .filter(Boolean),
-    ),
-  )
-  if (ids.length === 0) return { data: [], error: null }
-
-  const { data: users, error: uErr } = await supabase
-    .from('users')
-    .select('id, display_name, avatar_url')
-    .in('id', ids)
-
-  if (uErr) return { data: null, error: uErr.message }
-
+  const r = await listConversationMembersBasic(conversationId)
+  if (!r.ok) return { data: null, error: r.error.message }
+  const users = r.data.rows ?? []
   const byId = new Map<string, { display_name: string | null; avatar_url: string | null }>()
   for (const row of users ?? []) {
-    const id = typeof row.id === 'string' ? row.id : ''
+    const id = typeof (row as any).user_id === 'string' ? String((row as any).user_id) : ''
     if (!id) continue
     byId.set(id, {
-      display_name: typeof row.display_name === 'string' ? row.display_name : null,
-      avatar_url: typeof row.avatar_url === 'string' ? row.avatar_url : null,
+      display_name: typeof (row as any).display_name === 'string' ? String((row as any).display_name) : null,
+      avatar_url: typeof (row as any).avatar_url === 'string' ? String((row as any).avatar_url) : null,
     })
   }
 
-  const mapped: RoomChatMemberRow[] = ids.map((id) => {
-    const u = byId.get(id)
+  const ids = Array.from(byId.keys())
+  if (ids.length === 0) return { data: [], error: null }
+  const mapped: RoomChatMemberRow[] = ids.map((sid) => {
+    const u = byId.get(sid)
     const dn = u?.display_name?.trim()
     return {
-      userId: id,
+      userId: sid,
       displayName: dn || 'Участник',
       avatarUrl: u?.avatar_url?.trim() ? u.avatar_url.trim() : null,
     }
@@ -175,19 +145,18 @@ export async function getRoomChatConversationForUser(
   conversationId: string,
   userId: string,
 ): Promise<{ data: RoomChatConversationSummary | null; error: string | null }> {
-  const { data, error } = await supabase
-    .from('chat_conversations')
-    .select(
-      'id, kind, space_room_slug, title, created_at, closed_at, last_message_at, last_message_preview, message_count, chat_conversation_members!inner(user_id)',
-    )
-    .eq('chat_conversation_members.user_id', userId)
-    .eq('id', conversationId)
-    .eq('kind', 'room')
-    .maybeSingle()
-
-  if (error) return { data: null, error: error.message }
-  if (!data) return { data: null, error: null }
-  return { data: mapConversationRow(data as Record<string, unknown>), error: null }
+  void userId
+  const id = conversationId.trim()
+  if (!id) return { data: null, error: 'Нет id' }
+  const r = await fetchJson<{ row: any | null }>(`/api/v1/me/room-chat-conversations/${encodeURIComponent(id)}`, {
+    method: 'GET',
+    auth: true,
+  })
+  if (!r.ok) return { data: null, error: r.error.message }
+  const row = r.data.row
+  if (!row) return { data: null, error: null }
+  if (row.kind !== 'room') return { data: null, error: 'Чат не найден' }
+  return { data: mapConversationRow(row as Record<string, unknown>), error: null }
 }
 
 export async function listRoomChatMessagesForUser(
@@ -198,15 +167,11 @@ export async function listRoomChatMessagesForUser(
   if (convo.error) return { data: null, error: convo.error }
   if (!convo.data) return { data: null, error: 'Чат не найден' }
 
-  const { data, error } = await supabase
-    .from('chat_messages')
-    .select('id, sender_user_id, sender_name_snapshot, kind, body, created_at')
-    .eq('conversation_id', conversationId)
-    .order('created_at', { ascending: true })
-
-  if (error) return { data: null, error: error.message }
+  const r = await v1ListConversationMessagesPage({ conversationId, limit: 1000, before: null })
+  if (r.error || !r.data) return { data: null, error: r.error ?? 'request_failed' }
+  const data = r.data.messages ?? []
   return {
-    data: (data ?? []).map((row) => ({
+    data: (data ?? []).map((row: any) => ({
       id: String(row.id),
       senderUserId: typeof row.sender_user_id === 'string' ? row.sender_user_id : null,
       senderNameSnapshot:

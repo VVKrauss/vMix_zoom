@@ -147,6 +147,26 @@ export function DashboardShell({
 
         <div className="dashboard-topbar__actions">
           {!unifiedCabinetNav ? headerExtra : null}
+          {unifiedCabinetNav && !chromeless ? (
+            <Link
+              to="/test"
+              className="dashboard-topbar__circle-action"
+              title="Тест сети"
+              aria-label="Тест сети"
+            >
+              <SettingsGearIcon />
+            </Link>
+          ) : null}
+          {unifiedCabinetNav && !chromeless ? (
+            <Link
+              to="/test2"
+              className="dashboard-topbar__circle-action"
+              title="Зеркало камеры"
+              aria-label="Зеркало камеры"
+            >
+              <FiRrIcon name="camera" />
+            </Link>
+          ) : null}
           {unifiedCabinetNav && active !== 'messenger' && !chromeless ? (
             <Link
               to="/dashboard/messenger"

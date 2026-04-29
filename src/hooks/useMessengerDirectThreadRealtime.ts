@@ -9,7 +9,8 @@ import {
 import type { MessengerConversationSummary } from '../lib/messengerConversations'
 import { DM_PAGE_SIZE, MARK_DIRECT_READ_DEBOUNCE_MS, sortDirectMessagesChrono } from '../lib/messengerDashboardUtils'
 import { playMessageSound } from '../lib/messengerSound'
-import { supabase } from '../lib/supabase'
+import { subscribeThread } from '../api/messengerRealtime'
+import { optimisticMessageMatches } from '../lib/messengerOptimisticMatch'
 
 /**
  * Realtime по открытому direct-треду: INSERT/DELETE/UPDATE в chat_messages, звук, ресинк при ошибке канала.
@@ -48,6 +49,8 @@ export function useMessengerDirectThreadRealtime(opts: {
     if (!uid || !convId || listOnlyMobile) return
     const kind = itemsRef.current.find((i) => i.id === convId)?.kind ?? 'direct'
     if (kind !== 'direct') return
+
+    const disableWs = String(import.meta.env.VITE_MESSENGER_DISABLE_WS ?? '').trim() === '1'
 
     let sawSubscribed = false
     let markReadDebounce: ReturnType<typeof setTimeout> | null = null
@@ -90,20 +93,61 @@ export function useMessengerDirectThreadRealtime(opts: {
       )
     }
 
-    const channel = supabase
-      .channel(`dm-thread:${convId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `conversation_id=eq.${convId}`,
-        },
-        (payload) => {
-          const row = payload.new as Record<string, unknown>
-          if (!row?.id) return
-          const msg = mapDirectMessageFromRow(row)
+    if (disableWs) {
+      // HTTP polling fallback: periodically fetch latest page and merge into local state.
+      let destroyed = false
+      let pollInFlight = false
+
+      const pollOnce = async () => {
+        if (destroyed || pollInFlight) return
+        pollInFlight = true
+        try {
+          const page = await listDirectMessagesPage(convId, { limit: DM_PAGE_SIZE })
+          if (destroyed) return
+          if (page.error || !page.data) return
+          const nextPage = page.data
+
+          setMessages((prev) => {
+            const seen = new Set(prev.map((m) => m.id))
+            const appended = nextPage.filter((m) => !seen.has(m.id))
+            if (appended.length === 0) return prev
+            const next = [...prev, ...appended]
+            next.sort(sortDirectMessagesChrono)
+
+            // Best-effort sidebar + notifications based on new tail messages.
+            for (const m of appended) {
+              const isOwn = m.senderUserId === uid
+              const skipSidebarBump =
+                isOwn && (m.kind === 'text' || m.kind === 'image' || m.kind === 'audio')
+              if (!skipSidebarBump) bumpSidebarForInsert(m)
+              if (!isOwn) scheduleMarkRead()
+              if (!isOwn && document.hidden && !mutedConversationIdsRef.current.has(convId)) {
+                playMessageSound()
+              }
+            }
+
+            queueMicrotask(() => bumpScrollIfPinned())
+            return next
+          })
+        } finally {
+          pollInFlight = false
+        }
+      }
+
+      // Fast first run then steady polling.
+      void pollOnce()
+      const id = window.setInterval(() => void pollOnce(), 3000)
+
+      return () => {
+        destroyed = true
+        if (markReadDebounce != null) clearTimeout(markReadDebounce)
+        window.clearInterval(id)
+      }
+    }
+
+    const off = subscribeThread(convId, (ev) => {
+      if (ev.type === 'message_created') {
+        const msg = ev.message as any as DirectMessage
           const isOwn = msg.senderUserId === uid
           const skipSidebarBump =
             isOwn && (msg.kind === 'text' || msg.kind === 'reaction' || msg.kind === 'image' || msg.kind === 'audio')
@@ -112,16 +156,14 @@ export function useMessengerDirectThreadRealtime(opts: {
             if (prev.some((m) => m.id === msg.id)) return prev
             let base = prev
             if (isOwn) {
-              const i = prev.findIndex(
-                (m) =>
-                  m.id.startsWith('local-') &&
-                  m.senderUserId === msg.senderUserId &&
-                  m.body === msg.body &&
-                  m.kind === msg.kind &&
-                  (m.meta?.react_to ?? '') === (msg.meta?.react_to ?? '') &&
-                  (m.replyToMessageId ?? '') === (msg.replyToMessageId ?? '') &&
-                  JSON.stringify(m.meta ?? null) === JSON.stringify(msg.meta ?? null),
-              )
+              const i = (() => {
+                for (let j = 0; j < prev.length; j += 1) {
+                  const m = prev[j]!
+                  if (!m.id.startsWith('local-') || m.senderUserId !== msg.senderUserId) continue
+                  if (optimisticMessageMatches(m, msg, { senderId: uid })) return j
+                }
+                return -1
+              })()
               if (i !== -1) base = [...prev.slice(0, i), ...prev.slice(i + 1)]
             }
             const next = [...base, msg]
@@ -143,20 +185,11 @@ export function useMessengerDirectThreadRealtime(opts: {
           ) {
             playMessageSound()
           }
-        },
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `conversation_id=eq.${convId}`,
-        },
-        (payload) => {
-          const oldRow = payload.old as Record<string, unknown>
-          const id = typeof oldRow?.id === 'string' ? oldRow.id : ''
-          if (!id) return
+        return
+      }
+      if (ev.type === 'message_deleted') {
+        const id = ev.messageId
+        if (!id) return
 
           setMessages((prev) => prev.filter((m) => m.id !== id))
 
@@ -177,41 +210,19 @@ export function useMessengerDirectThreadRealtime(opts: {
               ? { ...prev, messageCount: Math.max(0, prev.messageCount - 1) }
               : prev,
           )
-        },
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `conversation_id=eq.${convId}`,
-        },
-        (payload) => {
-          const row = payload.new as Record<string, unknown>
-          if (!row?.id) return
-          const msg = mapDirectMessageFromRow(row)
-          setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)))
-          queueMicrotask(() => bumpScrollIfPinned())
-        },
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          sawSubscribed = true
-          return
-        }
-        if (!sawSubscribed || (status !== 'CHANNEL_ERROR' && status !== 'TIMED_OUT')) return
-        void (async () => {
-          const res = await listDirectMessagesPage(convId, { limit: DM_PAGE_SIZE })
-          if (res.error || !res.data?.length) return
-          mergeLatestPageIntoMessages(convId, res.data)
-          bumpScrollIfPinned()
-        })()
-      })
+        return
+      }
+      if (ev.type === 'message_updated') {
+        const msg = ev.message as any as DirectMessage
+        if (!msg?.id) return
+        setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)))
+        queueMicrotask(() => bumpScrollIfPinned())
+      }
+    })
 
     return () => {
       if (markReadDebounce != null) clearTimeout(markReadDebounce)
-      void supabase.removeChannel(channel)
+      off()
     }
   }, [threadConversationId, listOnlyMobile, userId, bumpScrollIfPinned, mergeLatestPageIntoMessages])
 }

@@ -16,7 +16,7 @@ import { listMessengerPeersByMessageCount } from '../lib/messenger'
 import type { ContactCard } from '../lib/socialGraph'
 import { listMyContacts } from '../lib/socialGraph'
 import { fetchPersistentSpaceRoomsForUser, type PersistentSpaceRoomRow } from '../lib/spaceRoom'
-import { supabase } from '../lib/supabase'
+import { v1GetMeProfile, v1PatchMeProfile } from '../api/meProfileApi'
 import type { StoredLayoutMode } from '../config/roomUiStorage'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
@@ -24,6 +24,7 @@ import { DashboardContactsIncomingModal } from './DashboardContactsIncomingModal
 import { DashboardLayoutPicker } from './DashboardLayoutPicker'
 import { DashboardMenuPicker } from './DashboardMenuPicker'
 import { PillToggle } from './PillToggle'
+import { readApiRouteMode, writeApiRouteMode } from '../config/apiRouteMode'
 import { DashboardShell } from './DashboardShell'
 import { ConfirmDialog } from './ConfirmDialog'
 import { DashboardRoomRow } from './DashboardRoomRow'
@@ -160,6 +161,8 @@ export function DashboardPage() {
   const [roomArchiveLoading, setRoomArchiveLoading] = useState(false)
   const [contacts, setContacts] = useState<ContactCard[]>([])
   const [contactsTick, setContactsTick] = useState(0)
+
+  const [forceProxy, setForceProxy] = useState(() => readApiRouteMode() === 'proxy')
   const [peerTop, setPeerTop] = useState<
     { userId: string; messageCount: number; avatarUrl: string | null; lastMessageAt: string | null }[]
   >([])
@@ -387,13 +390,53 @@ export function DashboardPage() {
     return () => window.clearTimeout(t)
   }, [profile, user, roomLayout, roomShowLayoutToggle, roomHideVideoLetterboxing])
 
-  const persistentSlugs = useMemo(() => new Set(myRooms.map((r) => r.slug)), [myRooms])
-  const persistentPreview = useMemo(() => myRooms.slice(0, 3), [myRooms])
+  const uniqueMyRooms = useMemo(() => {
+    const m = new Map<string, any>()
+    for (const r of myRooms) {
+      const slug = String((r as any)?.slug ?? '').trim()
+      if (!slug) continue
+      if (!m.has(slug)) m.set(slug, r)
+    }
+    return [...m.values()]
+  }, [myRooms])
+
+  const uniqueRoomArchiveItems = useMemo(() => {
+    const m = new Map<string, any>()
+    for (const it of roomArchiveItems) {
+      const id = String((it as any)?.id ?? '').trim()
+      if (!id) continue
+      if (!m.has(id)) m.set(id, it)
+    }
+    return [...m.values()]
+  }, [roomArchiveItems])
+
+  const persistentSlugs = useMemo(() => new Set(uniqueMyRooms.map((r) => r.slug)), [uniqueMyRooms])
+  const persistentPreview = useMemo(() => uniqueMyRooms.slice(0, 3), [uniqueMyRooms])
   const temporaryPreview = useMemo(() => {
-    return roomArchiveItems
+    return uniqueRoomArchiveItems
       .filter((it) => it.roomSlug && !persistentSlugs.has(it.roomSlug))
       .slice(0, 6)
-  }, [roomArchiveItems, persistentSlugs])
+  }, [uniqueRoomArchiveItems, persistentSlugs])
+
+  const uniqueGlobalRoles = useMemo(() => {
+    const m = new Map<string, { code: string; title?: string | null }>()
+    for (const r of profile?.global_roles ?? []) {
+      const code = String((r as any)?.code ?? '').trim()
+      if (!code) continue
+      if (!m.has(code)) m.set(code, r as any)
+    }
+    return [...m.values()]
+  }, [profile?.global_roles])
+
+  const uniquePeerTop = useMemo(() => {
+    const m = new Map<string, { userId: string; messageCount: number; avatarUrl: string | null; lastMessageAt: string | null }>()
+    for (const p of peerTop) {
+      const uid = String(p.userId ?? '').trim()
+      if (!uid) continue
+      if (!m.has(uid)) m.set(uid, p)
+    }
+    return [...m.values()]
+  }, [peerTop])
 
   const joinableSlugs = useMemo(() => {
     const s = new Set<string>()
@@ -668,6 +711,7 @@ export function DashboardPage() {
                 >
                   {profile.avatar_url ? <img src={profile.avatar_url} alt={profile.display_name} /> : <span className="dashboard-tile-profile__initials">{initials}</span>}
                 </button>
+
                 <div className="dashboard-tile-profile__main">
                   <div className="dashboard-tile-profile__line">
                     <span className="dashboard-tile-profile__name">{profile.display_name}</span>
@@ -680,6 +724,7 @@ export function DashboardPage() {
                     >
                       <SettingsGearIcon />
                     </button>
+
                   </div>
                   {profile.profile_slug ? <span className="dashboard-tile-profile__nick">@{profile.profile_slug}</span> : null}
                   <span className="dashboard-tile-profile__email" title={profile.email ?? undefined}>

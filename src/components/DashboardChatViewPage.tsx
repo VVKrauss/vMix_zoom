@@ -86,6 +86,16 @@ export function DashboardChatViewPage() {
     }
   }, [conversationId, user?.id])
 
+  const uniqueMessages = useMemo(() => {
+    const m = new Map<string, RoomChatArchiveMessage>()
+    for (const msg of messages) {
+      const id = String(msg.id ?? '').trim()
+      if (!id) continue
+      if (!m.has(id)) m.set(id, msg)
+    }
+    return [...m.values()]
+  }, [messages])
+
   useEffect(() => {
     let active = true
     const run = async () => {
@@ -96,7 +106,7 @@ export function DashboardChatViewPage() {
 
       const targetUserIds = Array.from(
         new Set(
-          messages
+          uniqueMessages
             .map((message) => message.senderUserId?.trim() ?? '')
             .filter((id) => id && id !== user.id),
         ),
@@ -120,7 +130,7 @@ export function DashboardChatViewPage() {
     return () => {
       active = false
     }
-  }, [messages, user?.id])
+  }, [uniqueMessages, user?.id])
 
   const toggleFavorite = async (targetUserId: string, currentValue: boolean) => {
     if (!targetUserId || pendingFavoriteUserId) return
@@ -174,10 +184,10 @@ export function DashboardChatViewPage() {
 
         {!loading && !error ? (
           <div className="dashboard-chat-thread">
-            {messages.length === 0 ? (
+            {uniqueMessages.length === 0 ? (
               <div className="dashboard-chats-empty">В этом архиве пока нет сообщений.</div>
             ) : (
-              messages.map((message) => {
+              uniqueMessages.map((message) => {
                 const senderUserId = message.senderUserId?.trim() ?? ''
                 const contact = senderUserId ? contactStatuses[senderUserId] : undefined
                 const canActOnAuthor = Boolean(senderUserId && user?.id && senderUserId !== user.id)

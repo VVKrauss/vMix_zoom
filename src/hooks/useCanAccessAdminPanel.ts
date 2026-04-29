@@ -1,21 +1,10 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-
-type AdminAccessInfo = { staff?: boolean; superadmin?: boolean }
-
-function parseAccessInfo(raw: unknown): AdminAccessInfo {
-  if (!raw || typeof raw !== 'object') return {}
-  const o = raw as Record<string, unknown>
-  return {
-    staff: o.staff === true,
-    superadmin: o.superadmin === true,
-  }
-}
+import { useProfile } from '../context/ProfileContext'
 
 /**
- * Доступ к `/admin`: RPC `admin_access_info()` (SECURITY DEFINER), т.к. у `users` RLS только «своя строка»
- * и проверка только через `user_global_roles` с клиента может быть ненадёжной.
+ * Доступ к `/admin`: только через first-party профиль `/api/v1/me/profile`.
+ * Legacy `/api/db/*` запрещён.
  */
 export function useCanAccessAdminPanel(): {
   allowed: boolean
@@ -24,6 +13,7 @@ export function useCanAccessAdminPanel(): {
 } {
   const { user } = useAuth()
   const uid = user?.id
+  const { profile, loading: profileLoading } = useProfile()
   const [allowed, setAllowed] = useState(false)
   const [isSuperadmin, setIsSuperadmin] = useState(false)
   /** Пока не знаем ответ RPC — true (иначе AdminProtectedRoute мгновенно редиректит с /admin на /). */
@@ -36,25 +26,17 @@ export function useCanAccessAdminPanel(): {
       setLoading(false)
       return
     }
-    let cancelled = false
-    setLoading(true)
-    void supabase.rpc('admin_access_info').then(({ data, error }) => {
-      if (cancelled) return
-      if (error) {
-        setAllowed(false)
-        setIsSuperadmin(false)
-        setLoading(false)
-        return
-      }
-      const info = parseAccessInfo(data)
-      setAllowed(info.staff === true)
-      setIsSuperadmin(info.superadmin === true)
-      setLoading(false)
-    })
-    return () => {
-      cancelled = true
+    if (profileLoading) {
+      setLoading(true)
+      return
     }
-  }, [uid])
+    const codes = new Set((profile?.global_roles ?? []).map((r) => r.code))
+    const superadmin = codes.has('superadmin')
+    const staff = superadmin || codes.has('platform_admin') || codes.has('support_admin')
+    setAllowed(staff)
+    setIsSuperadmin(superadmin)
+    setLoading(false)
+  }, [uid, profileLoading, profile?.global_roles])
 
   return { allowed, loading, isSuperadmin }
 }

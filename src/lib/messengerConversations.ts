@@ -2,7 +2,7 @@ import { listMyChannels, type ChannelSummary } from './channels'
 import { listMyGroupChats, type GroupChatSummary } from './groups'
 import { listDirectConversationsForUser, type DirectConversationSummary } from './messenger'
 import { listMyContactDisplayOverrides, type MyContactDisplayOverride } from './socialGraph'
-import { supabase } from './supabase'
+import { fetchJson } from '../api/http'
 
 export type MessengerConversationKind = 'direct' | 'group' | 'channel'
 
@@ -230,12 +230,12 @@ export async function searchOpenPublicConversations(
   query: string,
   limit = 20,
 ): Promise<{ data: OpenPublicConversationSearchHit[] | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('search_open_public_conversations', {
-    p_query: query.trim(),
-    p_limit: limit,
-  })
-  if (error) return { data: null, error: error.message }
-  const rows = Array.isArray(data) ? data : []
+  const qs = new URLSearchParams()
+  qs.set('query', query.trim())
+  qs.set('limit', String(Math.max(1, Math.min(limit, 50))))
+  const r = await fetchJson<{ rows: unknown[] }>(`/api/v1/public/conversations/search?${qs.toString()}`, { method: 'GET', auth: true })
+  if (!r.ok) return { data: null, error: r.error.message }
+  const rows = Array.isArray(r.data.rows) ? r.data.rows : []
   const mapped = rows
     .map((r) => mapOpenPublicSearchRow(r as Record<string, unknown>))
     .filter((x): x is OpenPublicConversationSearchHit => x != null)

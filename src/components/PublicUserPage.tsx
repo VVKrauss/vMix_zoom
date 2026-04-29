@@ -6,6 +6,7 @@ import { useToast } from '../context/ToastContext'
 import { GuestAuthPanel } from './GuestAuthPanel'
 import { ensureDirectConversationWithUser } from '../lib/messenger'
 import { getContactStatuses, setContactPin } from '../lib/socialGraph'
+import { v1GetUserPublicProfileBySlug } from '../api/publicProfilesApi'
 
 type PublicProfile = {
   id: string
@@ -52,20 +53,17 @@ export function PublicUserPage() {
     setError(null)
     setProfile(null)
     void (async () => {
-      const { supabase } = await import('../lib/supabase')
-      const { data, error: rpcErr } = await supabase.rpc('get_user_public_profile_by_slug', {
-        p_profile_slug: slug,
-      })
       if (!active) return
-      if (rpcErr) {
-        setError(rpcErr.message)
+      const r = await v1GetUserPublicProfileBySlug(slug)
+      if (r.error) {
+        setError(r.error)
         setLoading(false)
         return
       }
-      const parsed = parsePublicProfile(data)
+      const parsed = parsePublicProfile((r.data as any)?.profile ?? r.data)
       if (!parsed) {
-        const row = data as Record<string, unknown> | null
-        const code = typeof row?.error === 'string' ? row.error : ''
+        const row = r.data as Record<string, unknown> | null
+        const code = typeof row?.error === 'string' ? row.error : typeof (row as any)?.profile?.error === 'string' ? (row as any).profile.error : ''
         setError(code === 'not_found' ? 'Пользователь не найден.' : 'Не удалось загрузить профиль.')
         setLoading(false)
         return

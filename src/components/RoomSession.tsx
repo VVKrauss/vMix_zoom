@@ -10,7 +10,9 @@ import { RoomJoinApprovalWaiting } from './RoomJoinApprovalWaiting'
 import type { VideoPreset } from '../types'
 import { replaceRoomInBrowserUrl } from '../utils/soloViewerParams'
 import { useAuth } from '../context/AuthContext'
+import { useProfile } from '../hooks/useProfile'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
+import { pickMyAvatarUrl } from '../utils/myAvatarUrl'
 import {
   clearHostSessionIfMatches,
   clearPendingHostClaim,
@@ -82,7 +84,11 @@ interface Props {
 export function RoomSession({ roomId }: Props) {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const { profile, loading: profileLoading } = useProfile()
   const { allowed: canAccessAdminPanel } = useCanAccessAdminPanel()
+  const profileRef = useRef(profile)
+  const profileLoadingRef = useRef(profileLoading)
+  const userRef = useRef(user)
   const [name, setName] = useState('')
   const [chatOpen, setChatOpen] = useState(false)
   const [chatUnreadCount, setChatUnreadCount] = useState(0)
@@ -146,6 +152,12 @@ export function RoomSession({ roomId }: Props) {
   }, [chatOpen])
 
   useEffect(() => {
+    profileRef.current = profile
+    profileLoadingRef.current = profileLoading
+    userRef.current = user
+  }, [profile, profileLoading, user])
+
+  useEffect(() => {
     if (!chatOpen) return
     setChatUnreadCount(0)
     setChatIncomingPreview(null)
@@ -201,11 +213,7 @@ export function RoomSession({ roomId }: Props) {
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      const startPayload = { roomId, userId: user?.id ?? null }
-      console.log('[room-session] joinable check:start', startPayload)
       const { joinable, denial, isDbHost } = await getSpaceRoomJoinStatus(roomId, user?.id ?? null)
-      const resultPayload = { roomId, ok: joinable, denial, isDbHost, userId: user?.id ?? null }
-      console.log('[room-session] joinable check:result', resultPayload)
 
       if (cancelled) return
 
@@ -268,26 +276,38 @@ export function RoomSession({ roomId }: Props) {
       hostCreateOptions?: SpaceRoomCreateOptions | null,
     ) => {
     const trimmedRid = rid.trim()
-    console.log('[room-session] executeJoin:start', { roomId: trimmedRid, userId: user?.id ?? null })
     if (user?.id && matchesPendingHostClaim(trimmedRid)) {
       clearPendingHostClaim()
       const fromSession = takeSpaceRoomCreateOptions(trimmedRid)
       const createOpts: SpaceRoomCreateOptions =
         hostCreateOptions ?? fromSession ?? { lifecycle: 'temporary', chatVisibility: 'everyone' }
       const ok = await registerSpaceRoomAsHost(trimmedRid, user.id, createOpts)
-      console.log('[room-session] registerSpaceRoomAsHost', { roomId: trimmedRid, userId: user.id, ok })
       if (ok) markSessionAsHostFor(trimmedRid)
     }
     setName(n)
     writeRoomAutoResume({ roomId: trimmedRid, name: n.trim(), preset, media })
     replaceRoomInBrowserUrl(rid, { removePeer: true })
+
+    // Профиль (и avatar_url) может прилететь чуть позже auth-сессии.
+    // Подождём коротко перед входом, чтобы не уходить в signaling с avatarUrl=null.
+    if (user?.id && profileLoading && !pickMyAvatarUrl({ profile, user })) {
+      const startedAt = Date.now()
+      while (Date.now() - startedAt < 650) {
+        await new Promise<void>((r) => window.setTimeout(r, 50))
+        const curUser = userRef.current
+        if (!curUser?.id) break
+        if (!profileLoadingRef.current) break
+        if (pickMyAvatarUrl({ profile: profileRef.current, user: curUser })) break
+      }
+    }
+
     join(n, rid, preset, {
       ...media,
-      avatarUrl: (user?.user_metadata?.avatar_url as string | undefined) ?? null,
+      avatarUrl: pickMyAvatarUrl({ profile: profileRef.current, user: userRef.current }),
       authUserId: user?.id ?? null,
       canManageRoom: isSessionHostFor(trimmedRid) || canAccessAdminPanel,
     })
-  }, [user, canAccessAdminPanel, join])
+  }, [profile, profileLoading, user, canAccessAdminPanel, join])
 
   /** Обработчик кнопки «Войти» на JoinPage. */
   const handleJoin = useCallback(
@@ -318,15 +338,6 @@ export function RoomSession({ roomId }: Props) {
     if (leaveBusy) return
     const rid = (connectedRoomId ?? roomId).trim()
     const canEndRoomForEveryone = isSessionHostFor(rid) || canAccessAdminPanel
-    const leavePayload = {
-      roomId: rid,
-      userId: user?.id ?? null,
-      isSessionHost: isSessionHostFor(rid),
-      canEndRoomForEveryone,
-      connectedRoomId,
-      routeRoomId: roomId,
-    }
-    console.log('[room-session] handleLeaveRoom', leavePayload)
     setLeaveBusy(true)
     try {
       setChatOpen(false)
@@ -372,33 +383,6 @@ export function RoomSession({ roomId }: Props) {
     if (!roomClosedReason) return
     clearRoomAutoResume(roomId)
   }, [roomClosedReason, roomId])
-
-  useEffect(() => {
-    const onVisibility = () => {
-      const payload = {
-        roomId,
-        hidden: document.hidden,
-        status,
-      }
-      console.log('[room-session] visibilitychange', payload)
-    }
-    const onPageHide = () => {
-      const payload = { roomId, status }
-      console.log('[room-session] pagehide', payload)
-    }
-    const onPageShow = () => {
-      const payload = { roomId, status }
-      console.log('[room-session] pageshow', payload)
-    }
-    document.addEventListener('visibilitychange', onVisibility)
-    window.addEventListener('pagehide', onPageHide)
-    window.addEventListener('pageshow', onPageShow)
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility)
-      window.removeEventListener('pagehide', onPageHide)
-      window.removeEventListener('pageshow', onPageShow)
-    }
-  }, [roomId, status])
 
   if (status === 'connecting') {
     return (
