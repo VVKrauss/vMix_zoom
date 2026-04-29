@@ -17,3 +17,7 @@ export function devMark(name: string, payload?: Record<string, unknown>): void {
   console.debug(`[mark] ${name}`, payload ?? {})
 }
 
+export function isDevTraceEnabled(): boolean {
+  return Boolean(import.meta.env.DEV && String(import.meta.env.VITE_DEV_TRACE ?? '') === 'true')
+}
+
