@@ -175,8 +175,16 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    optimizeDeps: {
+      // Ограничиваем сканирование entry-поинтов (иначе Vite иногда подбирает fixtures из node_modules_ci_test).
+      entries: ['index.html', 'src/main.tsx'],
+    },
     server: {
       port: 5173,
+      fs: {
+        // Локальная папка для CI-установки зависимостей; не должна попадать в dev graph.
+        deny: ['**/node_modules_ci_test/**'],
+      },
       proxy: {
         '/socket.io': {
           target,
