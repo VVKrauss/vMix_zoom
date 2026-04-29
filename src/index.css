@@ -1315,6 +1315,7 @@ html.app-root--room #root {
   border: 1px solid var(--border);
   background: var(--surface2);
   color: var(--text);
+  text-decoration: none;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
@@ -4398,29 +4399,33 @@ button.admin-stat-card--interactive:disabled {
   font-family: var(--font);
   text-transform: none;
   font-weight: 600;
+  min-height: 34px;
   min-width: 0;
-  max-width: 100%;
+  max-width: 220px;
   white-space: nowrap;
-  padding: 8px 14px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  justify-content: center;
 }
 
 /* Кабинет: фильтры «Друзья» / «Чаты комнат» — как поле select в сетке фильтров */
 .admin-role-picker--dashboard-filters {
-  display: block;
-  width: 100%;
+  display: inline-flex;
+  width: auto;
+  margin-left: auto;
 }
 
 .admin-role-picker--dashboard-filters .admin-role-picker__trigger {
   font-family: var(--font);
   text-transform: none;
   font-weight: 600;
-  width: 100%;
+  width: auto;
   box-sizing: border-box;
-  min-height: 42px;
-  justify-content: flex-start;
-  border-radius: 14px;
-  padding: 10px 12px;
-  max-width: 100%;
+  min-height: 34px;
+  justify-content: center;
+  border-radius: 10px;
+  padding: 6px 10px;
+  max-width: 220px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -9559,6 +9564,7 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
 
 .dashboard-field__inline .admin-role-picker {
   flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .dashboard-field__inline .pill-toggle {
@@ -9589,6 +9595,20 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   border: 1px solid rgba(105,240,174,.3);
   border-radius: 8px;
   padding: 10px 12px;
+}
+
+/* Settings screen: never reserve empty tile area. */
+.dashboard-tiles-wrap--settings .dashboard-tile {
+  min-height: auto;
+}
+
+.dashboard-tiles-wrap--settings .dashboard-tiles {
+  align-items: start;
+  grid-template-columns: 1fr;
+}
+
+.dashboard-tiles-wrap--settings {
+  max-width: 760px;
 }
 
 /* Компактный блок профиля в кабинете */
