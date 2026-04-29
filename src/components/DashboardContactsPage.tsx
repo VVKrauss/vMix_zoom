@@ -231,14 +231,13 @@ export function DashboardContactsPage() {
         <div className="dashboard-chat-page__head dashboard-contacts-page__head">
           <Link
             to="/dashboard"
-            className="dashboard-page-back"
+            className="join-back-arrow"
             title="Назад в кабинет"
             aria-label="Назад в кабинет"
           >
             <ChevronLeftIcon />
-            <span>Кабинет</span>
           </Link>
-          <h2 className="dashboard-section__title dashboard-contacts__page-title">Контакты</h2>
+          <h2 className="dashboard-settings-back__title dashboard-contacts__page-title">Контакты</h2>
         </div>
 
         <div className="dashboard-chat-filters">
