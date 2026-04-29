@@ -10,7 +10,9 @@ import { RoomJoinApprovalWaiting } from './RoomJoinApprovalWaiting'
 import type { VideoPreset } from '../types'
 import { replaceRoomInBrowserUrl } from '../utils/soloViewerParams'
 import { useAuth } from '../context/AuthContext'
+import { useProfile } from '../hooks/useProfile'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
+import { pickMyAvatarUrl } from '../utils/myAvatarUrl'
 import {
   clearHostSessionIfMatches,
   clearPendingHostClaim,
@@ -82,7 +84,11 @@ interface Props {
 export function RoomSession({ roomId }: Props) {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const { profile, loading: profileLoading } = useProfile()
   const { allowed: canAccessAdminPanel } = useCanAccessAdminPanel()
+  const profileRef = useRef(profile)
+  const profileLoadingRef = useRef(profileLoading)
+  const userRef = useRef(user)
   const [name, setName] = useState('')
   const [chatOpen, setChatOpen] = useState(false)
   const [chatUnreadCount, setChatUnreadCount] = useState(0)
@@ -144,6 +150,12 @@ export function RoomSession({ roomId }: Props) {
   useLayoutEffect(() => {
     chatOpenRef.current = chatOpen
   }, [chatOpen])
+
+  useEffect(() => {
+    profileRef.current = profile
+    profileLoadingRef.current = profileLoading
+    userRef.current = user
+  }, [profile, profileLoading, user])
 
   useEffect(() => {
     if (!chatOpen) return
@@ -275,13 +287,27 @@ export function RoomSession({ roomId }: Props) {
     setName(n)
     writeRoomAutoResume({ roomId: trimmedRid, name: n.trim(), preset, media })
     replaceRoomInBrowserUrl(rid, { removePeer: true })
+
+    // Профиль (и avatar_url) может прилететь чуть позже auth-сессии.
+    // Подождём коротко перед входом, чтобы не уходить в signaling с avatarUrl=null.
+    if (user?.id && profileLoading && !pickMyAvatarUrl({ profile, user })) {
+      const startedAt = Date.now()
+      while (Date.now() - startedAt < 650) {
+        await new Promise<void>((r) => window.setTimeout(r, 50))
+        const curUser = userRef.current
+        if (!curUser?.id) break
+        if (!profileLoadingRef.current) break
+        if (pickMyAvatarUrl({ profile: profileRef.current, user: curUser })) break
+      }
+    }
+
     join(n, rid, preset, {
       ...media,
-      avatarUrl: (user?.user_metadata?.avatar_url as string | undefined) ?? null,
+      avatarUrl: pickMyAvatarUrl({ profile: profileRef.current, user: userRef.current }),
       authUserId: user?.id ?? null,
       canManageRoom: isSessionHostFor(trimmedRid) || canAccessAdminPanel,
     })
-  }, [user, canAccessAdminPanel, join])
+  }, [profile, profileLoading, user, canAccessAdminPanel, join])
 
   /** Обработчик кнопки «Войти» на JoinPage. */
   const handleJoin = useCallback(

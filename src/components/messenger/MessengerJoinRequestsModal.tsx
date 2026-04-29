@@ -133,7 +133,9 @@ export function MessengerJoinRequestsModal({
               <p className="dashboard-messenger-join-requests-dialog__empty">Список участников пуст.</p>
             ) : (
               <ul className="dashboard-messenger-join-requests-dialog__list">
-                {conversationMembers.map((m) => {
+                {Array.from(
+                  new Map(conversationMembers.map((m) => [m.userId, m] as const)).values(),
+                ).map((m) => {
                   const disp = messengerContactDisplayName(m.userId, m.displayName, aliasByUserId)
                   return (
                   <li key={m.userId} className="dashboard-messenger-join-requests-dialog__item">

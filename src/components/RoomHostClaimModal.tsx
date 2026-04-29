@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase'
+import { rtChannel, rtRemoveChannel } from '../api/realtimeCompat'
 
 interface Props {
   roomId: string
@@ -16,9 +16,9 @@ interface Props {
  */
 export function RoomHostClaimModal({ roomId, onTakeover, onJoinAsParticipant }: Props) {
   const handleTakeover = () => {
-    // Сигнал предыдущему устройству через Supabase Realtime Broadcast
-    const ch = supabase.channel(`room-mod:${roomId.trim()}`)
-    ch.subscribe((status) => {
+    // Сигнал предыдущему устройству через WS broadcast
+    const ch = rtChannel(`room-mod:${roomId.trim()}`)
+    ch.subscribe((status: any) => {
       if (status === 'SUBSCRIBED') {
         void ch
           .send({
@@ -27,7 +27,7 @@ export function RoomHostClaimModal({ roomId, onTakeover, onJoinAsParticipant }: 
             payload: { claimedAt: new Date().toISOString() },
           })
           .then(() => {
-            void supabase.removeChannel(ch)
+            rtRemoveChannel(ch)
           })
       }
     })

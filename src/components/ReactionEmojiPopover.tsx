@@ -51,7 +51,7 @@ function ReactionEmojiGridButton({ emoji, onPick }: { emoji: string; onPick: () 
   const src = twemojiSvgUrl(emoji)
   return (
     <button type="button" className="reaction-emoji-btn" title={emoji} aria-label={emoji} onClick={onPick}>
-      {!imgBroken ? (
+      {src && !imgBroken ? (
         <img
           src={src}
           alt=""

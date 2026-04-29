@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { v1DeleteSiteNews, v1InsertSiteNews, v1ListSiteNews, v1UpdateSiteNews } from '../api/siteNewsApi'
 
 export type SiteNewsItem = {
   id: string
@@ -10,14 +10,8 @@ export type SiteNewsItem = {
   updated_at: string
 }
 
-export async function listSiteNews(): Promise<{ data: SiteNewsItem[] | null; error: string | null }> {
-  const { data, error } = await supabase
-    .from('site_news')
-    .select('id, published_at, title, body, image_url, created_at, updated_at')
-    .order('published_at', { ascending: false })
-
-  if (error) return { data: null, error: error.message }
-  return { data: (data ?? []) as SiteNewsItem[], error: null }
+export async function listSiteNews(opts?: { limit?: number }): Promise<{ data: SiteNewsItem[] | null; error: string | null }> {
+  return await v1ListSiteNews(opts)
 }
 
 export async function insertSiteNews(row: {
@@ -26,13 +20,7 @@ export async function insertSiteNews(row: {
   body: string
   image_url?: string | null
 }): Promise<{ error: string | null }> {
-  const { error } = await supabase.from('site_news').insert({
-    published_at: row.published_at.trim(),
-    title: row.title.trim(),
-    body: row.body.trim(),
-    image_url: row.image_url?.trim() || null,
-  })
-  return { error: error?.message ?? null }
+  return await v1InsertSiteNews(row)
 }
 
 export async function updateSiteNews(
@@ -44,20 +32,9 @@ export async function updateSiteNews(
     image_url?: string | null
   },
 ): Promise<{ error: string | null }> {
-  const image_url = row.image_url?.trim() || null
-  const { error } = await supabase
-    .from('site_news')
-    .update({
-      published_at: row.published_at.trim(),
-      title: row.title.trim(),
-      body: row.body.trim(),
-      image_url,
-    })
-    .eq('id', id.trim())
-  return { error: error?.message ?? null }
+  return await v1UpdateSiteNews(id, row)
 }
 
 export async function deleteSiteNews(id: string): Promise<{ error: string | null }> {
-  const { error } = await supabase.from('site_news').delete().eq('id', id.trim())
-  return { error: error?.message ?? null }
+  return await v1DeleteSiteNews(id)
 }

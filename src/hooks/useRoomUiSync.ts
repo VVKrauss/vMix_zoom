@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { User } from '@supabase/supabase-js'
-import { supabase } from '../lib/supabase'
+import { v1GetMeProfile, v1PatchMeProfile } from '../api/meProfileApi'
 import type { StoredLayoutMode } from '../config/roomUiStorage'
 import type { PipPos, PipSize } from '../components/DraggablePip'
 import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
@@ -8,7 +7,7 @@ import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
 const SAVE_DEBOUNCE_MS = 650
 
 interface Args {
-  user: User | null
+  user: { id: string } | null
   isViewportMobile: boolean
   layout: StoredLayoutMode
   pipPos: PipPos
@@ -51,14 +50,10 @@ export function useRoomUiSync({
     if (loadedRef.current) return
     loadedRef.current = true
     let cancelled = false
-    void supabase
-      .from('users')
-      .select('room_ui_preferences')
-      .eq('id', user.id)
-      .single()
-      .then(({ data, error }) => {
-        if (cancelled || error || !data) return
-        const m = mergeRoomUiPrefs(data.room_ui_preferences)
+    void (async () => {
+      const r = await v1GetMeProfile()
+      if (cancelled || r.error || !r.data) return
+      const m = mergeRoomUiPrefs((r.data as any).room_ui_preferences)
         skipSavesRef.current += 1
         setLayout(m.layout_mode)
         setShowLayoutToggle(m.show_layout_toggle)
@@ -67,7 +62,7 @@ export function useRoomUiSync({
           setPipPos(m.pip.pos)
           setPipSize(m.pip.size)
         }
-      })
+    })()
     return () => {
       cancelled = true
     }
@@ -80,18 +75,14 @@ export function useRoomUiSync({
         skipSavesRef.current -= 1
         return
       }
-      void supabase
-        .from('users')
-        .update({
-          room_ui_preferences: {
-            layout_mode: layout,
-            show_layout_toggle: showLayoutToggle,
-            hide_video_letterboxing: hideVideoLetterboxing,
-            pip: { pos: pipPos, size: pipSize },
-          },
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', user.id)
+      void v1PatchMeProfile({
+        room_ui_preferences: {
+          layout_mode: layout,
+          show_layout_toggle: showLayoutToggle,
+          hide_video_letterboxing: hideVideoLetterboxing,
+          pip: { pos: pipPos, size: pipSize },
+        },
+      })
     }, SAVE_DEBOUNCE_MS)
     return () => window.clearTimeout(t)
   }, [user, isViewportMobile, layout, pipPos, pipSize, showLayoutToggle, hideVideoLetterboxing])

@@ -1,11 +1,23 @@
 node_modules/
+node_modules_ci_test/
 .env
 dist/
 supabase/.temp/
 
 # Backend copy from server (local only)
-backend/
+# backend/  <-- больше не игнорируем: backend живёт в репозитории
+backend/.env
+backend/.env.*.local
+backend/dist/
+backend/node_modules/
 
 # Локальные артефакты агента / архивы — не коммитить
 agent-tools-deploy-payload.json
 vMix replacer.zip
+
+# Local dumps / release archives (must never go to git or docker context)
+dump*.sql
+dump*.sql.*
+dump2/
+release-clean-*.tgz
+*.tgz

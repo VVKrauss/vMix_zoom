@@ -5,9 +5,43 @@
  *   (иначе с localhost при `CORS_ORIGIN=https://redflow.online` handshake Socket.IO режется).
  * - **production**: полный URL из `VITE_SIGNALING_URL`.
  */
+function trimOrigin(s: unknown): string {
+  return String(s ?? '').trim().replace(/\/$/, '')
+}
+
+/**
+ * Единая точка выбора базового URL.
+ * Приоритет: VITE_API_FALLBACK → VITE_API_BASE → VITE_SIGNALING_URL.
+ *
+ * Зачем: когда прямой доступ к основному API режется (DPI), можно прогнать и HTTP, и Socket.IO через proxy VPS.
+ */
+function pickBase(): string {
+  // UI override (личный кабинет): force proxy/direct without probes.
+  // Direct explicitly ignores VITE_API_FALLBACK.
+  try {
+    const mode = globalThis.localStorage?.getItem('rf_api_route_mode')
+    if (mode === 'proxy') {
+      const forcedProxy = trimOrigin(import.meta.env.VITE_API_FALLBACK) || 'https://proxy.redflow.online'
+      return forcedProxy
+    }
+    if (mode === 'direct') {
+      const forcedDirect = trimOrigin(import.meta.env.VITE_API_BASE) || trimOrigin(import.meta.env.VITE_SIGNALING_URL)
+      return forcedDirect
+    }
+  } catch {
+    // ignore
+  }
+
+  const fallback = trimOrigin(import.meta.env.VITE_API_FALLBACK)
+  if (fallback) return fallback
+  const primary = trimOrigin(import.meta.env.VITE_API_BASE)
+  if (primary) return primary
+  return trimOrigin(import.meta.env.VITE_SIGNALING_URL)
+}
+
 export function signalingSocketUrl(): string | undefined {
   if (import.meta.env.DEV) return undefined
-  const s = String(import.meta.env.VITE_SIGNALING_URL ?? '').trim().replace(/\/$/, '')
+  const s = pickBase()
   return s || undefined
 }
 

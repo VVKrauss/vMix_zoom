@@ -17,7 +17,7 @@ export function NewsPage() {
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(() => {
-    void listSiteNews().then((r) => {
+    void listSiteNews({ limit: 1 }).then((r) => {
       if (r.error) {
         setError(r.error)
         setItems([])

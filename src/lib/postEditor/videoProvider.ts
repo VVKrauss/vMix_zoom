@@ -39,9 +39,12 @@ export function videoOpenActionLabel(kind: VideoProviderKind): string {
 
 export function faviconUrlForPage(url: string): string | null {
   try {
-    const host = new URL(url).hostname
+    const u = new URL(url)
+    const host = u.hostname
     if (!host) return null
-    return `https://www.google.com/s2/favicons?sz=64&domain=${encodeURIComponent(host)}`
+    // Avoid Google favicon proxy (can be blocked). Try the target site favicon instead.
+    const proto = u.protocol === 'http:' || u.protocol === 'https:' ? u.protocol : 'https:'
+    return `${proto}//${host}/favicon.ico`
   } catch {
     return null
   }

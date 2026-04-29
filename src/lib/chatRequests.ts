@@ -1,4 +1,10 @@
-import { supabase } from './supabase'
+import {
+  v1ApproveConversationJoinRequest,
+  v1DenyConversationJoinRequest,
+  v1HasPendingConversationJoinRequest,
+  v1ListConversationJoinRequests,
+  v1RequestConversationJoin,
+} from '../api/conversationAdminApi'
 
 export type ConversationJoinRequest = {
   requestId: string
@@ -10,30 +16,23 @@ export type ConversationJoinRequest = {
 export async function hasPendingConversationJoinRequest(
   conversationId: string,
 ): Promise<{ data: boolean | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('has_pending_conversation_join_request', {
-    p_conversation_id: conversationId.trim(),
-  })
-  return { data: typeof data === 'boolean' ? data : null, error: error?.message ?? null }
+  return await v1HasPendingConversationJoinRequest(conversationId)
 }
 
 export async function requestConversationJoin(
   conversationId: string,
 ): Promise<{ data: { requested?: boolean; already_member?: boolean; required_plan?: string } | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('request_conversation_join', {
-    p_conversation_id: conversationId.trim(),
-  })
-  if (error) return { data: null, error: error.message }
-  return { data: data as { requested?: boolean; already_member?: boolean; required_plan?: string } | null, error: null }
+  const r = await v1RequestConversationJoin(conversationId)
+  if (r.error) return { data: null, error: r.error }
+  return { data: r.data as any, error: null }
 }
 
 export async function listConversationJoinRequests(
   conversationId: string,
 ): Promise<{ data: ConversationJoinRequest[] | null; error: string | null }> {
-  const { data, error } = await supabase.rpc('list_conversation_join_requests', {
-    p_conversation_id: conversationId.trim(),
-  })
-  if (error) return { data: null, error: error.message }
-  const rows = Array.isArray(data) ? data : []
+  const r = await v1ListConversationJoinRequests(conversationId)
+  if (r.error) return { data: null, error: r.error }
+  const rows = Array.isArray(r.data) ? r.data : []
   return {
     data: rows
       .map((row) => {
@@ -52,23 +51,11 @@ export async function listConversationJoinRequests(
 export async function approveConversationJoinRequest(
   requestId: string,
 ): Promise<{ error: string | null }> {
-  const { data, error } = await supabase.rpc('approve_conversation_join_request', {
-    p_request_id: requestId.trim(),
-  })
-  if (error) return { error: error.message }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_approved' }
-  return { error: null }
+  return await v1ApproveConversationJoinRequest(requestId)
 }
 
 export async function denyConversationJoinRequest(
   requestId: string,
 ): Promise<{ error: string | null }> {
-  const { data, error } = await supabase.rpc('deny_conversation_join_request', {
-    p_request_id: requestId.trim(),
-  })
-  if (error) return { error: error.message }
-  const row = data as Record<string, unknown> | null
-  if (!row || row.ok !== true) return { error: typeof row?.error === 'string' ? row.error : 'not_denied' }
-  return { error: null }
+  return await v1DenyConversationJoinRequest(requestId)
 }

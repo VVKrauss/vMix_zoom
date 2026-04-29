@@ -19,9 +19,10 @@ export function useMessengerBackgroundMessageSidebar(opts: {
   /** Открытый тред: не бейдж, не звук, не превью как «непрочитанное». */
   foregroundThreadConversationId: string
   mutedConversationIdsRef: MutableRefObject<Set<string>>
+  itemsRef: MutableRefObject<MessengerConversationSummary[]>
   setItems: Dispatch<SetStateAction<MessengerConversationSummary[]>>
 }): void {
-  const { userId, foregroundThreadConversationId, mutedConversationIdsRef, setItems } = opts
+  const { userId, foregroundThreadConversationId, mutedConversationIdsRef, itemsRef, setItems } = opts
 
   useEffect(() => {
     const uid = userId
@@ -33,6 +34,8 @@ export function useMessengerBackgroundMessageSidebar(opts: {
 
       if (cid.trim() === foregroundThreadConversationId.trim()) return
       if (kind === 'reaction') return
+      const itemKind = itemsRef.current.find((x) => x.id === cid)?.kind ?? null
+      const isChannelComment = itemKind === 'channel' && !!replyToMessageId
 
       setItems((prev) => {
         const idx = prev.findIndex((item) => item.id === cid)
@@ -51,7 +54,11 @@ export function useMessengerBackgroundMessageSidebar(opts: {
                 lastMessageAt: createdAt,
                 lastMessagePreview:
                   item.kind === 'channel' && replyToMessageId ? item.lastMessagePreview : body,
-                unreadCount: senderUserId !== uid ? item.unreadCount + 1 : item.unreadCount,
+                // Канал: комментарии к постам не считаем непрочитанными (unread считаем по top-level постам).
+                unreadCount:
+                  senderUserId !== uid && !(item.kind === 'channel' && replyToMessageId)
+                    ? item.unreadCount + 1
+                    : item.unreadCount,
                 messageCount: item.messageCount + 1,
               }
             : item,
@@ -59,6 +66,7 @@ export function useMessengerBackgroundMessageSidebar(opts: {
       })
 
       if (senderUserId !== uid) {
+        if (isChannelComment) return
         if (mutedConversationIdsRef.current.has(cid)) return
         playMessageSound()
       }
@@ -66,5 +74,5 @@ export function useMessengerBackgroundMessageSidebar(opts: {
 
     window.addEventListener(MESSENGER_BG_MESSAGE_EVENT, handler)
     return () => window.removeEventListener(MESSENGER_BG_MESSAGE_EVENT, handler)
-  }, [foregroundThreadConversationId, userId])
+  }, [foregroundThreadConversationId, itemsRef, setItems, mutedConversationIdsRef, userId])
 }

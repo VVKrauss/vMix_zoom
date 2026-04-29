@@ -1,10 +1,9 @@
-import type { RealtimeChannel } from '@supabase/supabase-js'
-import { mapDirectMessageFromRow, previewTextForDirectMessageTail } from './messenger'
-import { supabase } from './supabase'
+import { previewTextForDirectMessageTail } from './messenger'
+import { subscribeUserFeed } from '../api/messengerRealtime'
 
 type Notify = () => void
 
-let channel: RealtimeChannel | null = null
+let channel: any | null = null
 let boundUserId: string | null = null
 let refCount = 0
 const notifies = new Set<Notify>()
@@ -29,20 +28,19 @@ export interface MessengerBgMessageDetail {
   replyToMessageId?: string | null
 }
 
-function emitBgMessage(row: Record<string, unknown>): void {
-  const conversationId = typeof row.conversation_id === 'string' ? row.conversation_id : null
-  if (!conversationId) return
-  const msg = mapDirectMessageFromRow(row)
-  const preview = previewTextForDirectMessageTail(msg)
-  const replyToMessageId = msg.replyToMessageId?.trim() ? msg.replyToMessageId.trim() : null
-
+function emitBgMessage(d: MessengerBgMessageDetail): void {
+  const preview = previewTextForDirectMessageTail({
+    kind: d.kind as any,
+    body: d.body,
+    meta: null,
+  })
   const detail: MessengerBgMessageDetail = {
-    conversationId,
-    senderUserId: typeof row.sender_user_id === 'string' ? row.sender_user_id : null,
-    kind: msg.kind,
+    conversationId: d.conversationId,
+    senderUserId: d.senderUserId,
+    kind: d.kind,
     body: preview,
-    createdAt: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
-    replyToMessageId,
+    createdAt: d.createdAt,
+    replyToMessageId: d.replyToMessageId ?? null,
   }
   window.dispatchEvent(new CustomEvent(MESSENGER_BG_MESSAGE_EVENT, { detail }))
 }
@@ -59,40 +57,46 @@ export function subscribeMessengerUnreadRealtime(userId: string, onSignal: () =>
 
   if (!channel || boundUserId !== userId) {
     if (channel) {
-      void supabase.removeChannel(channel)
+      try {
+        channel()
+      } catch {
+        /* noop */
+      }
       channel = null
     }
     boundUserId = userId
-    channel = supabase
-      .channel(`messenger-unread:${userId}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'chat_messages' },
-        (payload) => {
-          emit()
-          emitBgMessage(payload.new as Record<string, unknown>)
-        },
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'chat_conversation_members',
-          filter: `user_id=eq.${userId}`,
-        },
-        () => {
-          emit()
-        },
-      )
-      .subscribe()
+    channel = subscribeUserFeed(userId, (e) => {
+      if (e.type === 'bg_message') {
+        emit()
+        emitBgMessage({
+          conversationId: e.conversationId,
+          senderUserId: e.senderUserId,
+          kind: e.kind,
+          body: e.body,
+          createdAt: e.createdAt,
+          replyToMessageId: e.replyToMessageId ?? null,
+        })
+        return
+      }
+      if (e.type === 'unread_invalidate') {
+        emit()
+        return
+      }
+      if (e.type === 'membership_changed') {
+        emit()
+      }
+    })
   }
 
   return () => {
     notifies.delete(onSignal)
     refCount = Math.max(0, refCount - 1)
     if (refCount === 0 && channel) {
-      void supabase.removeChannel(channel)
+      try {
+        channel()
+      } catch {
+        /* noop */
+      }
       channel = null
       boundUserId = null
     }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { RealtimeChannel } from '@supabase/supabase-js'
-import { supabase } from '../lib/supabase'
 import { isPeerPresenceOnlineFromMirror } from '../lib/messengerPeerPresence'
+import { v1ListUserPresencePublicByIds } from '../api/presenceMirrorApi'
+import { rtChannel, rtRemoveChannel } from '../api/realtimeCompat'
 
 type PresenceMirrorRow = {
   userId: string
@@ -45,7 +45,7 @@ function computeOnline(row: PresenceMirrorRow, nowMs: number): boolean {
 }
 
 /**
- * Единый источник «онлайн» для UI: только зеркало public.user_presence_public (select + realtime).
+ * Единый источник «онлайн» для UI: зеркало public.user_presence_public (GET + WebSocket `db_change` на `peer-presence:{userId}` + редкий опрос).
  * Никаких peek/RPC — поведение одинаковое в дереве и в шапке.
  */
 export function useOnlinePresenceMirror(args: {
@@ -80,43 +80,59 @@ export function useOnlinePresenceMirror(args: {
     if (!me || ids.length === 0) return
 
     let cancelled = false
-    let channel: RealtimeChannel | null = null
     const bump = () => setEpoch((e) => e + 1)
 
-    void (async () => {
-      const { data, error } = await supabase
-        .from('user_presence_public')
-        .select('user_id,last_active_at,presence_last_background_at,profile_show_online')
-        .in('user_id', ids)
-      if (cancelled || error) return
-
+    const refreshFromApi = async () => {
+      const { data, error } = await v1ListUserPresencePublicByIds(ids)
+      if (cancelled || error || !data) return
       const next = new Map<string, PresenceMirrorRow>()
-      for (const raw of (data ?? []) as unknown[]) {
+      for (const raw of data as unknown[]) {
         const parsed = parsePresenceRow(raw)
         if (!parsed) continue
         next.set(parsed.userId, parsed)
       }
       rowsRef.current = next
       bump()
-    })()
+    }
 
-    const filter = ids.length === 1 ? `user_id=eq.${ids[0]}` : `user_id=in.(${ids.join(',')})`
-    channel = supabase
-      .channel(`presence-mirror:${ids.length}-${ids[0]?.slice(0, 8) ?? '0'}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_presence_public', filter }, (payload) => {
-        const parsed = parsePresenceRow(payload.new ?? payload.old)
-        if (!parsed) return
-        if (!ids.includes(parsed.userId)) return
-        rowsRef.current.set(parsed.userId, parsed)
-        bump()
-      })
-      .subscribe()
+    void refreshFromApi()
+
+    const rtChannels: Array<ReturnType<typeof rtChannel>> = []
+    for (const peerId of ids) {
+      const ch = rtChannel(`peer-presence:${peerId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'user_presence_public' }, (payload: any) => {
+          if (cancelled) return
+          if (String(payload?.table ?? '') !== 'user_presence_public') return
+          const ev = String(payload?.eventType ?? '')
+          const row = (payload?.new ?? null) as Record<string, unknown> | null
+          if (ev === 'DELETE') {
+            rowsRef.current.delete(peerId)
+            bump()
+            return
+          }
+          if (!row) {
+            void refreshFromApi()
+            return
+          }
+          const parsed = parsePresenceRow(row)
+          if (parsed) rowsRef.current.set(parsed.userId, parsed)
+          bump()
+        })
+        .subscribe()
+      rtChannels.push(ch)
+    }
+
+    const REFRESH_MS = 60_000
+    const refreshId = window.setInterval(() => {
+      void refreshFromApi()
+    }, REFRESH_MS)
 
     const tickId = window.setInterval(bump, tickMs)
     return () => {
       cancelled = true
+      for (const c of rtChannels) rtRemoveChannel(c)
       window.clearInterval(tickId)
-      if (channel) void supabase.removeChannel(channel)
+      window.clearInterval(refreshId)
     }
   }, [viewerId, ids, tickMs])
 

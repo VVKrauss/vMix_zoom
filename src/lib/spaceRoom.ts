@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { fetchJson } from '../api/http'
 
 /** Постоянная комната — строка в БД сохраняется при выходе хоста (закрыта, но не удалена). Временная — как раньше, без долгой ссылки. */
 export type SpaceRoomLifecycleKind = 'permanent' | 'temporary'
@@ -233,15 +233,12 @@ export async function getSpaceRoomJoinStatus(
   if (matchesPendingHostClaim(trimmed) || isSessionHostFor(trimmed)) {
     return { joinable: true, denial: 'none', isDbHost: false }
   }
-  const { data, error } = await supabase
-    .from('space_rooms')
-    .select('status, host_user_id, retain_instance, access_mode, created_at, banned_user_ids, approved_joiners')
-    .eq('slug', trimmed)
-    .maybeSingle()
-  if (error) {
-    console.warn('getSpaceRoomJoinStatus:', error.message)
+  const r = await fetchJson<{ row: any | null }>(`/api/v1/public/space-rooms/${encodeURIComponent(trimmed)}/join-info`, { method: 'GET' })
+  if (!r.ok) {
+    console.warn('getSpaceRoomJoinStatus:', r.error.message)
     return { joinable: false, denial: 'closed_or_missing', isDbHost: false }
   }
+  const data = r.data.row as any
   if (!data || data.status !== 'open') {
     return { joinable: false, denial: 'closed_or_missing', isDbHost: false }
   }
@@ -328,16 +325,9 @@ export async function fetchPersistentSpaceRoomsForUser(
   const uid = userId.trim()
   if (!uid) return { data: [], error: null }
 
-  const { data, error } = await supabase
-    .from('space_rooms')
-    .select(
-      'slug, status, access_mode, chat_visibility, created_at, display_name, avatar_url, guest_policy, require_creator_host_for_join, cumulative_open_seconds, open_session_started_at',
-    )
-    .eq('host_user_id', uid)
-    .eq('retain_instance', true)
-    .order('created_at', { ascending: false })
-
-  if (error) return { data: null, error: error.message }
+  const r = await fetchJson<{ rows: any[] }>(`/api/v1/me/space-rooms/persistent`, { method: 'GET', auth: true })
+  if (!r.ok) return { data: null, error: r.error.message }
+  const data = r.data.rows as any[]
 
   const rows = (data ?? []).map((r) => {
     const gpRaw = r.guest_policy
@@ -405,13 +395,27 @@ export async function registerSpaceRoomAsHost(
     insertPayload.require_creator_host_for_join = true
   }
 
-  const { error } = await supabase.from('space_rooms').insert(insertPayload)
-  if (error) {
-    if (error.code === '23505') return false
-    console.warn('registerSpaceRoomAsHost:', error.message)
+  const r = await fetchJson<any>(`/api/v1/space-rooms`, {
+    method: 'POST',
+    auth: true,
+    body: JSON.stringify({
+      slug: trimmed,
+      lifecycle: permanent ? 'permanent' : 'temporary',
+      chatVisibility,
+      displayName: typeof insertPayload.display_name === 'string' ? insertPayload.display_name : null,
+      avatarUrl: typeof insertPayload.avatar_url === 'string' ? insertPayload.avatar_url : null,
+      guestPolicy:
+        insertPayload.guest_policy && typeof insertPayload.guest_policy === 'object' && !Array.isArray(insertPayload.guest_policy)
+          ? insertPayload.guest_policy
+          : null,
+      requireCreatorHostForJoin: insertPayload.require_creator_host_for_join === true,
+    }),
+  })
+  if (!r.ok) {
+    console.warn('registerSpaceRoomAsHost:', r.error.message)
     return false
   }
-  return true
+  return r.data?.ok === true
 }
 
 export async function updateSpaceRoomChatVisibility(
@@ -422,23 +426,22 @@ export async function updateSpaceRoomChatVisibility(
   const trimmed = slug.trim()
   if (!trimmed) return false
   if (!isChatVisibility(visibility)) return false
-  const { error, data } = await supabase
-    .from('space_rooms')
-    .update({ chat_visibility: visibility, updated_at: new Date().toISOString() })
-    .eq('slug', trimmed)
-    .select('slug')
-    .maybeSingle()
-  if (error) {
-    console.warn('updateSpaceRoomChatVisibility:', error.message)
+  const r = await fetchJson<any>(`/api/v1/space-rooms/${encodeURIComponent(trimmed)}/chat-visibility`, {
+    method: 'PATCH',
+    auth: true,
+    body: JSON.stringify({ chatVisibility: visibility }),
+  })
+  if (!r.ok) {
+    console.warn('updateSpaceRoomChatVisibility:', r.error.message)
     return false
   }
-  return Boolean(data?.slug)
+  return r.data?.ok === true
 }
 
 export async function hostLeaveSpaceRoom(slug: string): Promise<void> {
   const trimmed = slug.trim()
   if (!trimmed) return
-  await supabase.rpc('host_leave_space_room', { p_slug: trimmed })
+  await fetchJson<any>(`/api/v1/space-rooms/${encodeURIComponent(trimmed)}/host-leave`, { method: 'POST', auth: true, body: '{}' })
 }
 
 /** Заблокировать пользователя в комнате (хост / staff / со-админ комнаты — RLS). Read-modify-write. */
@@ -449,19 +452,16 @@ export async function banUserFromSpaceRoom(
 ): Promise<boolean> {
   const trimmed = slug.trim()
   if (!trimmed || !targetUserId) return false
-  const { data: row } = await supabase.from('space_rooms').select('banned_user_ids').eq('slug', trimmed).maybeSingle()
-  if (!row) return false
-  const current: string[] = Array.isArray(row.banned_user_ids) ? row.banned_user_ids : []
-  if (current.includes(targetUserId)) return true
-  const { error } = await supabase
-    .from('space_rooms')
-    .update({ banned_user_ids: [...current, targetUserId], updated_at: new Date().toISOString() })
-    .eq('slug', trimmed)
-  if (error) {
-    console.warn('banUserFromSpaceRoom:', error.message)
+  const r = await fetchJson<any>(`/api/v1/space-rooms/${encodeURIComponent(trimmed)}/ban`, {
+    method: 'POST',
+    auth: true,
+    body: JSON.stringify({ targetUserId }),
+  })
+  if (!r.ok) {
+    console.warn('banUserFromSpaceRoom:', r.error.message)
     return false
   }
-  return true
+  return r.data?.ok === true
 }
 
 /** Одобрить вход пользователя (режим approval; хост / staff / со-админ — RLS). */
@@ -472,19 +472,16 @@ export async function approveSpaceRoomJoiner(
 ): Promise<boolean> {
   const trimmed = slug.trim()
   if (!trimmed || !targetUserId) return false
-  const { data: row } = await supabase.from('space_rooms').select('approved_joiners').eq('slug', trimmed).maybeSingle()
-  if (!row) return false
-  const current: string[] = Array.isArray(row.approved_joiners) ? row.approved_joiners : []
-  if (current.includes(targetUserId)) return true
-  const { error } = await supabase
-    .from('space_rooms')
-    .update({ approved_joiners: [...current, targetUserId], updated_at: new Date().toISOString() })
-    .eq('slug', trimmed)
-  if (error) {
-    console.warn('approveSpaceRoomJoiner:', error.message)
+  const r = await fetchJson<any>(`/api/v1/space-rooms/${encodeURIComponent(trimmed)}/approve-joiner`, {
+    method: 'POST',
+    auth: true,
+    body: JSON.stringify({ targetUserId }),
+  })
+  if (!r.ok) {
+    console.warn('approveSpaceRoomJoiner:', r.error.message)
     return false
   }
-  return true
+  return r.data?.ok === true
 }
 
 /** Убрать пользователя из списка ожидающих (отклонить или очистить после входа). */
@@ -495,15 +492,11 @@ export async function removeSpaceRoomApprovedJoiner(
 ): Promise<void> {
   const trimmed = slug.trim()
   if (!trimmed || !targetUserId) return
-  const { data: row } = await supabase.from('space_rooms').select('approved_joiners').eq('slug', trimmed).maybeSingle()
-  if (!row) return
-  const current: string[] = Array.isArray(row.approved_joiners) ? row.approved_joiners : []
-  const next = current.filter((id) => id !== targetUserId)
-  if (next.length === current.length) return
-  await supabase
-    .from('space_rooms')
-    .update({ approved_joiners: next, updated_at: new Date().toISOString() })
-    .eq('slug', trimmed)
+  await fetchJson<any>(`/api/v1/space-rooms/${encodeURIComponent(trimmed)}/remove-approved-joiner`, {
+    method: 'POST',
+    auth: true,
+    body: JSON.stringify({ targetUserId }),
+  })
 }
 
 /** Режим входа в комнату (хост / staff / со-админ — RLS). */
@@ -514,17 +507,16 @@ export async function updateSpaceRoomAccessMode(
 ): Promise<boolean> {
   const trimmed = slug.trim()
   if (!trimmed) return false
-  const { error, data } = await supabase
-    .from('space_rooms')
-    .update({ access_mode: mode, updated_at: new Date().toISOString() })
-    .eq('slug', trimmed)
-    .select('slug')
-    .maybeSingle()
-  if (error) {
-    console.warn('updateSpaceRoomAccessMode:', error.message)
+  const r = await fetchJson<any>(`/api/v1/space-rooms/${encodeURIComponent(trimmed)}/access-mode`, {
+    method: 'PATCH',
+    auth: true,
+    body: JSON.stringify({ accessMode: mode }),
+  })
+  if (!r.ok) {
+    console.warn('updateSpaceRoomAccessMode:', r.error.message)
     return false
   }
-  return Boolean(data?.slug)
+  return r.data?.ok === true
 }
 
 function parseUuidArray(raw: unknown): string[] {
@@ -537,28 +529,16 @@ export async function addSpaceRoomAdminUser(slug: string, targetUserId: string):
   const trimmed = slug.trim()
   const tid = targetUserId.trim()
   if (!trimmed || !tid) return false
-  const { data: row, error: selErr } = await supabase
-    .from('space_rooms')
-    .select('host_user_id, room_admin_user_ids')
-    .eq('slug', trimmed)
-    .maybeSingle()
-  if (selErr || !row) {
-    if (selErr) console.warn('addSpaceRoomAdminUser:', selErr.message)
+  const r = await fetchJson<any>(`/api/v1/space-rooms/${encodeURIComponent(trimmed)}/admins/add`, {
+    method: 'POST',
+    auth: true,
+    body: JSON.stringify({ targetUserId: tid }),
+  })
+  if (!r.ok) {
+    console.warn('addSpaceRoomAdminUser:', r.error.message)
     return false
   }
-  const hostId = typeof row.host_user_id === 'string' ? row.host_user_id : null
-  if (hostId && tid === hostId) return false
-  const current = parseUuidArray(row.room_admin_user_ids)
-  if (current.includes(tid)) return true
-  const { error } = await supabase
-    .from('space_rooms')
-    .update({ room_admin_user_ids: [...current, tid], updated_at: new Date().toISOString() })
-    .eq('slug', trimmed)
-  if (error) {
-    console.warn('addSpaceRoomAdminUser:', error.message)
-    return false
-  }
-  return true
+  return r.data?.ok === true
 }
 
 /** Снять со-администратора комнаты. */
@@ -566,25 +546,14 @@ export async function removeSpaceRoomAdminUser(slug: string, targetUserId: strin
   const trimmed = slug.trim()
   const tid = targetUserId.trim()
   if (!trimmed || !tid) return false
-  const { data: row, error: selErr } = await supabase
-    .from('space_rooms')
-    .select('room_admin_user_ids')
-    .eq('slug', trimmed)
-    .maybeSingle()
-  if (selErr || !row) {
-    if (selErr) console.warn('removeSpaceRoomAdminUser:', selErr.message)
+  const r = await fetchJson<any>(`/api/v1/space-rooms/${encodeURIComponent(trimmed)}/admins/remove`, {
+    method: 'POST',
+    auth: true,
+    body: JSON.stringify({ targetUserId: tid }),
+  })
+  if (!r.ok) {
+    console.warn('removeSpaceRoomAdminUser:', r.error.message)
     return false
   }
-  const current = parseUuidArray(row.room_admin_user_ids)
-  const next = current.filter((id) => id !== tid)
-  if (next.length === current.length) return true
-  const { error } = await supabase
-    .from('space_rooms')
-    .update({ room_admin_user_ids: next, updated_at: new Date().toISOString() })
-    .eq('slug', trimmed)
-  if (error) {
-    console.warn('removeSpaceRoomAdminUser:', error.message)
-    return false
-  }
-  return true
+  return r.data?.ok === true
 }

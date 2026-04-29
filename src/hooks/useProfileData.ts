@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { normalizeProfileSlug, validateProfileSlugInput } from '../lib/profileSlug'
 import { assignAutoProfileSlugIfEmpty, isProfileSlugAvailable } from '../lib/profileSlugAvailability'
+import { authUpdateProfile } from '../api/authApi'
+import { storageGetPublicUrl, storageRemove, storageUpload } from '../api/storageApi'
+import { v1GetMeProfile, v1PatchMeProfile } from '../api/meProfileApi'
 
 /** Глобальные роли из `user_global_roles` + справочник `roles`. */
 export interface UserGlobalRole {
@@ -104,36 +106,26 @@ export function useProfileData(): UseProfileReturn {
       setLoading(true)
       setError(null)
 
-      const [{ data: userData, error: userError }, { data: roleRows, error: rolesError }] = await Promise.all([
-        supabase
-          .from('users')
-          .select(
-            'id, display_name, profile_slug, email, avatar_url, status, room_ui_preferences, messenger_pinned_conversation_ids, profile_search_closed, profile_search_allow_by_name, profile_search_allow_by_email, profile_search_allow_by_slug, dm_allow_from, profile_view_allow_from, profile_show_avatar, profile_show_slug, profile_show_last_active, profile_show_online, profile_dm_receipts_private',
-          )
-          .eq('id', uid)
-          .single(),
-        supabase
-          .from('user_global_roles')
-          .select('roles ( code, title, scope_type )')
-          .eq('user_id', uid),
-      ])
-
-      if (userError) {
-        setError(userError.message)
+      const me = await v1GetMeProfile()
+      if (me.error || !me.data?.profile) {
+        setError(me.error ?? 'profile_load_failed')
         setLoading(false)
         return
       }
 
+      const userData = me.data.profile as Record<string, unknown>
+      const roleRows = Array.isArray(me.data.roles) ? (me.data.roles as unknown[]) : []
+
       const globalRoles: UserGlobalRole[] = []
-      if (!rolesError && Array.isArray(roleRows)) {
-        for (const row of roleRows as { roles: UserGlobalRole | UserGlobalRole[] | null }[]) {
-          const r = row.roles
-          if (!r) continue
-          const list = Array.isArray(r) ? r : [r]
-          for (const x of list) {
-            if (x?.code) globalRoles.push(x)
-          }
-        }
+      for (const raw of roleRows) {
+        const row = raw as Record<string, unknown>
+        const code = typeof row.code === 'string' ? row.code : ''
+        if (!code) continue
+        globalRoles.push({
+          code,
+          title: typeof row.title === 'string' ? row.title : null,
+          scope_type: typeof row.scope_type === 'string' ? row.scope_type : 'global',
+        })
       }
 
       const ROLE_SORT = ['superadmin', 'platform_admin', 'support_admin', 'registered_user'] as const
@@ -152,18 +144,18 @@ export function useProfileData(): UseProfileReturn {
           : null
 
       if (!resolvedSlug) {
-        const assigned = await assignAutoProfileSlugIfEmpty(userData.id)
+        const assigned = await assignAutoProfileSlugIfEmpty(String(userData.id ?? ''))
         if (assigned.slug) resolvedSlug = assigned.slug
       }
 
       setProfile({
-        id: userData.id,
-        display_name: userData.display_name,
+        id: String(userData.id ?? ''),
+        display_name: String(userData.display_name ?? ''),
         profile_slug: resolvedSlug,
-        email: userData.email ?? user.email ?? null,
-        avatar_url: userData.avatar_url,
-        status: userData.status,
-        room_ui_preferences: userData.room_ui_preferences ?? null,
+        email: (userData.email as any) ?? user.email ?? null,
+        avatar_url: (userData.avatar_url as any) ?? null,
+        status: String(userData.status ?? ''),
+        room_ui_preferences: (userData.room_ui_preferences as any) ?? null,
         global_roles: globalRoles,
         profile_search_closed: userData.profile_search_closed === true,
         profile_search_allow_by_name: userData.profile_search_allow_by_name !== false,
@@ -183,26 +175,13 @@ export function useProfileData(): UseProfileReturn {
           : {}),
       })
 
-      // Подписка: берём через аккаунт владельца
-      const { data: subData } = await supabase
-        .from('account_subscriptions')
-        .select(`
-          status,
-          trial_ends_at,
-          subscription_plans ( title )
-        `)
-        .eq('status', 'active')
-        .limit(1)
-        .maybeSingle()
-
-      if (subData) {
-        const plans = subData.subscription_plans as unknown as { title: string } | null
-        const planTitle = plans?.title ?? 'Pro'
+      const subData = me.data.plan as any
+      if (subData?.title) {
         setPlan({
-          plan_name: planTitle,
+          plan_name: String(subData.title ?? 'Pro'),
           plan_status: 'active',
-          sub_status: subData.status,
-          trial_ends_at: subData.trial_ends_at,
+          sub_status: String(subData.status ?? 'active'),
+          trial_ends_at: typeof subData.trial_ends_at === 'string' ? subData.trial_ends_at : null,
         })
       } else {
         setPlan({ plan_name: 'Free', plan_status: 'active', sub_status: null, trial_ends_at: null })
@@ -268,21 +247,17 @@ export function useProfileData(): UseProfileReturn {
         patch.profile_slug = nextSlug
       }
 
-      const { error: dbErr } = await supabase.from('users').update(patch).eq('id', user.id)
+      const { error: dbErr } = await v1PatchMeProfile(patch)
 
       if (dbErr) {
         setSaving(false)
-        if (dbErr.code === '23505') {
-          return { error: 'Это имя пользователя уже занято' }
-        }
-        return { error: dbErr.message }
+        if (String(dbErr).includes('23505') || String(dbErr).includes('unique')) return { error: 'Это имя пользователя уже занято' }
+        return { error: dbErr }
       }
 
-      await supabase.auth.updateUser({
-        data: {
-          display_name: trimmed,
-          ...(profileSlugRaw !== undefined ? { profile_slug: nextSlug } : {}),
-        },
+      void authUpdateProfile({
+        displayName: trimmed,
+        ...(profileSlugRaw !== undefined ? { profileSlug: nextSlug } : {}),
       })
 
       setProfile((prev) =>
@@ -307,24 +282,18 @@ export function useProfileData(): UseProfileReturn {
     const ext = file.name.split('.').pop() ?? 'jpg'
     const path = `${user.id}/avatar.${ext}`
 
-    const { error: uploadErr } = await supabase.storage
-      .from('avatars')
-      .upload(path, file, { upsert: true, contentType: file.type })
+    const up = await storageUpload({ bucket: 'avatars', path, file, upsert: true, contentType: file.type })
+    if (!up.ok) { setUploadingAvatar(false); return { error: up.error.message } }
 
-    if (uploadErr) { setUploadingAvatar(false); return { error: uploadErr.message } }
-
-    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
+    const publicUrl = await storageGetPublicUrl({ bucket: 'avatars', path })
     // Добавляем cache-bust чтобы браузер не отображал старый аватар
     const urlWithBust = `${publicUrl}?t=${Date.now()}`
 
-    const { error: dbErr } = await supabase
-      .from('users')
-      .update({ avatar_url: urlWithBust, updated_at: new Date().toISOString() })
-      .eq('id', user.id)
+    const r = await v1PatchMeProfile({ avatar_url: urlWithBust, updated_at: new Date().toISOString() })
 
-    if (dbErr) { setUploadingAvatar(false); return { error: dbErr.message } }
+    if (r.error) { setUploadingAvatar(false); return { error: r.error } }
 
-    await supabase.auth.updateUser({ data: { avatar_url: urlWithBust } })
+    void authUpdateProfile({ avatarUrl: urlWithBust })
 
     setProfile((prev) => prev ? { ...prev, avatar_url: urlWithBust } : prev)
     setUploadingAvatar(false)
@@ -347,9 +316,9 @@ export function useProfileData(): UseProfileReturn {
         profile_search_allow_by_slug: patch.profile_search_allow_by_slug,
         updated_at: new Date().toISOString(),
       }
-      const { error: dbErr } = await supabase.from('users').update(body).eq('id', user.id)
+      const r = await v1PatchMeProfile(body)
       setSearchPrivacySaving(false)
-      if (dbErr) return { error: dbErr.message }
+      if (r.error) return { error: r.error }
       setProfile((prev) =>
         prev
           ? {
@@ -388,9 +357,9 @@ export function useProfileData(): UseProfileReturn {
         profile_dm_receipts_private: patch.profile_dm_receipts_private,
         updated_at: new Date().toISOString(),
       }
-      const { error: dbErr } = await supabase.from('users').update(body).eq('id', user.id)
+      const r = await v1PatchMeProfile(body)
       setContactPrivacySaving(false)
-      if (dbErr) return { error: dbErr.message }
+      if (r.error) return { error: r.error }
       setProfile((prev) =>
         prev
           ? {
@@ -408,21 +377,15 @@ export function useProfileData(): UseProfileReturn {
     if (!user || !profile?.avatar_url) return { error: null }
     setUploadingAvatar(true)
 
-    await supabase.storage.from('avatars').remove([
-      `${user.id}/avatar.jpg`,
-      `${user.id}/avatar.png`,
-      `${user.id}/avatar.webp`,
-      `${user.id}/avatar.gif`,
-    ])
+    void storageRemove({
+      bucket: 'avatars',
+      paths: [`${user.id}/avatar.jpg`, `${user.id}/avatar.png`, `${user.id}/avatar.webp`, `${user.id}/avatar.gif`],
+    })
 
-    const { error: dbErr } = await supabase
-      .from('users')
-      .update({ avatar_url: null, updated_at: new Date().toISOString() })
-      .eq('id', user.id)
+    const r = await v1PatchMeProfile({ avatar_url: null, updated_at: new Date().toISOString() })
+    if (r.error) { setUploadingAvatar(false); return { error: r.error } }
 
-    if (dbErr) { setUploadingAvatar(false); return { error: dbErr.message } }
-
-    await supabase.auth.updateUser({ data: { avatar_url: null } })
+    void authUpdateProfile({ avatarUrl: null })
 
     setProfile((prev) => prev ? { ...prev, avatar_url: null } : prev)
     setUploadingAvatar(false)

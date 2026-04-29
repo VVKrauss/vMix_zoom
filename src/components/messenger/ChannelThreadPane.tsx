@@ -6,7 +6,8 @@ import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { useStableMobileMessenger } from '../../hooks/useStableMobileMessenger'
 import { useMessengerPeerAliasesForMessages } from '../../hooks/useMessengerPeerAliasesForMessages'
-import { supabase } from '../../lib/supabase'
+import { fetchJson } from '../../api/http'
+import { subscribeThread } from '../../api/messengerRealtime'
 import {
   mapDirectMessageFromRow,
   messengerConversationListTailPatch,
@@ -18,6 +19,8 @@ import {
   type DirectMessage,
   type MessengerForwardNav,
 } from '../../lib/messenger'
+import { dedupeDirectMessagesByIdStable } from '../../lib/messengerMessageDedupe'
+import { optimisticMessageMatches } from '../../lib/messengerOptimisticMatch'
 import { buildQuotePreview } from '../../lib/messengerQuotePreview'
 import { useDevRenderTrace } from '../../lib/devTrace'
 import {
@@ -242,11 +245,39 @@ export function ChannelThreadPane({
   const feedPinnedToBottomRef = useRef(true)
   const commentsPinnedToBottomRef = useRef(true)
 
+  const timelinePosts = useMemo(() => {
+    const byId = new Map<string, DirectMessage>()
+    const dupCounts = new Map<string, number>()
+    for (const p of posts) {
+      if (p.kind === 'reaction') continue
+      const id = (p.id || '').trim()
+      if (!id) continue
+      const prev = byId.get(id)
+      if (!prev) {
+        byId.set(id, p)
+        dupCounts.set(id, 1)
+        continue
+      }
+      dupCounts.set(id, (dupCounts.get(id) ?? 1) + 1)
+      const pt = new Date(prev.createdAt).getTime()
+      const nt = new Date(p.createdAt).getTime()
+      byId.set(id, Number.isFinite(nt) && (!Number.isFinite(pt) || nt >= pt) ? p : prev)
+    }
+    if (import.meta.env.DEV) {
+      const dups = Array.from(dupCounts.entries()).filter(([, n]) => n > 1)
+      if (dups.length > 0) {
+        // eslint-disable-next-line no-console
+        console.warn('messenger.channel: duplicate post ids from state', dups.slice(0, 10))
+      }
+    }
+    return Array.from(byId.values())
+  }, [posts])
+
   const postsJumpScopeKey = `${conversationId}:${commentsModalPostId ?? ''}`
   const { showJump: showPostsJump, jumpToBottom: jumpPostsBottom } = useMessengerJumpToBottom(
     postsFeedScrollRef,
     postsJumpScopeKey,
-    posts.length,
+    timelinePosts.length,
   )
   const commentsJumpScopeKey = `${conversationId}:cmod:${commentsModalPostId ?? ''}`
   const commentsLen = commentsModalPostId ? (commentsByPostId[commentsModalPostId] ?? []).length : 0
@@ -285,10 +316,10 @@ export function ChannelThreadPane({
     Boolean(user?.id && aliasScanMessages.length > 0),
   )
 
-  const channelLastSignificantPostId = useMemo(() => {
-    const sig = posts.filter((p) => p.kind !== 'reaction')
-    return sig[sig.length - 1]?.id ?? null
-  }, [posts])
+  const channelLastSignificantPostId = useMemo(
+    () => timelinePosts[timelinePosts.length - 1]?.id ?? null,
+    [timelinePosts],
+  )
 
   useMessengerThreadReadCoordinator({
     conversationId: conversationId.trim(),
@@ -462,21 +493,16 @@ export function ChannelThreadPane({
       setMyChannelMemberRole(null)
       return
     }
-    void supabase
-      .from('chat_conversation_members')
-      .select('role')
-      .eq('conversation_id', cid)
-      .eq('user_id', user.id)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (cancelled) return
-        if (error || !data) {
-          setMyChannelMemberRole(null)
-          return
-        }
-        const r = typeof (data as { role?: unknown }).role === 'string' ? (data as { role: string }).role.trim() : null
-        setMyChannelMemberRole(r)
-      })
+    void (async () => {
+      const r = await fetchJson<{ row: any | null }>(`/api/v1/me/conversations/${encodeURIComponent(cid)}/membership`, { method: 'GET', auth: true })
+      if (cancelled) return
+      if (!r.ok || !r.data?.row) {
+        setMyChannelMemberRole(null)
+        return
+      }
+      const role = typeof (r.data.row as any)?.role === 'string' ? String((r.data.row as any).role).trim() : null
+      setMyChannelMemberRole(role)
+    })()
     return () => {
       cancelled = true
     }
@@ -624,7 +650,11 @@ export function ChannelThreadPane({
         createdAt,
         meta: imageMeta,
       }
-      setPosts((prev) => [...prev, newMsg].sort(sortChrono))
+      setPosts((prev) => {
+        const id = (newMsg.id || '').trim()
+        const base = id ? prev.filter((p) => p.id !== id) : prev
+        return [...base, newMsg].sort(sortChrono)
+      })
       onTouchTail?.({
         lastMessageAt: createdAt,
         lastMessagePreview: previewTextForDirectMessageTail({ kind: 'image', body, meta: imageMeta }),
@@ -663,18 +693,21 @@ export function ChannelThreadPane({
     }
     const finalId = res.data?.messageId ?? optimistic.id
     const finalAt = res.data?.createdAt ?? optimistic.createdAt
-    setPosts((prev) =>
-      prev.map((m) =>
-        m.id === optimistic.id
-          ? {
-              ...optimistic,
-              id: finalId,
-              createdAt: finalAt,
-              meta: linkMeta ?? optimistic.meta,
-            }
-          : m,
-      ),
-    )
+    setPosts((prev) => {
+      const next = prev
+        .filter((m) => m.id !== finalId)
+        .map((m) =>
+          m.id === optimistic.id
+            ? {
+                ...optimistic,
+                id: finalId,
+                createdAt: finalAt,
+                meta: linkMeta ?? optimistic.meta,
+              }
+            : m,
+        )
+      return next
+    })
     onTouchTail?.({ lastMessageAt: finalAt, lastMessagePreview: body })
     setFeedSending(false)
     requestAnimationFrame(() => {
@@ -740,7 +773,11 @@ export function ChannelThreadPane({
         createdAt,
         meta: audioMeta,
       }
-      setPosts((prev) => [...prev, newMsg].sort(sortChrono))
+      setPosts((prev) => {
+        const id = (newMsg.id || '').trim()
+        const base = id ? prev.filter((p) => p.id !== id) : prev
+        return [...base, newMsg].sort(sortChrono)
+      })
       onTouchTail?.({
         lastMessageAt: createdAt,
         lastMessagePreview: previewTextForDirectMessageTail({ kind: 'audio', body, meta: audioMeta }),
@@ -841,7 +878,7 @@ export function ChannelThreadPane({
       if (!active) return
       const hadCache = Boolean(cached?.posts?.length)
       if (cached) {
-        setPosts(cached.posts ?? [])
+        setPosts(dedupeDirectMessagesByIdStable(cached.posts ?? []))
         setHasMoreOlder(Boolean(cached.hasMoreOlder))
         setThreadLoading(false)
         pendingChannelTailScrollRef.current = true
@@ -870,7 +907,7 @@ export function ChannelThreadPane({
         }
         return
       }
-      const nextPosts = (res.data ?? []).filter((m) => m.kind !== 'reaction')
+      const nextPosts = dedupeDirectMessagesByIdStable((res.data ?? []).filter((m) => m.kind !== 'reaction'))
       setPosts(nextPosts)
       setHasMoreOlder(res.hasMoreOlder)
       if (!hadCache) pendingChannelTailScrollRef.current = true
@@ -899,13 +936,14 @@ export function ChannelThreadPane({
   useEffect(() => {
     const cid = conversationId.trim()
     if (!cid || !user?.id || !canView) return
-    const channel = supabase.channel(`channel-thread:${cid}`)
-    const filter = `conversation_id=eq.${cid}`
-    channel
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter }, (payload) => {
-        const msg = mapDirectMessageFromRow(payload.new as Record<string, unknown>)
+    const disableWs = String(import.meta.env.VITE_MESSENGER_DISABLE_WS ?? '').trim() === '1'
+    if (disableWs) return
+    const off = subscribeThread(cid, (ev) => {
+      if (ev.type === 'message_created') {
+        const msg = ev.message as any as DirectMessage
         if (!msg.id) return
         if (cidRef.current.trim() !== cid) return
+        const selfId = user.id
         if (msg.kind === 'reaction') {
           setReactions((prev) => (prev.some((r) => r.id === msg.id) ? prev : [...prev, msg].sort(sortChrono)))
           return
@@ -915,10 +953,8 @@ export function ChannelThreadPane({
             if (prev.some((p) => p.id === msg.id)) return prev
             const withoutMatchingOptimistic = prev.filter((p) => {
               if (!p.id.startsWith('local-')) return true
-              if (p.senderUserId !== msg.senderUserId) return true
-              if (p.kind !== msg.kind) return true
-              if ((p.body ?? '') !== (msg.body ?? '')) return true
-              return false
+              if (!selfId || p.senderUserId !== selfId || msg.senderUserId !== selfId) return true
+              return !optimisticMessageMatches(p, msg, { senderId: selfId })
             })
             return [...withoutMatchingOptimistic, msg].sort(sortChrono)
           })
@@ -933,27 +969,30 @@ export function ChannelThreadPane({
               channelFeedEndRef.current?.scrollIntoView({ block: 'end', inline: 'nearest' })
             })
           }
-        } else {
-          const postId = msg.replyToMessageId
-          if (seenChannelCommentIdsRef.current.has(msg.id)) return
-          seenChannelCommentIdsRef.current.add(msg.id)
-          setCommentCountByPostId((prev) => ({ ...prev, [postId]: (prev[postId] ?? 0) + 1 }))
-          setCommentsByPostId((prev) => {
-            const cur = prev[postId]
-            if (!cur) return prev
-            if (cur.some((c) => c.id === msg.id)) return prev
-            return { ...prev, [postId]: [...cur, msg].sort(sortChrono) }
-          })
-          if (commentsPinnedToBottomRef.current && commentsModalPostId?.trim() === postId.trim()) {
-            requestAnimationFrame(() => {
-              const el = commentsScrollRef.current
-              if (el) el.scrollTop = el.scrollHeight
-            })
-          }
+          return
         }
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages', filter }, (payload) => {
-        const msg = mapDirectMessageFromRow(payload.new as Record<string, unknown>)
+
+        const postId = msg.replyToMessageId
+        if (seenChannelCommentIdsRef.current.has(msg.id)) return
+        seenChannelCommentIdsRef.current.add(msg.id)
+        setCommentCountByPostId((prev) => ({ ...prev, [postId]: (prev[postId] ?? 0) + 1 }))
+        setCommentsByPostId((prev) => {
+          const cur = prev[postId]
+          if (!cur) return prev
+          if (cur.some((c) => c.id === msg.id)) return prev
+          return { ...prev, [postId]: [...cur, msg].sort(sortChrono) }
+        })
+        if (commentsPinnedToBottomRef.current && commentsModalPostId?.trim() === postId.trim()) {
+          requestAnimationFrame(() => {
+            const el = commentsScrollRef.current
+            if (el) el.scrollTop = el.scrollHeight
+          })
+        }
+        return
+      }
+
+      if (ev.type === 'message_updated') {
+        const msg = ev.message as any as DirectMessage
         if (!msg.id) return
         const patchOne = (m: DirectMessage): DirectMessage => (m.id === msg.id ? { ...m, ...msg } : m)
         if (msg.kind === 'reaction') {
@@ -970,45 +1009,89 @@ export function ChannelThreadPane({
           if (!cur) return prev
           return { ...prev, [postId]: cur.map(patchOne) }
         })
-      })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'chat_messages', filter }, (payload) => {
-        const oldRow = payload.old as Record<string, unknown>
-        const id = chatMessageDeleteRowId(oldRow)
+        return
+      }
+
+      if (ev.type === 'message_deleted') {
+        const id = ev.messageId
         if (!id || cidRef.current.trim() !== cid) return
-        const kind = typeof oldRow.kind === 'string' ? oldRow.kind : ''
-        const replyToRaw = oldRow.reply_to_message_id
-        const replyTo = typeof replyToRaw === 'string' && replyToRaw.trim() ? replyToRaw.trim() : null
-
-        if (kind === 'reaction') {
-          removeReactionMessageEverywhere(id)
-          return
-        }
-
-        if (replyTo) {
-          setCommentsByPostId((prev) => {
-            const cur = prev[replyTo]
-            if (!cur?.some((c) => c.id === id)) return prev
-            setCommentCountByPostId((pc) => ({
-              ...pc,
-              [replyTo]: Math.max(0, (pc[replyTo] ?? 0) - 1),
-            }))
-            return { ...prev, [replyTo]: cur.filter((c) => c.id !== id) }
-          })
-          return
-        }
-
+        // We don't know kind/replyTo without oldRow. Best-effort:
+        removeReactionMessageEverywhere(id)
         setPosts((prev) => {
           const next = prev.filter((p) => p.id !== id)
           queueMicrotask(() => onTouchTail?.(messengerConversationListTailPatch(next)))
           return next
         })
-      })
-      .subscribe()
+        setCommentsByPostId((prev) => {
+          let touched = false
+          const next: any = { ...prev }
+          for (const k of Object.keys(next)) {
+            const arr = next[k]
+            if (!Array.isArray(arr)) continue
+            const before = arr.length
+            const after = arr.filter((c: any) => c?.id !== id)
+            if (after.length !== before) {
+              touched = true
+              next[k] = after
+              setCommentCountByPostId((pc) => ({ ...pc, [k]: Math.max(0, (pc as any)[k] - 1) }))
+            }
+          }
+          return touched ? next : prev
+        })
+      }
+    })
 
     return () => {
-      supabase.removeChannel(channel)
+      off()
     }
-  }, [conversationId, user?.id, onTouchTail, removeReactionMessageEverywhere])
+  }, [conversationId, user?.id, canView, onTouchTail, removeReactionMessageEverywhere])
+
+  // HTTP polling fallback for channels (when WS is disabled):
+  // - periodically reload posts feed
+  // - if comments modal is open, periodically refresh comments for that post
+  useEffect(() => {
+    const disableWs = String(import.meta.env.VITE_MESSENGER_DISABLE_WS ?? '').trim() === '1'
+    if (!disableWs) return
+    const cid = conversationId.trim()
+    if (!cid || !user?.id || !canView || !messengerOnline) return
+
+    let destroyed = false
+    let commentsInFlight = false
+
+    const pollPosts = () => {
+      if (destroyed) return
+      reloadPosts()
+    }
+
+    const pollComments = async () => {
+      const postId = commentsModalPostId?.trim() ?? ''
+      if (!postId) return
+      if (destroyed || commentsInFlight) return
+      commentsInFlight = true
+      try {
+        const res = await listChannelCommentsPage(cid, postId, { limit: 60 })
+        if (destroyed) return
+        if (res.error || !res.data) return
+        const rows = res.data ?? []
+        setCommentsByPostId((prev) => ({ ...prev, [postId]: rows }))
+        const nonR = rows.filter((m) => m.kind !== 'reaction')
+        setCommentCountHasMoreByPostId((prev) => ({ ...prev, [postId]: res.hasMoreOlder }))
+        setCommentCountByPostId((prev) => ({ ...prev, [postId]: Math.max(prev[postId] ?? 0, nonR.length) }))
+      } finally {
+        commentsInFlight = false
+      }
+    }
+
+    pollPosts()
+    void pollComments()
+    const postsTimer = window.setInterval(pollPosts, 5000)
+    const commentsTimer = window.setInterval(() => void pollComments(), 5000)
+    return () => {
+      destroyed = true
+      window.clearInterval(postsTimer)
+      window.clearInterval(commentsTimer)
+    }
+  }, [conversationId, user?.id, canView, messengerOnline, reloadPosts, commentsModalPostId])
 
   const reactionFetchTargets = useMemo(() => {
     const postIds = posts.filter((p) => p.kind !== 'reaction').map((p) => p.id)
@@ -2021,7 +2104,7 @@ export function ChannelThreadPane({
           </div>
         ) : null}
 
-        {threadLoading && posts.filter((m) => m.kind !== 'reaction').length === 0 ? (
+        {threadLoading && timelinePosts.length === 0 ? (
           <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…" />
         ) : !canView ? (
           joinRequestPending ? (
@@ -2041,7 +2124,7 @@ export function ChannelThreadPane({
               </div>
             </div>
           )
-        ) : posts.filter((m) => m.kind !== 'reaction').length === 0 ? (
+        ) : timelinePosts.length === 0 ? (
           viewerOnly && publicJoinCta ? (
             <div className="messenger-viewer-join-empty messenger-viewer-join-empty--channel">
               <button
@@ -2067,8 +2150,7 @@ export function ChannelThreadPane({
               {(() => {
                 const nodes: React.ReactNode[] = []
                 let prevDayKey: string | null = null
-                for (const p of posts) {
-                  if (p.kind === 'reaction') continue
+                for (const p of timelinePosts) {
                   const dt = new Date(p.createdAt)
                   const dayKey = Number.isNaN(dt.getTime()) ? null : `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`
                   if (prevDayKey && dayKey && dayKey !== prevDayKey) {
@@ -2282,7 +2364,35 @@ export function ChannelThreadPane({
 
   const renderChannelCommentsView = () => {
     if (!commentsModalPostId) return null
-    const list = (commentsByPostId[commentsModalPostId] ?? []).filter((m) => m.kind !== 'reaction')
+    const listRaw = (commentsByPostId[commentsModalPostId] ?? []).filter((m) => m.kind !== 'reaction')
+    const list = (() => {
+      const byId = new Map<string, DirectMessage>()
+      const dupCounts = new Map<string, number>()
+      for (const m of listRaw) {
+        const id = (m.id || '').trim()
+        if (!id) continue
+        const prev = byId.get(id)
+        if (!prev) {
+          byId.set(id, m)
+          dupCounts.set(id, 1)
+          continue
+        }
+        dupCounts.set(id, (dupCounts.get(id) ?? 1) + 1)
+        const pt = new Date(prev.createdAt).getTime()
+        const nt = new Date(m.createdAt).getTime()
+        byId.set(id, Number.isFinite(nt) && (!Number.isFinite(pt) || nt >= pt) ? m : prev)
+      }
+      if (import.meta.env.DEV) {
+        const dups = Array.from(dupCounts.entries()).filter(([, n]) => n > 1)
+        if (dups.length > 0) {
+          // eslint-disable-next-line no-console
+          console.warn('messenger.channel: duplicate comment ids from state', dups.slice(0, 10), {
+            postId: commentsModalPostId,
+          })
+        }
+      }
+      return Array.from(byId.values())
+    })()
     const draft = draftCommentByPostId[commentsModalPostId] ?? ''
     const sending = sendingCommentPostId === commentsModalPostId
     const canSend = Boolean(draft.trim()) && !sending
@@ -2291,9 +2401,7 @@ export function ChannelThreadPane({
     const postsCompact = (
       <div className="dashboard-messenger__channel-comments-posts" role="region" aria-label="Посты канала">
         <div className="dashboard-messenger__channel-comments-posts-scroll">
-          {posts
-            .filter((m) => m.kind !== 'reaction')
-            .map((p) => {
+          {timelinePosts.map((p) => {
               const n = commentCountByPostId[p.id] ?? 0
               const capped = commentCountHasMoreByPostId[p.id] ?? false
               const label = capped ? `${n}+` : String(n)

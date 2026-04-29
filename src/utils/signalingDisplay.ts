@@ -2,8 +2,10 @@
  * Текст для UI: куда подключается клиент (учёт Vite proxy в dev).
  */
 export function getSignalingDisplayLines(): { primary: string; secondary?: string } {
-  const configured = String(import.meta.env.VITE_SIGNALING_URL ?? '').trim().replace(/\/$/, '')
-  const fallback = 'https://s.redflow.online'
+  const trim = (s: unknown) => String(s ?? '').trim().replace(/\/$/, '')
+  const configured =
+    trim(import.meta.env.VITE_API_FALLBACK) || trim(import.meta.env.VITE_API_BASE) || trim(import.meta.env.VITE_SIGNALING_URL)
+  const fallback = 'https://proxy.redflow.online'
 
   if (import.meta.env.DEV) {
     const proxyTarget = configured || fallback
@@ -19,7 +21,7 @@ export function getSignalingDisplayLines(): { primary: string; secondary?: strin
   }
 
   return {
-    primary: '(не задан VITE_SIGNALING_URL)',
-    secondary: 'Соберите фронт с переменной VITE_SIGNALING_URL на ваш signaling.',
+    primary: '(не задан VITE_API_FALLBACK / VITE_API_BASE / VITE_SIGNALING_URL)',
+    secondary: 'Соберите фронт с переменной VITE_API_FALLBACK (или VITE_API_BASE) на нужный хост.',
   }
 }

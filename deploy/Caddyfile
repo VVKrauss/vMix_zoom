@@ -1,0 +1,12 @@
+api2.redflow.online {
+  encode zstd gzip
+
+  @ws {
+    path /ws
+  }
+  reverse_proxy @ws api:8080
+
+  reverse_proxy /api/* api:8080
+  reverse_proxy /public/* api:8080
+}
+

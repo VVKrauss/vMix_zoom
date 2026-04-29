@@ -3,7 +3,7 @@ import type { NavigateFunction } from 'react-router-dom'
 import { requestMessengerUnreadRefresh } from '../lib/messenger'
 import type { MessengerConversationSummary } from '../lib/messengerConversations'
 import type { DirectMessage } from '../lib/messenger'
-import { supabase } from '../lib/supabase'
+import { rtChannel, rtRemoveChannel } from '../api/realtimeCompat'
 
 /**
  * DELETE в chat_conversation_members для текущего пользователя — убрать чат из дерева (в т.ч. взаимное скрытие ЛС).
@@ -32,8 +32,7 @@ export function useMessengerSelfMembershipDeleteRealtime(opts: {
   useEffect(() => {
     const uid = userId?.trim() ?? ''
     if (!uid) return
-    const channel = supabase
-      .channel(`messenger-member-self-delete:${uid}`)
+    const channel = rtChannel(`messenger-member-self-delete:${uid}`)
       .on(
         'postgres_changes',
         {
@@ -42,7 +41,7 @@ export function useMessengerSelfMembershipDeleteRealtime(opts: {
           table: 'chat_conversation_members',
           filter: `user_id=eq.${uid}`,
         },
-        (payload) => {
+        (payload: any) => {
           const oldRow = payload.old as Record<string, unknown>
           const raw = oldRow?.conversation_id
           const convId = typeof raw === 'string' ? raw.trim() : raw != null ? String(raw).trim() : ''
@@ -65,7 +64,7 @@ export function useMessengerSelfMembershipDeleteRealtime(opts: {
       .subscribe()
 
     return () => {
-      void supabase.removeChannel(channel)
+      rtRemoveChannel(channel)
     }
   }, [navigate, userId])
 }

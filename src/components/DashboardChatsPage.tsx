@@ -119,6 +119,26 @@ export function DashboardChatsPage() {
     }
   }, [user?.id])
 
+  const uniqueMyRooms = useMemo(() => {
+    const m = new Map<string, PersistentSpaceRoomRow>()
+    for (const r of myRooms) {
+      const slug = String(r.slug ?? '').trim()
+      if (!slug) continue
+      if (!m.has(slug)) m.set(slug, r)
+    }
+    return [...m.values()]
+  }, [myRooms])
+
+  const uniqueItems = useMemo(() => {
+    const m = new Map<string, RoomChatConversationSummary>()
+    for (const it of items) {
+      const id = String(it.id ?? '').trim()
+      if (!id) continue
+      if (!m.has(id)) m.set(id, it)
+    }
+    return [...m.values()]
+  }, [items])
+
   const createPersistentRoom = () => {
     if (!user?.id) return
     const id = newRoomId()
@@ -162,18 +182,18 @@ export function DashboardChatsPage() {
 
   const joinableSlugs = useMemo(() => {
     const s = new Set<string>()
-    for (const r of myRooms) {
+    for (const r of uniqueMyRooms) {
       if (r.status === 'open' && r.slug?.trim()) s.add(r.slug.trim())
     }
     return s
-  }, [myRooms])
+  }, [uniqueMyRooms])
 
   const emptyHint = useMemo(
     () =>
-      !loading && !error && items.length === 0
+      !loading && !error && uniqueItems.length === 0
         ? 'Здесь появятся комнаты, в которых вы участвовали. Откройте эфир по ссылке — запись добавится автоматически.'
         : null,
-    [loading, error, items.length],
+    [loading, error, uniqueItems.length],
   )
 
   return (
@@ -209,14 +229,14 @@ export function DashboardChatsPage() {
             <p className="dashboard-my-rooms__hint">Загрузка…</p>
           ) : myRoomsError ? (
             <p className="join-error dashboard-my-rooms__hint">{myRoomsError}</p>
-          ) : myRooms.length === 0 ? (
+          ) : uniqueMyRooms.length === 0 ? (
             <p className="dashboard-my-rooms__hint">
               Постоянных комнат пока нет. Нажмите «+» — откроется эфир с новой ссылкой; после первого входа комната
               сохранится в списке.
             </p>
           ) : (
             <ul className="dashboard-my-rooms__list">
-              {myRooms.map((r) => {
+              {uniqueMyRooms.map((r) => {
                 const label = r.displayName?.trim() || r.slug
                 const showTitle = Boolean(r.displayName?.trim())
                 return (
@@ -241,7 +261,7 @@ export function DashboardChatsPage() {
           )}
         </div>
 
-        {!loading && !error && (items.length > 0 || pageOffset > 0) ? (
+        {!loading && !error && (uniqueItems.length > 0 || pageOffset > 0) ? (
           <div className="dashboard-rooms-pager" role="navigation" aria-label="Страницы списка комнат">
             <button
               type="button"
@@ -254,7 +274,7 @@ export function DashboardChatsPage() {
               <ChevronLeftIcon />
             </button>
             <span className="dashboard-rooms-pager__info">
-              {pageOffset + 1}–{pageOffset + items.length}
+              {pageOffset + 1}–{pageOffset + uniqueItems.length}
               {hasMore ? ' …' : ''}
             </span>
             <button
@@ -272,13 +292,13 @@ export function DashboardChatsPage() {
 
         {loading ? <div className="auth-loading" aria-label="Загрузка..." /> : null}
         {!loading && error ? <p className="join-error">{error}</p> : null}
-        {!loading && !error && items.length === 0 && pageOffset === 0 ? (
+        {!loading && !error && uniqueItems.length === 0 && pageOffset === 0 ? (
           <div className="dashboard-chats-empty">{emptyHint}</div>
         ) : null}
 
-        {!loading && !error && items.length > 0 ? (
+        {!loading && !error && uniqueItems.length > 0 ? (
           <ul className="dashboard-rooms-compact-list">
-            {items.map((item) => {
+            {uniqueItems.map((item) => {
               const isOpen = !item.closedAt
               const slug = item.roomSlug?.trim() ?? ''
               const canJoinRoom = Boolean(slug && joinableSlugs.has(slug))

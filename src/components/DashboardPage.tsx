@@ -16,14 +16,7 @@ import { listMessengerPeersByMessageCount } from '../lib/messenger'
 import type { ContactCard } from '../lib/socialGraph'
 import { listMyContacts } from '../lib/socialGraph'
 import { fetchPersistentSpaceRoomsForUser, type PersistentSpaceRoomRow } from '../lib/spaceRoom'
-import {
-  getSupabaseDirectOrigin,
-  getSupabaseProxyOrigin,
-  getSupabaseUseProxy,
-  isSupabaseProxyOriginConfigured,
-  setSupabaseUseProxy,
-  supabase,
-} from '../lib/supabase'
+import { v1GetMeProfile, v1PatchMeProfile } from '../api/meProfileApi'
 import type { StoredLayoutMode } from '../config/roomUiStorage'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
@@ -31,6 +24,7 @@ import { DashboardContactsIncomingModal } from './DashboardContactsIncomingModal
 import { DashboardLayoutPicker } from './DashboardLayoutPicker'
 import { DashboardMenuPicker } from './DashboardMenuPicker'
 import { PillToggle } from './PillToggle'
+import { readApiRouteMode, writeApiRouteMode } from '../config/apiRouteMode'
 import { DashboardShell } from './DashboardShell'
 import { ConfirmDialog } from './ConfirmDialog'
 import { DashboardRoomRow } from './DashboardRoomRow'
@@ -167,6 +161,8 @@ export function DashboardPage() {
   const [roomArchiveLoading, setRoomArchiveLoading] = useState(false)
   const [contacts, setContacts] = useState<ContactCard[]>([])
   const [contactsTick, setContactsTick] = useState(0)
+
+  const [forceProxy, setForceProxy] = useState(() => readApiRouteMode() === 'proxy')
   const [peerTop, setPeerTop] = useState<
     { userId: string; messageCount: number; avatarUrl: string | null; lastMessageAt: string | null }[]
   >([])
@@ -199,73 +195,6 @@ export function DashboardPage() {
   useEffect(() => {
     refreshHiddenIncoming()
   }, [refreshHiddenIncoming, contactsTick])
-
-  useEffect(() => {
-    if (!isSupabaseProxyOriginConfigured()) return
-    const direct = getSupabaseDirectOrigin()
-    const proxy = getSupabaseProxyOrigin()
-    if (!direct || !proxy) return
-
-    const PROBE_MS = 12_000
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
-    if (!anonKey?.trim()) return
-
-    /** PostgREST: как у supabase-js (apikey + Bearer anon). */
-    const restProbeHeaders: Record<string, string> = {
-      Accept: 'application/json',
-      apikey: anonKey,
-      Authorization: `Bearer ${anonKey}`,
-    }
-    /** GoTrue /health: только apikey для Kong; Bearer с anon иногда даёт 401 и дублирует шум в консоли. */
-    const healthProbeHeaders: Record<string, string> = {
-      Accept: 'application/json',
-      apikey: anonKey,
-    }
-
-    async function probeSupabaseReach(origin: string, signal: AbortSignal): Promise<'yes' | 'no'> {
-      try {
-        const health = await fetch(`${origin}/auth/v1/health`, {
-          method: 'GET',
-          signal,
-          headers: healthProbeHeaders,
-        })
-        if (health.ok) return 'yes'
-        if (health.status >= 500) return 'no'
-        const rest = await fetch(`${origin}/rest/v1/`, {
-          method: 'GET',
-          signal,
-          headers: restProbeHeaders,
-        })
-        return rest.status >= 500 ? 'no' : 'yes'
-      } catch {
-        return 'no'
-      }
-    }
-
-    let cancelled = false
-    const acDirect = new AbortController()
-    const acProxy = new AbortController()
-    const tDirect = window.setTimeout(() => acDirect.abort(), PROBE_MS)
-    const tProxy = window.setTimeout(() => acProxy.abort(), PROBE_MS)
-
-    setDbDirectReachable('unknown')
-    setDbViaProxyReachable('unknown')
-
-    void probeSupabaseReach(direct, acDirect.signal).then((v) => {
-      if (!cancelled) setDbDirectReachable(v)
-    })
-    void probeSupabaseReach(proxy, acProxy.signal).then((v) => {
-      if (!cancelled) setDbViaProxyReachable(v)
-    })
-
-    return () => {
-      cancelled = true
-      acDirect.abort()
-      acProxy.abort()
-      window.clearTimeout(tDirect)
-      window.clearTimeout(tProxy)
-    }
-  }, [])
 
   useEffect(() => {
     if (!profile) return
@@ -467,10 +396,30 @@ export function DashboardPage() {
   const persistentSlugs = useMemo(() => new Set(myRooms.map((r) => r.slug)), [myRooms])
   const persistentPreview = useMemo(() => myRooms.slice(0, 3), [myRooms])
   const temporaryPreview = useMemo(() => {
-    return roomArchiveItems
+    return uniqueRoomArchiveItems
       .filter((it) => it.roomSlug && !persistentSlugs.has(it.roomSlug))
       .slice(0, 6)
-  }, [roomArchiveItems, persistentSlugs])
+  }, [uniqueRoomArchiveItems, persistentSlugs])
+
+  const uniqueGlobalRoles = useMemo(() => {
+    const m = new Map<string, { code: string; title?: string | null }>()
+    for (const r of profile?.global_roles ?? []) {
+      const code = String((r as any)?.code ?? '').trim()
+      if (!code) continue
+      if (!m.has(code)) m.set(code, r as any)
+    }
+    return [...m.values()]
+  }, [profile?.global_roles])
+
+  const uniquePeerTop = useMemo(() => {
+    const m = new Map<string, { userId: string; messageCount: number; avatarUrl: string | null; lastMessageAt: string | null }>()
+    for (const p of peerTop) {
+      const uid = String(p.userId ?? '').trim()
+      if (!uid) continue
+      if (!m.has(uid)) m.set(uid, p)
+    }
+    return [...m.values()]
+  }, [peerTop])
 
   const joinableSlugs = useMemo(() => {
     const s = new Set<string>()
@@ -796,83 +745,69 @@ export function DashboardPage() {
               </div>
             </section>
 
-        {isSupabaseProxyOriginConfigured() ? (
-          <section className="dashboard-tile dashboard-tile--supabase-proxy">
-            <h2 className="dashboard-tile__title">Прокси к базе</h2>
-            <div className="dashboard-form dashboard-form--compact">
-              <div
-                className="dashboard-supabase-db-probes"
-                role="status"
-                aria-live="polite"
-              >
-                <div
-                  className="dashboard-supabase-db-probe"
-                  title={`${getSupabaseDirectOrigin()}/auth/v1/health`}
-                >
-                  <span
-                    className={
-                      dbDirectReachable === 'yes'
-                        ? 'dashboard-supabase-proxy-dot dashboard-supabase-proxy-dot--ok'
-                        : dbDirectReachable === 'no'
-                          ? 'dashboard-supabase-proxy-dot dashboard-supabase-proxy-dot--bad'
-                          : 'dashboard-supabase-proxy-dot dashboard-supabase-proxy-dot--pending'
-                    }
-                    aria-hidden
-                  />
-                  <span className="dashboard-supabase-db-probe__label">Без прокси</span>
-                  <span
-                    className={
-                      dbDirectReachable === 'yes'
-                        ? 'dashboard-supabase-proxy-status-text dashboard-supabase-proxy-status-text--ok'
-                        : dbDirectReachable === 'no'
-                          ? 'dashboard-supabase-proxy-status-text dashboard-supabase-proxy-status-text--bad'
-                          : 'dashboard-supabase-proxy-status-text dashboard-supabase-proxy-status-text--pending'
-                    }
-                  >
-                    {dbDirectReachable === 'yes' ? 'есть' : dbDirectReachable === 'no' ? 'нет' : '…'}
+                <div className="dashboard-tile-profile__main">
+                  <div className="dashboard-tile-profile__line">
+                    <span className="dashboard-tile-profile__name">{profile.display_name}</span>
+                    <button
+                      type="button"
+                      className="dashboard-tile-profile__settings"
+                      title="Настройки профиля"
+                      aria-label="Настройки профиля"
+                      onClick={() => openProfileEdit()}
+                    >
+                      <SettingsGearIcon />
+                    </button>
+
+                  </div>
+                  {profile.profile_slug ? <span className="dashboard-tile-profile__nick">@{profile.profile_slug}</span> : null}
+                  <span className="dashboard-tile-profile__email" title={profile.email ?? undefined}>
+                    {profile.email ?? '—'}
                   </span>
-                </div>
-                <div
-                  className="dashboard-supabase-db-probe"
-                  title={`${getSupabaseProxyOrigin()}/auth/v1/health`}
-                >
-                  <span
-                    className={
-                      dbViaProxyReachable === 'yes'
-                        ? 'dashboard-supabase-proxy-dot dashboard-supabase-proxy-dot--ok'
-                        : dbViaProxyReachable === 'no'
-                          ? 'dashboard-supabase-proxy-dot dashboard-supabase-proxy-dot--bad'
-                          : 'dashboard-supabase-proxy-dot dashboard-supabase-proxy-dot--pending'
-                    }
-                    aria-hidden
-                  />
-                  <span className="dashboard-supabase-db-probe__label">Через прокси</span>
-                  <span
-                    className={
-                      dbViaProxyReachable === 'yes'
-                        ? 'dashboard-supabase-proxy-status-text dashboard-supabase-proxy-status-text--ok'
-                        : dbViaProxyReachable === 'no'
-                          ? 'dashboard-supabase-proxy-status-text dashboard-supabase-proxy-status-text--bad'
-                          : 'dashboard-supabase-proxy-status-text dashboard-supabase-proxy-status-text--pending'
-                    }
-                  >
-                    {dbViaProxyReachable === 'yes' ? 'есть' : dbViaProxyReachable === 'no' ? 'нет' : '…'}
-                  </span>
+                  <div className="dashboard-tile-profile__badges">
+                    <span className={`dashboard-badge ${STATUS_CLASS[profile.status] ?? ''}`}>
+                      {STATUS_LABEL[profile.status] ?? profile.status}
+                    </span>
+                    {profile.global_roles.length > 0 ? (
+                      <div className="dashboard-role-badges">
+                        {profile.global_roles.map((role) => (
+                          <span
+                            key={role.code}
+                            className={globalRoleBadgeClass(role.code)}
+                            title={role.title ? `${role.title} (${role.code})` : role.code}
+                          >
+                            {GLOBAL_ROLE_LABEL[role.code] ?? role.title ?? role.code}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    <span className="dashboard-plan dashboard-plan--inline">
+                      <span className="dashboard-plan__name">{plan?.plan_name ?? 'Free'}</span>
+                      {plan?.sub_status ? <span className="dashboard-badge dashboard-badge--active">{plan.sub_status}</span> : null}
+                    </span>
+                  </div>
+                  <button type="button" className="dashboard-tile-profile__logout" onClick={() => signOut()}>
+                    <LogOutIcon />
+                    Выход
+                  </button>
                 </div>
               </div>
-              <div className="dashboard-field" style={{ marginTop: 12 }}>
-                <div className="dashboard-field__inline dashboard-field__inline--toggle dashboard-supabase-proxy-toggle-row">
-                  <span className="dashboard-field__label">Включить прокси</span>
-                  <PillToggle
-                    checked={supabaseUseProxy}
-                    onCheckedChange={(next) => {
-                      if (next === supabaseUseProxy) return
-                      setSupabaseUseProxy(next)
-                      window.location.reload()
-                    }}
-                    ariaLabel="Включить прокси для запросов к базе"
-                  />
-                </div>
+            </section>
+
+            <div className="dashboard-settings-quick-between" aria-label="Быстрые разделы">
+              <div className="dashboard-settings-quick-grid">
+                <Link to="/dashboard/contacts" className="dashboard-settings-quick-tile">
+                  <FiRrIcon name="users" className="dashboard-settings-quick-tile__icon" />
+                  <span>Контакты</span>
+                  {visibleIncomingCount > 0 ? (
+                    <span className="dashboard-settings-quick-tile__badge">
+                      {visibleIncomingCount > 99 ? '99+' : visibleIncomingCount}
+                    </span>
+                  ) : null}
+                </Link>
+                <Link to="/dashboard/chats" className="dashboard-settings-quick-tile">
+                  <RoomsIcon />
+                  <span>Комнаты</span>
+                </Link>
               </div>
             </div>
           </section>
