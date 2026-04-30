@@ -116,7 +116,7 @@ export default defineConfig(({ mode }) => {
       inlineIndexCssImports(),
       react(),
       VitePWA({
-        registerType: 'prompt',
+        registerType: 'autoUpdate',
         injectRegister: null,
         includeAssets: ['logo.png', 'logo-h.png', 'push-badge.png'],
         manifest: {

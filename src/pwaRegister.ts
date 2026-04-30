@@ -37,7 +37,8 @@ export function registerPwa() {
   const updateSW = registerSW({
     immediate: true,
     onNeedRefresh() {
-      showUpdateBanner(() => updateSW())
+      // `true` → apply update + reload page (virtual:pwa-register API)
+      showUpdateBanner(() => updateSW(true))
     },
     onOfflineReady() {
       /* Офлайн-оболочка готова; мессенджер и комнаты всё равно требуют сеть. */
