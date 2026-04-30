@@ -81,9 +81,9 @@ export function AdminSiteNewsPanel() {
   }
 
   return (
-    <section className="dashboard-section admin-site-news">
-      <h2 className="dashboard-section__subtitle">Новости сайта</h2>
-      <p className="dashboard-section__hint admin-site-news__hint">
+    <section className="dashboard-tile admin-site-news">
+      <h2 className="dashboard-tile__title">Новости сайта</h2>
+      <p className="dashboard-field__hint" style={{ marginTop: 0 }}>
         Публикации видны на странице «Новости» без авторизации. Картинка — URL (https…), поле можно оставить пустым.
       </p>
 
@@ -96,51 +96,53 @@ export function AdminSiteNewsPanel() {
       {error ? <p className="join-error">{error}</p> : null}
 
       <div className="admin-site-news__grid">
-        <div className="admin-site-news__form-card">
-          <h3 className="admin-site-news__form-title">{editingId ? 'Редактирование' : 'Новая запись'}</h3>
-          <label className="join-label">
-            Дата публикации
-            <input
-              className="join-input"
-              type="date"
-              value={publishedAt}
-              onChange={(e) => setPublishedAt(e.target.value)}
-              disabled={saving}
-            />
-          </label>
-          <label className="join-label">
-            Заголовок
-            <input
-              className="join-input"
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              disabled={saving}
-              maxLength={300}
-            />
-          </label>
-          <label className="join-label">
-            Текст
-            <textarea
-              className="join-input admin-site-news__textarea"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              disabled={saving}
-              rows={6}
-            />
-          </label>
-          <label className="join-label">
-            Изображение (URL, необязательно)
-            <input
-              className="join-input"
-              type="url"
-              inputMode="url"
-              placeholder="https://…"
-              value={imageUrl}
-              onChange={(e) => setImageUrl(e.target.value)}
-              disabled={saving}
-            />
-          </label>
+        <div className="dashboard-tile admin-site-news__form-card">
+          <h3 className="dashboard-tile__subtitle">{editingId ? 'Редактирование' : 'Новая запись'}</h3>
+          <div className="dashboard-form dashboard-form--compact">
+            <label className="join-label">
+              Дата публикации
+              <input
+                className="join-input"
+                type="date"
+                value={publishedAt}
+                onChange={(e) => setPublishedAt(e.target.value)}
+                disabled={saving}
+              />
+            </label>
+            <label className="join-label">
+              Заголовок
+              <input
+                className="join-input"
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                disabled={saving}
+                maxLength={300}
+              />
+            </label>
+            <label className="join-label">
+              Текст
+              <textarea
+                className="join-input admin-site-news__textarea"
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                disabled={saving}
+                rows={6}
+              />
+            </label>
+            <label className="join-label">
+              Изображение (URL, необязательно)
+              <input
+                className="join-input"
+                type="url"
+                inputMode="url"
+                placeholder="https://…"
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+                disabled={saving}
+              />
+            </label>
+          </div>
           <div className="admin-site-news__form-actions">
             {editingId ? (
               <button type="button" className="join-btn join-btn--secondary" disabled={saving} onClick={resetForm}>
@@ -158,8 +160,8 @@ export function AdminSiteNewsPanel() {
           </div>
         </div>
 
-        <div className="admin-site-news__list-card">
-          <h3 className="admin-site-news__list-title">Опубликовано ({items.length})</h3>
+        <div className="dashboard-tile admin-site-news__list-card">
+          <h3 className="dashboard-tile__subtitle">Опубликовано ({items.length})</h3>
           {items.length === 0 ? (
             <p className="admin-site-news__empty">Записей пока нет.</p>
           ) : (

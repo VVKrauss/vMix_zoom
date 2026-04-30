@@ -2,59 +2,41 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
-import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
 import { AdminDashboardPanel } from './AdminDashboardPanel'
 import { AdminRegisteredUsersTable } from './AdminRegisteredUsersTable'
 import { ServerSettingsModal } from './ServerSettingsModal'
 import { TelegramNotificationsPanel } from './TelegramNotificationsPanel'
 import { AdminRoomChatsCleanupPanel } from './AdminRoomChatsCleanupPanel'
 import { AdminSiteNewsPanel } from './AdminSiteNewsPanel'
-import { ChatBubbleIcon } from './icons'
+import { DashboardShell } from './DashboardShell'
+import { LogOutIcon } from './icons'
 
 type AdminTab = 'dashboard' | 'users' | 'server' | 'notifications' | 'roomChats' | 'news'
 
 export function AdminPage() {
   const { signOut } = useAuth()
-  const { isSuperadmin } = useCanAccessAdminPanel()
-  const messengerUnread = useMessengerUnreadCount()
+  const { allowed: canAccessAdmin, isSuperadmin } = useCanAccessAdminPanel()
   const [tab, setTab] = useState<AdminTab>('dashboard')
 
   return (
-    <div className="dashboard-page">
-      <header className="dashboard-topbar">
-        <Link to="/" className="dashboard-topbar__logo" title="На главную">
-          <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
-        </Link>
-        <nav className="dashboard-topbar__nav">
-          <Link to="/" className="dashboard-topbar__nav-link">
-            На главную
-          </Link>
-          <Link to="/dashboard" className="dashboard-topbar__nav-link">
-            Личный кабинет
-          </Link>
-          <Link
-            to="/dashboard/messenger"
-            className="dashboard-topbar__nav-link dashboard-topbar__nav-link--inline-icon"
-            title="Мессенджер"
-          >
-            <ChatBubbleIcon />
-            <span>Мессенджер</span>
-            {messengerUnread > 0 ? (
-              <span className="dashboard-topbar__nav-ms-badge">
-                {messengerUnread > 99 ? '99+' : messengerUnread}
-              </span>
-            ) : null}
-          </Link>
-          <button
-            type="button"
-            className="dashboard-topbar__nav-link dashboard-topbar__nav-link--btn"
-            onClick={() => signOut()}
-          >
-            Выйти
-          </button>
-        </nav>
-      </header>
-
+    <DashboardShell
+      active="cabinet"
+      canAccessAdmin={canAccessAdmin}
+      onSignOut={() => signOut()}
+      suppressBurger
+      headerExtra={<div className="dashboard-topbar__fill" />}
+      headerActionsExtra={
+        <button
+          type="button"
+          className="dashboard-topbar__circle-action"
+          onClick={() => signOut()}
+          title="Выход"
+          aria-label="Выход"
+        >
+          <LogOutIcon />
+        </button>
+      }
+    >
       <div className="dashboard-body dashboard-body--admin">
         <aside className="admin-sidebar" aria-label="Разделы админки">
           <h1 className="admin-sidebar__title">Админка</h1>
@@ -116,6 +98,6 @@ export function AdminPage() {
           {tab === 'news' ? <AdminSiteNewsPanel /> : null}
         </div>
       </div>
-    </div>
+    </DashboardShell>
   )
 }

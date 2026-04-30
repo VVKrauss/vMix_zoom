@@ -27,6 +27,8 @@ type DashboardShellProps = {
   suppressBurger?: boolean
   /** Доп. элементы в правой части шапки (например, переключатель звука на странице мессенджера). */
   headerExtra?: ReactNode
+  /** Доп. элементы рядом с actions (справа в шапке). */
+  headerActionsExtra?: ReactNode
 }
 
 const INCOMING_PINS_BANNER_DISMISS_PREFIX = 'vmix.dashboard.incomingPin.dismissSig:'
@@ -47,6 +49,7 @@ export function DashboardShell({
   chromeless,
   suppressBurger = false,
   headerExtra,
+  headerActionsExtra,
 }: DashboardShellProps) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -147,6 +150,7 @@ export function DashboardShell({
 
         <div className="dashboard-topbar__actions">
           {!unifiedCabinetNav ? headerExtra : null}
+          {headerActionsExtra}
           {unifiedCabinetNav && active !== 'messenger' && !chromeless ? (
             <Link
               to="/dashboard/messenger"

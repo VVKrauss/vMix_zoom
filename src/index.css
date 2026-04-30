@@ -1726,12 +1726,6 @@ html.app-root--room #root {
 }
 
 /* ─── Admin: site news ───────────────────────────────────────────────────── */
-.admin-site-news__hint {
-  margin-top: -6px;
-  margin-bottom: 16px;
-  max-width: 720px;
-}
-
 .admin-site-news__loading {
   padding: 16px 0;
 }
@@ -1749,20 +1743,9 @@ html.app-root--room #root {
   }
 }
 
-.admin-site-news__form-card,
-.admin-site-news__list-card {
-  padding: 16px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--surface2);
-}
-
-.admin-site-news__form-title,
-.admin-site-news__list-title {
-  font-size: 15px;
-  font-weight: 600;
-  margin: 0 0 14px;
-  color: var(--text);
+.admin-site-news__form-card.dashboard-tile,
+.admin-site-news__list-card.dashboard-tile {
+  min-height: auto;
 }
 
 .admin-site-news__textarea {

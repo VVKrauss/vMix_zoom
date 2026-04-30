@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   fetchTelegramNotifications,
   sendTelegramNotificationsTest,
@@ -72,6 +72,8 @@ export function TelegramNotificationsPanel() {
   const [telegramSaveMsg, setTelegramSaveMsg] = useState<string | null>(null)
   const [telegramSaveErr, setTelegramSaveErr] = useState<string | null>(null)
   const canManageTelegram = hasAdminBearerToken()
+  const autosaveSkipRef = useRef(true)
+  const lastSavedRef = useRef<TelegramToggleState | null>(null)
 
   useEffect(() => {
     if (!canManageTelegram) return
@@ -86,29 +88,52 @@ export function TelegramNotificationsPanel() {
         return
       }
       setTelegramConfigured(result.data.configured)
-      setSettings(settingsToToggleState(result.data))
+      const next = settingsToToggleState(result.data)
+      autosaveSkipRef.current = true
+      lastSavedRef.current = next
+      setSettings(next)
+      queueMicrotask(() => {
+        autosaveSkipRef.current = false
+      })
     })
     return () => {
       cancelled = true
     }
   }, [canManageTelegram])
 
-  const handleSaveTelegramPrefs = async (e: React.FormEvent) => {
-    e.preventDefault()
+  useEffect(() => {
     if (!canManageTelegram) return
-    setTelegramSaving(true)
-    setTelegramSaveErr(null)
-    setTelegramSaveMsg(null)
-    const result = await updateTelegramNotifications(toggleStateToPayload(settings))
-    setTelegramSaving(false)
-    if (!result.ok) {
-      setTelegramSaveErr(result.message)
-      return
-    }
-    setTelegramConfigured(result.data.configured)
-    setSettings(settingsToToggleState(result.data))
-    setTelegramSaveMsg('Настройки уведомлений сохранены')
-  }
+    if (telegramLoading) return
+    if (autosaveSkipRef.current) return
+
+    const prevSaved = lastSavedRef.current
+    if (prevSaved && JSON.stringify(prevSaved) === JSON.stringify(settings)) return
+
+    const t = window.setTimeout(() => {
+      void (async () => {
+        setTelegramSaving(true)
+        setTelegramSaveErr(null)
+        setTelegramSaveMsg(null)
+        const result = await updateTelegramNotifications(toggleStateToPayload(settings))
+        setTelegramSaving(false)
+        if (!result.ok) {
+          setTelegramSaveErr(result.message)
+          return
+        }
+        setTelegramConfigured(result.data.configured)
+        const saved = settingsToToggleState(result.data)
+        lastSavedRef.current = saved
+        autosaveSkipRef.current = true
+        setSettings(saved)
+        queueMicrotask(() => {
+          autosaveSkipRef.current = false
+        })
+        setTelegramSaveMsg('Настройки уведомлений сохранены')
+      })()
+    }, 450)
+
+    return () => window.clearTimeout(t)
+  }, [canManageTelegram, telegramLoading, settings])
 
   const handleTelegramTest = async () => {
     if (!canManageTelegram) return
@@ -124,148 +149,153 @@ export function TelegramNotificationsPanel() {
     setTelegramSaveMsg('Тестовое сообщение отправлено')
   }
 
+  const ToggleRow = ({
+    label,
+    checked,
+    onChange,
+    ariaLabel,
+    offLabel = 'Выкл',
+    onLabel = 'Вкл',
+  }: {
+    label: string
+    checked: boolean
+    onChange: (next: boolean) => void
+    ariaLabel: string
+    offLabel?: string
+    onLabel?: string
+  }) => (
+    <div className="dashboard-settings-control-row">
+      <span className="dashboard-settings-control-row__label">{label}</span>
+      <div className="dashboard-settings-control-row__control">
+        <PillToggle checked={checked} onCheckedChange={onChange} ariaLabel={ariaLabel} offLabel={offLabel} onLabel={onLabel} />
+      </div>
+    </div>
+  )
+
   return (
-    <section className="dashboard-section">
-      <h2 className="dashboard-section__subtitle">Telegram уведомления</h2>
-      <p className="dashboard-section__hint">
-        Включаем нужные события отдельно. Тестовое сообщение уже работает через тот же бот.
+    <section className="dashboard-tile">
+      <h2 className="dashboard-tile__title">Telegram уведомления</h2>
+      <p className="dashboard-field__hint" style={{ marginTop: 0 }}>
+        Включайте нужные события отдельно. Тестовое сообщение отправляется через того же бота.
       </p>
       {!canManageTelegram ? (
         <p className="join-error">
           Добавьте <code>VITE_ADMIN_API_SECRET</code>, чтобы управлять уведомлениями из админки.
         </p>
       ) : (
-        <form onSubmit={handleSaveTelegramPrefs} className="dashboard-form">
-          <div className="dashboard-field">
-            <div className="dashboard-field__inline dashboard-field__inline--toggle">
-              <span className="dashboard-field__label">Уведомления включены</span>
-              <PillToggle
-                checked={settings.enabled}
-                onCheckedChange={(next) => {
-                  setSettings((prev) => ({ ...prev, enabled: next }))
-                  setTelegramSaveMsg(null)
-                  setTelegramSaveErr(null)
-                }}
-                offLabel="Нет"
-                onLabel="Да"
-                ariaLabel="Включить Telegram уведомления"
-              />
-            </div>
-          </div>
+        <div className="dashboard-form dashboard-form--compact">
+          <ToggleRow
+            label="Уведомления включены"
+            checked={settings.enabled}
+            onChange={(next) => {
+              setSettings((prev) => ({ ...prev, enabled: next }))
+              setTelegramSaveMsg(null)
+              setTelegramSaveErr(null)
+            }}
+            ariaLabel="Включить Telegram уведомления"
+            offLabel="Нет"
+            onLabel="Да"
+          />
+
+          <p className="dashboard-settings-group-title">События (сразу)</p>
 
           {EVENT_OPTIONS.map((option) => {
             const checked = settings.immediateEvents.includes(option.key)
             return (
-              <div className="dashboard-field" key={option.key}>
-                <div className="dashboard-field__inline dashboard-field__inline--toggle">
-                  <span className="dashboard-field__label">{option.label}</span>
-                  <PillToggle
-                    checked={checked}
-                    onCheckedChange={(next) => {
-                      setSettings((prev) => ({
-                        ...prev,
-                        immediateEvents: next
-                          ? Array.from(new Set([...prev.immediateEvents, option.key]))
-                          : prev.immediateEvents.filter((item) => item !== option.key),
-                      }))
-                      setTelegramSaveMsg(null)
-                      setTelegramSaveErr(null)
-                    }}
-                    offLabel="Выкл"
-                    onLabel="Вкл"
-                    ariaLabel={option.label}
-                  />
-                </div>
-              </div>
-            )
-          })}
-
-          <div className="dashboard-field">
-            <div className="dashboard-field__inline dashboard-field__inline--toggle">
-              <span className="dashboard-field__label">Отладка жизни комнаты</span>
-              <PillToggle
-                checked={settings.immediateEvents.includes(ROOM_DEBUG_EVENT)}
-                onCheckedChange={(next) => {
+              <ToggleRow
+                key={option.key}
+                label={option.label}
+                checked={checked}
+                onChange={(next) => {
                   setSettings((prev) => ({
                     ...prev,
                     immediateEvents: next
-                      ? Array.from(new Set([...prev.immediateEvents, ROOM_DEBUG_EVENT]))
-                      : prev.immediateEvents.filter((item) => item !== ROOM_DEBUG_EVENT),
+                      ? Array.from(new Set([...prev.immediateEvents, option.key]))
+                      : prev.immediateEvents.filter((item) => item !== option.key),
                   }))
                   setTelegramSaveMsg(null)
                   setTelegramSaveErr(null)
                 }}
-                offLabel="Выкл"
-                onLabel="Вкл"
-                ariaLabel="Отладка жизни комнаты"
+                ariaLabel={option.label}
               />
-            </div>
-          </div>
+            )
+          })}
 
-          <div className="dashboard-field">
-            <div className="dashboard-field__inline dashboard-field__inline--toggle">
-              <span className="dashboard-field__label">Сводка за 4 часа</span>
-              <PillToggle
-                checked={settings.summary4h}
-                onCheckedChange={(next) => {
-                  setSettings((prev) => ({ ...prev, summary4h: next }))
-                  setTelegramSaveMsg(null)
-                  setTelegramSaveErr(null)
-                }}
-                offLabel="Выкл"
-                onLabel="Вкл"
-                ariaLabel="Сводка за 4 часа"
-              />
-            </div>
-          </div>
-          <div className="dashboard-field">
-            <div className="dashboard-field__inline dashboard-field__inline--toggle">
-              <span className="dashboard-field__label">Сводка за 8 часов</span>
-              <PillToggle
-                checked={settings.summary8h}
-                onCheckedChange={(next) => {
-                  setSettings((prev) => ({ ...prev, summary8h: next }))
-                  setTelegramSaveMsg(null)
-                  setTelegramSaveErr(null)
-                }}
-                offLabel="Выкл"
-                onLabel="Вкл"
-                ariaLabel="Сводка за 8 часов"
-              />
-            </div>
-          </div>
-          <div className="dashboard-field">
-            <div className="dashboard-field__inline dashboard-field__inline--toggle">
-              <span className="dashboard-field__label">Сводка за день</span>
-              <PillToggle
-                checked={settings.summary24h}
-                onCheckedChange={(next) => {
-                  setSettings((prev) => ({ ...prev, summary24h: next }))
-                  setTelegramSaveMsg(null)
-                  setTelegramSaveErr(null)
-                }}
-                offLabel="Выкл"
-                onLabel="Вкл"
-                ariaLabel="Сводка за день"
-              />
-            </div>
-          </div>
+          <ToggleRow
+            label="Отладка жизни комнаты"
+            checked={settings.immediateEvents.includes(ROOM_DEBUG_EVENT)}
+            onChange={(next) => {
+              setSettings((prev) => ({
+                ...prev,
+                immediateEvents: next
+                  ? Array.from(new Set([...prev.immediateEvents, ROOM_DEBUG_EVENT]))
+                  : prev.immediateEvents.filter((item) => item !== ROOM_DEBUG_EVENT),
+              }))
+              setTelegramSaveMsg(null)
+              setTelegramSaveErr(null)
+            }}
+            ariaLabel="Отладка жизни комнаты"
+          />
 
-          <div className="dashboard-field">
-            <div className="dashboard-field__inline">
-              <span className="dashboard-field__label">Состояние бота</span>
-              <span
-                className={`dashboard-badge ${
-                  telegramConfigured ? 'dashboard-badge--active' : 'dashboard-badge--pending'
-                }`}
-              >
+          <p className="dashboard-settings-group-title">Сводка</p>
+
+          <ToggleRow
+            label="Сводка за 4 часа"
+            checked={settings.summary4h}
+            onChange={(next) => {
+              setSettings((prev) => ({
+                ...prev,
+                summary4h: next,
+                summary8h: next ? false : prev.summary8h,
+                summary24h: next ? false : prev.summary24h,
+              }))
+              setTelegramSaveMsg(null)
+              setTelegramSaveErr(null)
+            }}
+            ariaLabel="Сводка за 4 часа"
+          />
+          <ToggleRow
+            label="Сводка за 8 часов"
+            checked={settings.summary8h}
+            onChange={(next) => {
+              setSettings((prev) => ({
+                ...prev,
+                summary8h: next,
+                summary4h: next ? false : prev.summary4h,
+                summary24h: next ? false : prev.summary24h,
+              }))
+              setTelegramSaveMsg(null)
+              setTelegramSaveErr(null)
+            }}
+            ariaLabel="Сводка за 8 часов"
+          />
+          <ToggleRow
+            label="Сводка за день"
+            checked={settings.summary24h}
+            onChange={(next) => {
+              setSettings((prev) => ({
+                ...prev,
+                summary24h: next,
+                summary4h: next ? false : prev.summary4h,
+                summary8h: next ? false : prev.summary8h,
+              }))
+              setTelegramSaveMsg(null)
+              setTelegramSaveErr(null)
+            }}
+            ariaLabel="Сводка за день"
+          />
+
+          <div className="dashboard-settings-control-row">
+            <span className="dashboard-settings-control-row__label">Состояние бота</span>
+            <div className="dashboard-settings-control-row__control">
+              <span className={`dashboard-badge ${telegramConfigured ? 'dashboard-badge--active' : 'dashboard-badge--pending'}`}>
                 {telegramConfigured ? 'Подключён' : 'Не настроен на сервере'}
               </span>
             </div>
           </div>
 
           {hasMultipleSummaryToggles(settings) ? (
-            <p className="dashboard-section__hint">
+            <p className="dashboard-field__note">
               На текущем бэке сохраняется только один интервал сводки. Если включено несколько, будет
               использован первый: 4ч, потом 8ч, потом 24ч.
             </p>
@@ -274,28 +304,20 @@ export function TelegramNotificationsPanel() {
           {telegramSaveErr && <p className="join-error">{telegramSaveErr}</p>}
           {telegramSaveMsg && <p className="dashboard-save-ok">{telegramSaveMsg}</p>}
 
+          {telegramSaving ? <p className="dashboard-field__hint">Сохранение…</p> : null}
           <div className="dashboard-field">
-            <div className="dashboard-field__inline">
-              <button
-                type="submit"
-                className="join-btn dashboard-form__save"
-                disabled={telegramLoading || telegramSaving}
-              >
-                {telegramSaving ? 'Сохранение…' : 'Сохранить настройки Telegram'}
-              </button>
-              <button
-                type="button"
-                className="join-btn join-btn--secondary"
-                onClick={() => {
-                  void handleTelegramTest()
-                }}
-                disabled={telegramLoading || telegramTesting || !telegramConfigured}
-              >
-                {telegramTesting ? 'Отправка…' : 'Отправить тест'}
-              </button>
-            </div>
+            <button
+              type="button"
+              className="join-btn join-btn--secondary"
+              onClick={() => {
+                void handleTelegramTest()
+              }}
+              disabled={telegramLoading || telegramTesting || !telegramConfigured}
+            >
+              {telegramTesting ? 'Отправка…' : 'Отправить тест'}
+            </button>
           </div>
-        </form>
+        </div>
       )}
     </section>
   )
