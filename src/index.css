@@ -1535,6 +1535,17 @@ html.app-root--room #root {
   gap: 6px;
 }
 
+.home-create-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.home-create-row__primary {
+  flex: 1 1 auto;
+  width: auto;
+}
+
 .home-create-hint {
   font-size: 12px;
   color: var(--text-dim);

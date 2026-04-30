@@ -94,22 +94,6 @@ export function HomePage() {
                 </div>
 
                 <nav className="home-user-nav" aria-label="Разделы аккаунта">
-                  <div className="home-user-nav__row">
-                    <Link
-                      to="/dashboard/messenger"
-                      className="home-user-nav__icon-btn"
-                      title="Мессенджер"
-                      aria-label="Мессенджер"
-                    >
-                      <ChatBubbleIcon />
-                      {messengerUnreadCount > 0 ? (
-                        <span className="home-user-nav__icon-badge">
-                          {messengerUnreadCount > 99 ? '99+' : messengerUnreadCount}
-                        </span>
-                      ) : null}
-                    </Link>
-                  </div>
-
                   {canAccessAdmin ? (
                     <Link to="/admin" className="join-btn join-btn--secondary join-btn--block home-user-nav__btn">
                       Войти в админку
@@ -141,15 +125,32 @@ export function HomePage() {
         ) : null}
 
         <div className="home-create-block">
-          <button
-            type="button"
-            className="join-btn join-btn--block"
-            onClick={handleCreateClick}
-            disabled={!user}
-            title={!user ? 'Войдите, чтобы создать комнату' : undefined}
-          >
-            Создать комнату
-          </button>
+          <div className="home-create-row">
+            <button
+              type="button"
+              className="join-btn join-btn--block home-create-row__primary"
+              onClick={handleCreateClick}
+              disabled={!user}
+              title={!user ? 'Войдите, чтобы создать комнату' : undefined}
+            >
+              Создать комнату
+            </button>
+            {user ? (
+              <Link
+                to="/dashboard/messenger"
+                className="home-user-nav__icon-btn"
+                title="Мессенджер"
+                aria-label="Мессенджер"
+              >
+                <ChatBubbleIcon />
+                {messengerUnreadCount > 0 ? (
+                  <span className="home-user-nav__icon-badge">
+                    {messengerUnreadCount > 99 ? '99+' : messengerUnreadCount}
+                  </span>
+                ) : null}
+              </Link>
+            ) : null}
+          </div>
           {!user && !loading ? <p className="home-create-hint">Требуется аккаунт</p> : null}
         </div>
 
