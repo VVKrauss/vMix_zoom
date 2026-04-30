@@ -55,8 +55,10 @@ function MessengerChatListAsideImpl(props: {
   mentionUnreadByConversationId?: Record<string, number>
   selectConversation: (id: string) => void
   navigate: NavigateFunction
-  /** user_id собеседника в ЛС → в сети (для зелёного кольца у аватарки) */
+  /** user_id собеседника в ЛС → в сети (для кольца у аватарки) */
   directPeersOnline: Record<string, boolean>
+  /** user_id → в звонке (бледно-жёлтое кольцо, только если уже онлайн) */
+  directPeersInRoom: Record<string, boolean>
   pinnedChatIds: string[]
   setChatListRowMenu: Dispatch<
     SetStateAction<{
@@ -93,6 +95,7 @@ function MessengerChatListAsideImpl(props: {
     selectConversation,
     navigate,
     directPeersOnline,
+    directPeersInRoom,
     pinnedChatIds,
     setChatListRowMenu,
     onRefreshChatList,
@@ -335,6 +338,8 @@ function MessengerChatListAsideImpl(props: {
                   : ''
               const peerOnline =
                 item.kind === 'direct' && rowPeekUserId ? Boolean(directPeersOnline[rowPeekUserId]) : false
+              const peerInRoom =
+                item.kind === 'direct' && rowPeekUserId ? Boolean(directPeersInRoom[rowPeekUserId]) : false
               const gcLock = isMessengerClosedGroupOrChannel(item)
               return (
                 <div className="dashboard-messenger__row-shell" key={item.id}>
@@ -352,7 +357,11 @@ function MessengerChatListAsideImpl(props: {
                     <div className="dashboard-messenger__row-main">
                       <div
                         className={`dashboard-messenger__row-avatar-wrap${
-                          peerOnline ? ' dashboard-messenger__row-avatar-wrap--online' : ''
+                          peerOnline
+                            ? peerInRoom
+                              ? ' dashboard-messenger__row-avatar-wrap--in-room'
+                              : ' dashboard-messenger__row-avatar-wrap--online'
+                            : ''
                         }`}
                         aria-hidden
                       >
@@ -476,6 +485,7 @@ function MessengerChatListAsideImpl(props: {
             {extraGlobalUsers.map((hit) => {
               const subtitle = hit.profileSlug ? `@${hit.profileSlug}` : 'Профиль'
               const hitOnline = Boolean(directPeersOnline[hit.id])
+              const hitInRoom = Boolean(directPeersInRoom[hit.id])
               return (
                 <div className="dashboard-messenger__row-shell" key={`glob-user-${hit.id}`}>
                   <Link
@@ -490,7 +500,11 @@ function MessengerChatListAsideImpl(props: {
                     <div className="dashboard-messenger__row-main">
                       <div
                         className={`dashboard-messenger__row-avatar-wrap${
-                          hitOnline ? ' dashboard-messenger__row-avatar-wrap--online' : ''
+                          hitOnline
+                            ? hitInRoom
+                              ? ' dashboard-messenger__row-avatar-wrap--in-room'
+                              : ' dashboard-messenger__row-avatar-wrap--online'
+                            : ''
                         }`}
                         aria-hidden
                       >

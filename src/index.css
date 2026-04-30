@@ -5463,6 +5463,19 @@ html[data-theme='light'] .dashboard-messenger__row-avatar-wrap--online {
     0 0 0 4px #15803d;
 }
 
+/* Онлайн и в звонке (комната): бледно-жёлтое кольцо */
+.dashboard-messenger__row-avatar-wrap--in-room {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--surface, #121212) 92%, transparent),
+    0 0 0 4px color-mix(in srgb, #e8d35c 55%, #a16207 45%);
+}
+
+html[data-theme='light'] .dashboard-messenger__row-avatar-wrap--in-room {
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 4px color-mix(in srgb, #d4a017 50%, #ca8a04 50%);
+}
+
 /* Закрытая группа/канал: замок внизу слева на аватарке */
 .dashboard-messenger__gc-avatar-lock-wrap {
   position: relative;
@@ -6213,6 +6226,18 @@ html[data-theme='light'] .dashboard-messenger__avatar-ring-wrap--online {
   box-shadow:
     0 0 0 2px #fff,
     0 0 0 4px #15803d;
+}
+
+.dashboard-messenger__avatar-ring-wrap--in-room {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--surface, #121212) 92%, transparent),
+    0 0 0 4px color-mix(in srgb, #e8d35c 55%, #a16207 45%);
+}
+
+html[data-theme='light'] .dashboard-messenger__avatar-ring-wrap--in-room {
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 4px color-mix(in srgb, #d4a017 50%, #ca8a04 50%);
 }
 
 .dashboard-messenger__thread-avatar {

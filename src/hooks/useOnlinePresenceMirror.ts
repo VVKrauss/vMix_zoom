@@ -8,6 +8,8 @@ type PresenceMirrorRow = {
   lastActiveAt: string | null
   presenceLastBackgroundAt: string | null
   profileShowOnline: boolean | null
+  /** Пользователь в звонке (комната); смысл только если он «онлайн» по last_active_at. */
+  presenceInRoom: boolean
 }
 
 function parsePresenceRow(raw: unknown): PresenceMirrorRow | null {
@@ -15,6 +17,10 @@ function parsePresenceRow(raw: unknown): PresenceMirrorRow | null {
   const r = raw as Record<string, unknown>
   const userId = typeof r.user_id === 'string' ? r.user_id.trim() : ''
   if (!userId) return null
+  const rawInRoom = r.presence_in_room
+  const presenceInRoom =
+    typeof rawInRoom === 'boolean' ? rawInRoom : rawInRoom === null || rawInRoom === undefined ? false : Boolean(rawInRoom)
+
   return {
     userId,
     lastActiveAt:
@@ -30,6 +36,7 @@ function parsePresenceRow(raw: unknown): PresenceMirrorRow | null {
           ? null
           : String(r.presence_last_background_at),
     profileShowOnline: typeof r.profile_show_online === 'boolean' ? r.profile_show_online : null,
+    presenceInRoom,
   }
 }
 
@@ -48,12 +55,18 @@ function computeOnline(row: PresenceMirrorRow, nowMs: number): boolean {
  * Единый источник «онлайн» для UI: только зеркало public.user_presence_public (select + realtime).
  * Никаких peek/RPC — поведение одинаковое в дереве и в шапке.
  */
+export type OnlinePresenceMirrorMaps = {
+  online: Record<string, boolean>
+  /** Онлайн и отмечен как «в комнате» (для бледно-жёлтого кольца). */
+  inRoom: Record<string, boolean>
+}
+
 export function useOnlinePresenceMirror(args: {
   viewerId: string | undefined
   userIds: readonly string[]
   /** Локальная переоценка окна online (нужно, чтобы оно гасло без новых событий). */
   tickMs?: number
-}): Record<string, boolean> {
+}): OnlinePresenceMirrorMaps {
   const { viewerId, userIds, tickMs = 1500 } = args
 
   const key = useMemo(() => {
@@ -86,7 +99,7 @@ export function useOnlinePresenceMirror(args: {
     void (async () => {
       const { data, error } = await supabase
         .from('user_presence_public')
-        .select('user_id,last_active_at,presence_last_background_at,profile_show_online')
+        .select('user_id,last_active_at,presence_last_background_at,profile_show_online,presence_in_room')
         .in('user_id', ids)
       if (cancelled || error) return
 
@@ -121,15 +134,18 @@ export function useOnlinePresenceMirror(args: {
   }, [viewerId, ids, tickMs])
 
   return useMemo(() => {
-    const out: Record<string, boolean> = {}
+    const online: Record<string, boolean> = {}
+    const inRoom: Record<string, boolean> = {}
     const nowMs = Date.now()
     for (const id of ids) {
       const row = rowsRef.current.get(id)
-      out[id] = row ? computeOnline(row, nowMs) : false
+      const isOn = row ? computeOnline(row, nowMs) : false
+      online[id] = isOn
+      inRoom[id] = isOn && Boolean(row?.presenceInRoom)
     }
     // tie to epoch
     void epoch
-    return out
+    return { online, inRoom }
   }, [ids, epoch])
 }
 

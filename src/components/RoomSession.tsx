@@ -10,6 +10,7 @@ import { RoomJoinApprovalWaiting } from './RoomJoinApprovalWaiting'
 import type { VideoPreset } from '../types'
 import { replaceRoomInBrowserUrl } from '../utils/soloViewerParams'
 import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import {
   clearHostSessionIfMatches,
@@ -191,6 +192,16 @@ export function RoomSession({ roomId }: Props) {
     document.documentElement.classList.add('app-root--room')
     return () => document.documentElement.classList.remove('app-root--room')
   }, [status])
+
+  /** Зеркало в user_presence_public: жёлтое кольцо в мессенджере, пока реально в звонке. */
+  useEffect(() => {
+    if (!user?.id) return
+    const inRoom = status === 'connected'
+    void supabase.rpc('set_presence_in_room', { p_in_room: inRoom })
+    return () => {
+      void supabase.rpc('set_presence_in_room', { p_in_room: false })
+    }
+  }, [status, user?.id])
 
   const statusRef = useRef<RoomStatus>('idle')
   statusRef.current = status

@@ -37,6 +37,8 @@ function MessengerDirectThreadBodyImpl(props: {
   threadHeadConversation: MessengerDirectThreadHeadConversation
   /** Собеседник в сети (с учётом приватности). */
   directPeerIsOnline?: boolean
+  /** Собеседник в звонке (комната) — бледно-жёлтое кольцо, только если онлайн. */
+  directPeerInRoom?: boolean
   /** Последняя активность собеседника (ISO), если разрешено профилем. */
   directPeerLastActivityAt?: string | null
   /** false — собеседник скрыл время активности; строку «Был(а): …» не показываем. */
@@ -97,6 +99,7 @@ function MessengerDirectThreadBodyImpl(props: {
     peerDmReceiptsPrivate,
     threadHeadConversation,
     directPeerIsOnline = false,
+    directPeerInRoom = false,
     directPeerLastActivityAt = null,
     directPeerShowLastActivity = true,
     openUserPeek,
@@ -132,6 +135,13 @@ function MessengerDirectThreadBodyImpl(props: {
     messageActionMenu,
     onForwardSourceNavigate,
   } = props
+
+  const peerPresenceRingClass =
+    !directPeerIsOnline
+      ? ''
+      : directPeerInRoom
+        ? ' dashboard-messenger__avatar-ring-wrap--in-room'
+        : ' dashboard-messenger__avatar-ring-wrap--online'
 
   const seenMessageIdsRef = useRef<Set<string>>(new Set())
 
@@ -177,10 +187,7 @@ function MessengerDirectThreadBodyImpl(props: {
                 }
               }}
             >
-              <span
-                className={`dashboard-messenger__avatar-ring-wrap${directPeerIsOnline ? ' dashboard-messenger__avatar-ring-wrap--online' : ''}`}
-                aria-hidden
-              >
+              <span className={`dashboard-messenger__avatar-ring-wrap${peerPresenceRingClass}`} aria-hidden>
                 <span className="dashboard-messenger__thread-head-center-avatar">
                   {activeAvatarUrl ? (
                     <StorageOrHttpAvatarImg
@@ -254,7 +261,7 @@ function MessengerDirectThreadBodyImpl(props: {
               }}
             >
               <span
-                className={`dashboard-messenger__avatar-ring-wrap dashboard-messenger__avatar-ring-wrap--thread${directPeerIsOnline ? ' dashboard-messenger__avatar-ring-wrap--online' : ''}`}
+                className={`dashboard-messenger__avatar-ring-wrap dashboard-messenger__avatar-ring-wrap--thread${peerPresenceRingClass}`}
                 aria-hidden
               >
                 <span className="dashboard-messenger__thread-avatar">
