@@ -79,15 +79,15 @@ export function HomePage() {
             {user ? (
               <div className="home-user-block">
                 <div className="home-user-identity">
-                  <div className="home-user-identity__avatar-wrap" aria-hidden>
+                  <Link to="/dashboard" className="home-user-identity__avatar-wrap" aria-label="Открыть личный кабинет">
                     {avatarUrl ? (
                       <img src={avatarUrl} alt="" className="home-user-identity__avatar" draggable={false} />
                     ) : (
-                      <span className="home-user-identity__avatar home-user-identity__avatar--placeholder">
+                      <span className="home-user-identity__avatar home-user-identity__avatar--placeholder" aria-hidden>
                         <DashboardIcon />
                       </span>
                     )}
-                  </div>
+                  </Link>
                   <p className="home-user-identity__name" title={displayName}>
                     {displayName}
                   </p>
@@ -95,9 +95,6 @@ export function HomePage() {
 
                 <nav className="home-user-nav" aria-label="Разделы аккаунта">
                   <div className="home-user-nav__row">
-                    <Link to="/dashboard" className="join-btn join-btn--secondary join-btn--block home-user-nav__btn">
-                      Личный кабинет
-                    </Link>
                     <Link
                       to="/dashboard/messenger"
                       className="home-user-nav__icon-btn"
