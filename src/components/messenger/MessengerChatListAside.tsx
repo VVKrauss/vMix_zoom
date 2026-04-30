@@ -5,7 +5,6 @@ import { BrandLogoLoader } from '../BrandLogoLoader'
 import {
   ChevronLeftIcon,
   FiRrIcon,
-  MenuBurgerIcon,
   MessengerFilterAllIcon,
   MessengerFilterChannelIcon,
   MessengerFilterDirectIcon,
@@ -37,8 +36,7 @@ function MessengerChatListAsideImpl(props: {
   onChatListSearchChange: (value: string) => void
   openCreateConversationModal: () => void
   goCreateRoomFromMessenger: () => void
-  messengerMenuOpen: boolean
-  setMessengerMenuOpen: (v: boolean | ((p: boolean) => boolean)) => void
+  onOpenMessengerSettings: () => void
   conversationKindFilter: KindFilter
   onConversationKindFilterChange: (id: KindFilter) => void
   /** Сумма непрочитанных по типу (как в строках списка), для бейджей на вкладках */
@@ -76,8 +74,7 @@ function MessengerChatListAsideImpl(props: {
     onChatListSearchChange,
     openCreateConversationModal,
     goCreateRoomFromMessenger,
-    messengerMenuOpen,
-    setMessengerMenuOpen,
+    onOpenMessengerSettings,
     conversationKindFilter,
     onConversationKindFilterChange,
     filterUnreadByKind,
@@ -218,13 +215,12 @@ function MessengerChatListAsideImpl(props: {
             </button>
             <button
               type="button"
-              className={`dashboard-messenger__list-head-btn${messengerMenuOpen ? ' dashboard-messenger__list-head-btn--open' : ''}`}
-              onClick={() => setMessengerMenuOpen((v) => !v)}
-              aria-label={messengerMenuOpen ? 'Закрыть меню' : 'Меню'}
-              title="Меню"
-              aria-expanded={messengerMenuOpen}
+              className="dashboard-messenger__list-head-btn"
+              onClick={() => onOpenMessengerSettings()}
+              aria-label="Настройки мессенджера"
+              title="Настройки мессенджера"
             >
-              <MenuBurgerIcon />
+              <FiRrIcon name="settings" />
             </button>
           </div>
           </header>

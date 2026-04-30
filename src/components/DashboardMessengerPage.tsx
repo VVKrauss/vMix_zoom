@@ -145,7 +145,7 @@ import { writeMessengerThreadTailCache } from '../lib/messengerThreadTailCache'
 import { newRoomId } from '../utils/roomId'
 import { normalizeProfileSlug } from '../lib/profileSlug'
 import { BrandLogoLoader } from './BrandLogoLoader'
-import { ChevronLeftIcon, JoinRequestsIcon, MenuBurgerIcon } from './icons'
+import { ChevronLeftIcon, FiRrIcon, JoinRequestsIcon } from './icons'
 import { useMessengerJumpToBottom } from '../hooks/useMessengerJumpToBottom'
 import { useMessengerThreadReadCoordinator } from '../hooks/useMessengerThreadReadCoordinator'
 import { useNavigatorOnline } from '../hooks/useNavigatorOnline'
@@ -165,7 +165,6 @@ import { MessengerSettingsModal } from './messenger/MessengerSettingsModal'
 import { MessengerChatListAside } from './messenger/MessengerChatListAside'
 import { MessengerClosedGcLockBadge } from './messenger/MessengerClosedGcLockBadge'
 import { MessengerNetStrip } from './messenger/MessengerNetStrip'
-import { MessengerQuickNavMenu } from './messenger/MessengerQuickNavMenu'
 import { MessengerDeleteChatDialog } from './messenger/MessengerDeleteChatDialog'
 import { MessengerChatListRowMenuPortal } from './messenger/MessengerChatListRowMenuPortal'
 import { MessengerDmMessageMenuPortal } from './messenger/MessengerDmMessageMenuPortal'
@@ -214,7 +213,6 @@ export function DashboardMessengerPage() {
     getMessengerFontPreset(),
   )
   const [messengerSettingsOpen, setMessengerSettingsOpen] = useState(false)
-  const [messengerMenuOpen, setMessengerMenuOpen] = useState(false)
   const [messengerDeleteUi, setMessengerDeleteUi] = useState<
     | null
     | { step: 'dm-pick' }
@@ -2328,10 +2326,6 @@ export function DashboardMessengerPage() {
     refocusMessengerComposer()
   }, [refocusMessengerComposer])
 
-  const closeMessengerMenu = useCallback(() => {
-    setMessengerMenuOpen(false)
-  }, [])
-
   const beginDeleteChatFromListItem = useCallback(
     async (item: MessengerConversationSummary) => {
       if (!user?.id || deleteChatBusy) return
@@ -2340,7 +2334,6 @@ export function DashboardMessengerPage() {
         return
       }
       setChatListRowMenu(null)
-      closeMessengerMenu()
       const cid = item.id.trim()
       if (!cid) return
       setDeleteFlowConversationId(cid)
@@ -2384,7 +2377,7 @@ export function DashboardMessengerPage() {
         })
       }
     },
-    [user?.id, deleteChatBusy, toast, closeMessengerMenu],
+    [user?.id, deleteChatBusy, toast],
   )
 
   const executeDeleteChatAction = useCallback(
@@ -2478,11 +2471,6 @@ export function DashboardMessengerPage() {
     }
     navigate(`/r/${encodeURIComponent(id)}`)
   }, [navigate, threadHeadConversation, user?.id, activeConversationId])
-
-  const goCreateRoomFromMenu = useCallback(() => {
-    closeMessengerMenu()
-    goCreateRoomFromMessenger()
-  }, [closeMessengerMenu, goCreateRoomFromMessenger])
 
   const openCreateConversationModal = useCallback(() => {
     setCreateError(null)
@@ -2909,8 +2897,6 @@ export function DashboardMessengerPage() {
     user?.id,
   ])
 
-  useEscapeKey(messengerMenuOpen, closeMessengerMenu)
-
   return (
     <DashboardShell
       active="messenger"
@@ -2923,15 +2909,12 @@ export function DashboardMessengerPage() {
           <div className="dashboard-topbar__messenger-controls">
             <button
               type="button"
-              className={`dashboard-messenger__list-head-btn${
-                messengerMenuOpen ? ' dashboard-messenger__list-head-btn--open' : ''
-              }`}
-              onClick={() => setMessengerMenuOpen((v) => !v)}
-              aria-label={messengerMenuOpen ? 'Закрыть меню' : 'Меню'}
-              title="Меню"
-              aria-expanded={messengerMenuOpen}
+              className="dashboard-messenger__list-head-btn"
+              onClick={() => setMessengerSettingsOpen(true)}
+              aria-label="Настройки мессенджера"
+              title="Настройки мессенджера"
             >
-              <MenuBurgerIcon />
+              <FiRrIcon name="settings" />
             </button>
           </div>
         ) : null
@@ -2952,8 +2935,7 @@ export function DashboardMessengerPage() {
                 onChatListSearchChange={setChatListSearch}
                 openCreateConversationModal={openCreateConversationModal}
                 goCreateRoomFromMessenger={goCreateRoomFromMessenger}
-                messengerMenuOpen={messengerMenuOpen}
-                setMessengerMenuOpen={setMessengerMenuOpen}
+                onOpenMessengerSettings={() => setMessengerSettingsOpen(true)}
                 conversationKindFilter={conversationKindFilter}
                 onConversationKindFilterChange={setConversationKindFilter}
                 filterUnreadByKind={filterUnreadByKind}
@@ -3468,16 +3450,6 @@ export function DashboardMessengerPage() {
             ) : null}
           </div>
 
-        <MessengerQuickNavMenu
-          open={messengerMenuOpen}
-          onBackdropClick={closeMessengerMenu}
-          onClose={closeMessengerMenu}
-          goCreateRoomFromMenu={goCreateRoomFromMenu}
-          onRefreshChats={user?.id ? refreshChatList : undefined}
-          onOpenMessengerSettings={() => setMessengerSettingsOpen(true)}
-          onSignOut={signOut}
-          canAccessAdmin={canAccessAdmin}
-        />
         </>
       </section>
 

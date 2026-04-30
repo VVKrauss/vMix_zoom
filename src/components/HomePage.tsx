@@ -19,6 +19,7 @@ export function HomePage() {
   const messengerUnreadCount = useMessengerUnreadCount()
   const [joinId, setJoinId] = useState('')
   const [dbVersion, setDbVersion] = useState<string | null>(null)
+  const [entryJsName, setEntryJsName] = useState<string>('')
 
   useEffect(() => {
     let cancelled = false
@@ -29,6 +30,24 @@ export function HomePage() {
     return () => {
       cancelled = true
     }
+  }, [])
+
+  useEffect(() => {
+    const guessEntryAssetName = (): string => {
+      try {
+        const scripts = Array.from(document.querySelectorAll('script[type="module"][src]'))
+        const asset = scripts
+          .map((s) => String((s as HTMLScriptElement).src || '').trim())
+          .find((src) => src.includes('/assets/') && src.endsWith('.js'))
+        if (!asset) return ''
+        const clean = asset.split('?')[0].split('#')[0]
+        const base = clean.slice(clean.lastIndexOf('/') + 1)
+        return base || ''
+      } catch {
+        return ''
+      }
+    }
+    setEntryJsName(guessEntryAssetName())
   }, [])
   const handleCreateClick = () => {
     if (!user) return
@@ -176,8 +195,12 @@ export function HomePage() {
 
         </div>
 
-        <p className="home-version" aria-label={`Версия приложения: ${dbVersion ?? APP_VERSION}`}>
-          {dbVersion ?? APP_VERSION}
+        <p
+          className="home-version"
+          aria-label={`Текущий JS: ${entryJsName || 'неизвестно'}; версия БД: ${dbVersion ?? APP_VERSION}`}
+          title={entryJsName ? `JS: ${entryJsName}` : undefined}
+        >
+          {entryJsName || 'unknown.js'}
         </p>
       </div>
     </div>
