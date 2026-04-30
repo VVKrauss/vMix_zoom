@@ -197,9 +197,13 @@ export function RoomSession({ roomId }: Props) {
   useEffect(() => {
     if (!user?.id) return
     const inRoom = status === 'connected'
-    void supabase.rpc('set_presence_in_room', { p_in_room: inRoom })
+    void supabase.rpc('set_presence_in_room', { p_in_room: inRoom }).then(({ error }) => {
+      if (error && import.meta.env.DEV) console.warn('[set_presence_in_room]', error.message)
+    })
     return () => {
-      void supabase.rpc('set_presence_in_room', { p_in_room: false })
+      void supabase.rpc('set_presence_in_room', { p_in_room: false }).then(({ error }) => {
+        if (error && import.meta.env.DEV) console.warn('[set_presence_in_room]', error.message)
+      })
     }
   }, [status, user?.id])
 

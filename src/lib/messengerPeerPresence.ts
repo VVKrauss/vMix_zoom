@@ -33,6 +33,23 @@ export function isPeerPresenceOnlineFromMirror(
   return true
 }
 
+/** Итог для кольца в мессенджере: сначала оффлайн/онлайн, затем «в звонке». */
+export type PeerPresenceDisplay = 'offline' | 'online' | 'in_call'
+
+export type PeerPresenceMirrorRowInput = PeerPresenceMirrorInput & {
+  presenceInRoom: boolean
+}
+
+export function peerPresenceDisplayFromMirrorRow(
+  row: PeerPresenceMirrorRowInput | undefined,
+  nowMs: number = Date.now(),
+): PeerPresenceDisplay {
+  if (!row) return 'offline'
+  if (!isPeerPresenceOnlineFromMirror(row, nowMs)) return 'offline'
+  if (row.presenceInRoom) return 'in_call'
+  return 'online'
+}
+
 export function peerPresenceMirrorFromRow(row: Record<string, unknown>): PeerPresenceMirrorInput {
   const lastActiveAt =
     typeof row.last_active_at === 'string' ? row.last_active_at : row.last_active_at == null ? null : String(row.last_active_at)

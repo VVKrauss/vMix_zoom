@@ -18,6 +18,7 @@ import {
   QUICK_REACTION_EMOJI,
 } from '../../lib/messengerDashboardUtils'
 import { resolveQuotedAvatarForDm } from '../../lib/messengerUi'
+import type { PeerPresenceDisplay } from '../../lib/messengerPeerPresence'
 import type { MessengerConversationSummary } from '../../lib/messengerConversations'
 import type { ReactionEmoji } from '../../types/roomComms'
 import { ThreadMessageBubble } from './ThreadMessageBubble'
@@ -35,10 +36,8 @@ function MessengerDirectThreadBodyImpl(props: {
   viewerDmReceiptsPrivate: boolean
   peerDmReceiptsPrivate: boolean
   threadHeadConversation: MessengerDirectThreadHeadConversation
-  /** Собеседник в сети (с учётом приватности). */
-  directPeerIsOnline?: boolean
-  /** Собеседник в звонке (комната) — бледно-жёлтое кольцо, только если онлайн. */
-  directPeerInRoom?: boolean
+  /** Собеседник: оффлайн / онлайн / в звонке (кольцо). */
+  directPeerPresenceDisplay?: PeerPresenceDisplay
   /** Последняя активность собеседника (ISO), если разрешено профилем. */
   directPeerLastActivityAt?: string | null
   /** false — собеседник скрыл время активности; строку «Был(а): …» не показываем. */
@@ -98,8 +97,7 @@ function MessengerDirectThreadBodyImpl(props: {
     viewerDmReceiptsPrivate,
     peerDmReceiptsPrivate,
     threadHeadConversation,
-    directPeerIsOnline = false,
-    directPeerInRoom = false,
+    directPeerPresenceDisplay = 'offline',
     directPeerLastActivityAt = null,
     directPeerShowLastActivity = true,
     openUserPeek,
@@ -137,11 +135,11 @@ function MessengerDirectThreadBodyImpl(props: {
   } = props
 
   const peerPresenceRingClass =
-    !directPeerIsOnline
-      ? ''
-      : directPeerInRoom
-        ? ' dashboard-messenger__avatar-ring-wrap--in-room'
-        : ' dashboard-messenger__avatar-ring-wrap--online'
+    directPeerPresenceDisplay === 'in_call'
+      ? ' dashboard-messenger__avatar-ring-wrap--in-room'
+      : directPeerPresenceDisplay === 'online'
+        ? ' dashboard-messenger__avatar-ring-wrap--online'
+        : ''
 
   const seenMessageIdsRef = useRef<Set<string>>(new Set())
 

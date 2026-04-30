@@ -1355,11 +1355,7 @@ export function DashboardMessengerPage() {
   )
 
   const chatListExtraUserIds = useMemo(() => chatListGlobalUsers.map((u) => u.id), [chatListGlobalUsers])
-  const { online: directPeersOnline, inRoom: directPeersInRoom } = useMessengerSidebarDirectPeersOnline(
-    user?.id,
-    sortedItems,
-    chatListExtraUserIds,
-  )
+  const directPeersPresence = useMessengerSidebarDirectPeersOnline(user?.id, sortedItems, chatListExtraUserIds)
 
   /** Сумма непрочитанного по типу беседы — для бейджей на вкладках «Все / ЛС / …». */
   const filterUnreadByKind = useMemo(() => {
@@ -1417,8 +1413,9 @@ export function DashboardMessengerPage() {
 
   // Онлайн-состояние собеседников в дереве — единый источник (user_presence_public).
   // Для шапки ЛС берём тот же флаг, чтобы поведение совпадало 1:1.
-  const directPeerIsOnline = Boolean(directOtherUserId && directPeersOnline[directOtherUserId] === true)
-  const directPeerInRoom = Boolean(directOtherUserId && directPeersInRoom[directOtherUserId] === true)
+  const directPeerPresenceDisplay = directOtherUserId.trim()
+    ? directPeersPresence[directOtherUserId] ?? 'offline'
+    : 'offline'
 
   /** Шаринг: `?msg=` / `post=` → скролл к посту/комментарию; параметры убираем из адреса после применения. */
   useEffect(() => {
@@ -2960,8 +2957,7 @@ export function DashboardMessengerPage() {
                 mentionUnreadByConversationId={mentionUnreadByConversationId}
                 selectConversation={selectConversation}
                 navigate={navigate}
-                directPeersOnline={directPeersOnline}
-                directPeersInRoom={directPeersInRoom}
+                directPeersPresence={directPeersPresence}
                 pinnedChatIds={pinnedChatIds}
                 setChatListRowMenu={setChatListRowMenu}
               />
@@ -3272,8 +3268,7 @@ export function DashboardMessengerPage() {
                       directPeerLastReadAt={directPeerLastReadAt}
                       viewerDmReceiptsPrivate={profile?.profile_dm_receipts_private === true}
                       peerDmReceiptsPrivate={directPeerReceiptsPrivate}
-                      directPeerIsOnline={directPeerIsOnline}
-                      directPeerInRoom={directPeerInRoom}
+                      directPeerPresenceDisplay={directPeerPresenceDisplay}
                       directPeerLastActivityAt={directPeerLastActivityAt}
                       directPeerShowLastActivity={directPeerShowLastActivity}
                       threadHeadConversation={threadHeadConversation as MessengerDirectThreadHeadConversation}

@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
+import type { PeerPresenceDisplay } from '../lib/messengerPeerPresence'
 import type { MessengerConversationSummary } from '../lib/messengerConversations'
-import { useOnlinePresenceMirror, type OnlinePresenceMirrorMaps } from './useOnlinePresenceMirror'
+import { useOnlinePresenceMirror } from './useOnlinePresenceMirror'
 
 /**
  * Онлайн-состояние собеседников в дереве чатов (только ЛС + пользователи из глобального поиска).
@@ -10,7 +11,7 @@ export function useMessengerSidebarDirectPeersOnline(
   viewerId: string | undefined,
   items: MessengerConversationSummary[],
   extraUserIds: readonly string[],
-): OnlinePresenceMirrorMaps {
+): Record<string, PeerPresenceDisplay> {
   const peerIdKey = useMemo(() => {
     const s = new Set<string>()
     for (const it of items) {

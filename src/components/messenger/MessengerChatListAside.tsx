@@ -24,6 +24,7 @@ import type {
   MessengerConversationSummary,
   OpenPublicConversationSearchHit,
 } from '../../lib/messengerConversations'
+import type { PeerPresenceDisplay } from '../../lib/messengerPeerPresence'
 import type { RegisteredUserSearchHit } from '../../lib/socialGraph'
 import { MessengerClosedGcLockBadge } from './MessengerClosedGcLockBadge'
 import { StorageOrHttpAvatarImg } from './StorageOrHttpAvatarImg'
@@ -55,10 +56,8 @@ function MessengerChatListAsideImpl(props: {
   mentionUnreadByConversationId?: Record<string, number>
   selectConversation: (id: string) => void
   navigate: NavigateFunction
-  /** user_id собеседника в ЛС → в сети (для кольца у аватарки) */
-  directPeersOnline: Record<string, boolean>
-  /** user_id → в звонке (бледно-жёлтое кольцо, только если уже онлайн) */
-  directPeersInRoom: Record<string, boolean>
+  /** user_id → состояние кольца: оффлайн / онлайн / в звонке */
+  directPeersPresence: Record<string, PeerPresenceDisplay>
   pinnedChatIds: string[]
   setChatListRowMenu: Dispatch<
     SetStateAction<{
@@ -94,8 +93,7 @@ function MessengerChatListAsideImpl(props: {
     mentionUnreadByConversationId,
     selectConversation,
     navigate,
-    directPeersOnline,
-    directPeersInRoom,
+    directPeersPresence,
     pinnedChatIds,
     setChatListRowMenu,
     onRefreshChatList,
@@ -336,10 +334,8 @@ function MessengerChatListAsideImpl(props: {
                 item.kind === 'direct'
                   ? item.otherUserId?.trim() || (!item.otherUserId && userId ? userId : '')
                   : ''
-              const peerOnline =
-                item.kind === 'direct' && rowPeekUserId ? Boolean(directPeersOnline[rowPeekUserId]) : false
-              const peerInRoom =
-                item.kind === 'direct' && rowPeekUserId ? Boolean(directPeersInRoom[rowPeekUserId]) : false
+              const peerPresence: PeerPresenceDisplay =
+                item.kind === 'direct' && rowPeekUserId ? directPeersPresence[rowPeekUserId] ?? 'offline' : 'offline'
               const gcLock = isMessengerClosedGroupOrChannel(item)
               return (
                 <div className="dashboard-messenger__row-shell" key={item.id}>
@@ -357,11 +353,11 @@ function MessengerChatListAsideImpl(props: {
                     <div className="dashboard-messenger__row-main">
                       <div
                         className={`dashboard-messenger__row-avatar-wrap${
-                          peerOnline
-                            ? peerInRoom
-                              ? ' dashboard-messenger__row-avatar-wrap--in-room'
-                              : ' dashboard-messenger__row-avatar-wrap--online'
-                            : ''
+                          peerPresence === 'in_call'
+                            ? ' dashboard-messenger__row-avatar-wrap--in-room'
+                            : peerPresence === 'online'
+                              ? ' dashboard-messenger__row-avatar-wrap--online'
+                              : ''
                         }`}
                         aria-hidden
                       >
@@ -484,8 +480,7 @@ function MessengerChatListAsideImpl(props: {
             })}
             {extraGlobalUsers.map((hit) => {
               const subtitle = hit.profileSlug ? `@${hit.profileSlug}` : 'Профиль'
-              const hitOnline = Boolean(directPeersOnline[hit.id])
-              const hitInRoom = Boolean(directPeersInRoom[hit.id])
+              const hitPresence = directPeersPresence[hit.id] ?? 'offline'
               return (
                 <div className="dashboard-messenger__row-shell" key={`glob-user-${hit.id}`}>
                   <Link
@@ -500,11 +495,11 @@ function MessengerChatListAsideImpl(props: {
                     <div className="dashboard-messenger__row-main">
                       <div
                         className={`dashboard-messenger__row-avatar-wrap${
-                          hitOnline
-                            ? hitInRoom
-                              ? ' dashboard-messenger__row-avatar-wrap--in-room'
-                              : ' dashboard-messenger__row-avatar-wrap--online'
-                            : ''
+                          hitPresence === 'in_call'
+                            ? ' dashboard-messenger__row-avatar-wrap--in-room'
+                            : hitPresence === 'online'
+                              ? ' dashboard-messenger__row-avatar-wrap--online'
+                              : ''
                         }`}
                         aria-hidden
                       >

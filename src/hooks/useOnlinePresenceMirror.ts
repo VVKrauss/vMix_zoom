@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
-import { isPeerPresenceOnlineFromMirror } from '../lib/messengerPeerPresence'
+import { peerPresenceDisplayFromMirrorRow, type PeerPresenceDisplay } from '../lib/messengerPeerPresence'
 
 type PresenceMirrorRow = {
   userId: string
   lastActiveAt: string | null
   presenceLastBackgroundAt: string | null
   profileShowOnline: boolean | null
-  /** Пользователь в звонке (комната); смысл только если он «онлайн» по last_active_at. */
   presenceInRoom: boolean
 }
 
@@ -22,17 +21,45 @@ function mirrorRowToDbShape(prev: PresenceMirrorRow): Record<string, unknown> {
   }
 }
 
-/** Realtime часто шлёт только изменённые поля — мержим с кэшем, иначе теряется presence_in_room. */
+function parsePresenceInRoomLoose(raw: unknown): boolean {
+  if (raw === true) return true
+  if (raw === false || raw == null) return false
+  if (typeof raw === 'string') {
+    const t = raw.trim().toLowerCase()
+    return t === 't' || t === 'true' || t === '1' || t === 'yes'
+  }
+  if (typeof raw === 'number') return raw !== 0
+  return false
+}
+
+function readUserIdFromPayload(
+  newRow: Record<string, unknown> | null,
+  oldRow: Record<string, unknown> | null,
+  singlePeerFallback: string | undefined,
+): string {
+  const n = newRow?.user_id
+  if (typeof n === 'string' && n.trim()) return n.trim()
+  const o = oldRow?.user_id
+  if (typeof o === 'string' && o.trim()) return o.trim()
+  const f = singlePeerFallback?.trim()
+  return f ?? ''
+}
+
+/** Realtime часто шлёт только изменённые поля — мержим с кэшем; user_id может быть только в `old`. */
 function mergePresenceMirrorPayload(
   newRow: Record<string, unknown> | null,
+  oldRow: Record<string, unknown> | null,
   prevByUserId: Map<string, PresenceMirrorRow>,
+  singlePeerFallback: string | undefined,
 ): PresenceMirrorRow | null {
   const patch = newRow && typeof newRow === 'object' ? newRow : null
-  if (!patch) return null
-  const userId = typeof patch.user_id === 'string' ? patch.user_id.trim() : ''
-  const prev = userId ? prevByUserId.get(userId) : undefined
-  const base = prev ? mirrorRowToDbShape(prev) : {}
-  return parsePresenceRow({ ...base, ...patch })
+  const old = oldRow && typeof oldRow === 'object' ? oldRow : null
+  const userId = readUserIdFromPayload(patch, old, singlePeerFallback)
+  if (!userId) return null
+  const prev = prevByUserId.get(userId)
+  const base = prev ? mirrorRowToDbShape(prev) : { user_id: userId }
+  const merged = { ...base, ...(patch ?? {}) }
+  return parsePresenceRow(merged)
 }
 
 function parsePresenceRow(raw: unknown): PresenceMirrorRow | null {
@@ -40,9 +67,6 @@ function parsePresenceRow(raw: unknown): PresenceMirrorRow | null {
   const r = raw as Record<string, unknown>
   const userId = typeof r.user_id === 'string' ? r.user_id.trim() : ''
   if (!userId) return null
-  const rawInRoom = r.presence_in_room
-  const presenceInRoom =
-    typeof rawInRoom === 'boolean' ? rawInRoom : rawInRoom === null || rawInRoom === undefined ? false : Boolean(rawInRoom)
 
   return {
     userId,
@@ -59,37 +83,29 @@ function parsePresenceRow(raw: unknown): PresenceMirrorRow | null {
           ? null
           : String(r.presence_last_background_at),
     profileShowOnline: typeof r.profile_show_online === 'boolean' ? r.profile_show_online : null,
-    presenceInRoom,
+    presenceInRoom: parsePresenceInRoomLoose(r.presence_in_room),
   }
 }
 
-function computeOnline(row: PresenceMirrorRow, nowMs: number): boolean {
-  return isPeerPresenceOnlineFromMirror(
-    {
-      lastActiveAt: row.lastActiveAt,
-      presenceLastBackgroundAt: row.presenceLastBackgroundAt,
-      profileShowOnline: row.profileShowOnline,
-    },
-    nowMs,
-  )
+function rowToDisplayInput(row: PresenceMirrorRow) {
+  return {
+    lastActiveAt: row.lastActiveAt,
+    presenceLastBackgroundAt: row.presenceLastBackgroundAt,
+    profileShowOnline: row.profileShowOnline,
+    presenceInRoom: row.presenceInRoom,
+  }
 }
 
 /**
- * Единый источник «онлайн» для UI: только зеркало public.user_presence_public (select + realtime).
- * Никаких peek/RPC — поведение одинаковое в дереве и в шапке.
+ * Единый источник присутствия для UI: зеркало public.user_presence_public (select + realtime).
+ * Состояние считается в порядке: оффлайн → онлайн → в звонке (`in_call`).
  */
-export type OnlinePresenceMirrorMaps = {
-  online: Record<string, boolean>
-  /** Онлайн и отмечен как «в комнате» (для бледно-жёлтого кольца). */
-  inRoom: Record<string, boolean>
-}
-
 export function useOnlinePresenceMirror(args: {
   viewerId: string | undefined
   userIds: readonly string[]
   /** Локальная переоценка окна online (нужно, чтобы оно гасло без новых событий). */
   tickMs?: number
-}): OnlinePresenceMirrorMaps {
+}): Record<string, PeerPresenceDisplay> {
   const { viewerId, userIds, tickMs = 1500 } = args
 
   const key = useMemo(() => {
@@ -102,6 +118,8 @@ export function useOnlinePresenceMirror(args: {
   }, [viewerId, userIds])
 
   const ids = useMemo(() => (key ? key.split('\0').filter(Boolean) : []), [key])
+
+  const singlePeerFallback = useMemo(() => (ids.length === 1 ? ids[0] : undefined), [ids])
 
   const rowsRef = useRef<Map<string, PresenceMirrorRow>>(new Map())
   const [epoch, setEpoch] = useState(0)
@@ -153,7 +171,12 @@ export function useOnlinePresenceMirror(args: {
             }
             return
           }
-          const parsed = mergePresenceMirrorPayload(payload.new, rowsRef.current)
+          const parsed = mergePresenceMirrorPayload(
+            payload.new,
+            payload.old,
+            rowsRef.current,
+            singlePeerFallback,
+          )
           if (!parsed) return
           if (!ids.includes(parsed.userId)) return
           rowsRef.current.set(parsed.userId, parsed)
@@ -168,21 +191,16 @@ export function useOnlinePresenceMirror(args: {
       window.clearInterval(tickId)
       if (channel) void supabase.removeChannel(channel)
     }
-  }, [viewerId, ids, tickMs])
+  }, [viewerId, ids, tickMs, singlePeerFallback])
 
   return useMemo(() => {
-    const online: Record<string, boolean> = {}
-    const inRoom: Record<string, boolean> = {}
+    const out: Record<string, PeerPresenceDisplay> = {}
     const nowMs = Date.now()
     for (const id of ids) {
       const row = rowsRef.current.get(id)
-      const isOn = row ? computeOnline(row, nowMs) : false
-      online[id] = isOn
-      inRoom[id] = isOn && Boolean(row?.presenceInRoom)
+      out[id] = peerPresenceDisplayFromMirrorRow(row ? rowToDisplayInput(row) : undefined, nowMs)
     }
-    // tie to epoch
     void epoch
-    return { online, inRoom }
+    return out
   }, [ids, epoch])
 }
-
