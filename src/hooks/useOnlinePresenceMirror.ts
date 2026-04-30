@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { RealtimeChannel } from '@supabase/supabase-js'
+import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { isPeerPresenceOnlineFromMirror } from '../lib/messengerPeerPresence'
 
@@ -10,6 +10,29 @@ type PresenceMirrorRow = {
   profileShowOnline: boolean | null
   /** Пользователь в звонке (комната); смысл только если он «онлайн» по last_active_at. */
   presenceInRoom: boolean
+}
+
+function mirrorRowToDbShape(prev: PresenceMirrorRow): Record<string, unknown> {
+  return {
+    user_id: prev.userId,
+    last_active_at: prev.lastActiveAt,
+    presence_last_background_at: prev.presenceLastBackgroundAt,
+    profile_show_online: prev.profileShowOnline,
+    presence_in_room: prev.presenceInRoom,
+  }
+}
+
+/** Realtime часто шлёт только изменённые поля — мержим с кэшем, иначе теряется presence_in_room. */
+function mergePresenceMirrorPayload(
+  newRow: Record<string, unknown> | null,
+  prevByUserId: Map<string, PresenceMirrorRow>,
+): PresenceMirrorRow | null {
+  const patch = newRow && typeof newRow === 'object' ? newRow : null
+  if (!patch) return null
+  const userId = typeof patch.user_id === 'string' ? patch.user_id.trim() : ''
+  const prev = userId ? prevByUserId.get(userId) : undefined
+  const base = prev ? mirrorRowToDbShape(prev) : {}
+  return parsePresenceRow({ ...base, ...patch })
 }
 
 function parsePresenceRow(raw: unknown): PresenceMirrorRow | null {
@@ -116,13 +139,27 @@ export function useOnlinePresenceMirror(args: {
     const filter = ids.length === 1 ? `user_id=eq.${ids[0]}` : `user_id=in.(${ids.join(',')})`
     channel = supabase
       .channel(`presence-mirror:${ids.length}-${ids[0]?.slice(0, 8) ?? '0'}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_presence_public', filter }, (payload) => {
-        const parsed = parsePresenceRow(payload.new ?? payload.old)
-        if (!parsed) return
-        if (!ids.includes(parsed.userId)) return
-        rowsRef.current.set(parsed.userId, parsed)
-        bump()
-      })
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_presence_public', filter },
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
+          const ev = payload.eventType
+          if (ev === 'DELETE') {
+            const oldR = payload.old
+            const delId = oldR && typeof oldR.user_id === 'string' ? oldR.user_id.trim() : ''
+            if (delId && ids.includes(delId)) {
+              rowsRef.current.delete(delId)
+              bump()
+            }
+            return
+          }
+          const parsed = mergePresenceMirrorPayload(payload.new, rowsRef.current)
+          if (!parsed) return
+          if (!ids.includes(parsed.userId)) return
+          rowsRef.current.set(parsed.userId, parsed)
+          bump()
+        },
+      )
       .subscribe()
 
     const tickId = window.setInterval(bump, tickMs)
