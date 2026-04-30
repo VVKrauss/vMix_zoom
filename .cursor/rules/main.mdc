@@ -6,3 +6,40 @@ alwaysApply: true
 # Код
 
 Всегда придерживаться принципов **Clean Code**: понятные имена, небольшие функции с одной зоной ответственности, явные зависимости, читаемый поток управления, без лишней сложности и «магии»; не раздувать дифф сверх задачи.
+
+# VPS: деплой фронта (static/Vite)
+
+Репозиторий деплоится на VPS `204.168.146.200` как **статический фронт** (Vite `dist/`) через **nginx**. Backend/deploy в этом сценарии игнорируем.
+
+## Пути на VPS
+
+- `/opt/redflow/front/releases/` — загруженные архивы и распакованные релизы
+- `/opt/redflow/front/current/dist` — **симлинк на актуальный `dist/`**
+
+## Критично: симлинк на dist
+
+Не допускаем `dist/dist/index.html`.
+Правильно, когда `index.html` лежит по пути:
+
+`/opt/redflow/front/current/dist/index.html`
+
+то есть `current/dist` — это симлинк на `.../releases/<ts>/dist`.
+
+## Правило: если пользователь просит «задеплоить / деплой»
+
+Агент **сам выполняет полный деплой** (без просьб “сделай команды”), используя безопасный подход для Windows/PowerShell:
+
+1) **Локально**:
+- `npm run build`
+- создать архив `front-dist-<ts>.tgz` из `dist/`
+- `scp` архива на VPS в `/opt/redflow/front/releases/`
+
+2) **На VPS** (выполнять через `ssh` одной командой в *одинарных кавычках*, чтобы PowerShell не подменял `$...`):
+- распаковать архив в `/opt/redflow/front/releases/<ts>/`
+- переключить симлинк `/opt/redflow/front/current/dist` на новый релиз
+- `nginx -t && systemctl reload nginx`
+
+3) **Проверка**:
+- `ls -la /opt/redflow/front/current/dist` (проверить симлинк)
+- `curl -I https://redflow.online/` (проверить `Last-Modified` и `Cache-Control: no-store`)
+- `curl -I https://redflow.online/assets/NOPE.js` должен быть `404` (чтобы ассеты не падали в SPA-fallback)

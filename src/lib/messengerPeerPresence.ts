@@ -5,7 +5,7 @@
 // Должно быть >= частоты heartbeat у клиентов. Иначе пользователь будет «оффлайн»
 // почти всё время на старых версиях фронта.
 // Быстрое “гашение” при фоне обеспечивает presence_last_background_at.
-const ONLINE_WINDOW_MS = 60 * 1000
+const ONLINE_WINDOW_MS = 6 * 1000
 
 export type PeerPresenceMirrorInput = {
   lastActiveAt: string | null | undefined
