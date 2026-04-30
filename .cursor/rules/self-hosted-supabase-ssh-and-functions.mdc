@@ -1,0 +1,51 @@
+---
+description: SSH доступ к self-hosted Supabase и деплой Edge Functions (Web Push)
+alwaysApply: true
+---
+
+# Self-hosted Supabase (prod): SSH + Edge Functions deploy
+
+## SSH (точка входа на сервер Supabase/БД)
+
+- Подключение: `ssh deploy@147.45.148.174`
+
+## Web Push: Edge Functions, которые нужны проекту
+
+- `send-dm-webpush`
+- `send-channel-webpush`
+
+Secrets для функций (в Studio → Edge Functions → Secrets):
+
+- `VAPID_SUBJECT`
+- `VAPID_PUBLIC_KEY`
+- `VAPID_PRIVATE_KEY`
+
+## Как деплоить функции на self-hosted
+
+На self-hosted функции обычно берутся из папки, примонтированной volume в контейнер `edge-runtime` (или похожий сервис).
+
+Алгоритм:
+
+1) На сервере найти docker compose директорию и проверить сервисы:
+
+```bash
+docker compose ps
+```
+
+2) Найти, куда примонтированы функции (volume) у edge-runtime:
+
+```bash
+docker compose config | sed -n '/edge-runtime:/,/^[^ ]/p'
+```
+
+3) Скопировать папки функций в functions-volume (рядом уже есть `hello`, если он виден в Studio):
+
+- `send-dm-webpush/index.ts`
+- `send-channel-webpush/index.ts`
+
+4) Перезапустить edge-runtime (без рестарта Postgres):
+
+```bash
+docker compose restart edge-runtime
+```
+

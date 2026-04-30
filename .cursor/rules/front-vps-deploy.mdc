@@ -1,0 +1,56 @@
+---
+description: Деплой фронта (Vite dist) на VPS через nginx
+alwaysApply: true
+---
+
+# VPS: деплой фронта (static/Vite)
+
+Этот репозиторий деплоится на VPS `204.168.146.200` как **статический фронт** (Vite `dist/`) через **nginx**. Backend/deploy в этом сценарии игнорируем.
+
+## Пути на VPS
+
+- `/opt/redflow/front/releases/` — загруженные архивы и распакованные релизы
+- `/opt/redflow/front/current/dist` — **симлинк на актуальный `dist/`**
+
+## Критично: симлинк на dist
+
+Не допускаем `dist/dist/index.html`.
+Правильно, когда `index.html` лежит по пути:
+
+`/opt/redflow/front/current/dist/index.html`
+
+То есть `current/dist` — это симлинк на `.../releases/<ts>/dist`.
+
+## Локальная сборка + upload (Windows / PowerShell)
+
+```powershell
+cd "C:\Code\vMix replacer"
+npm ci
+npm run build
+
+$ts = Get-Date -Format "yyyyMMdd-HHmmss"
+$archive = "C:\Code\front-dist-$ts.tgz"
+tar -czf $archive -C "C:\Code\vMix replacer" dist
+scp $archive root@204.168.146.200:/opt/redflow/front/releases/
+```
+
+## Переключение на VPS
+
+```bash
+cd /opt/redflow/front/releases
+archive="$(ls -1t front-dist-*.tgz | head -n 1)"
+ts="${archive#front-dist-}"; ts="${ts%.tgz}"
+
+mkdir -p "/opt/redflow/front/releases/$ts"
+tar -xzf "$archive" -C "/opt/redflow/front/releases/$ts"
+
+rm -rf /opt/redflow/front/current/dist
+ln -sfn "/opt/redflow/front/releases/$ts/dist" /opt/redflow/front/current/dist
+
+nginx -t && systemctl reload nginx
+```
+
+## Nginx: SPA правило
+
+- `root /opt/redflow/front/current/dist;`
+- `try_files $uri $uri/ /index.html;`

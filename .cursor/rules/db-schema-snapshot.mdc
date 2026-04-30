@@ -1,0 +1,38 @@
+---
+description: Schema snapshot (VPS Postgres) — как обновлять docs/db-schema.vps.sql
+alwaysApply: true
+---
+
+# Schema snapshot (VPS Postgres)
+
+В репозитории файл `docs/db-schema.vps.sql` — это **фактический schema-only дамп** с VPS (источник истины для структуры БД).
+
+## Когда обязательно обновлять
+
+- после изменений DDL в проде/VPS (новые таблицы/колонки/индексы/триггеры/функции)
+- перед задачами, где важна реальная структура
+
+## Как обновлять snapshot
+
+### 1) На VPS — снять schema-only в `/tmp`
+
+```bash
+# Команда зависит от того, как запущен Postgres на VPS.
+# Если Postgres в docker compose — используйте exec/pg_dump внутри контейнера.
+docker compose exec -T postgres \
+ sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h 127.0.0.1 -U redflow -d redflow \
+ --schema-only --no-owner --no-privileges --if-exists --clean \
+ --quote-all-identifiers --exclude-schema=information_schema --exclude-schema=pg_catalog' \
+ > /tmp/db-schema.vps.actual.sql
+```
+
+### 2) На локальной машине — скачать в репозиторий
+
+```bash
+scp root@204.168.146.200:/tmp/db-schema.vps.actual.sql "C:\Code\vMix replacer\docs\db-schema.vps.sql"
+```
+
+## Важно
+
+- `docs/` может не входить в релиз на VPS — snapshot храним отдельно.
+- Секреты/пароли в репозиторий не коммитим.
