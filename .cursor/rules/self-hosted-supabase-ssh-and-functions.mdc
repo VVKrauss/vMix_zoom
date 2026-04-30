@@ -9,20 +9,64 @@ alwaysApply: true
 
 - Подключение: `ssh deploy@147.45.148.174`
 
+## Миграции БД (self-hosted): как применять в этом проекте
+
+В этом проекте Supabase **self-hosted**, поэтому **не используем Supabase Cloud / MCP** для наката DDL.
+
+### Где живёт compose и Postgres
+
+- Compose-директория на сервере: `~/apps/supabase/docker`
+- Postgres сервис: `db` (контейнер `supabase-db`)
+
+### История миграций (наша)
+
+Мы ведём свою таблицу истории (не Supabase internal):
+
+- `app_migrations.schema_migrations(version, name, checksum_sha256, applied_at)`
+
+### Правило: если пользователь просит «примени миграции»
+
+Агент **сам применяет миграции** на сервер `deploy@147.45.148.174` через `docker compose exec` в контейнер Postgres и **обязательно** записывает версию в `app_migrations.schema_migrations`.
+
+Локальный инструмент в репозитории:
+
+- `tools/apply-selfhosted-migration.ps1`
+
+Пример запуска с Windows:
+
+```powershell
+pwsh -File .\tools\apply-selfhosted-migration.ps1 -MigrationPath .\supabase\migrations\20260421153000_presence_online_15s.sql
+```
+
 ## Web Push: Edge Functions, которые нужны проекту
 
 - `send-dm-webpush`
 - `send-channel-webpush`
 
-Secrets для функций (в Studio → Edge Functions → Secrets):
+### Секреты / env для Web Push (self-hosted)
 
+В этом compose Web Push функции — это сервис **`functions`** (контейнер `supabase-edge-functions`).  
+`Deno.env.get(...)` читает **переменные окружения контейнера**, а не «Secrets» из Studio, если вы явно не прокинули их в `docker-compose.yml`.
+
+Минимально должны быть заданы (значения лежат в `~/apps/supabase/docker/.env`, а в compose — через `${...}`):
+
+- `WEBHOOK_PUSH_SECRET` — тот же Bearer, что в `Authorization` у Database Webhook / `supabase_functions.http_request(...)`
 - `VAPID_SUBJECT`
 - `VAPID_PUBLIC_KEY`
 - `VAPID_PRIVATE_KEY`
+- (опционально) `PUBLIC_APP_URL` — если не задано, в коде функций есть дефолт `https://redflow.online`
+
+Проверка «секреты реально попали в runtime»:
+
+```bash
+cd ~/apps/supabase/docker
+docker compose exec -T functions sh -lc 'printenv WEBHOOK_PUSH_SECRET >/dev/null && echo WEBHOOK_OK'
+docker compose exec -T functions sh -lc 'printenv VAPID_PUBLIC_KEY >/dev/null && echo VAPID_OK'
+```
 
 ## Как деплоить функции на self-hosted
 
-На self-hosted функции обычно берутся из папки, примонтированной volume в контейнер `edge-runtime` (или похожий сервис).
+На self-hosted функции берутся из volume **`./volumes/functions` → `/home/deno/functions`** у сервиса **`functions`**.
 
 Алгоритм:
 
@@ -32,20 +76,20 @@ Secrets для функций (в Studio → Edge Functions → Secrets):
 docker compose ps
 ```
 
-2) Найти, куда примонтированы функции (volume) у edge-runtime:
+2) Убедиться, что в `docker-compose.yml` у сервиса `functions` в `environment` прокинуты `${WEBHOOK_PUSH_SECRET}` и `${VAPID_*}` (см. раздел выше). После правок:
 
 ```bash
-docker compose config | sed -n '/edge-runtime:/,/^[^ ]/p'
+docker compose up -d --no-deps functions
 ```
 
-3) Скопировать папки функций в functions-volume (рядом уже есть `hello`, если он виден в Studio):
+3) Скопировать/обновить папки функций в `~/apps/supabase/docker/volumes/functions/`:
 
 - `send-dm-webpush/index.ts`
 - `send-channel-webpush/index.ts`
 
-4) Перезапустить edge-runtime (без рестарта Postgres):
+4) Перезапустить `functions` (Postgres не трогаем):
 
 ```bash
-docker compose restart edge-runtime
+docker compose restart functions
 ```
 

@@ -43,3 +43,7 @@ alwaysApply: true
 - `ls -la /opt/redflow/front/current/dist` (проверить симлинк)
 - `curl -I https://redflow.online/` (проверить `Last-Modified` и `Cache-Control: no-store`)
 - `curl -I https://redflow.online/assets/NOPE.js` должен быть `404` (чтобы ассеты не падали в SPA-fallback)
+
+# Self-hosted Supabase: миграции БД
+
+Если пользователь просит «примени миграции», агент делает это **на self-hosted сервере** `deploy@147.45.148.174` через `docker compose exec` и пишет запись в `app_migrations.schema_migrations`. Подробности и команда — в правиле `self-hosted-supabase-ssh-and-functions.mdc`.

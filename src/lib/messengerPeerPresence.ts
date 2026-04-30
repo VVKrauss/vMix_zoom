@@ -5,7 +5,8 @@
 // Должно быть >= частоты heartbeat у клиентов. Иначе пользователь будет «оффлайн»
 // почти всё время на старых версиях фронта.
 // Быстрое “гашение” при фоне обеспечивает presence_last_background_at.
-const ONLINE_WINDOW_MS = 6 * 1000
+// Online window for UI ring. Must be comfortably above pulse cadence + network jitter.
+const ONLINE_WINDOW_MS = 20 * 1000
 
 export type PeerPresenceMirrorInput = {
   lastActiveAt: string | null | undefined

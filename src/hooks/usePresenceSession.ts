@@ -13,7 +13,9 @@ export function usePresenceSession() {
     if (!user?.id) return
 
     let pulseRpc: 'presence_foreground_pulse' | 'touch_my_presence' = 'presence_foreground_pulse'
-    const PULSE_MS = 4_000
+    // Keep this safely below the server-side update threshold and the UI online window.
+    // Too aggressive values can cause flicker if updates are throttled or delayed.
+    const PULSE_MS = 8_000
 
     const callPulse = async () => {
       const { error } = await supabase.rpc(pulseRpc)

@@ -2,7 +2,7 @@
  * Web Push для каналов (chat_messages, kind=channel).
  *
  * Вызов: Database Webhook (INSERT на public.chat_messages) → POST на этот endpoint.
- * Секреты (Supabase Dashboard → Edge Functions → Secrets):
+ * Секреты (self-hosted): переменные окружения контейнера `functions` (см. `docker-compose.yml` → сервис `functions`):
  *   WEBHOOK_PUSH_SECRET — тот же Bearer в настройках вебхука
  *   VAPID_SUBJECT        — например mailto:you@domain
  *   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY — пара VAPID (должна соответствовать VITE_VAPID_PUBLIC_KEY на клиенте)
