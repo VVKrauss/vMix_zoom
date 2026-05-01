@@ -201,24 +201,8 @@ export function ThreadMessageBubble({
   const bubbleTimeCornerClass = showAuthorInMeta ? ' dashboard-messenger__message--time-tr' : ''
 
   if (isDmSoftDeletedStub(message)) {
-    const whoRaw =
-      typeof message.senderNameSnapshot === 'string' && message.senderNameSnapshot.trim()
-        ? message.senderNameSnapshot.trim()
-        : 'Кто-то'
-    const who = peerAliasByUserId
-      ? messengerPeerDisplayTitle(message.senderUserId, whoRaw, peerAliasByUserId, currentUserId).trim() || 'Кто-то'
-      : whoRaw
-    return (
-      <div
-        ref={(el) => {
-          bindMessageAnchor(message.id, el)
-        }}
-        className="dashboard-messenger__dm-deleted-plain"
-        aria-label={`${who} удалил(а) сообщение`}
-      >
-        {who} удалил(а) сообщение
-      </div>
-    )
+    // Hide soft-deleted stub rows in UI.
+    return null
   }
 
   return (
