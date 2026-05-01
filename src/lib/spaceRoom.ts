@@ -53,6 +53,60 @@ export const SPACE_ROOM_TEMPORARY_INVITE_MINUTES = 2
 
 const CREATE_OPTS_PREFIX = 'vmix_space_room_create:'
 
+/** Отложенное приглашение в ЛС после входа организатора в комнату (создание из открытого ЛС). */
+const PENDING_DM_INVITE_PREFIX = 'vmix_pending_dm_room_invite:'
+
+export type PendingDmRoomInvite = {
+  otherUserId: string
+  /** Уже открытый ЛС — пишем без ensure. */
+  directConversationId?: string | null
+  peerTitle?: string | null
+}
+
+export function stashPendingDmRoomInvite(slug: string, payload: PendingDmRoomInvite): void {
+  const trimmed = slug.trim()
+  const peer = payload.otherUserId.trim()
+  if (!trimmed || !peer) return
+  try {
+    sessionStorage.setItem(
+      PENDING_DM_INVITE_PREFIX + trimmed,
+      JSON.stringify({
+        otherUserId: peer,
+        directConversationId: payload.directConversationId?.trim() || undefined,
+        peerTitle: payload.peerTitle?.trim() || undefined,
+      }),
+    )
+  } catch {
+    /* noop */
+  }
+}
+
+/** Снимает и возвращает отложенное приглашение (один раз), чтобы не дублировать при реконнекте. */
+export function takePendingDmRoomInvite(slug: string): PendingDmRoomInvite | null {
+  const trimmed = slug.trim()
+  if (!trimmed) return null
+  const key = PENDING_DM_INVITE_PREFIX + trimmed
+  try {
+    const raw = sessionStorage.getItem(key)
+    if (!raw) return null
+    sessionStorage.removeItem(key)
+    const p = JSON.parse(raw) as Partial<PendingDmRoomInvite>
+    if (typeof p.otherUserId !== 'string' || !p.otherUserId.trim()) return null
+    return {
+      otherUserId: p.otherUserId.trim(),
+      directConversationId: p.directConversationId,
+      peerTitle: p.peerTitle,
+    }
+  } catch {
+    try {
+      sessionStorage.removeItem(key)
+    } catch {
+      /* noop */
+    }
+    return null
+  }
+}
+
 export const PENDING_HOST_CLAIM_KEY = 'vmix_pending_host_claim'
 export const HOST_SESSION_KEY = 'vmix_i_am_host_for'
 

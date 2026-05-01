@@ -128,7 +128,7 @@ import {
   requestConversationJoin,
   type ConversationJoinRequest,
 } from '../lib/chatRequests'
-import { setPendingHostClaim, stashSpaceRoomCreateOptions } from '../lib/spaceRoom'
+import { setPendingHostClaim, stashPendingDmRoomInvite, stashSpaceRoomCreateOptions } from '../lib/spaceRoom'
 import { setContactPin, type RegisteredUserSearchHit } from '../lib/socialGraph'
 import {
   getMyConversationNotificationMutes,
@@ -2622,21 +2622,15 @@ export function DashboardMessengerPage() {
     const activeId = activeConversationId.trim()
     if (otherId && user?.id && otherId !== user.id) {
       const peerTitle = threadHeadConversation?.title?.trim() || null
-      const body = `Приглашаю в комнату: [${id}]`
       const sameOpenDm =
         Boolean(activeId) &&
         threadHeadConversation?.id === activeId &&
         threadHeadConversation?.otherUserId?.trim() === otherId
-      void (async () => {
-        if (sameOpenDm) {
-          await appendDirectMessage(activeId, body)
-          return
-        }
-        const ensured = await ensureDirectConversationWithUser(otherId, peerTitle)
-        if (!ensured.error && ensured.data) {
-          await appendDirectMessage(ensured.data, body)
-        }
-      })()
+      stashPendingDmRoomInvite(id, {
+        otherUserId: otherId,
+        directConversationId: sameOpenDm ? activeId : null,
+        peerTitle,
+      })
     }
     navigate(`/r/${encodeURIComponent(id)}`)
   }, [navigate, threadHeadConversation, user?.id, activeConversationId])

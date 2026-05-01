@@ -21,9 +21,11 @@ import {
   getSpaceRoomJoinStatus,
   markSessionAsHostFor,
   registerSpaceRoomAsHost,
+  takePendingDmRoomInvite,
   takeSpaceRoomCreateOptions,
   type SpaceRoomCreateOptions,
 } from '../lib/spaceRoom'
+import { appendDirectMessage, ensureDirectConversationWithUser } from '../lib/messenger'
 
 const CHAT_PREVIEW_TOAST_MS = 7000
 const ROOM_AUTO_RESUME_KEY_PREFIX = 'vmix_room_auto_resume:'
@@ -206,6 +208,39 @@ export function RoomSession({ roomId }: Props) {
       })
     }
   }, [status, user?.id])
+
+  /** Приглашение из ЛС: сообщение уходит только после реального входа в комнату. */
+  useEffect(() => {
+    if (status !== 'connected' || !user?.id) return
+    const slug = (connectedRoomId ?? roomId).trim()
+    if (!slug) return
+    let cancelled = false
+    void (async () => {
+      const pending = takePendingDmRoomInvite(slug)
+      if (!pending || cancelled) return
+      const body = `Приглашаю в комнату: [${slug}]`
+      const directId = pending.directConversationId?.trim()
+      try {
+        if (directId) {
+          await appendDirectMessage(directId, body)
+          return
+        }
+        const ensured = await ensureDirectConversationWithUser(
+          pending.otherUserId,
+          pending.peerTitle?.trim() || null,
+        )
+        if (cancelled) return
+        if (!ensured.error && ensured.data) {
+          await appendDirectMessage(ensured.data, body)
+        }
+      } catch (e) {
+        if (import.meta.env.DEV) console.warn('[pending-dm-room-invite]', e)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [status, user?.id, connectedRoomId, roomId])
 
   const statusRef = useRef<RoomStatus>('idle')
   statusRef.current = status
