@@ -2,12 +2,11 @@ import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } 
 import {
   listDirectMessagesPage,
   mapDirectMessageFromRow,
-  markDirectConversationRead,
   previewTextForDirectMessageTail,
   type DirectMessage,
 } from '../lib/messenger'
 import type { MessengerConversationSummary } from '../lib/messengerConversations'
-import { DM_PAGE_SIZE, MARK_DIRECT_READ_DEBOUNCE_MS, sortDirectMessagesChrono } from '../lib/messengerDashboardUtils'
+import { DM_PAGE_SIZE, sortDirectMessagesChrono } from '../lib/messengerDashboardUtils'
 import { playMessageSound } from '../lib/messengerSound'
 import { supabase } from '../lib/supabase'
 
@@ -50,20 +49,15 @@ export function useMessengerDirectThreadRealtime(opts: {
     if (kind !== 'direct') return
 
     let sawSubscribed = false
-    let markReadDebounce: ReturnType<typeof setTimeout> | null = null
-    const scheduleMarkRead = () => {
-      if (markReadDebounce != null) clearTimeout(markReadDebounce)
-      markReadDebounce = setTimeout(() => {
-        markReadDebounce = null
-        void markDirectConversationRead(convId)
-      }, MARK_DIRECT_READ_DEBOUNCE_MS)
-    }
 
     const bumpSidebarForInsert = (msg: DirectMessage) => {
       if (msg.kind === 'reaction') return
       const preview = previewTextForDirectMessageTail(msg)
-      const fromPeer = msg.senderUserId !== uid
-      /** В открытом ЛС входящие уже «увидены» в ленте — не копим unread локально. */
+      /**
+       * Важно: нельзя автоматически сбрасывать unread при получении сообщения —
+       * пользователь мог быть в фоне и не видеть его глазами.
+       * Факт «прочитано» определяется координатором чтения (видимая вкладка + видимость хвоста ленты).
+       */
       setItems((prev) =>
         prev.map((item) =>
           item.id === convId
@@ -72,7 +66,7 @@ export function useMessengerDirectThreadRealtime(opts: {
                 lastMessageAt: msg.createdAt,
                 lastMessagePreview: preview,
                 messageCount: item.messageCount + 1,
-                unreadCount: fromPeer ? 0 : item.unreadCount,
+                unreadCount: item.unreadCount,
               }
             : item,
         ),
@@ -84,7 +78,7 @@ export function useMessengerDirectThreadRealtime(opts: {
               lastMessageAt: msg.createdAt,
               lastMessagePreview: preview,
               messageCount: prev.messageCount + 1,
-              unreadCount: fromPeer ? 0 : prev.unreadCount,
+              unreadCount: prev.unreadCount,
             }
           : prev,
       )
@@ -133,7 +127,6 @@ export function useMessengerDirectThreadRealtime(opts: {
 
           if (!skipSidebarBump && msg.kind !== 'reaction') {
             bumpSidebarForInsert(msg)
-            if (!isOwn) scheduleMarkRead()
           }
           if (
             !isOwn &&
@@ -210,7 +203,6 @@ export function useMessengerDirectThreadRealtime(opts: {
       })
 
     return () => {
-      if (markReadDebounce != null) clearTimeout(markReadDebounce)
       void supabase.removeChannel(channel)
     }
   }, [threadConversationId, listOnlyMobile, userId, bumpScrollIfPinned, mergeLatestPageIntoMessages])

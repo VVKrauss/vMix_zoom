@@ -153,7 +153,7 @@ import { DashboardShell } from './DashboardShell'
 import { MessengerForwardToDmModal } from './MessengerForwardToDmModal'
 import { MessengerMessageMenuPopover } from './MessengerMessageMenuPopover'
 import type { ReactionEmoji } from '../types/roomComms'
-import { bookmarkMessage, countMessageBookmarks } from '../lib/messengerBookmarks'
+import { bookmarkMessage, countMessageBookmarks, listMessageBookmarks } from '../lib/messengerBookmarks'
 import { DirectThreadPane } from './messenger/DirectThreadPane'
 import { GroupThreadPane } from './messenger/GroupThreadPane'
 import { ChannelThreadPane } from './messenger/ChannelThreadPane'
@@ -242,6 +242,7 @@ export function DashboardMessengerPage() {
   const [dmBookmarkBusy, setDmBookmarkBusy] = useState(false)
   const [bookmarksOpen, setBookmarksOpen] = useState(false)
   const [bookmarksCount, setBookmarksCount] = useState(0)
+  const [bookmarksPeerNewCount, setBookmarksPeerNewCount] = useState(0)
   const [inviteJoinBusy, setInviteJoinBusy] = useState(false)
   /** Есть цель для треда (deep link): при view=list всё равно показываем чат, а не только дерево. */
   const hasMobileOpenTarget =
@@ -1393,6 +1394,7 @@ export function DashboardMessengerPage() {
     const cid = activeConversationId.trim()
     if (!user?.id || !cid) {
       setBookmarksCount(0)
+      setBookmarksPeerNewCount(0)
       return
     }
     void countMessageBookmarks(cid).then((res) => {
@@ -1402,7 +1404,34 @@ export function DashboardMessengerPage() {
       }
       setBookmarksCount(Math.max(0, res.data))
     })
-  }, [activeConversationId, user?.id])
+
+    const head = threadHeadConversation
+    const isPeerDm = Boolean(head?.kind === 'direct' && head.otherUserId?.trim())
+    if (!isPeerDm) {
+      setBookmarksPeerNewCount(0)
+      return
+    }
+
+    const seenKey = `vmix:bookmarks-seen:${cid}`
+    const seenAt = (typeof window !== 'undefined' ? window.localStorage.getItem(seenKey) : '')?.trim() ?? ''
+    const seenMs = seenAt ? Date.parse(seenAt) : 0
+
+    void listMessageBookmarks({ conversationId: cid, limit: 200 }).then((res) => {
+      if (res.error || !res.data) return
+      const now = Date.now()
+      const safeSeenMs = Number.isFinite(seenMs) ? seenMs : 0
+      const n = res.data.reduce((acc, r) => {
+        const by = r.createdByUserId?.trim() ?? ''
+        if (!by || by === user.id) return acc
+        const t = Date.parse(r.bookmarkCreatedAt)
+        if (!Number.isFinite(t)) return acc
+        if (t <= safeSeenMs) return acc
+        if (t > now + 30_000) return acc
+        return acc + 1
+      }, 0)
+      setBookmarksPeerNewCount(Math.max(0, n))
+    })
+  }, [activeConversationId, user?.id, threadHeadConversation?.kind, threadHeadConversation?.otherUserId])
 
   const saveMessageFromActiveConversation = useCallback(
     async (message: DirectMessage, ctx?: { channelParentPostId?: string | null }) => {
@@ -1439,7 +1468,14 @@ export function DashboardMessengerPage() {
     [activeConversationId, threadHeadConversation, toast, user?.id],
   )
 
-  const openBookmarks = useCallback(() => setBookmarksOpen(true), [])
+  const openBookmarks = useCallback(() => {
+    const cid = activeConversationId.trim()
+    if (cid && typeof window !== 'undefined') {
+      window.localStorage.setItem(`vmix:bookmarks-seen:${cid}`, new Date().toISOString())
+    }
+    setBookmarksPeerNewCount(0)
+    setBookmarksOpen(true)
+  }, [activeConversationId])
 
   const dmComposerNode = useMemo(
     () => (
@@ -3572,6 +3608,7 @@ export function DashboardMessengerPage() {
                       navigate={navigate}
                       totalOtherUnread={totalOtherUnread}
                       bookmarksCount={bookmarksCount}
+                      bookmarksPeerNewCount={bookmarksPeerNewCount}
                       onOpenBookmarks={openBookmarks}
                       directPeerLastReadAt={directPeerLastReadAt}
                       viewerDmReceiptsPrivate={profile?.profile_dm_receipts_private === true}
@@ -3693,6 +3730,13 @@ export function DashboardMessengerPage() {
                 message: res.ok ? 'Добавлено в закладки' : 'Не удалось добавить в закладки',
                 ms: 2400,
               })
+              if (res.ok) {
+                const cid = activeConversationId.trim()
+                if (cid) {
+                  const c = await countMessageBookmarks(cid)
+                  if (!c.error && typeof c.data === 'number') setBookmarksCount(Math.max(0, c.data))
+                }
+              }
               setDmBookmarkScopePick(null)
             } finally {
               setDmBookmarkBusy(false)
@@ -3711,6 +3755,13 @@ export function DashboardMessengerPage() {
                 message: res.ok ? 'Добавлено в закладки' : 'Не удалось добавить в закладки',
                 ms: 2400,
               })
+              if (res.ok) {
+                const cid = activeConversationId.trim()
+                if (cid) {
+                  const c = await countMessageBookmarks(cid)
+                  if (!c.error && typeof c.data === 'number') setBookmarksCount(Math.max(0, c.data))
+                }
+              }
               setDmBookmarkScopePick(null)
             } finally {
               setDmBookmarkBusy(false)

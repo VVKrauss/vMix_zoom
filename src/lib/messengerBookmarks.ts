@@ -5,6 +5,7 @@ export type BookmarkScope = 'me' | 'all'
 export type MessageBookmarkRow = {
   bookmarkId: string
   bookmarkCreatedAt: string
+  createdByUserId: string | null
   messageId: string
   messageKind: string
   messageBody: string
@@ -24,6 +25,7 @@ function mapBookmarkRow(raw: Record<string, unknown>): MessageBookmarkRow | null
   return {
     bookmarkId,
     bookmarkCreatedAt: typeof raw.bookmark_created_at === 'string' ? raw.bookmark_created_at : new Date(0).toISOString(),
+    createdByUserId: typeof raw.created_by_user_id === 'string' ? raw.created_by_user_id : null,
     messageId,
     messageKind: typeof raw.message_kind === 'string' ? raw.message_kind : 'text',
     messageBody: typeof raw.message_body === 'string' ? raw.message_body : '',

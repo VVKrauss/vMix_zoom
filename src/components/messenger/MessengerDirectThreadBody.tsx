@@ -83,6 +83,8 @@ function MessengerDirectThreadBodyImpl(props: {
   messageActionMenu: ReactNode
   onForwardSourceNavigate?: (nav: MessengerForwardNav) => void
   bookmarksCount: number
+  /** Новые закладки от собеседника (пока модалка не открыта). */
+  bookmarksPeerNewCount?: number
   onOpenBookmarks: () => void
 }) {
   useDevRenderTrace('MessengerDirectThreadBody', {
@@ -135,6 +137,7 @@ function MessengerDirectThreadBodyImpl(props: {
     messageActionMenu,
     onForwardSourceNavigate,
     bookmarksCount,
+    bookmarksPeerNewCount = 0,
     onOpenBookmarks,
   } = props
 
@@ -240,6 +243,11 @@ function MessengerDirectThreadBodyImpl(props: {
                   title="Закладки"
                 >
                   <FiRrIcon name="bookmark" />
+                  {bookmarksPeerNewCount > 0 ? (
+                    <span className="dashboard-messenger__bookmark-badge dashboard-messenger__row-badge" aria-label="Новые закладки">
+                      {bookmarksPeerNewCount > 99 ? '99+' : bookmarksPeerNewCount}
+                    </span>
+                  ) : null}
                 </button>
               ) : null}
               <button
@@ -322,8 +330,19 @@ function MessengerDirectThreadBodyImpl(props: {
             </button>
             {bookmarksCount > 0 ? (
               <div className="dashboard-messenger__thread-head-actions-desktop">
-                <button type="button" className="dashboard-topbar__action" onClick={onOpenBookmarks} title="Закладки" aria-label="Закладки">
+                <button
+                  type="button"
+                  className="dashboard-topbar__action dashboard-messenger__bookmark-btn"
+                  onClick={onOpenBookmarks}
+                  title="Закладки"
+                  aria-label="Закладки"
+                >
                   <FiRrIcon name="bookmark" />
+                  {bookmarksPeerNewCount > 0 ? (
+                    <span className="dashboard-messenger__bookmark-badge dashboard-messenger__row-badge" aria-label="Новые закладки">
+                      {bookmarksPeerNewCount > 99 ? '99+' : bookmarksPeerNewCount}
+                    </span>
+                  ) : null}
                 </button>
               </div>
             ) : null}

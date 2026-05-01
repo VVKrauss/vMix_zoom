@@ -8966,6 +8966,19 @@ span.dashboard-messenger__thread-head-center-avatar {
   pointer-events: none;
 }
 
+.dashboard-messenger__bookmark-btn,
+.dashboard-messenger__list-head-btn {
+  position: relative;
+}
+
+.dashboard-messenger__bookmark-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  transform: translate(35%, -35%);
+  pointer-events: none;
+}
+
 .dashboard-messenger__row-badge--inline {
   display: inline-flex;
   vertical-align: middle;
