@@ -2420,20 +2420,22 @@ html[data-theme="light"] .card-bar-fav--on {
 }
 
 .device-popover--reaction-pick {
-  min-width: auto;
-  max-width: min(100vw - 24px, 220px);
+  /* Явная ширина: иначе сетка 5×N схлопывает родителя до «полоски». */
+  box-sizing: border-box;
+  width: min(220px, calc(100vw - 24px));
+  min-width: min(200px, calc(100vw - 24px));
+  max-width: min(100vw - 16px, 220px);
   font-size: 13px;
 }
 
 .device-popover--reaction-pick .reaction-emoji-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  /* Одна высота строки — иначе первый ряд у некоторых шрифтов визуально «мельче». */
-  grid-auto-rows: minmax(38px, auto);
+  grid-template-columns: repeat(5, 1fr);
+  grid-auto-rows: auto;
   align-items: stretch;
   justify-items: stretch;
-  gap: 2px;
-  padding: 2px 6px 6px;
+  gap: 4px;
+  padding: 4px 6px 8px;
 }
 
 .reaction-emoji-btn {
@@ -2447,9 +2449,8 @@ html[data-theme="light"] .card-bar-fav--on {
   cursor: pointer;
   transition: background .12s, transform .12s;
   box-sizing: border-box;
-  width: 100%;
-  min-height: 38px;
-  display: inline-flex;
+  min-height: 40px;
+  display: flex;
   align-items: center;
   justify-content: center;
 }
@@ -2480,10 +2481,6 @@ html[data-theme="light"] .card-bar-fav--on {
   .reaction-emoji-btn {
     padding: 8px 4px;
     min-height: 44px;
-  }
-
-  .device-popover--reaction-pick .reaction-emoji-grid {
-    grid-auto-rows: minmax(44px, auto);
   }
 
   .reaction-emoji-btn__twemoji {

@@ -2861,6 +2861,7 @@ export function DashboardMessengerPage() {
             onReply={() => {
               setReplyTo(messageMenu.message)
               closeMessageActionMenu()
+              queueMicrotask(() => composerTextareaRef.current?.focus())
             }}
             onForward={
               threadHeadConversation?.kind === 'direct' &&

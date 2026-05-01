@@ -1317,6 +1317,7 @@ export function GroupThreadPane({
                 onReply={() => {
                   setReplyTo(messageMenu.message)
                   setMessageMenu(null)
+                  queueMicrotask(() => composerTextareaRef.current?.focus())
                 }}
                 onPickReaction={(em) => {
                   if (!messageMenu.message.id || !isAllowedReactionEmoji(em)) return

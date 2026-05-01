@@ -2666,6 +2666,7 @@ export function ChannelThreadPane({
                 onReply={() => {
                   setQuoteToComment(commentMenu.message)
                   setCommentMenu(null)
+                  queueMicrotask(() => commentsComposerRef.current?.focus())
                 }}
                 onPickReaction={(em) => {
                   if (!commentMenu.message.id || !isAllowedReactionEmoji(em)) return

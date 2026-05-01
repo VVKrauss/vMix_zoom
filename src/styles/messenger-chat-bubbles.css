@@ -36,7 +36,7 @@
   display: flex;
   align-items: flex-end;
   justify-content: flex-start;
-  gap: 8px;
+  gap: 12px;
 }
 
 .dashboard-messenger__bubble-time {
@@ -61,11 +61,11 @@
 
 /* Reserve space so author/body text never overlaps time */
 .dashboard-messenger__message--time-tr {
-  padding-right: 34px;
+  padding-right: 40px;
 }
 
 .dashboard-messenger__message--image.dashboard-messenger__message--time-tr {
-  padding-right: 30px;
+  padding-right: 36px;
 }
 
 .dashboard-messenger__message-bottom-row > .dashboard-messenger__message-body {
