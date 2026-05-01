@@ -52,6 +52,7 @@ import { REACTION_EMOJI_WHITELIST } from '../../types/roomComms'
 import { AttachmentIcon, ChevronLeftIcon, FiRrIcon, MessengerSendPlaneIcon, XCloseIcon } from '../icons'
 import { MessengerBubbleBody } from '../MessengerBubbleBody'
 import { MessengerMessageMenuPopover } from '../MessengerMessageMenuPopover'
+import { bookmarkMessage } from '../../lib/messengerBookmarks'
 import { PostDraftReadView, PostPublicationLine } from '../postEditor/PostDraftReadView'
 import { PostEditorModal } from '../postEditor/PostEditorModal'
 import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
@@ -126,6 +127,7 @@ export function ChannelThreadPane({
   messengerOnline = true,
   onTouchTail,
   onForwardMessage,
+  onSaveMessage,
   onMentionSlug,
   isMemberHint,
   postingMode,
@@ -142,6 +144,7 @@ export function ChannelThreadPane({
   onTouchTail?: (patch: { lastMessageAt: string; lastMessagePreview: string }) => void
   /** Переслать текст/фото в личный чат (открывает модалку на уровне страницы). */
   onForwardMessage?: (message: DirectMessage) => void
+  onSaveMessage?: (message: DirectMessage, ctx: { parentPostId?: string | null }) => void | Promise<void>
   onForwardSourceNavigate?: (nav: MessengerForwardNav) => void
   /** Клик по @slug в теле поста/комментария (markdown). */
   onMentionSlug?: (slug: string) => void
@@ -2513,6 +2516,22 @@ export function ChannelThreadPane({
                       postMenu.post.kind === 'audio' ||
                       postMenu.post.kind === 'system'),
                 )}
+                canBookmark={Boolean(
+                  canModerateChannel &&
+                    !postMenu.post.id.startsWith('local-') &&
+                    (postMenu.post.kind === 'text' ||
+                      postMenu.post.kind === 'image' ||
+                      postMenu.post.kind === 'audio' ||
+                      postMenu.post.kind === 'system'),
+                )}
+                canSave={Boolean(
+                  isChannelMember &&
+                    !postMenu.post.id.startsWith('local-') &&
+                    (postMenu.post.kind === 'text' ||
+                      postMenu.post.kind === 'image' ||
+                      postMenu.post.kind === 'audio' ||
+                      postMenu.post.kind === 'system'),
+                )}
                 canDelete={Boolean(
                   user?.id &&
                     postMenu.post.senderUserId === user.id &&
@@ -2532,6 +2551,18 @@ export function ChannelThreadPane({
                     message: ok ? 'Скопировано в буфер обмена' : 'Не удалось скопировать',
                     ms: 2200,
                   })
+                }}
+                onBookmark={async () => {
+                  const res = await bookmarkMessage(postMenu.post.id, 'me')
+                  toast.push({
+                    tone: res.ok ? 'success' : 'error',
+                    message: res.ok ? 'Добавлено в закладки' : 'Не удалось добавить в закладки',
+                    ms: 2400,
+                  })
+                }}
+                onSave={async () => {
+                  if (!onSaveMessage) return
+                  await onSaveMessage(postMenu.post, { parentPostId: null })
                 }}
                 onEdit={() => {
                   setPostEditor({ mode: 'edit', message: postMenu.post })
@@ -2583,6 +2614,20 @@ export function ChannelThreadPane({
                       commentMenu.message.kind === 'image' ||
                       commentMenu.message.kind === 'audio'),
                 )}
+                canBookmark={Boolean(
+                  canModerateChannel &&
+                    !commentMenu.message.id.startsWith('local-') &&
+                    (commentMenu.message.kind === 'text' ||
+                      commentMenu.message.kind === 'image' ||
+                      commentMenu.message.kind === 'audio'),
+                )}
+                canSave={Boolean(
+                  isChannelMember &&
+                    !commentMenu.message.id.startsWith('local-') &&
+                    (commentMenu.message.kind === 'text' ||
+                      commentMenu.message.kind === 'image' ||
+                      commentMenu.message.kind === 'audio'),
+                )}
                 canDelete={canDeleteChannelComment(commentMenu.message)}
                 timestampLabel={formatChannelBubbleTime(commentMenu.message.createdAt)}
                 onClose={() => setCommentMenu(null)}
@@ -2594,6 +2639,18 @@ export function ChannelThreadPane({
                     message: ok ? 'Скопировано в буфер обмена' : 'Не удалось скопировать',
                     ms: 2200,
                   })
+                }}
+                onBookmark={async () => {
+                  const res = await bookmarkMessage(commentMenu.message.id, 'me')
+                  toast.push({
+                    tone: res.ok ? 'success' : 'error',
+                    message: res.ok ? 'Добавлено в закладки' : 'Не удалось добавить в закладки',
+                    ms: 2400,
+                  })
+                }}
+                onSave={async () => {
+                  if (!onSaveMessage) return
+                  await onSaveMessage(commentMenu.message, { parentPostId: commentsModalPostId })
                 }}
                 onEdit={() => {
                   setEditingCommentId(commentMenu.message.id)

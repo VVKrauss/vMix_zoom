@@ -82,6 +82,8 @@ function MessengerDirectThreadBodyImpl(props: {
   composer: ReactNode
   messageActionMenu: ReactNode
   onForwardSourceNavigate?: (nav: MessengerForwardNav) => void
+  bookmarksCount: number
+  onOpenBookmarks: () => void
 }) {
   useDevRenderTrace('MessengerDirectThreadBody', {
     isMobileMessenger: props.isMobileMessenger,
@@ -132,6 +134,8 @@ function MessengerDirectThreadBodyImpl(props: {
     composer,
     messageActionMenu,
     onForwardSourceNavigate,
+    bookmarksCount,
+    onOpenBookmarks,
   } = props
 
   const peerPresenceRingClass =
@@ -142,6 +146,7 @@ function MessengerDirectThreadBodyImpl(props: {
         : ''
 
   const seenMessageIdsRef = useRef<Set<string>>(new Set())
+  const isSavedSelfChat = threadHeadConversation.title.trim().toLowerCase() === 'сохраненное' && !threadHeadConversation.otherUserId?.trim()
 
   return (
     <>
@@ -187,7 +192,9 @@ function MessengerDirectThreadBodyImpl(props: {
             >
               <span className={`dashboard-messenger__avatar-ring-wrap${peerPresenceRingClass}`} aria-hidden>
                 <span className="dashboard-messenger__thread-head-center-avatar">
-                  {activeAvatarUrl ? (
+                  {isSavedSelfChat ? (
+                    <FiRrIcon name="bookmark" />
+                  ) : activeAvatarUrl ? (
                     <StorageOrHttpAvatarImg
                       src={activeAvatarUrl}
                       alt=""
@@ -224,6 +231,17 @@ function MessengerDirectThreadBodyImpl(props: {
               </div>
             </button>
             <div className="dashboard-messenger__list-head-actions">
+              {bookmarksCount > 0 ? (
+                <button
+                  type="button"
+                  className="dashboard-messenger__list-head-btn"
+                  onClick={onOpenBookmarks}
+                  aria-label="Закладки"
+                  title="Закладки"
+                >
+                  <FiRrIcon name="bookmark" />
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="dashboard-messenger__list-head-btn dashboard-messenger__list-head-btn--primary"
@@ -263,7 +281,9 @@ function MessengerDirectThreadBodyImpl(props: {
                 aria-hidden
               >
                 <span className="dashboard-messenger__thread-avatar">
-                  {activeAvatarUrl ? (
+                  {isSavedSelfChat ? (
+                    <FiRrIcon name="bookmark" />
+                  ) : activeAvatarUrl ? (
                     <StorageOrHttpAvatarImg
                       src={activeAvatarUrl}
                       alt=""
@@ -300,6 +320,13 @@ function MessengerDirectThreadBodyImpl(props: {
                 </div>
               </div>
             </button>
+            {bookmarksCount > 0 ? (
+              <div className="dashboard-messenger__thread-head-actions-desktop">
+                <button type="button" className="dashboard-topbar__action" onClick={onOpenBookmarks} title="Закладки" aria-label="Закладки">
+                  <FiRrIcon name="bookmark" />
+                </button>
+              </div>
+            ) : null}
           </div>
         )}
       </div>

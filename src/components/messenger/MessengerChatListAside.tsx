@@ -326,6 +326,8 @@ function MessengerChatListAsideImpl(props: {
         ) : (
           <>
             {filteredSortedItems.map((item) => {
+              const isSavedSelfChat =
+                item.kind === 'direct' && item.title.trim().toLowerCase() === 'сохраненное' && !item.otherUserId?.trim()
               const avatarUrl =
                 item.kind === 'direct'
                   ? item.avatarUrl ?? (!item.otherUserId ? profileAvatarUrl ?? null : null)
@@ -363,7 +365,9 @@ function MessengerChatListAsideImpl(props: {
                       >
                         {item.kind === 'direct' ? (
                           <div className="dashboard-messenger__row-avatar">
-                            {avatarUrl ? (
+                            {isSavedSelfChat ? (
+                              <FiRrIcon name="bookmark" />
+                            ) : avatarUrl ? (
                               <StorageOrHttpAvatarImg
                                 src={avatarUrl}
                                 alt=""

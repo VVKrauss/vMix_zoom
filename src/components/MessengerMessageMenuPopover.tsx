@@ -9,12 +9,16 @@ export function MessengerMessageMenuPopover({
   canEdit,
   canDelete,
   canCopy,
+  canBookmark,
+  canSave,
   dmOutgoingReceipt,
   timestampLabel,
   onClose,
   onEdit,
   onDelete,
   onCopy,
+  onBookmark,
+  onSave,
   onReply,
   onPickReaction,
   onForward,
@@ -28,6 +32,10 @@ export function MessengerMessageMenuPopover({
   canDelete: boolean
   /** Скопировать текст сообщения в буфер обмена. */
   canCopy?: boolean
+  /** Закладки: показать/разрешить пункт «В закладки». */
+  canBookmark?: boolean
+  /** Сохранённое: показать/разрешить пункт «Сохранить». */
+  canSave?: boolean
   /** ЛС: легенда статуса исходящего (кольцо/полукруг/круг) — только информационная строка. */
   dmOutgoingReceipt?: { level: DmOutgoingReceiptLevel; messageId: string } | null
   /** Дата/время сообщения (показывается внизу меню). */
@@ -36,6 +44,8 @@ export function MessengerMessageMenuPopover({
   onEdit: () => void
   onDelete: () => void
   onCopy?: () => void | Promise<void>
+  onBookmark?: () => void | Promise<void>
+  onSave?: () => void | Promise<void>
   onReply: () => void
   onPickReaction: (emoji: ReactionEmoji) => void
   /** Переслать в личный чат (канал/группа/ЛС). */
@@ -102,6 +112,30 @@ export function MessengerMessageMenuPopover({
           }}
         >
           Скопировать
+        </button>
+      ) : null}
+      {canBookmark && onBookmark ? (
+        <button
+          type="button"
+          className="messenger-msg-menu__item"
+          role="menuitem"
+          onClick={() => {
+            void Promise.resolve(onBookmark()).finally(() => onClose())
+          }}
+        >
+          В закладки
+        </button>
+      ) : null}
+      {canSave && onSave ? (
+        <button
+          type="button"
+          className="messenger-msg-menu__item"
+          role="menuitem"
+          onClick={() => {
+            void Promise.resolve(onSave()).finally(() => onClose())
+          }}
+        >
+          Сохранить
         </button>
       ) : null}
       {canDelete ? (

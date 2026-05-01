@@ -39,6 +39,7 @@ export type MessengerForwardNav =
   | { kind: 'channel_post'; conversationId: string; postMessageId: string }
   | { kind: 'channel_comment'; conversationId: string; postId: string; commentMessageId: string }
   | { kind: 'group_message'; conversationId: string; messageId: string }
+  | { kind: 'dm_message'; conversationId: string; messageId: string }
   | { kind: 'dm_profile'; authorUserId: string }
 
 /** Пересланное сообщение (копия): строка источника + опциональный переход. */
@@ -108,6 +109,11 @@ function readForwardNavFromRecord(n: Record<string, unknown>): MessengerForwardN
   if (kind === 'group_message') {
     const messageId = (typeof n.messageId === 'string' ? n.messageId : typeof n.message_id === 'string' ? n.message_id : '').trim()
     if (cid && messageId) return { kind: 'group_message', conversationId: cid, messageId }
+    return undefined
+  }
+  if (kind === 'dm_message') {
+    const messageId = (typeof n.messageId === 'string' ? n.messageId : typeof n.message_id === 'string' ? n.message_id : '').trim()
+    if (cid && messageId) return { kind: 'dm_message', conversationId: cid, messageId }
     return undefined
   }
   if (kind === 'dm_profile') {

@@ -30,6 +30,7 @@ import { readMessengerThreadTailCache, writeMessengerThreadTailCache } from '../
 import type { ReactionEmoji } from '../../types/roomComms'
 import { MessengerMessageMenuPopover } from '../MessengerMessageMenuPopover'
 import { AttachmentIcon, FiRrIcon, MessengerSendPlaneIcon } from '../icons'
+import { bookmarkMessage } from '../../lib/messengerBookmarks'
 import {
   copyTextToClipboard,
   extractClipboardImageFiles,
@@ -55,6 +56,7 @@ import { MessengerVoiceRecordBtn } from './MessengerVoiceRecordBtn'
 import { MentionAutocomplete } from './MentionAutocomplete'
 
 const QUICK_REACTION_EMOJI: ReactionEmoji = '❤️'
+const GROUP_STAFF_ROLES = new Set(['owner', 'admin', 'moderator'])
 
 function formatGroupBubbleTime(iso: string): string {
   const dt = new Date(iso)
@@ -90,6 +92,7 @@ export function GroupThreadPane({
   messengerOnline = true,
   onTouchTail,
   onForwardMessage,
+  onSaveMessage,
   onMentionSlug,
   isMemberHint,
   viewerOnly,
@@ -104,6 +107,7 @@ export function GroupThreadPane({
   messengerOnline?: boolean
   onTouchTail?: (patch: { lastMessageAt: string; lastMessagePreview: string }) => void
   onForwardMessage?: (message: DirectMessage) => void
+  onSaveMessage?: (message: DirectMessage) => void | Promise<void>
   onForwardSourceNavigate?: (nav: MessengerForwardNav) => void
   onMentionSlug?: (slug: string) => void
   /** Хинт из родителя: если диалог уже есть в списке, считаем что участник (убирает рассинхрон после вступления). */
@@ -195,6 +199,7 @@ export function GroupThreadPane({
 
   const isGroupMember = myGroupMemberRole !== null || isMemberHint === true
   const canView = viewerOnly || isGroupMember
+  const canBookmarkInGroup = Boolean(myGroupMemberRole && GROUP_STAFF_ROLES.has(myGroupMemberRole))
 
   const peerAliasByUserId = useMessengerPeerAliasesForMessages(user?.id, messages, canView)
 
@@ -1255,6 +1260,22 @@ export function GroupThreadPane({
                       messageMenu.message.kind === 'image' ||
                       messageMenu.message.kind === 'audio'),
                 )}
+                canBookmark={Boolean(
+                  canBookmarkInGroup &&
+                    !messageMenu.message.id.startsWith('local-') &&
+                    (messageMenu.message.kind === 'text' ||
+                      messageMenu.message.kind === 'image' ||
+                      messageMenu.message.kind === 'audio' ||
+                      messageMenu.message.kind === 'system'),
+                )}
+                canSave={Boolean(
+                  isGroupMember &&
+                    !messageMenu.message.id.startsWith('local-') &&
+                    (messageMenu.message.kind === 'text' ||
+                      messageMenu.message.kind === 'image' ||
+                      messageMenu.message.kind === 'audio' ||
+                      messageMenu.message.kind === 'system'),
+                )}
                 canDelete={Boolean(
                   user?.id &&
                     messageMenu.message.senderUserId === user.id &&
@@ -1273,6 +1294,18 @@ export function GroupThreadPane({
                     message: ok ? 'Скопировано в буфер обмена' : 'Не удалось скопировать',
                     ms: 2200,
                   })
+                }}
+                onBookmark={async () => {
+                  const res = await bookmarkMessage(messageMenu.message.id, 'me')
+                  toast.push({
+                    tone: res.ok ? 'success' : 'error',
+                    message: res.ok ? 'Добавлено в закладки' : 'Не удалось добавить в закладки',
+                    ms: 2400,
+                  })
+                }}
+                onSave={async () => {
+                  if (!onSaveMessage) return
+                  await onSaveMessage(messageMenu.message)
                 }}
                 onEdit={() => setMessageMenu(null)}
                 onDelete={() => {

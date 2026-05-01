@@ -153,6 +153,7 @@ import { DashboardShell } from './DashboardShell'
 import { MessengerForwardToDmModal } from './MessengerForwardToDmModal'
 import { MessengerMessageMenuPopover } from './MessengerMessageMenuPopover'
 import type { ReactionEmoji } from '../types/roomComms'
+import { bookmarkMessage, countMessageBookmarks } from '../lib/messengerBookmarks'
 import { DirectThreadPane } from './messenger/DirectThreadPane'
 import { GroupThreadPane } from './messenger/GroupThreadPane'
 import { ChannelThreadPane } from './messenger/ChannelThreadPane'
@@ -169,9 +170,12 @@ import { MessengerDeleteChatDialog } from './messenger/MessengerDeleteChatDialog
 import { MessengerChatListRowMenuPortal } from './messenger/MessengerChatListRowMenuPortal'
 import { MessengerDmMessageMenuPortal } from './messenger/MessengerDmMessageMenuPortal'
 import { MessengerDirectThreadBody, type MessengerDirectThreadHeadConversation } from './messenger/MessengerDirectThreadBody'
+import { MessengerBookmarkScopeDialog } from './messenger/MessengerBookmarkScopeDialog'
+import { MessengerBookmarksModal } from './messenger/MessengerBookmarksModal'
 import { devMark, useDevRenderTrace } from '../lib/devTrace'
 import { useMessengerSidebarDirectPeersOnline } from '../hooks/useMessengerSidebarDirectPeersOnline'
 import { markMyMentionsRead } from '../lib/messengerMentions'
+import { saveMessageToSelfConversation } from '../lib/messengerSaved'
 
 export function DashboardMessengerPage() {
   useDevRenderTrace('DashboardMessengerPage')
@@ -234,6 +238,10 @@ export function DashboardMessengerPage() {
   const [createChannelComments, setCreateChannelComments] = useState<'comments' | 'reactions_only'>('comments')
   const [createBusy, setCreateBusy] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+  const [dmBookmarkScopePick, setDmBookmarkScopePick] = useState<null | { messageId: string }>(null)
+  const [dmBookmarkBusy, setDmBookmarkBusy] = useState(false)
+  const [bookmarksOpen, setBookmarksOpen] = useState(false)
+  const [bookmarksCount, setBookmarksCount] = useState(0)
   const [inviteJoinBusy, setInviteJoinBusy] = useState(false)
   /** Есть цель для треда (deep link): при view=list всё равно показываем чат, а не только дерево. */
   const hasMobileOpenTarget =
@@ -1381,6 +1389,56 @@ export function DashboardMessengerPage() {
   const threadHeadConversation =
     sortedItems.find((i) => i.id === resolvedThreadConversationId) ?? activeConversation
 
+  useEffect(() => {
+    const cid = activeConversationId.trim()
+    if (!user?.id || !cid) {
+      setBookmarksCount(0)
+      return
+    }
+    void countMessageBookmarks(cid).then((res) => {
+      if (res.error || typeof res.data !== 'number') {
+        setBookmarksCount(0)
+        return
+      }
+      setBookmarksCount(Math.max(0, res.data))
+    })
+  }, [activeConversationId, user?.id])
+
+  const saveMessageFromActiveConversation = useCallback(
+    async (message: DirectMessage, ctx?: { channelParentPostId?: string | null }) => {
+      const cid = activeConversationId.trim()
+      if (!user?.id || !cid) return
+      const kind = threadHeadConversation?.kind
+      if (kind !== 'direct' && kind !== 'group' && kind !== 'channel') return
+
+      const title = threadHeadConversation?.title?.trim() || 'Чат'
+
+      const source =
+        kind === 'direct'
+          ? ({ kind: 'direct', conversationId: cid, title, messageId: message.id } as const)
+          : kind === 'group'
+            ? ({ kind: 'group', conversationId: cid, title, messageId: message.id } as const)
+            : ctx?.channelParentPostId?.trim()
+              ? ({
+                  kind: 'channel_comment',
+                  conversationId: cid,
+                  title,
+                  postId: ctx.channelParentPostId.trim(),
+                  commentMessageId: message.id,
+                } as const)
+              : ({ kind: 'channel_post', conversationId: cid, title, postMessageId: message.id } as const)
+
+      toast.push({ tone: 'info', message: 'Сохранение…', ms: 1600 })
+      const res = await saveMessageToSelfConversation({ message, source })
+      toast.push({
+        tone: res.ok ? 'success' : 'error',
+        message: res.ok ? 'Сохранено' : 'Не удалось сохранить',
+        ms: 2400,
+      })
+    },
+    [activeConversationId, threadHeadConversation, toast, user?.id],
+  )
+
   const threadHeadGcClosed = useMemo(
     () => isMessengerClosedGroupOrChannel(threadHeadConversation ?? null),
     [threadHeadConversation],
@@ -1812,6 +1870,10 @@ export function DashboardMessengerPage() {
         return
       }
       if (nav.kind === 'group_message') {
+        navigate(buildMessengerUrl(nav.conversationId, undefined, undefined, { messageId: nav.messageId }))
+        return
+      }
+      if (nav.kind === 'dm_message') {
         navigate(buildMessengerUrl(nav.conversationId, undefined, undefined, { messageId: nav.messageId }))
         return
       }
@@ -3095,6 +3157,17 @@ export function DashboardMessengerPage() {
                                 </div>
                               </button>
                               <div className="dashboard-messenger__list-head-actions">
+                                {bookmarksCount > 0 ? (
+                                  <button
+                                    type="button"
+                                    className="dashboard-messenger__list-head-btn"
+                                    onClick={() => setBookmarksOpen(true)}
+                                    title="Закладки"
+                                    aria-label="Закладки"
+                                  >
+                                    <FiRrIcon name="bookmark" />
+                                  </button>
+                                ) : null}
                                 {canManageConversationJoinRequests ? (
                                   <button
                                     type="button"
@@ -3142,6 +3215,17 @@ export function DashboardMessengerPage() {
                                 </div>
                               </button>
                               <div className="dashboard-messenger__thread-head-actions-desktop">
+                                {bookmarksCount > 0 ? (
+                                  <button
+                                    type="button"
+                                    className="dashboard-topbar__action"
+                                    onClick={() => setBookmarksOpen(true)}
+                                    title="Закладки"
+                                    aria-label="Закладки"
+                                  >
+                                    <FiRrIcon name="bookmark" />
+                                  </button>
+                                ) : null}
                                 {canManageConversationJoinRequests ? (
                                   <button
                                     type="button"
@@ -3219,6 +3303,7 @@ export function DashboardMessengerPage() {
                               )
                             }}
                             onForwardMessage={handleForwardFromGroupMessage}
+                            onSaveMessage={(m) => saveMessageFromActiveConversation(m)}
                             onForwardSourceNavigate={onMessengerForwardSourceNavigate}
                             onMentionSlug={onMentionSlugOpenProfile}
                           />
@@ -3253,6 +3338,9 @@ export function DashboardMessengerPage() {
                               )
                             }}
                             onForwardMessage={handleForwardFromChannelMessage}
+                            onSaveMessage={(m, ctx) =>
+                              saveMessageFromActiveConversation(m, { channelParentPostId: ctx.parentPostId ?? null })
+                            }
                             onForwardSourceNavigate={onMessengerForwardSourceNavigate}
                           />
                         )}
@@ -3265,6 +3353,8 @@ export function DashboardMessengerPage() {
                       onForwardSourceNavigate={onMessengerForwardSourceNavigate}
                       navigate={navigate}
                       totalOtherUnread={totalOtherUnread}
+                      bookmarksCount={bookmarksCount}
+                      onOpenBookmarks={() => setBookmarksOpen(true)}
                       directPeerLastReadAt={directPeerLastReadAt}
                       viewerDmReceiptsPrivate={profile?.profile_dm_receipts_private === true}
                       peerDmReceiptsPrivate={directPeerReceiptsPrivate}
@@ -3357,6 +3447,24 @@ export function DashboardMessengerPage() {
                                     messageMenu.message.kind === 'audio') &&
                                   !isDmSoftDeletedStub(messageMenu.message),
                               )}
+                              canBookmark={Boolean(
+                                user?.id &&
+                                  !messageMenu.message.id.startsWith('local-') &&
+                                  (messageMenu.message.kind === 'text' ||
+                                    messageMenu.message.kind === 'image' ||
+                                    messageMenu.message.kind === 'audio' ||
+                                    messageMenu.message.kind === 'system') &&
+                                  !isDmSoftDeletedStub(messageMenu.message),
+                              )}
+                              canSave={Boolean(
+                                user?.id &&
+                                  !messageMenu.message.id.startsWith('local-') &&
+                                  (messageMenu.message.kind === 'text' ||
+                                    messageMenu.message.kind === 'image' ||
+                                    messageMenu.message.kind === 'audio' ||
+                                    messageMenu.message.kind === 'system') &&
+                                  !isDmSoftDeletedStub(messageMenu.message),
+                              )}
                               canDelete={Boolean(
                                 user?.id &&
                                   messageMenu.message.senderUserId === user.id &&
@@ -3391,6 +3499,10 @@ export function DashboardMessengerPage() {
                                   ms: 2200,
                                 })
                               }}
+                              onBookmark={() => {
+                                setDmBookmarkScopePick({ messageId: messageMenu.message.id })
+                              }}
+                              onSave={async () => saveMessageFromActiveConversation(messageMenu.message)}
                               onEdit={() => {
                                 const m = messageMenu.message
                                 setEditingMessageId(m.id)
@@ -3503,6 +3615,76 @@ export function DashboardMessengerPage() {
         onShowSourceLineChange={setForwardDmShowSource}
         onSend={(ids) => void finishForwardToDms(ids)}
         sending={forwardDmSending}
+      />
+
+      <MessengerBookmarkScopeDialog
+        open={dmBookmarkScopePick !== null}
+        busy={dmBookmarkBusy}
+        onClose={() => {
+          if (!dmBookmarkBusy) setDmBookmarkScopePick(null)
+        }}
+        onPickMe={() => {
+          const mid = dmBookmarkScopePick?.messageId?.trim() ?? ''
+          if (!mid || dmBookmarkBusy) return
+          setDmBookmarkBusy(true)
+          void (async () => {
+            try {
+              const res = await bookmarkMessage(mid, 'me')
+              toast.push({
+                tone: res.ok ? 'success' : 'error',
+                message: res.ok ? 'Добавлено в закладки' : 'Не удалось добавить в закладки',
+                ms: 2400,
+              })
+              setDmBookmarkScopePick(null)
+            } finally {
+              setDmBookmarkBusy(false)
+            }
+          })()
+        }}
+        onPickAll={() => {
+          const mid = dmBookmarkScopePick?.messageId?.trim() ?? ''
+          if (!mid || dmBookmarkBusy) return
+          setDmBookmarkBusy(true)
+          void (async () => {
+            try {
+              const res = await bookmarkMessage(mid, 'all')
+              toast.push({
+                tone: res.ok ? 'success' : 'error',
+                message: res.ok ? 'Добавлено в закладки' : 'Не удалось добавить в закладки',
+                ms: 2400,
+              })
+              setDmBookmarkScopePick(null)
+            } finally {
+              setDmBookmarkBusy(false)
+            }
+          })()
+        }}
+      />
+
+      <MessengerBookmarksModal
+        open={bookmarksOpen}
+        conversationId={activeConversationId}
+        conversationKind={
+          threadHeadConversation?.kind === 'group'
+            ? 'group'
+            : threadHeadConversation?.kind === 'channel'
+              ? 'channel'
+              : 'direct'
+        }
+        onClose={() => setBookmarksOpen(false)}
+        onNavigateToMessage={({ messageId, parentMessageId }) => {
+          const cid = activeConversationId.trim()
+          if (!cid || !messageId.trim()) return
+          navigate(
+            buildMessengerUrl(cid, undefined, undefined, {
+              messageId: messageId.trim(),
+              ...(parentMessageId?.trim() ? { parentMessageId: parentMessageId.trim() } : {}),
+            }),
+          )
+        }}
+        onCopyText={(text) => copyTextToClipboard(text)}
+        onToast={({ tone, message, ms }) => toast.push({ tone, message, ms: ms ?? 2400 })}
+        onDeleted={() => setBookmarksCount((p) => Math.max(0, p - 1))}
       />
 
       <MessengerJoinRequestsModal
