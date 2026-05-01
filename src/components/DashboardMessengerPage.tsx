@@ -1439,6 +1439,74 @@ export function DashboardMessengerPage() {
     [activeConversationId, threadHeadConversation, toast, user?.id],
   )
 
+  const openBookmarks = useCallback(() => setBookmarksOpen(true), [])
+
+  const dmComposerNode = useMemo(
+    () => (
+      <MessengerThreadComposer
+        replyTo={replyTo}
+        editingMessageId={editingMessageId}
+        pendingMessengerPhotos={pendingMessengerPhotos}
+        draft={draft}
+        onDraftChange={setDraft}
+        threadLoading={threadLoading}
+        photoUploading={photoUploading}
+        sending={sending}
+        isMobileMessenger={isMobileMessenger}
+        bumpScrollIfPinned={bumpScrollIfPinned}
+        onOpenLightbox={(urls, index) => setMessengerImageLightbox({ urls, index })}
+        onRemovePendingPhoto={removePendingMessengerPhoto}
+        draftLinkPreview={draftLinkPreview}
+        draftLinkPreviewLoading={draftLinkPreviewLoading}
+        onDismissDraftLinkPreview={dismissDraftLinkPreview}
+        composerTextareaRef={composerTextareaRef}
+        composerEmojiWrapRef={composerEmojiWrapRef}
+        photoInputRef={photoInputRef}
+        onComposerPaste={onComposerPaste}
+        adjustMobileComposerHeight={adjustMobileComposerHeight}
+        onSend={() => void sendMessage()}
+        insertEmojiInDraft={insertEmojiInDraft}
+        onAddPendingPhotoFiles={addPendingMessengerPhotoFiles}
+        composerEmojiOpen={composerEmojiOpen}
+        setComposerEmojiOpen={setComposerEmojiOpen}
+        onClearReply={() => setReplyTo(null)}
+        onCancelEdit={() => {
+          setEditingMessageId(null)
+          resetDraft()
+        }}
+        voiceUploading={voiceUploading}
+        onVoiceRecorded={onVoiceRecorded}
+        conversationId={activeConversationId}
+      />
+    ),
+    [
+      replyTo,
+      editingMessageId,
+      pendingMessengerPhotos,
+      draft,
+      threadLoading,
+      photoUploading,
+      sending,
+      isMobileMessenger,
+      bumpScrollIfPinned,
+      removePendingMessengerPhoto,
+      draftLinkPreview,
+      draftLinkPreviewLoading,
+      dismissDraftLinkPreview,
+      onComposerPaste,
+      adjustMobileComposerHeight,
+      insertEmojiInDraft,
+      addPendingMessengerPhotoFiles,
+      composerEmojiOpen,
+      voiceUploading,
+      onVoiceRecorded,
+      activeConversationId,
+      resetDraft,
+    ],
+  )
+
+  // dmMessageActionMenuNode is defined later (after callbacks)
+
   const threadHeadGcClosed = useMemo(
     () => isMessengerClosedGroupOrChannel(threadHeadConversation ?? null),
     [threadHeadConversation],
@@ -2661,6 +2729,156 @@ export function DashboardMessengerPage() {
     setItems,
   ])
 
+  const dmMessageActionMenuNode = useMemo(
+    () =>
+      messageMenu ? (
+        <MessengerDmMessageMenuPortal open={true} msgMenuWrapRef={msgMenuWrapRef}>
+          <MessengerMessageMenuPopover
+            canEdit={Boolean(
+              user?.id &&
+                messageMenu.message.senderUserId === user.id &&
+                !messageMenu.message.id.startsWith('local-') &&
+                (messageMenu.message.kind === 'text' ||
+                  messageMenu.message.kind === 'image' ||
+                  messageMenu.message.kind === 'audio'),
+            )}
+            canCopy={Boolean(
+              !messageMenu.message.id.startsWith('local-') &&
+                (messageMenu.message.kind === 'text' ||
+                  messageMenu.message.kind === 'image' ||
+                  messageMenu.message.kind === 'audio') &&
+                !isDmSoftDeletedStub(messageMenu.message),
+            )}
+            canBookmark={Boolean(
+              user?.id &&
+                !messageMenu.message.id.startsWith('local-') &&
+                (messageMenu.message.kind === 'text' ||
+                  messageMenu.message.kind === 'image' ||
+                  messageMenu.message.kind === 'audio' ||
+                  messageMenu.message.kind === 'system') &&
+                !isDmSoftDeletedStub(messageMenu.message),
+            )}
+            canSave={Boolean(
+              user?.id &&
+                !messageMenu.message.id.startsWith('local-') &&
+                (messageMenu.message.kind === 'text' ||
+                  messageMenu.message.kind === 'image' ||
+                  messageMenu.message.kind === 'audio' ||
+                  messageMenu.message.kind === 'system') &&
+                !isDmSoftDeletedStub(messageMenu.message),
+            )}
+            canDelete={Boolean(
+              user?.id &&
+                messageMenu.message.senderUserId === user.id &&
+                !messageMenu.message.id.startsWith('local-') &&
+                (messageMenu.message.kind === 'text' ||
+                  messageMenu.message.kind === 'image' ||
+                  messageMenu.message.kind === 'audio'),
+            )}
+            dmOutgoingReceipt={
+              threadHeadConversation?.kind === 'direct' &&
+              !(
+                threadHeadConversation.title.trim().toLowerCase() === 'сохраненное' &&
+                !threadHeadConversation.otherUserId?.trim()
+              )
+                ? (() => {
+                    const uid = user?.id ?? ''
+                    const level = directOutgoingReceiptStatus(messageMenu.message, {
+                      isOwn: Boolean(uid && messageMenu.message.senderUserId === uid),
+                      isDirectThread: true,
+                      peerLastReadAt: directPeerLastReadAt,
+                      viewerReceiptsPrivate: profile?.profile_dm_receipts_private === true,
+                      peerReceiptsPrivate: directPeerReceiptsPrivate,
+                    })
+                    return level ? { level, messageId: messageMenu.message.id } : null
+                  })()
+                : null
+            }
+            timestampLabel={formatDateTime(messageMenu.message.createdAt)}
+            onClose={closeMessageActionMenu}
+            onCopy={async () => {
+              const text = previewTextForDirectMessageTail(messageMenu.message)
+              const ok = await copyTextToClipboard(text)
+              toast.push({
+                tone: ok ? 'success' : 'error',
+                message: ok ? 'Скопировано в буфер обмена' : 'Не удалось скопировать',
+                ms: 2200,
+              })
+            }}
+            onBookmark={() => {
+              setDmBookmarkScopePick({ messageId: messageMenu.message.id })
+            }}
+            onSave={async () => saveMessageFromActiveConversation(messageMenu.message)}
+            onEdit={() => {
+              const m = messageMenu.message
+              setEditingMessageId(m.id)
+              setReplyTo(null)
+              setComposerEmojiOpen(false)
+              setDraft(m.body)
+              closeMessageActionMenu()
+              queueMicrotask(() => composerTextareaRef.current?.focus())
+            }}
+            onDelete={() => {
+              void deleteMessageFromMenu()
+            }}
+            onReply={() => {
+              setReplyTo(messageMenu.message)
+              closeMessageActionMenu()
+            }}
+            onForward={
+              threadHeadConversation?.kind === 'direct' &&
+              !messageMenu.message.id.startsWith('local-') &&
+              (messageMenu.message.kind === 'text' ||
+                messageMenu.message.kind === 'image' ||
+                messageMenu.message.kind === 'audio')
+                ? () => openForwardFromDmMessage(messageMenu.message)
+                : undefined
+            }
+            onPickReaction={(emoji) => {
+              if (!isDirectReactionEmoji(emoji)) return
+              void toggleMessengerReaction(messageMenu.message.id, emoji)
+              closeMessageActionMenu()
+            }}
+            showAddPin={Boolean(
+              messageMenu.message.senderUserId &&
+                user?.id &&
+                messageMenu.message.senderUserId !== user.id,
+            )}
+            pinActive={Boolean(
+              messageMenu.message.senderUserId &&
+                senderContactByUserId[messageMenu.message.senderUserId]?.pinnedByMe,
+            )}
+            pinBusy={
+              Boolean(messageMenu.message.senderUserId) &&
+              pinBusyUserId === messageMenu.message.senderUserId
+            }
+            onTogglePin={() => {
+              void toggleFavoriteFromMessageMenu()
+            }}
+          />
+        </MessengerDmMessageMenuPortal>
+      ) : null,
+    [
+      messageMenu,
+      msgMenuWrapRef,
+      user?.id,
+      threadHeadConversation,
+      directPeerLastReadAt,
+      profile?.profile_dm_receipts_private,
+      directPeerReceiptsPrivate,
+      closeMessageActionMenu,
+      toast,
+      saveMessageFromActiveConversation,
+      deleteMessageFromMenu,
+      openForwardFromDmMessage,
+      toggleMessengerReaction,
+      senderContactByUserId,
+      pinBusyUserId,
+      toggleFavoriteFromMessageMenu,
+      composerTextareaRef,
+    ],
+  )
+
   const openConversationInfo = useCallback(
     async (cid: string) => {
       const id = cid.trim()
@@ -3354,7 +3572,7 @@ export function DashboardMessengerPage() {
                       navigate={navigate}
                       totalOtherUnread={totalOtherUnread}
                       bookmarksCount={bookmarksCount}
-                      onOpenBookmarks={() => setBookmarksOpen(true)}
+                      onOpenBookmarks={openBookmarks}
                       directPeerLastReadAt={directPeerLastReadAt}
                       viewerDmReceiptsPrivate={profile?.profile_dm_receipts_private === true}
                       peerDmReceiptsPrivate={directPeerReceiptsPrivate}
@@ -3391,168 +3609,8 @@ export function DashboardMessengerPage() {
                       composerTextareaRef={composerTextareaRef}
                       showDmJump={showDmJump}
                       jumpDmBottom={jumpDmBottom}
-                      composer={
-                        <MessengerThreadComposer
-                          replyTo={replyTo}
-                          editingMessageId={editingMessageId}
-                          pendingMessengerPhotos={pendingMessengerPhotos}
-                          draft={draft}
-                          onDraftChange={setDraft}
-                          threadLoading={threadLoading}
-                          photoUploading={photoUploading}
-                          sending={sending}
-                          isMobileMessenger={isMobileMessenger}
-                          bumpScrollIfPinned={bumpScrollIfPinned}
-                          onOpenLightbox={(urls, index) => setMessengerImageLightbox({ urls, index })}
-                          onRemovePendingPhoto={removePendingMessengerPhoto}
-                          draftLinkPreview={draftLinkPreview}
-                          draftLinkPreviewLoading={draftLinkPreviewLoading}
-                          onDismissDraftLinkPreview={dismissDraftLinkPreview}
-                          composerTextareaRef={composerTextareaRef}
-                          composerEmojiWrapRef={composerEmojiWrapRef}
-                          photoInputRef={photoInputRef}
-                          onComposerPaste={onComposerPaste}
-                          adjustMobileComposerHeight={adjustMobileComposerHeight}
-                          onSend={() => void sendMessage()}
-                          insertEmojiInDraft={insertEmojiInDraft}
-                          onAddPendingPhotoFiles={addPendingMessengerPhotoFiles}
-                          composerEmojiOpen={composerEmojiOpen}
-                          setComposerEmojiOpen={setComposerEmojiOpen}
-                          onClearReply={() => setReplyTo(null)}
-                          onCancelEdit={() => {
-                            setEditingMessageId(null)
-                            resetDraft()
-                          }}
-                          voiceUploading={voiceUploading}
-                          onVoiceRecorded={onVoiceRecorded}
-                          conversationId={activeConversationId}
-                        />
-                      }
-                      messageActionMenu={
-                        messageMenu ? (
-                          <MessengerDmMessageMenuPortal open={true} msgMenuWrapRef={msgMenuWrapRef}>
-                            <MessengerMessageMenuPopover
-                              canEdit={Boolean(
-                                user?.id &&
-                                  messageMenu.message.senderUserId === user.id &&
-                                  !messageMenu.message.id.startsWith('local-') &&
-                                  (messageMenu.message.kind === 'text' ||
-                                    messageMenu.message.kind === 'image' ||
-                                    messageMenu.message.kind === 'audio'),
-                              )}
-                              canCopy={Boolean(
-                                !messageMenu.message.id.startsWith('local-') &&
-                                  (messageMenu.message.kind === 'text' ||
-                                    messageMenu.message.kind === 'image' ||
-                                    messageMenu.message.kind === 'audio') &&
-                                  !isDmSoftDeletedStub(messageMenu.message),
-                              )}
-                              canBookmark={Boolean(
-                                user?.id &&
-                                  !messageMenu.message.id.startsWith('local-') &&
-                                  (messageMenu.message.kind === 'text' ||
-                                    messageMenu.message.kind === 'image' ||
-                                    messageMenu.message.kind === 'audio' ||
-                                    messageMenu.message.kind === 'system') &&
-                                  !isDmSoftDeletedStub(messageMenu.message),
-                              )}
-                              canSave={Boolean(
-                                user?.id &&
-                                  !messageMenu.message.id.startsWith('local-') &&
-                                  (messageMenu.message.kind === 'text' ||
-                                    messageMenu.message.kind === 'image' ||
-                                    messageMenu.message.kind === 'audio' ||
-                                    messageMenu.message.kind === 'system') &&
-                                  !isDmSoftDeletedStub(messageMenu.message),
-                              )}
-                              canDelete={Boolean(
-                                user?.id &&
-                                  messageMenu.message.senderUserId === user.id &&
-                                  !messageMenu.message.id.startsWith('local-') &&
-                                  (messageMenu.message.kind === 'text' ||
-                                    messageMenu.message.kind === 'image' ||
-                                    messageMenu.message.kind === 'audio'),
-                              )}
-                              dmOutgoingReceipt={
-                                threadHeadConversation?.kind === 'direct'
-                                  ? (() => {
-                                      const uid = user?.id ?? ''
-                                      const level = directOutgoingReceiptStatus(messageMenu.message, {
-                                        isOwn: Boolean(uid && messageMenu.message.senderUserId === uid),
-                                        isDirectThread: true,
-                                        peerLastReadAt: directPeerLastReadAt,
-                                        viewerReceiptsPrivate: profile?.profile_dm_receipts_private === true,
-                                        peerReceiptsPrivate: directPeerReceiptsPrivate,
-                                      })
-                                      return level ? { level, messageId: messageMenu.message.id } : null
-                                    })()
-                                  : null
-                              }
-                              timestampLabel={formatDateTime(messageMenu.message.createdAt)}
-                              onClose={closeMessageActionMenu}
-                              onCopy={async () => {
-                                const text = previewTextForDirectMessageTail(messageMenu.message)
-                                const ok = await copyTextToClipboard(text)
-                                toast.push({
-                                  tone: ok ? 'success' : 'error',
-                                  message: ok ? 'Скопировано в буфер обмена' : 'Не удалось скопировать',
-                                  ms: 2200,
-                                })
-                              }}
-                              onBookmark={() => {
-                                setDmBookmarkScopePick({ messageId: messageMenu.message.id })
-                              }}
-                              onSave={async () => saveMessageFromActiveConversation(messageMenu.message)}
-                              onEdit={() => {
-                                const m = messageMenu.message
-                                setEditingMessageId(m.id)
-                                setReplyTo(null)
-                                setComposerEmojiOpen(false)
-                                setDraft(m.body)
-                                closeMessageActionMenu()
-                                queueMicrotask(() => composerTextareaRef.current?.focus())
-                              }}
-                              onDelete={() => {
-                                void deleteMessageFromMenu()
-                              }}
-                              onReply={() => {
-                                setReplyTo(messageMenu.message)
-                                closeMessageActionMenu()
-                              }}
-                              onForward={
-                                threadHeadConversation?.kind === 'direct' &&
-                                !messageMenu.message.id.startsWith('local-') &&
-                                (messageMenu.message.kind === 'text' ||
-                                  messageMenu.message.kind === 'image' ||
-                                  messageMenu.message.kind === 'audio')
-                                  ? () => openForwardFromDmMessage(messageMenu.message)
-                                  : undefined
-                              }
-                              onPickReaction={(emoji) => {
-                                if (!isDirectReactionEmoji(emoji)) return
-                                void toggleMessengerReaction(messageMenu.message.id, emoji)
-                                closeMessageActionMenu()
-                              }}
-                              showAddPin={Boolean(
-                                messageMenu.message.senderUserId &&
-                                  user?.id &&
-                                  messageMenu.message.senderUserId !== user.id,
-                              )}
-                              pinActive={Boolean(
-                                messageMenu.message.senderUserId &&
-                                  senderContactByUserId[messageMenu.message.senderUserId]?.pinnedByMe,
-                              )}
-                              pinBusy={
-                                Boolean(messageMenu.message.senderUserId) &&
-                                pinBusyUserId === messageMenu.message.senderUserId
-                              }
-                              onTogglePin={() => {
-                                void toggleFavoriteFromMessageMenu()
-                              }}
-                            />
-                          </MessengerDmMessageMenuPortal>
-                        ) : null
-                      }
+                      composer={dmComposerNode}
+                      messageActionMenu={dmMessageActionMenuNode}
                     />
                   </DirectThreadPane>
 

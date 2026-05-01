@@ -366,7 +366,7 @@ function MessengerChatListAsideImpl(props: {
                         {item.kind === 'direct' ? (
                           <div className="dashboard-messenger__row-avatar">
                             {isSavedSelfChat ? (
-                              <FiRrIcon name="bookmark" />
+                              <FiRrIcon name="disk" />
                             ) : avatarUrl ? (
                               <StorageOrHttpAvatarImg
                                 src={avatarUrl}

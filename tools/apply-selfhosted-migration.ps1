@@ -36,30 +36,38 @@ $remoteSqlPath = "$RemoteTmpDir/$file"
 
 Write-Host "Applying migration to self-hosted Supabase"
 Write-Host "  local : $full"
-Write-Host "  remote: $RemoteHost:$remoteSqlPath"
+Write-Host "  remote: ${RemoteHost}:$remoteSqlPath"
 Write-Host "  ver   : $version"
 Write-Host "  name  : $name"
 Write-Host "  sha256: $hash"
 
-& scp $full "$RemoteHost:`"$remoteSqlPath`""
+& scp $full "${RemoteHost}:`"$remoteSqlPath`""
 
 # Apply SQL by piping the file into psql running inside the Postgres container.
+# Keep it single-line to avoid CRLF issues when passing to remote shell.
 # Use `-u postgres` to avoid peer auth errors.
-$applyCmd = @"
-set -euo pipefail
-cd "$RemoteComposeDir"
-cat "$remoteSqlPath" | docker compose exec -T -u postgres "$DbService" psql -v ON_ERROR_STOP=1 -U "$DbUser" -d "$DbName"
-"@
+$applyCmd = "set -eu; cd `"$RemoteComposeDir`"; cat `"$remoteSqlPath`" | docker compose exec -T -u postgres `"$DbService`" psql -v ON_ERROR_STOP=1 -U `"$DbUser`" -d `"$DbName`""
 
 & ssh $RemoteHost $applyCmd
+if ($LASTEXITCODE -ne 0) { Fail "Remote apply failed (ssh exit $LASTEXITCODE)" }
 
 # Record application in our own history table.
-$recordCmd = @"
-set -euo pipefail
-cd "$RemoteComposeDir"
-docker compose exec -T -u postgres "$DbService" psql -v ON_ERROR_STOP=1 -U "$DbUser" -d "$DbName" -c "insert into app_migrations.schema_migrations(version,name,checksum_sha256) values ('$version','$name','$hash') on conflict (version) do update set name=excluded.name, checksum_sha256=excluded.checksum_sha256, applied_at=app_migrations.schema_migrations.applied_at;"
-docker compose exec -T -u postgres "$DbService" psql -U "$DbUser" -d "$DbName" -c "select version,name,applied_at from app_migrations.schema_migrations order by applied_at desc limit 10;"
-"@
+$insertSql =
+  "insert into app_migrations.schema_migrations(version,name,checksum_sha256) " +
+  "values ('$version','$name','$hash') " +
+  "on conflict (version) do update " +
+  "set name=excluded.name, checksum_sha256=excluded.checksum_sha256, applied_at=app_migrations.schema_migrations.applied_at;"
+
+$checkSql = "select version,name,applied_at from app_migrations.schema_migrations order by applied_at desc limit 10;"
+
+# Avoid shell quoting pitfalls by sending SQL as base64 over SSH.
+$sqlBatch = "$insertSql`n$checkSql`n"
+$sqlB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($sqlBatch))
+
+$recordCmd =
+  "set -eu; cd `"$RemoteComposeDir`"; " +
+  "echo $sqlB64 | base64 -d | docker compose exec -T -u postgres `"$DbService`" psql -v ON_ERROR_STOP=1 -U `"$DbUser`" -d `"$DbName`""
 
 & ssh $RemoteHost $recordCmd
+if ($LASTEXITCODE -ne 0) { Fail "Remote record failed (ssh exit $LASTEXITCODE)" }
 

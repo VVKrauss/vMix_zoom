@@ -122,11 +122,13 @@ export function useOnlinePresenceMirror(args: {
   const singlePeerFallback = useMemo(() => (ids.length === 1 ? ids[0] : undefined), [ids])
 
   const rowsRef = useRef<Map<string, PresenceMirrorRow>>(new Map())
-  const [epoch, setEpoch] = useState(0)
+  const [presenceById, setPresenceById] = useState<Record<string, PeerPresenceDisplay>>({})
+  const presenceByIdRef = useRef(presenceById)
+  presenceByIdRef.current = presenceById
 
   useEffect(() => {
     rowsRef.current = new Map()
-    setEpoch((e) => e + 1)
+    setPresenceById({})
   }, [key])
 
   useEffect(() => {
@@ -135,7 +137,27 @@ export function useOnlinePresenceMirror(args: {
 
     let cancelled = false
     let channel: RealtimeChannel | null = null
-    const bump = () => setEpoch((e) => e + 1)
+    const recompute = () => {
+      const nowMs = Date.now()
+      const next: Record<string, PeerPresenceDisplay> = {}
+      for (const id of ids) {
+        const row = rowsRef.current.get(id)
+        next[id] = peerPresenceDisplayFromMirrorRow(row ? rowToDisplayInput(row) : undefined, nowMs)
+      }
+      const prev = presenceByIdRef.current
+      const prevKeys = Object.keys(prev)
+      if (prevKeys.length === ids.length) {
+        let changed = false
+        for (const id of ids) {
+          if (prev[id] !== next[id]) {
+            changed = true
+            break
+          }
+        }
+        if (!changed) return
+      }
+      setPresenceById(next)
+    }
 
     void (async () => {
       const { data, error } = await supabase
@@ -151,7 +173,7 @@ export function useOnlinePresenceMirror(args: {
         next.set(parsed.userId, parsed)
       }
       rowsRef.current = next
-      bump()
+      recompute()
     })()
 
     const filter = ids.length === 1 ? `user_id=eq.${ids[0]}` : `user_id=in.(${ids.join(',')})`
@@ -167,7 +189,7 @@ export function useOnlinePresenceMirror(args: {
             const delId = oldR && typeof oldR.user_id === 'string' ? oldR.user_id.trim() : ''
             if (delId && ids.includes(delId)) {
               rowsRef.current.delete(delId)
-              bump()
+              recompute()
             }
             return
           }
@@ -180,12 +202,13 @@ export function useOnlinePresenceMirror(args: {
           if (!parsed) return
           if (!ids.includes(parsed.userId)) return
           rowsRef.current.set(parsed.userId, parsed)
-          bump()
+          recompute()
         },
       )
       .subscribe()
 
-    const tickId = window.setInterval(bump, tickMs)
+    // Recompute online-window expiry without forcing rerenders when unchanged.
+    const tickId = window.setInterval(recompute, tickMs)
     return () => {
       cancelled = true
       window.clearInterval(tickId)
@@ -193,14 +216,5 @@ export function useOnlinePresenceMirror(args: {
     }
   }, [viewerId, ids, tickMs, singlePeerFallback])
 
-  return useMemo(() => {
-    const out: Record<string, PeerPresenceDisplay> = {}
-    const nowMs = Date.now()
-    for (const id of ids) {
-      const row = rowsRef.current.get(id)
-      out[id] = peerPresenceDisplayFromMirrorRow(row ? rowToDisplayInput(row) : undefined, nowMs)
-    }
-    void epoch
-    return out
-  }, [ids, epoch])
+  return presenceById
 }

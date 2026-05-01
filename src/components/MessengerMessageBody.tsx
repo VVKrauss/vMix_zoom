@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import { Link } from 'react-router-dom'
 import { normalizeProfileSlug, validateProfileSlugInput } from '../lib/profileSlug'
 import { MessengerInlineInviteCard } from './messenger/MessengerInlineInviteCard'
+import { MessengerInlineRoomInviteCard } from './messenger/MessengerInlineRoomInviteCard'
 
 const INVITE_AT_START = /^Приглашаю в комнату:\s*\[([^\]]+)\]/
 const URL_AT_START = /^(https?:\/\/[^\s<>\]]+|www\.[^\s<>\]]+)/i
@@ -104,14 +105,9 @@ function buildChildren(text: string, onMentionSlug?: (slug: string) => void): Re
       const bracketPos = full.indexOf('[')
       const prefix = bracketPos >= 0 ? full.slice(0, bracketPos) : full
       if (roomId) {
-        const to = `/r/${encodeURIComponent(roomId)}`
         nodes.push(<span key={k}>{prefix}</span>)
         k += 1
-        nodes.push(
-          <Link key={k} to={to} className="messenger-message-link">
-            [{roomId}]
-          </Link>,
-        )
+        nodes.push(<MessengerInlineRoomInviteCard key={k} roomId={roomId} />)
         k += 1
       } else {
         nodes.push(<span key={k}>{full}</span>)

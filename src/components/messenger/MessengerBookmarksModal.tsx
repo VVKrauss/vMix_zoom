@@ -73,7 +73,13 @@ export function MessengerBookmarksModal({
           <div className="messenger-settings-modal__title">
             <FiRrIcon name="bookmark" /> Закладки
           </div>
-          <button type="button" className="messenger-settings-modal__x" onClick={onClose} aria-label="Закрыть" title="Закрыть">
+          <button
+            type="button"
+            className="messenger-settings-modal__x"
+            onClick={onClose}
+            aria-label="Закрыть"
+            title="Закрыть"
+          >
             <FiRrIcon name="cross" />
           </button>
         </div>
@@ -82,7 +88,7 @@ export function MessengerBookmarksModal({
         {error ? <div className="messenger-settings-modal__error">Не удалось загрузить закладки</div> : null}
         {empty ? <div className="messenger-settings-modal__empty">Закладок пока нет</div> : null}
 
-        <div className="messenger-settings-modal__content">
+        <div className="messenger-settings-modal__content" role="list" aria-label="Список закладок">
           {rows.map((r) => {
             const label = previewLabelForBookmark(r)
             const parentMessageId =
@@ -90,27 +96,31 @@ export function MessengerBookmarksModal({
                 ? r.replyToMessageId.trim()
                 : null
             return (
-              <div key={r.bookmarkId} className="messenger-settings-modal__row">
-                <div className="messenger-settings-modal__row-main">
-                  <div className="messenger-settings-modal__row-title">{label}</div>
-                  <div className="messenger-settings-modal__row-meta">
+              <div key={r.bookmarkId} className="messenger-settings-modal__bookmark-row" role="listitem">
+                <div className="messenger-settings-modal__bookmark-main">
+                  <div className="messenger-settings-modal__bookmark-title">{label}</div>
+                  <div className="messenger-settings-modal__bookmark-meta">
                     {new Date(r.messageCreatedAt).toLocaleString('ru-RU', { dateStyle: 'medium', timeStyle: 'short' })}
                   </div>
                 </div>
-                <div className="messenger-settings-modal__row-actions">
+                <div className="messenger-settings-modal__bookmark-actions">
                   <button
                     type="button"
-                    className="messenger-settings-modal__btn"
+                    className="messenger-settings-modal__row-btn"
                     onClick={() => {
                       onNavigateToMessage({ messageId: r.messageId, parentMessageId })
                       onClose()
                     }}
+                    title="Перейти к сообщению"
+                    aria-label="Перейти к сообщению"
                   >
-                    Перейти
+                    <span className="messenger-settings-modal__row-ico" aria-hidden>
+                      <FiRrIcon name="arrow-right" />
+                    </span>
                   </button>
                   <button
                     type="button"
-                    className="messenger-settings-modal__btn"
+                    className="messenger-settings-modal__row-btn"
                     onClick={() => {
                       void onCopyText(label).then((ok) => {
                         onToast({
@@ -120,12 +130,16 @@ export function MessengerBookmarksModal({
                         })
                       })
                     }}
+                    title="Скопировать"
+                    aria-label="Скопировать"
                   >
-                    Скопировать
+                    <span className="messenger-settings-modal__row-ico" aria-hidden>
+                      <FiRrIcon name="copy" />
+                    </span>
                   </button>
                   <button
                     type="button"
-                    className="messenger-settings-modal__btn messenger-settings-modal__btn--danger"
+                    className="messenger-settings-modal__row-btn messenger-settings-modal__row-btn--danger"
                     disabled={busyDeleteId === r.messageId}
                     onClick={() => {
                       if (busyDeleteId) return
@@ -142,8 +156,12 @@ export function MessengerBookmarksModal({
                         })
                         .finally(() => setBusyDeleteId(null))
                     }}
+                    title="Удалить закладку"
+                    aria-label="Удалить закладку"
                   >
-                    Удалить
+                    <span className="messenger-settings-modal__row-ico" aria-hidden>
+                      <FiRrIcon name="trash" />
+                    </span>
                   </button>
                 </div>
               </div>

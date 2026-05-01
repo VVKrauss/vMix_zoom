@@ -193,7 +193,7 @@ function MessengerDirectThreadBodyImpl(props: {
               <span className={`dashboard-messenger__avatar-ring-wrap${peerPresenceRingClass}`} aria-hidden>
                 <span className="dashboard-messenger__thread-head-center-avatar">
                   {isSavedSelfChat ? (
-                    <FiRrIcon name="bookmark" />
+                    <FiRrIcon name="disk" />
                   ) : activeAvatarUrl ? (
                     <StorageOrHttpAvatarImg
                       src={activeAvatarUrl}
@@ -282,7 +282,7 @@ function MessengerDirectThreadBodyImpl(props: {
               >
                 <span className="dashboard-messenger__thread-avatar">
                   {isSavedSelfChat ? (
-                    <FiRrIcon name="bookmark" />
+                    <FiRrIcon name="disk" />
                   ) : activeAvatarUrl ? (
                     <StorageOrHttpAvatarImg
                       src={activeAvatarUrl}
@@ -386,13 +386,15 @@ function MessengerDirectThreadBodyImpl(props: {
                             : null,
                         ),
                     })
-                    const dmOutgoingReceipt = directOutgoingReceiptStatus(message, {
-                      isOwn,
-                      isDirectThread: threadHeadConversation.kind === 'direct',
-                      peerLastReadAt: directPeerLastReadAt,
-                      viewerReceiptsPrivate: viewerDmReceiptsPrivate,
-                      peerReceiptsPrivate: peerDmReceiptsPrivate,
-                    })
+                    const dmOutgoingReceipt = isSavedSelfChat
+                      ? null
+                      : directOutgoingReceiptStatus(message, {
+                          isOwn,
+                          isDirectThread: threadHeadConversation.kind === 'direct',
+                          peerLastReadAt: directPeerLastReadAt,
+                          viewerReceiptsPrivate: viewerDmReceiptsPrivate,
+                          peerReceiptsPrivate: peerDmReceiptsPrivate,
+                        })
                     nodes.push(
                       <ThreadMessageBubble
                         key={message.id}

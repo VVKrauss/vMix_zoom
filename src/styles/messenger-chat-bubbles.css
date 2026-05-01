@@ -39,6 +39,35 @@
   gap: 8px;
 }
 
+.dashboard-messenger__bubble-time {
+  position: absolute;
+  left: 9px;
+  top: 6px;
+  z-index: 2;
+  font-size: 8px;
+  line-height: 1;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.42);
+  pointer-events: none;
+  user-select: none;
+}
+
+.dashboard-messenger__message--time-tr .dashboard-messenger__bubble-time {
+  left: auto;
+  right: 9px;
+  top: 6px;
+}
+
+/* Reserve space so author/body text never overlaps time */
+.dashboard-messenger__message--time-tr {
+  padding-right: 34px;
+}
+
+.dashboard-messenger__message--image.dashboard-messenger__message--time-tr {
+  padding-right: 30px;
+}
+
 .dashboard-messenger__message-bottom-row > .dashboard-messenger__message-body {
   flex: 1 1 auto;
   min-width: 0;

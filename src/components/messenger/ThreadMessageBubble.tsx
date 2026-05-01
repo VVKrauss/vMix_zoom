@@ -86,6 +86,11 @@ export function ThreadMessageBubble({
   peerAliasByUserId,
   onForwardSourceNavigate,
 }: ThreadMessageBubbleProps) {
+  const timeOnlyLabel = (() => {
+    const dt = new Date(message.createdAt)
+    if (Number.isNaN(dt.getTime())) return ''
+    return dt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  })()
   const [swipeTx, setSwipeTx] = useState(0)
   const swipeRef = useRef<{
     pointerId: number | null
@@ -193,6 +198,7 @@ export function ThreadMessageBubble({
       : `К цитируемому сообщению: ${quotePreview.quotedName.trim()}`
 
   const showAuthorInMeta = !dmMutePeerLabels
+  const bubbleTimeCornerClass = showAuthorInMeta ? ' dashboard-messenger__message--time-tr' : ''
 
   if (isDmSoftDeletedStub(message)) {
     const whoRaw =
@@ -222,7 +228,7 @@ export function ThreadMessageBubble({
       }}
       className={`dashboard-messenger__message${isOwn ? ' dashboard-messenger__message--own' : ''}${
         canSwipeReply ? ' dashboard-messenger__message--swipe-reply' : ''
-      }${message.kind === 'image' ? ' dashboard-messenger__message--image' : ''}${enterAnim ? ' dashboard-messenger__message--enter' : ''}`}
+      }${message.kind === 'image' ? ' dashboard-messenger__message--image' : ''}${enterAnim ? ' dashboard-messenger__message--enter' : ''}${bubbleTimeCornerClass}`}
       style={
         swipeTx !== 0
           ? { transform: `translateX(${swipeTx}px)`, transition: 'none' }
@@ -319,6 +325,11 @@ export function ThreadMessageBubble({
         </button>
       ) : null}
       <div className="dashboard-messenger__message-bottom-row">
+        {timeOnlyLabel ? (
+          <span className="dashboard-messenger__bubble-time" aria-hidden>
+            {timeOnlyLabel}
+          </span>
+        ) : null}
         <DoubleTapHeartSurface
           enabled={Boolean(quickReactEnabled && onQuickHeart)}
           isMobileViewport={Boolean(isMobileMessenger)}
