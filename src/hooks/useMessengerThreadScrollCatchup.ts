@@ -1,5 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, type MutableRefObject, type RefObject } from 'react'
-import { MESSENGER_BOTTOM_PIN_PX } from '../lib/messengerDashboardUtils'
+import {
+  messengerScrollIsPinnedToBottom,
+  messengerScrollMaxScrollTop,
+} from '../lib/messengerDashboardUtils'
 import { attachMessengerTailCatchupAfterContentPaint } from './messengerTailCatchup'
 
 /** После окончания `threadLoading` — прокрутка вниз, если есть сообщения. */
@@ -82,7 +85,7 @@ export function useMessengerScrollAfterThreadLoad(opts: {
       const scrollEl = messagesScrollRef.current
       if (!scrollEl) return false
       pendingTailScrollRef.current = false
-      scrollEl.scrollTop = scrollEl.scrollHeight
+      scrollEl.scrollTop = messengerScrollMaxScrollTop(scrollEl)
       messengerPinnedToBottomRef.current = true
 
       const contentEl = messagesContentRef.current
@@ -150,15 +153,16 @@ export function useMessengerScrollOnMessageGrowth(opts: {
     const grew = messagesLength > prevLen
     prevMessagesLenForScrollRef.current = messagesLength
     if (!el || !grew) return
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < MESSENGER_BOTTOM_PIN_PX
+    const nearBottom = messengerScrollIsPinnedToBottom(el)
     const stickToTail = messengerPinnedToBottomRef.current || nearBottom
     if (stickToTail) {
       const delta = Math.max(0, messagesLength - prevLen)
+      const top = messengerScrollMaxScrollTop(el)
       // Плавно только для "обычного" прихода одного сообщения, чтобы не трясло ленту на bulk-обновлениях.
       if (delta === 1) {
-        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+        el.scrollTo({ top, behavior: 'smooth' })
       } else {
-        el.scrollTop = el.scrollHeight
+        el.scrollTop = top
       }
       messengerPinnedToBottomRef.current = true
     }

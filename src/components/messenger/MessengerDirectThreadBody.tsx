@@ -218,17 +218,25 @@ function MessengerDirectThreadBodyImpl(props: {
                     {threadHeadConversation.title}
                   </span>
                 </div>
-                <div className="dashboard-messenger__thread-head-center-meta">
+                <div
+                  className={`dashboard-messenger__thread-head-center-meta${
+                    isMemberOfActiveConversation &&
+                    !threadHeadConversation.joinRequestPending &&
+                    threadHeadConversation.unreadCount > 0
+                      ? ' dashboard-messenger__thread-head-center-meta--has-unread'
+                      : ''
+                  }`}
+                >
                   {formatMessengerListRowTime(threadHeadConversation.lastMessageAt ?? threadHeadConversation.createdAt)}
                   {isMemberOfActiveConversation &&
                   !threadHeadConversation.joinRequestPending &&
                   threadHeadConversation.unreadCount > 0 ? (
-                    <>
-                      {' · '}
-                      <span className="dashboard-messenger__row-badge dashboard-messenger__row-badge--inline">
-                        {threadHeadConversation.unreadCount > 99 ? '99+' : threadHeadConversation.unreadCount}
-                      </span>
-                    </>
+                    <span
+                      className="dashboard-messenger__row-badge dashboard-messenger__row-badge--float"
+                      aria-label={`Непрочитано: ${threadHeadConversation.unreadCount}`}
+                    >
+                      {threadHeadConversation.unreadCount > 99 ? '99+' : threadHeadConversation.unreadCount}
+                    </span>
                   ) : null}
                 </div>
               </div>

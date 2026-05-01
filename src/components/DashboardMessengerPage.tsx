@@ -74,7 +74,8 @@ import {
 } from '../lib/messengerConversations'
 import {
   MESSENGER_JOIN_REQUEST_MANAGER_ROLES,
-  MESSENGER_BOTTOM_PIN_PX,
+  messengerScrollIsPinnedToBottom,
+  messengerScrollMaxScrollTop,
   MESSENGER_PHOTO_INPUT_MAX_BYTES,
   QUICK_REACTION_EMOJI,
   DM_PAGE_SIZE,
@@ -473,12 +474,14 @@ export function DashboardMessengerPage() {
   const reactionOpInFlightRef = useRef<Set<string>>(new Set())
 
   const messagesScrollRef = useRef<HTMLDivElement | null>(null)
+  const dmReadTailRef = useRef<HTMLDivElement | null>(null)
   /** Только смена диалога: иначе каждое сообщение пересоздаёт подписки jump-to-bottom и лишний layout. */
   const dmJumpKey = conversationId || ''
   const { showJump: showDmJump, jumpToBottom: jumpDmBottom } = useMessengerJumpToBottom(
     messagesScrollRef,
     dmJumpKey,
     messages.length,
+    dmReadTailRef,
   )
   /** Контейнер с сообщениями — ResizeObserver ловит рост высоты после decode изображений. */
   const messagesContentRef = useRef<HTMLDivElement | null>(null)
@@ -489,7 +492,6 @@ export function DashboardMessengerPage() {
   const composerEmojiWrapRef = useRef<HTMLDivElement | null>(null)
   const photoInputRef = useRef<HTMLInputElement | null>(null)
   const olderFetchInFlightRef = useRef(false)
-  const dmReadTailRef = useRef<HTMLDivElement | null>(null)
   const chatListRefreshInFlightRef = useRef(false)
 
   const refreshChatList = useCallback(async () => {
@@ -524,8 +526,7 @@ export function DashboardMessengerPage() {
   const updateMessengerScrollPinned = useCallback(() => {
     const el = messagesScrollRef.current
     if (!el) return
-    messengerPinnedToBottomRef.current =
-      el.scrollHeight - el.scrollTop - el.clientHeight < MESSENGER_BOTTOM_PIN_PX
+    messengerPinnedToBottomRef.current = messengerScrollIsPinnedToBottom(el)
   }, [])
 
   /** Догон низа после decode картинки / смены высоты пузыря, если пользователь был у хвоста. */
@@ -534,7 +535,7 @@ export function DashboardMessengerPage() {
       if (!messengerPinnedToBottomRef.current) return
       const el = messagesScrollRef.current
       if (!el) return
-      el.scrollTop = el.scrollHeight
+      el.scrollTop = messengerScrollMaxScrollTop(el)
     })
   }, [])
 

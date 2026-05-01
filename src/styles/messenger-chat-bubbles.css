@@ -160,7 +160,6 @@
   border-color: rgba(122, 198, 255, 0.16);
 }
 
-
 .dashboard-messenger__message--highlight {
   outline: 2px solid rgba(159, 214, 255, 0.55);
   outline-offset: 2px;
@@ -172,6 +171,63 @@
   border-radius: 16px 16px 9px 16px;
   border-color: rgba(122, 198, 255, 0.18);
   background: linear-gradient(180deg, rgba(67, 149, 255, 0.18), rgba(39, 116, 209, 0.12));
+}
+
+/* Только эмодзи: без фона пузыря; один текстовый блок по размеру глифа; без внутреннего скролла */
+.dashboard-messenger__message--emoji-only {
+  padding: 2px 6px;
+  overflow: visible;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+.dashboard-messenger__message--emoji-only.dashboard-messenger__message--own {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+.dashboard-messenger__message--emoji-only .dashboard-messenger__message-bottom-row {
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  gap: 6px;
+}
+
+.dashboard-messenger__message--emoji-only .dashboard-messenger__message-body {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: visible !important;
+  overflow-x: visible !important;
+}
+
+.messenger-message-body--emoji-only {
+  font-size: 6em;
+  line-height: 1.05;
+  display: inline-block;
+  vertical-align: middle;
+  max-width: 100%;
+  overflow: visible;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+/* Только сообщения из одних эмодзи — полоска реакций без фона/рамки (как сам пузырь) */
+.dashboard-messenger__message--emoji-only .dashboard-messenger__message-reactions {
+  background: transparent !important;
+  border: none !important;
+  padding: 4px 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.dashboard-messenger__message--emoji-only.dashboard-messenger__message--own .dashboard-messenger__message-reactions {
+  border: none !important;
 }
 
 .dashboard-messenger__message-meta {
@@ -767,6 +823,12 @@ html[data-theme='light'] .dashboard-messenger__message--own {
   background: linear-gradient(180deg, rgba(200, 150, 148, 0.35), rgba(180, 125, 122, 0.22));
 }
 
+html[data-theme='light'] .dashboard-messenger__message--emoji-only,
+html[data-theme='light'] .dashboard-messenger__message--emoji-only.dashboard-messenger__message--own {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
 html[data-theme='light'] .dashboard-messenger__message-body .messenger-message-link {
   color: var(--red);
 }
@@ -791,4 +853,9 @@ html[data-theme='light'] .dashboard-messenger__reaction-chip {
 html[data-theme='light'] .dashboard-messenger__message--own .dashboard-messenger__reaction-chip {
   border: none;
   background: transparent;
+}
+
+html[data-theme='light'] .dashboard-messenger__message--emoji-only .dashboard-messenger__message-reactions {
+  background: transparent !important;
+  border: none !important;
 }

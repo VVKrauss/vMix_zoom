@@ -292,11 +292,14 @@ export function injectMentionsInReactTree(node: ReactNode, onMentionSlug?: (slug
 export function MessengerMessageBody({
   text,
   onMentionSlug,
+  className,
 }: {
   text: string
   /** Клик по @nickname — открыть профиль (slug уже нормализован). */
   onMentionSlug?: (slug: string) => void
+  className?: string
 }) {
   const children = useMemo(() => buildChildren(text, onMentionSlug), [text, onMentionSlug])
-  return <>{children}</>
+  if (!className) return <>{children}</>
+  return <span className={className}>{children}</span>
 }

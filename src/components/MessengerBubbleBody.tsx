@@ -13,11 +13,14 @@ export type MessengerImageLightboxOpen = {
 
 export function MessengerBubbleBody({
   message,
+  emojiOnlyVisual,
   onOpenImageLightbox,
   onInlineImageLayout,
   onMentionSlug,
 }: {
   message: DirectMessage
+  /** Только текст из одних эмодзи: крупный глиф без отдельной вёрстки ссылки и т.п. */
+  emojiOnlyVisual?: boolean
   /** Полноэкран: массив URL и индекс (галерея в одном сообщении). */
   onOpenImageLightbox?: (ctx: MessengerImageLightboxOpen) => void
   /** После decode/раскладки превью в ленте (догон скролла к низу). */
@@ -260,6 +263,11 @@ export function MessengerBubbleBody({
     )
   }
   const link = message.kind === 'text' && message.meta?.link?.url?.trim() ? message.meta.link : null
+  if (emojiOnlyVisual && message.kind === 'text' && !link) {
+    return (
+      <MessengerMessageBody text={message.body} onMentionSlug={onMentionSlug} className="messenger-message-body--emoji-only" />
+    )
+  }
   return (
     <div
       className={`messenger-bubble-stack messenger-bubble-stack--text${link ? ' messenger-bubble-stack--link-first' : ''}`}

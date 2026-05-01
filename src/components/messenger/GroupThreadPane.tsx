@@ -38,6 +38,7 @@ import {
   MESSENGER_PHOTO_INPUT_MAX_BYTES,
   formatMessengerDaySeparatorLabel,
   messengerPeerDisplayTitle,
+  messengerScrollIsPinnedToBottom,
 } from '../../lib/messengerDashboardUtils'
 import { ThreadMessageBubble } from './ThreadMessageBubble'
 import { useDevRenderTrace } from '../../lib/devTrace'
@@ -230,6 +231,7 @@ export function GroupThreadPane({
     messagesScrollRef,
     conversationId || '',
     messages.length,
+    groupReadTailRef,
   )
 
   useEffect(() => {
@@ -409,8 +411,7 @@ export function GroupThreadPane({
   const updatePinnedToBottom = useCallback(() => {
     const el = messagesScrollRef.current
     if (!el) return
-    const slack = 48
-    pinnedToBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - slack
+    pinnedToBottomRef.current = messengerScrollIsPinnedToBottom(el)
   }, [])
 
   useEffect(() => {

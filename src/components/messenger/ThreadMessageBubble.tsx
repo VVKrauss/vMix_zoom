@@ -6,7 +6,7 @@ import { DmOutgoingReceiptGlyph } from './DmOutgoingReceiptGlyph'
 import { DoubleTapHeartSurface } from './DoubleTapHeartSurface'
 import { MessengerBubbleBody, type MessengerImageLightboxOpen } from '../MessengerBubbleBody'
 import { MessengerReplyMiniThumb } from '../MessengerReplyMiniThumb'
-import { messengerPeerDisplayTitle } from '../../lib/messengerDashboardUtils'
+import { isMessengerEmojiOnlyPlainText, messengerPeerDisplayTitle } from '../../lib/messengerDashboardUtils'
 
 export type ThreadReplyPreview =
   | { snippet: string; kind: 'text'; quotedAvatarUrl: string | null; quotedName?: string }
@@ -198,7 +198,17 @@ export function ThreadMessageBubble({
       : `К цитируемому сообщению: ${quotePreview.quotedName.trim()}`
 
   const showAuthorInMeta = !dmMutePeerLabels
-  const bubbleTimeCornerClass = showAuthorInMeta ? ' dashboard-messenger__message--time-tr' : ''
+  const linkUrlTrimmed =
+    message.kind === 'text' ? message.meta?.link?.url?.trim() ?? '' : ''
+  const emojiOnlyBubble =
+    !renderBody &&
+    message.kind === 'text' &&
+    !quotePreview &&
+    !showForwardInfoLine &&
+    !linkUrlTrimmed &&
+    isMessengerEmojiOnlyPlainText(message.body)
+  const bubbleTimeCornerClass =
+    showAuthorInMeta && !emojiOnlyBubble ? ' dashboard-messenger__message--time-tr' : ''
 
   if (isDmSoftDeletedStub(message)) {
     // Hide soft-deleted stub rows in UI.
@@ -212,7 +222,9 @@ export function ThreadMessageBubble({
       }}
       className={`dashboard-messenger__message${isOwn ? ' dashboard-messenger__message--own' : ''}${
         canSwipeReply ? ' dashboard-messenger__message--swipe-reply' : ''
-      }${message.kind === 'image' ? ' dashboard-messenger__message--image' : ''}${enterAnim ? ' dashboard-messenger__message--enter' : ''}${bubbleTimeCornerClass}`}
+      }${message.kind === 'image' ? ' dashboard-messenger__message--image' : ''}${enterAnim ? ' dashboard-messenger__message--enter' : ''}${bubbleTimeCornerClass}${
+        emojiOnlyBubble ? ' dashboard-messenger__message--emoji-only' : ''
+      }`}
       style={
         swipeTx !== 0
           ? { transform: `translateX(${swipeTx}px)`, transition: 'none' }
@@ -309,7 +321,7 @@ export function ThreadMessageBubble({
         </button>
       ) : null}
       <div className="dashboard-messenger__message-bottom-row">
-        {timeOnlyLabel ? (
+        {timeOnlyLabel && !emojiOnlyBubble ? (
           <span className="dashboard-messenger__bubble-time" aria-hidden>
             {timeOnlyLabel}
           </span>
@@ -325,6 +337,7 @@ export function ThreadMessageBubble({
           ) : (
             <MessengerBubbleBody
               message={message}
+              emojiOnlyVisual={emojiOnlyBubble}
               onOpenImageLightbox={onOpenImageLightbox}
               onInlineImageLayout={onInlineImageLayout}
               onMentionSlug={onMentionSlug}

@@ -2744,6 +2744,7 @@ html.app-root--room #root {
 }
 
 .dashboard-topbar__action {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2755,6 +2756,24 @@ html.app-root--room #root {
   color: var(--text);
   cursor: pointer;
   transition: background .15s, border-color .15s, transform .15s;
+}
+
+.dashboard-topbar__badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--red, #e5484d);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  box-sizing: border-box;
+  pointer-events: none;
 }
 
 .dashboard-topbar__action:hover {
@@ -2787,6 +2806,7 @@ html.app-root--room #root {
 .dashboard-topbar__nav-link--btn { color: var(--text-dim); }
 
 .dashboard-topbar__nav-link--inline-icon {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2799,6 +2819,9 @@ html.app-root--room #root {
 }
 
 .dashboard-topbar__nav-ms-badge {
+  position: absolute;
+  top: -5px;
+  right: -6px;
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
@@ -2810,6 +2833,7 @@ html.app-root--room #root {
   line-height: 18px;
   text-align: center;
   box-sizing: border-box;
+  pointer-events: none;
 }
 
 .dashboard-admin-server-btn {
@@ -5756,10 +5780,12 @@ button.dashboard-messenger__row-avatar {
 }
 
 .dashboard-messenger__row-aside {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 3px;
+  display: inline-flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
   flex-shrink: 0;
   min-width: 0;
 }
@@ -6279,11 +6305,23 @@ html[data-theme='light'] button.dashboard-messenger__thread-head-main--tappable:
 }
 
 .dashboard-messenger__thread-titleline {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
   min-width: 0;
+}
+
+.dashboard-messenger__thread-titleline:has(> .dashboard-messenger__row-badge) {
+  padding-right: 26px;
+}
+
+.dashboard-messenger__thread-titleline > .dashboard-messenger__row-badge {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
 }
 
 .dashboard-messenger__thread-titleline .dashboard-section__subtitle {
@@ -8979,12 +9017,6 @@ span.dashboard-messenger__thread-head-center-avatar {
   pointer-events: none;
 }
 
-.dashboard-messenger__row-badge--inline {
-  display: inline-flex;
-  vertical-align: middle;
-  margin-left: 2px;
-}
-
 .dashboard-messenger__thread-head-center-text {
   min-width: 0;
   display: flex;
@@ -9005,12 +9037,24 @@ span.dashboard-messenger__thread-head-center-avatar {
 }
 
 .dashboard-messenger__thread-head-center-meta {
+  position: relative;
   font-size: 11px;
   color: var(--text-dim);
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.dashboard-messenger__thread-head-center-meta--has-unread {
+  padding-right: 22px;
+}
+
+.dashboard-messenger__row-badge--float {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
 }
 
 .dashboard-page.dashboard-page--messenger-chromeless .dashboard-messenger-fab {

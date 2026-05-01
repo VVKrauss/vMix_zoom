@@ -70,6 +70,22 @@ export function conversationInitial(title: string): string {
   return (title.trim().charAt(0) || 'С').toUpperCase()
 }
 
+/** Текст сообщения состоит только из эмодзи (пробелы допускаются). Для превью ссылок / цитат не используется. */
+export function isMessengerEmojiOnlyPlainText(body: string): boolean {
+  const t = body.replace(/\uFEFF/g, '').trim()
+  if (!t) return false
+  if (!/\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(t)) return false
+  const stripped = t
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/\p{Regional_Indicator}/gu, '')
+    .replace(/[\uFE0F\u200D]/g, '')
+    .replace(/[\u{1F3FB}-\u{1F3FF}\u{1F9B0}-\u{1F9B3}]/gu, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, '')
+    .trim()
+  return stripped.length === 0
+}
+
 /** Закрытая группа или канал (не в открытом каталоге) — для бейджа-замка на аватарке. */
 export function isMessengerClosedGroupOrChannel(
   row: { kind: 'direct' | 'group' | 'channel'; isPublic?: boolean } | null | undefined,
@@ -162,8 +178,32 @@ export const DM_PAGE_SIZE = 50
 export { MESSENGER_PHOTO_INPUT_MAX_BYTES } from './messenger'
 /** Макс. число фото в одном сообщении (галерея). */
 export const MESSENGER_GALLERY_MAX_ATTACH = 10
-/** Ниже этой дистанции от низа считаем, что пользователь «на хвосте» — догоняем при подгрузке картинок и т.п. */
+/**
+ * Ниже этой дистанции от низа (в px) считаем «на хвосте»: догон скролла, приход новых сообщений.
+ * См. {@link messengerScrollIsPinnedToBottom}.
+ */
 export const MESSENGER_BOTTOM_PIN_PX = 200
+
+/**
+ * FAB «вниз»: запас по scroll-метрикам без сентинела или как подстраховка к IntersectionObserver
+ * (переполнение пузырей/реакций раздувает scrollHeight — ползунок внизу, а дистанция ещё большая).
+ */
+export const MESSENGER_JUMP_FAB_SCROLL_EPSILON_PX = 72
+
+/** Пиксели от низа прокрутки до «логического» низа контента (0 ≈ упёрлись вниз). */
+export function messengerScrollDistanceFromBottom(el: HTMLElement): number {
+  return el.scrollHeight - el.scrollTop - el.clientHeight
+}
+
+/** Совпадает с `updateMessengerScrollPinned` и кнопкой «в последние сообщения». */
+export function messengerScrollIsPinnedToBottom(el: HTMLElement): boolean {
+  return messengerScrollDistanceFromBottom(el) < MESSENGER_BOTTOM_PIN_PX
+}
+
+/** Целевой scrollTop для прижатия к низу (корректнее, чем всегда `scrollHeight`). */
+export function messengerScrollMaxScrollTop(el: HTMLElement): number {
+  return Math.max(0, el.scrollHeight - el.clientHeight)
+}
 /** Сжимаем частые mark read при пачке входящих в открытом треде. */
 export const MARK_DIRECT_READ_DEBOUNCE_MS = 400
 

@@ -36,7 +36,7 @@ export function isScreenShareChatNotice(text: string): boolean {
 export const CHAT_MESSAGE_MAX_LEN = 2000
 export const CHAT_MESSAGES_CAP = 200
 export const REACTION_TTL_DEFAULT_MS = 3500
-/** Как на сервере (services/server/src/chat.js) */
+/** Должен совпадать с миграциями Postgres (`toggle_*_message_reaction`, `v_allowed`). */
 export const REACTION_EMOJI_WHITELIST = [
   '👍',
   '👏',
@@ -53,6 +53,26 @@ export const REACTION_EMOJI_WHITELIST = [
   '😛',
   '😳',
   '😉',
+  '😃',
+  '😀',
+  '😆',
+  '😁',
+  '😅',
+  '🤣',
+  '😊',
+  '😇',
+  '🙂',
+  '😍',
+  '🥰',
+  '😗',
+  '😙',
+  '😚',
+  '😋',
+  '😜',
+  '🤪',
+  '😝',
+  '🤑',
+  '🤭',
 ] as const
 export type ReactionEmoji = (typeof REACTION_EMOJI_WHITELIST)[number]
 

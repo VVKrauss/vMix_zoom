@@ -45,6 +45,7 @@ import {
   MESSENGER_GALLERY_MAX_ATTACH,
   MESSENGER_PHOTO_INPUT_MAX_BYTES,
   messengerPeerDisplayTitle,
+  messengerScrollIsPinnedToBottom,
 } from '../../lib/messengerDashboardUtils'
 import { collectStoragePathsFromDraft } from '../../lib/postEditor/draftUtils'
 import type { ReactionEmoji } from '../../types/roomComms'
@@ -239,6 +240,7 @@ export function ChannelThreadPane({
   const postAnchorRef = useRef<Map<string, HTMLElement>>(new Map())
   const commentAnchorRef = useRef<Map<string, HTMLElement>>(new Map())
   const commentsScrollRef = useRef<HTMLDivElement | null>(null)
+  const commentsJumpTailRef = useRef<HTMLDivElement | null>(null)
   const postsFeedScrollRef = useRef<HTMLDivElement | null>(null)
   const postsFeedContentRef = useRef<HTMLDivElement | null>(null)
   const cancelPostsFeedTailCatchupRef = useRef<(() => void) | null>(null)
@@ -250,6 +252,7 @@ export function ChannelThreadPane({
     postsFeedScrollRef,
     postsJumpScopeKey,
     posts.length,
+    channelFeedEndRef,
   )
   const commentsJumpScopeKey = `${conversationId}:cmod:${commentsModalPostId ?? ''}`
   const commentsLen = commentsModalPostId ? (commentsByPostId[commentsModalPostId] ?? []).length : 0
@@ -257,6 +260,7 @@ export function ChannelThreadPane({
     commentsScrollRef,
     commentsJumpScopeKey,
     commentsLen,
+    commentsJumpTailRef,
   )
 
   const cidRef = useRef(conversationId)
@@ -266,8 +270,7 @@ export function ChannelThreadPane({
   const updateFeedPinnedToBottom = useCallback(() => {
     const el = postsFeedScrollRef.current
     if (!el) return
-    const slack = 48
-    feedPinnedToBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - slack
+    feedPinnedToBottomRef.current = messengerScrollIsPinnedToBottom(el)
   }, [])
 
   const isChannelMember = myChannelMemberRole !== null || isMemberHint === true
@@ -1188,8 +1191,7 @@ export function ChannelThreadPane({
   const updateCommentsPinned = useCallback(() => {
     const el = commentsScrollRef.current
     if (!el) return
-    const slack = 48
-    commentsPinnedToBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - slack
+    commentsPinnedToBottomRef.current = messengerScrollIsPinnedToBottom(el)
   }, [])
 
   useEffect(() => {
@@ -2399,6 +2401,7 @@ export function ChannelThreadPane({
                 return nodes
               })()}
               {list.length === 0 ? <div className="dashboard-chats-empty" style={{ padding: 8 }}>Пока нет комментариев.</div> : null}
+              <div ref={commentsJumpTailRef} className="dashboard-messenger__channel-feed-end" aria-hidden />
             </div>
           </div>
           <MessengerJumpToBottomFab visible={showCommentsJump} onClick={jumpCommentsBottom} />
