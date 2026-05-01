@@ -9,20 +9,43 @@ export type QuotePreview =
 
 export function buildQuotePreview({
   quotedMessageId,
+  quoteToMessageId,
+  replyToMessageId,
   messageById,
   resolveQuotedAvatarUrl,
   viewerUserId,
   peerAliasByUserId,
 }: {
-  /** Id цитируемого сообщения (уже “нормализованный”: для channel comments это quote_to, для DM/group — quote_to ?? reply_to). */
-  quotedMessageId: string | null
+  /**
+   * Режим комментария канала: только quote_to (reply_to там — id поста, не сообщение для превью).
+   */
+  quotedMessageId?: string | null
+  /**
+   * ЛС / группа: оба поля из сообщения. Если quote_to «битый» (нет в загруженной ленте), а reply_to указывает
+   * на сообщение в треде — показываем превью по reply_to (иначе ложное «Нет в загруженной истории»).
+   */
+  quoteToMessageId?: string | null
+  replyToMessageId?: string | null
   messageById: (id: string) => DirectMessage | undefined
   resolveQuotedAvatarUrl: (senderUserId: string | null) => string | null
   /** Для групп/канала: подставить локальное имя автора цитаты. */
   viewerUserId?: string | null
   peerAliasByUserId?: Record<string, string> | null
 }): { preview: QuotePreview | null; scrollTargetId: string | null } {
-  const rid = quotedMessageId?.trim() || null
+  const dualMode =
+    typeof quoteToMessageId !== 'undefined' || typeof replyToMessageId !== 'undefined'
+
+  let rid: string | null = null
+  if (dualMode) {
+    const q = quoteToMessageId?.trim() || null
+    const r = replyToMessageId?.trim() || null
+    if (q && messageById(q)) rid = q
+    else if (r && messageById(r)) rid = r
+    else rid = q || r
+  } else {
+    rid = quotedMessageId?.trim() || null
+  }
+
   if (!rid) return { preview: null, scrollTargetId: null }
 
   const src = messageById(rid)

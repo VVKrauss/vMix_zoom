@@ -399,9 +399,9 @@ function MessengerDirectThreadBodyImpl(props: {
                     const isNew = !seenMessageIdsRef.current.has(message.id)
                     if (isNew) seenMessageIdsRef.current.add(message.id)
                     const reactions = reactionsByTargetId.get(message.id) ?? []
-                    const rid = message.quoteToMessageId?.trim() || message.replyToMessageId?.trim() || null
                     const { preview: replyPreview, scrollTargetId: replyScrollTargetId } = buildQuotePreview({
-                      quotedMessageId: rid,
+                      quoteToMessageId: message.quoteToMessageId ?? null,
+                      replyToMessageId: message.replyToMessageId ?? null,
                       messageById: (id) => messages.find((m) => m.id === id),
                       resolveQuotedAvatarUrl: (senderUserId) =>
                         resolveQuotedAvatarForDm(

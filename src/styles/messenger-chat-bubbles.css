@@ -477,6 +477,7 @@
   line-height: 1.2;
   border: none;
   background: transparent;
+  flex-shrink: 0;
 }
 
 .dashboard-messenger__message--own .dashboard-messenger__reaction-chip {
@@ -487,6 +488,7 @@
 .dashboard-messenger__reaction-emoji {
   font-size: 14px;
   line-height: 1;
+  flex-shrink: 0;
 }
 
 .dashboard-messenger__reaction-count {

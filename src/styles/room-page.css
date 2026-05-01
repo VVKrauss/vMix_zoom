@@ -2427,7 +2427,11 @@ html[data-theme="light"] .card-bar-fav--on {
 
 .device-popover--reaction-pick .reaction-emoji-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  /* Одна высота строки — иначе первый ряд у некоторых шрифтов визуально «мельче». */
+  grid-auto-rows: minmax(38px, auto);
+  align-items: stretch;
+  justify-items: stretch;
   gap: 2px;
   padding: 2px 6px 6px;
 }
@@ -2438,10 +2442,16 @@ html[data-theme="light"] .card-bar-fav--on {
   border: none;
   border-radius: 6px;
   background: transparent;
-  font-size: 1.35em;
-  line-height: 1.2;
+  font-size: 18px;
+  line-height: 1;
   cursor: pointer;
   transition: background .12s, transform .12s;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .reaction-emoji-btn:hover {
@@ -2450,8 +2460,9 @@ html[data-theme="light"] .card-bar-fav--on {
 }
 
 .reaction-emoji-btn__twemoji {
-  width: 1.35em;
-  height: 1.35em;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
   display: block;
   margin: 0 auto;
   object-fit: contain;
@@ -2460,13 +2471,28 @@ html[data-theme="light"] .card-bar-fav--on {
 
 .reaction-emoji-btn__fallback {
   display: block;
-  font-size: 1.35em;
-  line-height: 1.2;
+  flex-shrink: 0;
+  font-size: 22px;
+  line-height: 1;
 }
 
 @media (pointer: coarse) {
   .reaction-emoji-btn {
     padding: 8px 4px;
+    min-height: 44px;
+  }
+
+  .device-popover--reaction-pick .reaction-emoji-grid {
+    grid-auto-rows: minmax(44px, auto);
+  }
+
+  .reaction-emoji-btn__twemoji {
+    width: 26px;
+    height: 26px;
+  }
+
+  .reaction-emoji-btn__fallback {
+    font-size: 24px;
   }
 }
 

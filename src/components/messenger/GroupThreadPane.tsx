@@ -974,7 +974,8 @@ export function GroupThreadPane({
                   const reacts = reactionsByTargetId.get(m.id) ?? []
                   const isOwn = Boolean(user?.id && m.senderUserId === user.id)
                   const { preview: replyPreview, scrollTargetId: replyScrollTargetId } = buildQuotePreview({
-                    quotedMessageId: m.quoteToMessageId?.trim() || m.replyToMessageId?.trim() || null,
+                    quoteToMessageId: m.quoteToMessageId ?? null,
+                    replyToMessageId: m.replyToMessageId ?? null,
                     messageById: (id) => messages.find((x) => x.id === id),
                     resolveQuotedAvatarUrl: () => null,
                     viewerUserId: user?.id ?? null,
