@@ -4648,6 +4648,25 @@ button.admin-stat-card--interactive:disabled {
   color: var(--text-dim);
   background: rgba(255,255,255,.02);
 }
+
+/* Пустая лента диалога / группы / канала: без фона и рамки, текст по центру, меньше шрифт */
+.dashboard-chats-empty.messenger-thread-empty {
+  padding: 16px 12px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.45;
+  justify-self: center;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+html[data-theme="light"] .dashboard-chats-empty.messenger-thread-empty {
+  background: transparent;
+}
 .dashboard-chat-filters {
   display: grid;
   grid-template-columns: minmax(240px, 1.6fr) minmax(180px, .8fr) minmax(160px, .7fr);

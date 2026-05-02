@@ -372,7 +372,9 @@ function MessengerDirectThreadBodyImpl(props: {
                   <BrandLogoLoader size={56} />
                 </div>
               ) : timelineMessages.length === 0 ? (
-                <div className="dashboard-chats-empty">Напиши первое сообщение в этот чат.</div>
+                <div className="dashboard-chats-empty messenger-thread-empty">
+                  Напиши первое сообщение в этот чат.
+                </div>
               ) : (
                 (() => {
                   const nodes: ReactNode[] = []
@@ -402,6 +404,7 @@ function MessengerDirectThreadBodyImpl(props: {
                     const { preview: replyPreview, scrollTargetId: replyScrollTargetId } = buildQuotePreview({
                       quoteToMessageId: message.quoteToMessageId ?? null,
                       replyToMessageId: message.replyToMessageId ?? null,
+                      replyPreviewStored: message.replyPreview ?? null,
                       messageById: (id) => messages.find((m) => m.id === id),
                       resolveQuotedAvatarUrl: (senderUserId) =>
                         resolveQuotedAvatarForDm(

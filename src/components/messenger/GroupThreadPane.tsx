@@ -13,6 +13,7 @@ import { MESSENGER_COMPOSER_EMOJIS } from '../../lib/messengerComposerEmojis'
 import {
   mapDirectMessageFromRow,
   messengerConversationListTailPatch,
+  messengerReplyPreviewStoredFromMessage,
   previewTextForDirectMessageTail,
   type DirectMessage,
   type MessengerForwardNav,
@@ -582,7 +583,9 @@ export function GroupThreadPane({
     const hasPending = pendingGroupPhotos.length > 0
     if (!hasPending && !body) return
 
-    const replyId = replyTo?.id ?? null
+    const replyTarget = replyTo
+    const replyId = replyTarget?.id ?? null
+    const replyStored = replyTarget ? messengerReplyPreviewStoredFromMessage(replyTarget) : null
 
     if (hasPending) {
       setSending(true)
@@ -624,6 +627,7 @@ export function GroupThreadPane({
         body,
         createdAt,
         replyToMessageId: replyId,
+        ...(replyStored ? { replyPreview: replyStored } : {}),
         meta: imageMeta,
       }
       for (const p of pendingGroupPhotos) URL.revokeObjectURL(p.previewUrl)
@@ -649,6 +653,7 @@ export function GroupThreadPane({
       body,
       createdAt: new Date().toISOString(),
       replyToMessageId: replyId,
+      ...(replyStored ? { replyPreview: replyStored } : {}),
       ...(linkMetaRecord ? { meta: linkMetaRecord } : {}),
     }
     setMessages((prev) => [...prev, optimistic].sort(sortChrono))
@@ -697,7 +702,9 @@ export function GroupThreadPane({
       const cid = conversationId.trim()
       const body = draft.trim()
       if (!isGroupMember || !user?.id || !cid || sending || threadLoading || voiceUploading || photoUploading) return
-      const replyId = replyTo?.id ?? null
+      const replyTargetVoice = replyTo
+      const replyId = replyTargetVoice?.id ?? null
+      const replyStoredVoice = replyTargetVoice ? messengerReplyPreviewStoredFromMessage(replyTargetVoice) : null
       setSending(true)
       setVoiceUploading(true)
       setError(null)
@@ -733,6 +740,7 @@ export function GroupThreadPane({
         body,
         createdAt,
         replyToMessageId: replyId,
+        ...(replyStoredVoice ? { replyPreview: replyStoredVoice } : {}),
         meta: audioMeta,
       }
       resetDraft()
@@ -951,7 +959,7 @@ export function GroupThreadPane({
                 </button>
               </div>
             ) : (
-              <div className="dashboard-chats-empty">Пока нет сообщений.</div>
+              <div className="dashboard-chats-empty messenger-thread-empty">Пока нет сообщений.</div>
             )
           ) : (
             <>
@@ -976,6 +984,7 @@ export function GroupThreadPane({
                   const { preview: replyPreview, scrollTargetId: replyScrollTargetId } = buildQuotePreview({
                     quoteToMessageId: m.quoteToMessageId ?? null,
                     replyToMessageId: m.replyToMessageId ?? null,
+                    replyPreviewStored: m.replyPreview ?? null,
                     messageById: (id) => messages.find((x) => x.id === id),
                     resolveQuotedAvatarUrl: () => null,
                     viewerUserId: user?.id ?? null,

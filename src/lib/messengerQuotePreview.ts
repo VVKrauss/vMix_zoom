@@ -1,4 +1,4 @@
-import type { DirectMessage } from './messenger'
+import type { DirectMessage, MessengerReplyPreviewStored } from './messenger'
 import { previewTextForDirectMessageTail } from './messenger'
 import { truncateMessengerReplySnippet } from './messengerUi'
 import { messengerPeerDisplayTitle } from './messengerDashboardUtils'
@@ -15,6 +15,8 @@ export function buildQuotePreview({
   resolveQuotedAvatarUrl,
   viewerUserId,
   peerAliasByUserId,
+  /** Денормализованное превью с сервера / optimistic — приоритетнее join по ленте. */
+  replyPreviewStored,
 }: {
   /**
    * Режим комментария канала: только quote_to (reply_to там — id поста, не сообщение для превью).
@@ -31,6 +33,7 @@ export function buildQuotePreview({
   /** Для групп/канала: подставить локальное имя автора цитаты. */
   viewerUserId?: string | null
   peerAliasByUserId?: Record<string, string> | null
+  replyPreviewStored?: MessengerReplyPreviewStored | null
 }): { preview: QuotePreview | null; scrollTargetId: string | null } {
   const dualMode =
     typeof quoteToMessageId !== 'undefined' || typeof replyToMessageId !== 'undefined'
@@ -47,6 +50,56 @@ export function buildQuotePreview({
   }
 
   if (!rid) return { preview: null, scrollTargetId: null }
+
+  const stored = replyPreviewStored ?? null
+
+  if (stored?.snippet) {
+    const quotedAvatarUrl = resolveQuotedAvatarUrl(stored.senderUserId ?? null)
+    const quotedName = peerAliasByUserId
+      ? messengerPeerDisplayTitle(
+          stored.senderUserId,
+          stored.senderName,
+          peerAliasByUserId,
+          viewerUserId ?? null,
+        ).trim() || undefined
+      : stored.senderName.trim() || undefined
+
+    if (stored.kind === 'image') {
+      const thumbPath = stored.thumbPath?.trim() || ''
+      return {
+        preview: {
+          quotedAvatarUrl,
+          quotedName,
+          snippet: truncateMessengerReplySnippet(stored.snippet),
+          kind: 'image',
+          ...(thumbPath ? { thumbPath } : {}),
+        },
+        scrollTargetId: rid,
+      }
+    }
+
+    if (stored.kind === 'audio') {
+      return {
+        preview: {
+          quotedAvatarUrl,
+          quotedName,
+          snippet: truncateMessengerReplySnippet(stored.snippet),
+          kind: 'text',
+        },
+        scrollTargetId: rid,
+      }
+    }
+
+    return {
+      preview: {
+        quotedAvatarUrl,
+        quotedName,
+        snippet: truncateMessengerReplySnippet(stored.snippet) || '…',
+        kind: 'text',
+      },
+      scrollTargetId: rid,
+    }
+  }
 
   const src = messageById(rid)
   if (!src) {

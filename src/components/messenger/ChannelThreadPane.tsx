@@ -1807,6 +1807,7 @@ export function ChannelThreadPane({
 
     const { preview: replyPreview, scrollTargetId: replyScrollTargetId } = buildQuotePreview({
       quotedMessageId: m.quoteToMessageId?.trim() || null,
+      replyPreviewStored: m.replyPreview ?? null,
       messageById: (id) => {
         const cur = pid ? (commentsByPostId[pid] ?? []) : []
         return cur.find((x) => x.id === id) ?? posts.find((p) => p.id === id)
@@ -2059,7 +2060,7 @@ export function ChannelThreadPane({
               </button>
             </div>
           ) : (
-            <div className="dashboard-chats-empty">Пока нет постов.</div>
+            <div className="dashboard-chats-empty messenger-thread-empty">Пока нет постов.</div>
           )
         ) : (
           <>
@@ -2400,7 +2401,9 @@ export function ChannelThreadPane({
                 }
                 return nodes
               })()}
-              {list.length === 0 ? <div className="dashboard-chats-empty" style={{ padding: 8 }}>Пока нет комментариев.</div> : null}
+              {list.length === 0 ? (
+                <div className="dashboard-chats-empty messenger-thread-empty">Пока нет комментариев.</div>
+              ) : null}
               <div ref={commentsJumpTailRef} className="dashboard-messenger__channel-feed-end" aria-hidden />
             </div>
           </div>

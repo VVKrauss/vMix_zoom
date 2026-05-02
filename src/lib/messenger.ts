@@ -34,6 +34,71 @@ export type DirectConversationSummary = {
 
 export type DirectMessageKind = 'text' | 'system' | 'reaction' | 'image' | 'audio'
 
+/** Снимок цитируемого сообщения на момент отправки (reply_preview в БД). */
+export type MessengerReplyPreviewStored = {
+  kind: Extract<DirectMessageKind, 'text' | 'image' | 'audio' | 'system'>
+  snippet: string
+  senderName: string
+  senderUserId: string | null
+  thumbPath?: string
+}
+
+/** Локальный снимок для optimistic-сообщений (совместим с серверным reply_preview). */
+export function messengerReplyPreviewStoredFromMessage(parent: DirectMessage): MessengerReplyPreviewStored | null {
+  if (!parent?.id || parent.kind === 'reaction') return null
+  const k = parent.kind
+  if (k !== 'text' && k !== 'image' && k !== 'audio' && k !== 'system') return null
+
+  const raw = previewTextForDirectMessageTail(parent).replace(/\s+/g, ' ').trim()
+  const snippet = (raw.length > 280 ? raw.slice(0, 280) : raw) || '…'
+
+  let thumbPath: string | undefined
+  if (k === 'image') {
+    const tp =
+      parent.meta?.image?.thumbPath?.trim() ||
+      parent.meta?.image?.path?.trim() ||
+      (Array.isArray(parent.meta?.images) && parent.meta!.images!.length > 0
+        ? parent.meta!.images![0]!.thumbPath?.trim() || parent.meta!.images![0]!.path?.trim()
+        : '')
+    thumbPath = tp || undefined
+  }
+
+  const senderName = parent.senderNameSnapshot?.trim() || '…'
+
+  return {
+    kind: k,
+    snippet,
+    senderName,
+    senderUserId: parent.senderUserId ?? null,
+    ...(thumbPath ? { thumbPath } : {}),
+  }
+}
+
+function mapReplyPreviewFromRow(row: Record<string, unknown>): MessengerReplyPreviewStored | null {
+  const raw = row.reply_preview
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const o = raw as Record<string, unknown>
+  const kindRaw = typeof o.kind === 'string' ? o.kind : ''
+  const kind =
+    kindRaw === 'text' || kindRaw === 'image' || kindRaw === 'audio' || kindRaw === 'system' ? kindRaw : null
+  if (!kind) return null
+  const snippet =
+    typeof o.snippet === 'string' && o.snippet.trim() ? o.snippet.trim().slice(0, 280) : '…'
+  const senderName =
+    typeof o.sender_name === 'string' && o.sender_name.trim() ? o.sender_name.trim().slice(0, 200) : '…'
+  let senderUserId: string | null = null
+  if (typeof o.sender_user_id === 'string' && o.sender_user_id.trim()) senderUserId = o.sender_user_id.trim()
+  const thumbPath =
+    typeof o.thumb_path === 'string' && o.thumb_path.trim() ? o.thumb_path.trim() : undefined
+  return {
+    kind,
+    snippet,
+    senderName,
+    senderUserId,
+    ...(thumbPath ? { thumbPath } : {}),
+  }
+}
+
 /** Навигация по клику на «Переслано из …» (сохраняется в meta.forward_info). */
 export type MessengerForwardNav =
   | { kind: 'channel_post'; conversationId: string; postMessageId: string }
@@ -61,6 +126,8 @@ export type DirectMessage = {
   replyToMessageId?: string | null
   /** Отдельная ссылка на цитируемое сообщение (для channel comments: replyTo = post, quoteTo = comment). */
   quoteToMessageId?: string | null
+  /** Денормализованное превью цитируемого сообщения (не зависит от загрузки родителя в ленту). */
+  replyPreview?: MessengerReplyPreviewStored | null
   /**
    * Meta из базы (jsonb):
    * - reaction: react_to
@@ -505,6 +572,7 @@ export function mapDirectMessageFromRow(row: Record<string, unknown>): DirectMes
       String((row as Record<string, unknown>).quote_to_message_id).trim()
         ? String((row as Record<string, unknown>).quote_to_message_id).trim()
         : null,
+    replyPreview: mapReplyPreviewFromRow(row),
     meta: mapMetaFromRow(row.meta),
   }
 }
@@ -665,7 +733,9 @@ export async function listDirectMessagesPage(
 
   let query = supabase
     .from('chat_messages')
-    .select('id, sender_user_id, sender_name_snapshot, kind, body, meta, created_at, edited_at, reply_to_message_id')
+    .select(
+      'id, sender_user_id, sender_name_snapshot, kind, body, meta, created_at, edited_at, reply_to_message_id, quote_to_message_id, reply_preview',
+    )
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })

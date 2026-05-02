@@ -57,6 +57,7 @@ import {
   directOutgoingReceiptStatus,
   fetchDirectPeerDmReceiptContext,
   mergePeerLastReadAt,
+  messengerReplyPreviewStoredFromMessage,
   previewTextForDirectMessageTail,
   requestMessengerUnreadRefresh,
   MESSENGER_CONTACT_ALIAS_CHANGED_EVENT,
@@ -1054,6 +1055,7 @@ export function DashboardMessengerPage() {
 
     const replyTarget = replyTo
     const replyId = replyTarget?.id ?? null
+    const replyStored = replyTarget ? messengerReplyPreviewStoredFromMessage(replyTarget) : null
 
     if (hasPendingPhotos) {
       setSending(true)
@@ -1107,6 +1109,7 @@ export function DashboardMessengerPage() {
         body: trimmed,
         createdAt,
         replyToMessageId: replyId,
+        ...(replyStored ? { replyPreview: replyStored } : {}),
         meta: imageMeta,
       }
       setMessages((prev) => {
@@ -1160,6 +1163,7 @@ export function DashboardMessengerPage() {
       body: trimmed,
       createdAt: new Date().toISOString(),
       replyToMessageId: replyId,
+      ...(replyStored ? { replyPreview: replyStored } : {}),
       ...(linkMetaRecord ? { meta: linkMetaRecord } : {}),
     }
     setMessages((prev) => [...prev, optimistic])
@@ -1241,6 +1245,7 @@ export function DashboardMessengerPage() {
 
       const replyTarget = replyTo
       const replyId = replyTarget?.id ?? null
+      const replyStoredVoice = replyTarget ? messengerReplyPreviewStoredFromMessage(replyTarget) : null
 
       setSending(true)
       setVoiceUploading(true)
@@ -1286,6 +1291,7 @@ export function DashboardMessengerPage() {
         body: trimmed,
         createdAt,
         replyToMessageId: replyId,
+        ...(replyStoredVoice ? { replyPreview: replyStoredVoice } : {}),
         meta: audioMeta,
       }
       setMessages((prev) => {

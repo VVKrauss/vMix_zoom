@@ -109,7 +109,9 @@ export function MessengerImageLightbox({ open, urls, initialIndex = 0, onClose }
       role="dialog"
       aria-modal="true"
       aria-label="Просмотр изображения"
-      onClick={() => onClose()}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
     >
       <button
         type="button"
@@ -154,7 +156,10 @@ export function MessengerImageLightbox({ open, urls, initialIndex = 0, onClose }
       <div
         ref={frameRef}
         className="messenger-image-lightbox__frame"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          /* Поле вокруг картинки (letterbox) — то же самое, что «нажать мимо» */
+          if (e.target === e.currentTarget) onClose()
+        }}
         onPointerDown={(e) => {
           if (e.button !== 0) return
           swipeRef.current = {
