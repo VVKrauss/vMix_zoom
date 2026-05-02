@@ -189,6 +189,41 @@ export type VmixIngressPhase = 'idle' | 'waiting' | 'live'
 
 const SPEAKER_PIN_LONG_PRESS_MS = 550
 
+function SpeakerPinnedBadge({
+  variant,
+  tileId,
+  onTogglePin,
+}: {
+  variant: 'strip' | 'main'
+  tileId: string
+  onTogglePin: (tileId: string) => void
+}) {
+  const stopBubblingToStrip = useCallback((e: React.SyntheticEvent) => {
+    e.stopPropagation()
+  }, [])
+
+  return (
+    <button
+      type="button"
+      className={`room-speaker-pin-badge room-speaker-pin-badge--${variant}`}
+      title="Снять закреп"
+      aria-label="Снять закреп со сцены"
+      aria-pressed="true"
+      onPointerDown={stopBubblingToStrip}
+      onTouchStart={stopBubblingToStrip}
+      onClick={(e) => {
+        e.stopPropagation()
+        onTogglePin(tileId)
+      }}
+    >
+      <FiRrIcon
+        name="thumbtack"
+        className={`room-speaker-pin-badge__fi${variant === 'main' ? ' room-speaker-pin-badge__fi--main' : ''}`}
+      />
+    </button>
+  )
+}
+
 function SpeakerStripTile({
   tileId,
   active,
@@ -258,7 +293,7 @@ function SpeakerStripTile({
 
   return (
     <div
-      className={`room-speaker-strip-tile${active ? ' room-speaker-strip-tile--on-stage' : ''}${pinned ? ' room-speaker-strip-tile--pinned' : ''}`}
+      className={`room-speaker-strip-tile${active ? ' room-speaker-strip-tile--on-stage' : ''}`}
       onContextMenu={handleContextMenu}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -267,9 +302,14 @@ function SpeakerStripTile({
       onMouseDown={handleMouseDown}
       onMouseUp={handlePressEnd}
       onMouseLeave={handlePressEnd}
-      title={pinned ? 'Закреплено. Долгое нажатие или правая кнопка мыши — снять закреп.' : 'Долгое нажатие или правая кнопка мыши — закрепить на сцене.'}
-      aria-label={pinned ? 'Снять закреп со сцены' : 'Закрепить на сцене'}
+      title={
+        pinned
+          ? 'Закреплено. Нажмите булавку, долгое нажатие или ПКМ — снять закреп.'
+          : 'Долгое нажатие или правая кнопка мыши — закрепить на сцене.'
+      }
+      aria-label={pinned ? 'Плитка: снять закреп со сцены' : 'Закрепить на сцене'}
     >
+      {pinned ? <SpeakerPinnedBadge variant="strip" tileId={tileId} onTogglePin={onTogglePin} /> : null}
       {children}
     </div>
   )
@@ -1007,29 +1047,6 @@ export function RoomPage({
     window.location.assign(`/dashboard/messenger?${sp.toString()}`)
   }, [])
 
-  const buildTileExtras = useCallback(
-    (authUserId: string | null | undefined, displayName: string): SrtCopyMenuExtraItem[] | undefined => {
-      const uid = authUserId?.trim()
-      if (!uid || !user?.id || uid === user.id) return undefined
-      const c = chatContactStatuses[uid]
-      return [
-        {
-          key: 'dm',
-          label: 'Личный чат',
-          onSelect: () => openDirectChat(uid, displayName),
-        },
-        {
-          key: 'fav',
-          label: c?.pinnedByMe ? 'Убрать из контактов' : 'Добавить в контакты',
-          onSelect: () => {
-            void toggleFavoriteFromChat(uid, !(c?.pinnedByMe ?? false))
-          },
-        },
-      ]
-    },
-    [user?.id, chatContactStatuses, openDirectChat, toggleFavoriteFromChat],
-  )
-
   /** Участники-люди в счётчике шапки (без виртуального SRT/внешнего потока). */
   const remoteHumanPeers = useMemo(
     () => remoteList.filter((p) => !isProgramIngestPeerDisplayName(p.name) && p.virtualSourceType !== 'studio_program'),
@@ -1280,6 +1297,47 @@ export function RoomPage({
     setPinnedSpeakerTileId((prev) => (prev === tileId ? null : tileId))
   }, [])
 
+  const buildTileExtras = useCallback(
+    (tileId: string, authUserId: string | null | undefined, displayName: string): SrtCopyMenuExtraItem[] => {
+      const items: SrtCopyMenuExtraItem[] = []
+      if (stageLayout) {
+        const pinned = pinnedSpeakerTileId === tileId
+        items.push({
+          key: 'stage-pin',
+          label: pinned ? 'Снять закреп' : 'Закрепить',
+          onSelect: () => togglePinnedSpeakerTile(tileId),
+        })
+      }
+      const uid = authUserId?.trim()
+      if (!uid || !user?.id || uid === user.id) return items
+      const c = chatContactStatuses[uid]
+      items.push(
+        {
+          key: 'dm',
+          label: 'Личный чат',
+          onSelect: () => openDirectChat(uid, displayName),
+        },
+        {
+          key: 'fav',
+          label: c?.pinnedByMe ? 'Убрать из контактов' : 'Добавить в контакты',
+          onSelect: () => {
+            void toggleFavoriteFromChat(uid, !(c?.pinnedByMe ?? false))
+          },
+        },
+      )
+      return items
+    },
+    [
+      stageLayout,
+      pinnedSpeakerTileId,
+      togglePinnedSpeakerTile,
+      user?.id,
+      chatContactStatuses,
+      openDirectChat,
+      toggleFavoriteFromChat,
+    ],
+  )
+
   const speakerFallbackTileId = useMemo(() => {
     if (orderedTileIds.length === 0) return localPeerId
     const presentationTileId = orderedTileIds.find((id) => isScreenTileId(id) || isStudioProgramTileId(id))
@@ -1346,27 +1404,30 @@ export function RoomPage({
 
   const localSrt = srtByPeer[localPeerId]
 
-  const localTile = (inPip: boolean) => (
-    <LocalTile
-      stream={localStream}
-      name={name}
-      isMuted={isMuted}
-      isCamOff={isCamOff}
-      avatarUrl={user?.user_metadata?.avatar_url as string | undefined}
-      videoStyle={localCameraTileVideoStyle}
-      showInfo={showInfo}
-      showMeter={showMeter}
-      roomId={roomId}
-      peerId={localPeerId}
-      inPip={inPip}
-      srtConnectUrl={localSrt?.connectUrlPublic}
-      srtListenPort={localSrt?.listenPort}
-      reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
-      mirrorLocalPreview={mirrorLocalCamera}
-      peekUserId={user?.id ?? null}
-      showSoloViewerCopy={canUseElevatedRoomTools}
-    />
-  )
+  const localTile = (inPip: boolean) => {
+    const localExtras = buildTileExtras(localPeerId, user?.id ?? null, name)
+    return (
+      <LocalTile
+        stream={localStream}
+        name={name}
+        isMuted={isMuted}
+        isCamOff={isCamOff}
+        avatarUrl={user?.user_metadata?.avatar_url as string | undefined}
+        videoStyle={localCameraTileVideoStyle}
+        showInfo={showInfo}
+        showMeter={showMeter}
+        roomId={roomId}
+        peerId={localPeerId}
+        inPip={inPip}
+        srtConnectUrl={localSrt?.connectUrlPublic}
+        srtListenPort={localSrt?.listenPort}
+        reactionBurst={pickLatestBurstForPeer(reactionBursts, localPeerId)}
+        mirrorLocalPreview={mirrorLocalCamera}
+        showSoloViewerCopy={canUseElevatedRoomTools}
+        tileMenuExtras={localExtras}
+      />
+    )
+  }
 
   const leaveMessage =
     leaveEndsRoomForAll
@@ -1515,6 +1576,7 @@ export function RoomPage({
       return localTile(false)
     }
     if (localScreenTileId && id === localScreenTileId && localScreenStream) {
+      const localScreenMenuExtras = buildTileExtras(id, user?.id ?? null, name)
       return (
         <LocalScreenShareTile
           stream={localScreenStream}
@@ -1537,12 +1599,14 @@ export function RoomPage({
               ? { show: true, onMute: () => { requestPeerMicMute?.(localPeerId) } }
               : undefined
           }
+          extraMenuItems={localScreenMenuExtras}
+          showTileOverflowButton={localScreenMenuExtras.length > 0}
         />
       )
     }
     const remotePresenter = remoteList.find((p) => remoteScreenTileId(p) === id)
     if (remotePresenter?.screenStream) {
-      const screenShareExtras = buildTileExtras(remotePresenter.authUserId, remotePresenter.name)
+      const screenShareExtras = buildTileExtras(id, remotePresenter.authUserId, remotePresenter.name)
       return (
         <LocalScreenShareTile
           stream={remotePresenter.screenStream}
@@ -1565,7 +1629,7 @@ export function RoomPage({
               : undefined
           }
           extraMenuItems={screenShareExtras}
-          showTileOverflowButton={Boolean(screenShareExtras?.length)}
+          showTileOverflowButton={screenShareExtras.length > 0}
         />
       )
     }
@@ -1574,6 +1638,7 @@ export function RoomPage({
       if (!owner) return null
       if (owner === localPeerId) {
         if (!localScreenStream) return null
+        const localScreenMenuExtrasOwned = buildTileExtras(id, user?.id ?? null, name)
         return (
           <LocalScreenShareTile
             stream={localScreenStream}
@@ -1596,12 +1661,14 @@ export function RoomPage({
                 ? { show: true, onMute: () => { requestPeerMicMute?.(localPeerId) } }
                 : undefined
             }
+            extraMenuItems={localScreenMenuExtrasOwned}
+            showTileOverflowButton={localScreenMenuExtrasOwned.length > 0}
           />
         )
       }
       const p = participants.get(owner)
       if (!p?.screenStream) return null
-      const screenExtrasRemote = buildTileExtras(p.authUserId, p.name)
+      const screenExtrasRemote = buildTileExtras(id, p.authUserId, p.name)
       return (
         <LocalScreenShareTile
           stream={p.screenStream}
@@ -1624,7 +1691,7 @@ export function RoomPage({
               : undefined
           }
           extraMenuItems={screenExtrasRemote}
-          showTileOverflowButton={Boolean(screenExtrasRemote?.length)}
+          showTileOverflowButton={screenExtrasRemote.length > 0}
         />
       )
     }
@@ -1637,10 +1704,7 @@ export function RoomPage({
         remoteStudioRtmpByPeer[owner] ??
         (remoteStudioProgramConsumePending ? 'connecting' : 'idle')
       const ownerPart = participants.get(owner)
-      const studioExtras = buildTileExtras(
-        ownerPart?.authUserId ?? p.authUserId,
-        ownerPart?.name ?? p.name,
-      )
+      const studioExtras = buildTileExtras(id, ownerPart?.authUserId ?? p.authUserId, ownerPart?.name ?? p.name)
       return (
         <StudioProgramShareTile
           stream={p.videoStream}
@@ -1660,11 +1724,12 @@ export function RoomPage({
               : undefined
           }
           extraMenuItems={studioExtras}
-          showTileOverflowButton={Boolean(studioExtras?.length)}
+          showTileOverflowButton={studioExtras.length > 0}
         />
       )
     }
     const isProgramIngestTile = isProgramIngestPeerDisplayName(p.name)
+    const participantExtras = buildTileExtras(id, p.authUserId, p.name)
     return (
       <ParticipantCard
         participant={p}
@@ -1696,13 +1761,7 @@ export function RoomPage({
               }
             : undefined
         }
-        currentUserId={user?.id}
         contactStatus={p.authUserId ? chatContactStatuses[p.authUserId] : undefined}
-        onOpenDirectChat={
-          p.authUserId && user?.id && p.authUserId !== user.id
-            ? (participant) => openDirectChat(participant.authUserId!, participant.name)
-            : undefined
-        }
         onToggleFavorite={
           p.authUserId && user?.id && p.authUserId !== user.id
             ? () => {
@@ -1712,6 +1771,7 @@ export function RoomPage({
               }
             : undefined
         }
+        extraMenuItems={participantExtras}
       />
     )
   }
@@ -2429,6 +2489,13 @@ export function RoomPage({
       {stageLayout && featuredPeerId && (
         <>
           <div className="room-speaker-main">
+            {pinnedSpeakerTileId && featuredPeerId === pinnedSpeakerTileId ? (
+              <SpeakerPinnedBadge
+                variant="main"
+                tileId={pinnedSpeakerTileId}
+                onTogglePin={togglePinnedSpeakerTile}
+              />
+            ) : null}
             {renderConferenceTile(featuredPeerId)}
           </div>
           <div className="room-speaker-strip">
@@ -2794,15 +2861,14 @@ function LocalTile({
   reactionBurst,
   mirrorLocalPreview,
   avatarUrl,
-  peekUserId,
   showSoloViewerCopy = true,
+  tileMenuExtras = [],
 }: {
   stream: MediaStream | null
   name: string
   isMuted: boolean
   isCamOff: boolean
   avatarUrl?: string | null
-  peekUserId?: string | null
   videoStyle: React.CSSProperties
   showInfo?: boolean
   showMeter?: boolean
@@ -2814,6 +2880,7 @@ function LocalTile({
   reactionBurst?: RoomReactionBurst | null
   mirrorLocalPreview?: boolean
   showSoloViewerCopy?: boolean
+  tileMenuExtras?: SrtCopyMenuExtraItem[]
 }) {
   const mainVideoRef = useRef<HTMLVideoElement>(null)
 
@@ -2843,7 +2910,7 @@ function LocalTile({
       ) : null}
       {showAvatar ? (
         <div className="cam-off-avatar">
-          <ParticipantTileIdle name={name} avatarUrl={avatarUrl} peekUserId={peekUserId ?? undefined} />
+          <ParticipantTileIdle name={name} avatarUrl={avatarUrl} />
         </div>
       ) : null}
       {showMeter && !isMuted && <AudioMeter stream={stream} stereo />}
@@ -2888,6 +2955,8 @@ function LocalTile({
             roomId={roomId}
             tilePeerId={peerId}
             showSoloViewerCopy={showSoloViewerCopy}
+            extraMenuItems={tileMenuExtras.length > 0 ? tileMenuExtras : undefined}
+            showTileOverflowButton={tileMenuExtras.length > 0}
           >
             {videoInner}
             {reactionBurst ? <ReactionBurstOverlay key={reactionBurst.id} burst={reactionBurst} /> : null}

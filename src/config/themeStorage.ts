@@ -2,6 +2,8 @@ export const LS_APP_THEME = 'vmix_ui_theme'
 
 export type AppTheme = 'dark' | 'light' | 'auto'
 
+type ResolvedUiTheme = 'light' | 'dark'
+
 let mediaListener: ((this: MediaQueryList, ev: MediaQueryListEvent) => void) | null = null
 let boundMql: MediaQueryList | null = null
 
@@ -18,17 +20,17 @@ function prefersDarkScheme(): boolean {
   return window.matchMedia('(prefers-color-scheme: dark)').matches
 }
 
-/** Эффективная светлая/тёмная тема с учётом режима «авто». */
-export function resolveAppTheme(theme: AppTheme): 'light' | 'dark' {
+/** Эффективная тема для DOM (`data-theme`): светлая или тёмная; «авто» → системная. */
+export function resolveAppTheme(theme: AppTheme): ResolvedUiTheme {
   if (theme === 'light') return 'light'
   if (theme === 'dark') return 'dark'
   return prefersDarkScheme() ? 'dark' : 'light'
 }
 
-function applyResolved(lightOrDark: 'light' | 'dark'): void {
+function applyResolved(mode: ResolvedUiTheme): void {
   if (typeof document === 'undefined') return
   const root = document.documentElement
-  if (lightOrDark === 'light') {
+  if (mode === 'light') {
     root.dataset.theme = 'light'
   } else {
     delete root.dataset.theme
@@ -39,6 +41,7 @@ export function getStoredTheme(): AppTheme {
   if (typeof window === 'undefined') return 'auto'
   try {
     const v = localStorage.getItem(LS_APP_THEME)
+    if (v === 'glass') return 'dark'
     if (v === 'light' || v === 'dark' || v === 'auto') return v
   } catch {
     /* noop */
@@ -54,7 +57,7 @@ export function setStoredTheme(theme: AppTheme): void {
   }
 }
 
-/** Синхронизирует `data-theme` на `<html>` с выбранной темой; в режиме `auto` подписывается на смену системной темы. */
+/** Синхронизирует `data-theme` на `<html>` (`light` или без атрибута для тёмной); в режиме `auto` подписывается на смену системной темы. */
 export function applyTheme(theme: AppTheme): void {
   if (typeof document === 'undefined') return
   clearSystemThemeListener()

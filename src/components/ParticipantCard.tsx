@@ -33,8 +33,8 @@ interface Props {
   showSoloViewerCopy?: boolean
   guestMute?: { show: boolean; onMute: () => void }
   guestKick?: { show: boolean; onKick: () => void; onBan?: () => void }
-  onOpenDirectChat?: (participant: RemoteParticipant) => void
-  currentUserId?: string | null
+  /** Пункты меню плитки (личный чат, контакты, закреп на сцене — задаёт родитель). */
+  extraMenuItems?: SrtCopyMenuExtraItem[]
   /** Статус контактов для участника с authUserId */
   contactStatus?: ContactStatus | null
   /** Добавить / убрать из контактов (чужой залогиненный участник) */
@@ -52,8 +52,7 @@ export function ParticipantCard({
   showSoloViewerCopy = true,
   guestMute,
   guestKick,
-  onOpenDirectChat,
-  currentUserId,
+  extraMenuItems,
   contactStatus,
   onToggleFavorite,
 }: Props) {
@@ -87,33 +86,6 @@ export function ParticipantCard({
     Boolean(getPeerUplinkVideoQuality && hasIncomingPicture),
     fetchInboundQuality,
   )
-
-  const extraMenuItems = useMemo((): SrtCopyMenuExtraItem[] => {
-    const uid = participant.authUserId?.trim()
-    const me = currentUserId?.trim()
-    const out: SrtCopyMenuExtraItem[] = []
-    if (uid && me && uid !== me && onOpenDirectChat) {
-      out.push({
-        key: 'dm',
-        label: 'Личный чат',
-        onSelect: () => onOpenDirectChat(participant),
-      })
-    }
-    if (uid && me && uid !== me && onToggleFavorite) {
-      out.push({
-        key: 'fav',
-        label: contactStatus?.pinnedByMe ? 'Убрать из контактов' : 'Добавить в контакты',
-        onSelect: onToggleFavorite,
-      })
-    }
-    return out
-  }, [
-    participant,
-    currentUserId,
-    onOpenDirectChat,
-    onToggleFavorite,
-    contactStatus?.pinnedByMe,
-  ])
 
   useEffect(() => {
     if (mainVideoRef.current) mainVideoRef.current.srcObject = mainStream
@@ -149,7 +121,7 @@ export function ParticipantCard({
           showSoloViewerCopy={showSoloViewerCopy}
           guestMute={guestMute}
           guestKick={guestKick}
-          extraMenuItems={extraMenuItems}
+          extraMenuItems={extraMenuItems && extraMenuItems.length > 0 ? extraMenuItems : undefined}
           showTileOverflowButton
         >
           {hasVideo ? (
@@ -163,11 +135,7 @@ export function ParticipantCard({
           ) : null}
           {!hasVideo || !hasFrames ? (
             <div className="cam-off-avatar">
-              <ParticipantTileIdle
-                name={participant.name}
-                avatarUrl={participant.avatarUrl}
-                peekUserId={participant.authUserId?.trim() || undefined}
-              />
+              <ParticipantTileIdle name={participant.name} avatarUrl={participant.avatarUrl} />
             </div>
           ) : null}
           <audio ref={audioRef} autoPlay playsInline />
@@ -195,10 +163,7 @@ export function ParticipantCard({
       <div className="card-bar">
         <div className="card-bar-title">
           <span className="card-name">{participant.name}</span>
-          {onToggleFavorite &&
-          participant.authUserId?.trim() &&
-          currentUserId?.trim() &&
-          participant.authUserId.trim() !== currentUserId.trim() ? (
+          {onToggleFavorite && participant.authUserId?.trim() ? (
             <button
               type="button"
               className={`card-bar-fav${contactStatus?.pinnedByMe ? ' card-bar-fav--on' : ''}`}

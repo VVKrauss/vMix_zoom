@@ -31,8 +31,8 @@ const cycle: Record<AppTheme, AppTheme> = {
 
 const labelByTheme: Record<AppTheme, string> = {
   auto: 'Автотема (как в системе). Нажмите — светлая тема',
-  light: 'Светлая тема. Нажмите — тёмная',
-  dark: 'Тёмная тема. Нажмите — автотема',
+  light: 'Светлая тема. Нажмите — тёмную',
+  dark: 'Тёмная тема. Нажмите — автотему',
 }
 
 export function ThemeToggle({ variant = 'inline', className = '' }: Props) {

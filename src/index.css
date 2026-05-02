@@ -11,47 +11,54 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg:        #0d0d0d;
-  --surface:   #1a1a1a;
-  --surface2:  #242424;
-  --border:    #2e2e2e;
-  --text:      #f0f0f0;
-  --text-dim:  #888;
-  --red:       #d20000;
-  --red-dk:    #881919;
+  --glass-bg-base: #09090f;
+  --glass-mesh:
+    radial-gradient(ellipse 125% 95% at 12% 18%, rgba(140, 36, 48, 0.34) 0%, transparent 58%),
+    radial-gradient(ellipse 100% 85% at 88% 12%, rgba(52, 62, 125, 0.2) 0%, transparent 55%),
+    radial-gradient(ellipse 95% 80% at 45% 92%, rgba(82, 28, 38, 0.14) 0%, transparent 52%);
+  --bg: transparent;
+  --surface: rgba(24, 24, 30, 0.58);
+  --surface2: rgba(34, 34, 42, 0.48);
+  --border: rgba(255, 255, 255, 0.11);
+  --text: #f0f0f0;
+  --text-dim: rgba(185, 185, 195, 0.72);
+  --red: #d20000;
+  --red-dk: #881919;
   --red-hover: #b80000;
-  /* Красный знака REDFLOW в логотипе */
-  --logo-red:    #d20000;
+  --logo-red: #d20000;
   --logo-red-dk: #881919;
-  /* Градиент кнопок */
   --btn-red-grad: linear-gradient(180deg, #d20000 0%, #881919 100%);
   --btn-red-grad-hover: linear-gradient(180deg, #b80000 0%, #6e1313 100%);
-  /* Solo: «Назад» — средний серый между основным текстом и приглушённым */
-  --solo-back-muted: #a3a3a3;
-  --join-screen-radial: radial-gradient(ellipse at 50% 40%, #1a0000 0%, var(--bg) 70%);
-  --card-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
-  --font:      'Montserrat', system-ui, sans-serif;
-  --radius:    10px;
+  --solo-back-muted: #a8a8b2;
+  --join-screen-radial: none;
+  --card-shadow: 0 24px 64px rgba(0, 0, 0, 0.48);
+  --font: 'Montserrat', system-ui, sans-serif;
+  --radius: 10px;
 }
 
-/* Светлая тема: тёплый фон, спокойные приглушённые красные акценты */
+/* Светлая тема: те же принципы — матовое стекло, тёплая палитра */
 html[data-theme="light"] {
-  --bg:        #f6f1ef;
-  --surface:   #fffdfb;
-  --surface2:  #efe6e3;
-  --border:    #e0d4d0;
-  --text:      #2a2220;
-  --text-dim:  #6b5e5a;
-  --red:       #9e5c5c;
-  --red-dk:    #6d4343;
+  --glass-bg-base: #e8e2dd;
+  --glass-mesh:
+    radial-gradient(ellipse 118% 92% at 10% 14%, rgba(195, 115, 105, 0.26) 0%, transparent 56%),
+    radial-gradient(ellipse 100% 86% at 90% 10%, rgba(165, 145, 200, 0.14) 0%, transparent 54%),
+    radial-gradient(ellipse 92% 76% at 50% 94%, rgba(255, 212, 198, 0.24) 0%, transparent 50%);
+  --bg: transparent;
+  --surface: rgba(255, 253, 251, 0.76);
+  --surface2: rgba(246, 240, 236, 0.62);
+  --border: rgba(95, 72, 68, 0.2);
+  --text: #2a2220;
+  --text-dim: #6b5e5a;
+  --red: #9e5c5c;
+  --red-dk: #6d4343;
   --red-hover: #8a5050;
-  --logo-red:    #8f4f4f;
+  --logo-red: #8f4f4f;
   --logo-red-dk: #5c3838;
   --btn-red-grad: linear-gradient(180deg, #a86565 0%, #6d4343 100%);
   --btn-red-grad-hover: linear-gradient(180deg, #985a5a 0%, #5a3636 100%);
   --solo-back-muted: #7a6c68;
-  --join-screen-radial: radial-gradient(ellipse at 50% 36%, rgba(160, 90, 88, 0.14) 0%, var(--bg) 72%);
-  --card-shadow: 0 20px 56px rgba(80, 40, 40, 0.08);
+  --join-screen-radial: none;
+  --card-shadow: 0 20px 56px rgba(80, 40, 40, 0.1);
 }
 
 .join-screen--themed {
@@ -87,6 +94,16 @@ html[data-theme="light"] {
 .theme-toggle .theme-toggle__fi {
   font-size: 18px;
   line-height: 1;
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  .join-card,
+  .theme-toggle,
+  .dashboard-topbar,
+  .dashboard-sidebar {
+    backdrop-filter: blur(18px) saturate(1.2);
+    -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  }
 }
 
 .theme-toggle--join-corner {
@@ -341,7 +358,9 @@ html[data-theme="light"] .reaction-emoji-btn:hover {
 
 
 html[data-theme="light"] .srt-copy-menu {
-  box-shadow: 0 12px 36px rgba(60, 30, 30, 0.12);
+  background: color-mix(in srgb, var(--glass-bg-base) 93%, var(--surface));
+  border-color: color-mix(in srgb, var(--border) 82%, rgba(255, 255, 255, 0.92));
+  box-shadow: 0 12px 36px rgba(60, 30, 30, 0.14);
 }
 
 html[data-theme="light"] .srt-copy-menu__btn {
@@ -726,11 +745,20 @@ html[data-theme="light"] .dashboard-topbar__circle-action--primary:hover {
 }
 
 /* Ширина мобильного блока — то же число, что MOBILE_MAX_WIDTH_PX в src/config/uiBreakpoints.ts */
-html,
+html {
+  width: 100%;
+  background-color: var(--glass-bg-base);
+  background-image: var(--glass-mesh);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  color: var(--text);
+  font-family: var(--font);
+}
+
 body,
 #root {
   width: 100%;
-  background: var(--bg);
+  background: transparent;
   color: var(--text);
   font-family: var(--font);
 }
@@ -777,8 +805,7 @@ html.app-root--room #root {
   justify-content: center;
   min-height: 100dvh;
   height: 100%;
-  background: var(--join-screen-radial);
-  background-color: var(--bg);
+  background: transparent;
 }
 
 .join-card {
@@ -3682,9 +3709,7 @@ html.app-root--room #root {
   height: calc(100dvh - var(--dashboard-topbar-height));
   padding: 20px 12px;
   border-right: 1px solid var(--border);
-  background:
-    linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,0)),
-    rgba(255,255,255,.015);
+  background: var(--surface);
 }
 
 .dashboard-sidebar__nav {
