@@ -6,6 +6,18 @@ import type { ReactionEmoji } from '../types/roomComms'
 /** Роли, которым доступна очередь запросов на вступление в группу/канал. */
 export const MESSENGER_JOIN_REQUEST_MANAGER_ROLES = new Set(['owner', 'admin', 'moderator'])
 
+/**
+ * Группа: владелец и админ. Канал: также модератор (как у пункта «Редактировать» в карточке беседы).
+ */
+export function canViewMessengerConversationAdminStats(
+  kind: MessengerConversationSummary['kind'],
+  role: string | null,
+): boolean {
+  if (!role || (kind !== 'group' && kind !== 'channel')) return false
+  if (kind === 'group') return role === 'owner' || role === 'admin'
+  return role === 'owner' || role === 'admin' || role === 'moderator'
+}
+
 export function formatDateTime(value: string): string {
   const dt = new Date(value)
   if (Number.isNaN(dt.getTime())) return '—'

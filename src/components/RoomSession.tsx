@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import '../styles/room-page.css'
 import { useNavigate } from 'react-router-dom'
 import { useLocalStorageBool } from '../hooks/useLocalStorage'
 import { useRoom, type JoinRoomMediaOptions, type RoomStatus, type RoomClosedReason } from '../hooks/useRoom'
@@ -12,6 +13,8 @@ import { replaceRoomInBrowserUrl } from '../utils/soloViewerParams'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
+import { useIsDbSpaceRoomHost } from '../hooks/useSpaceRoomHost'
+import { useSpaceRoomSettings } from '../hooks/useSpaceRoomSettings'
 import {
   clearHostSessionIfMatches,
   clearPendingHostClaim,
@@ -189,6 +192,22 @@ export function RoomSession({ roomId }: Props) {
     roomClosedReason,
   } = useRoom(roomActivityNotifyRef)
 
+  const slugForMeta = (connectedRoomId ?? roomId).trim()
+  const isDbSpaceRoomHostByHook = useIsDbSpaceRoomHost(slugForMeta || undefined, user?.id)
+  const { row: spaceRoomSettingsRow } = useSpaceRoomSettings(roomId)
+
+  const isRoomLeaveAuthority = useMemo(() => {
+    const rid = (connectedRoomId ?? roomId).trim()
+    if (!rid) return false
+    const uid = user?.id
+    const isRoomSpaceAdmin = Boolean(
+      uid && spaceRoomSettingsRow?.roomAdminUserIds.some((id) => id === uid),
+    )
+    return isSessionHostFor(rid) || isDbSpaceRoomHostByHook || isRoomSpaceAdmin
+  }, [connectedRoomId, roomId, user?.id, isDbSpaceRoomHostByHook, spaceRoomSettingsRow?.roomAdminUserIds])
+
+  const leaveShowStaffForceEndOption = canAccessAdminPanel && !isRoomLeaveAuthority
+
   useEffect(() => {
     if (status !== 'connected') return
     document.documentElement.classList.add('app-root--room')
@@ -331,11 +350,17 @@ export function RoomSession({ roomId }: Props) {
     setName(n)
     writeRoomAutoResume({ roomId: trimmedRid, name: n.trim(), preset, media })
     replaceRoomInBrowserUrl(rid, { removePeer: true })
+    const joinStatus = await getSpaceRoomJoinStatus(trimmedRid, user?.id ?? null)
+    const canManageRoom =
+      isSessionHostFor(trimmedRid) ||
+      canAccessAdminPanel ||
+      joinStatus.isDbHost ||
+      joinStatus.isRoomSpaceAdmin
     join(n, rid, preset, {
       ...media,
       avatarUrl: (user?.user_metadata?.avatar_url as string | undefined) ?? null,
       authUserId: user?.id ?? null,
-      canManageRoom: isSessionHostFor(trimmedRid) || canAccessAdminPanel,
+      canManageRoom,
     })
   }, [user, canAccessAdminPanel, join])
 
@@ -364,23 +389,30 @@ export function RoomSession({ roomId }: Props) {
     await executeJoin(n, rid, preset, media, hostCreateOptions ?? null)
   }, [executeJoin])
 
-  const handleLeaveRoom = async () => {
+  const handleLeaveRoom = async (options?: { endForAll?: boolean }) => {
     if (leaveBusy) return
     const rid = (connectedRoomId ?? roomId).trim()
-    const canEndRoomForEveryone = isSessionHostFor(rid) || canAccessAdminPanel
+    const wantEndForAll = options?.endForAll === true
+    const mayEndForAll = isRoomLeaveAuthority || canAccessAdminPanel
     const leavePayload = {
       roomId: rid,
       userId: user?.id ?? null,
       isSessionHost: isSessionHostFor(rid),
-      canEndRoomForEveryone,
+      wantEndForAll,
+      mayEndForAll,
+      isRoomLeaveAuthority,
       connectedRoomId,
       routeRoomId: roomId,
     }
     console.log('[room-session] handleLeaveRoom', leavePayload)
+    if (wantEndForAll && !mayEndForAll) {
+      console.warn('[room-session] handleLeaveRoom: endForAll not allowed')
+      return
+    }
     setLeaveBusy(true)
     try {
       setChatOpen(false)
-      if (canEndRoomForEveryone) {
+      if (wantEndForAll) {
         const res = await endRoomForAll()
         if (!res.ok) {
           console.error('[room-session] endRoomForAll failed', { roomId: rid, error: res.error })
@@ -473,6 +505,8 @@ export function RoomSession({ roomId }: Props) {
         onToggleMute={toggleMute}
         onToggleCam={toggleCam}
         onLeave={handleLeaveRoom}
+        leaveShowStaffForceEndOption={leaveShowStaffForceEndOption}
+        leaveBusy={leaveBusy}
         onSwitchCamera={switchCamera}
         onSwitchMic={switchMic}
         activePreset={activePreset}
@@ -515,7 +549,7 @@ export function RoomSession({ roomId }: Props) {
         studioServerLogLines={studioServerLogLines}
         connectionState={connectionState}
         reconnectAttempt={reconnectAttempt}
-        leaveEndsRoomForAll={isSessionHostFor((connectedRoomId ?? roomId).trim()) || canAccessAdminPanel}
+        leaveEndsRoomForAll={isRoomLeaveAuthority}
       />
     )
   }

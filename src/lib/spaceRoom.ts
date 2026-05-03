@@ -278,40 +278,56 @@ export type SpaceRoomJoinDenial =
   | 'banned'
   | 'approval_required'
 
+export type SpaceRoomJoinStatusResult = {
+  joinable: boolean
+  denial: SpaceRoomJoinDenial
+  isDbHost: boolean
+  /** Пользователь в `space_rooms.room_admin_user_ids` (со-админ комнаты). */
+  isRoomSpaceAdmin: boolean
+}
+
 export async function getSpaceRoomJoinStatus(
   slug: string,
   authUserId?: string | null,
-): Promise<{ joinable: boolean; denial: SpaceRoomJoinDenial; isDbHost: boolean }> {
+): Promise<SpaceRoomJoinStatusResult> {
   const trimmed = slug.trim()
-  if (!trimmed) return { joinable: false, denial: 'closed_or_missing', isDbHost: false }
+  if (!trimmed) {
+    return { joinable: false, denial: 'closed_or_missing', isDbHost: false, isRoomSpaceAdmin: false }
+  }
   if (matchesPendingHostClaim(trimmed) || isSessionHostFor(trimmed)) {
-    return { joinable: true, denial: 'none', isDbHost: false }
+    return { joinable: true, denial: 'none', isDbHost: false, isRoomSpaceAdmin: false }
   }
   const { data, error } = await supabase
     .from('space_rooms')
-    .select('status, host_user_id, retain_instance, access_mode, created_at, banned_user_ids, approved_joiners')
+    .select(
+      'status, host_user_id, retain_instance, access_mode, created_at, banned_user_ids, approved_joiners, room_admin_user_ids',
+    )
     .eq('slug', trimmed)
     .maybeSingle()
   if (error) {
     console.warn('getSpaceRoomJoinStatus:', error.message)
-    return { joinable: false, denial: 'closed_or_missing', isDbHost: false }
+    return { joinable: false, denial: 'closed_or_missing', isDbHost: false, isRoomSpaceAdmin: false }
   }
   if (!data || data.status !== 'open') {
-    return { joinable: false, denial: 'closed_or_missing', isDbHost: false }
+    return { joinable: false, denial: 'closed_or_missing', isDbHost: false, isRoomSpaceAdmin: false }
   }
 
   const hostId = typeof data.host_user_id === 'string' ? data.host_user_id : null
   const isDbHost = Boolean(authUserId && hostId && authUserId === hostId)
+  const roomAdmins: string[] = Array.isArray(data.room_admin_user_ids)
+    ? data.room_admin_user_ids.filter((x): x is string => typeof x === 'string')
+    : []
+  const isRoomSpaceAdmin = Boolean(authUserId && roomAdmins.includes(authUserId))
 
   // Проверка бана раньше всего остального
   const bannedIds: string[] = Array.isArray(data.banned_user_ids) ? data.banned_user_ids : []
   if (authUserId && bannedIds.includes(authUserId)) {
-    return { joinable: false, denial: 'banned', isDbHost: false }
+    return { joinable: false, denial: 'banned', isDbHost: false, isRoomSpaceAdmin: false }
   }
 
   // Хост всегда входит
   if (isDbHost) {
-    return { joinable: true, denial: 'none', isDbHost: true }
+    return { joinable: true, denial: 'none', isDbHost: true, isRoomSpaceAdmin }
   }
 
   const accessMode = typeof data.access_mode === 'string' ? data.access_mode : 'link'
@@ -319,13 +335,13 @@ export async function getSpaceRoomJoinStatus(
   if (accessMode === 'approval') {
     const approvedIds: string[] = Array.isArray(data.approved_joiners) ? data.approved_joiners : []
     if (authUserId && approvedIds.includes(authUserId)) {
-      return { joinable: true, denial: 'none', isDbHost: false }
+      return { joinable: true, denial: 'none', isDbHost: false, isRoomSpaceAdmin }
     }
-    return { joinable: false, denial: 'approval_required', isDbHost: false }
+    return { joinable: false, denial: 'approval_required', isDbHost: false, isRoomSpaceAdmin }
   }
 
   if (accessMode === 'invite_only') {
-    return { joinable: false, denial: 'invite_expired', isDbHost: false }
+    return { joinable: false, denial: 'invite_expired', isDbHost: false, isRoomSpaceAdmin }
   }
 
   const retain = Boolean(data.retain_instance)
@@ -336,11 +352,11 @@ export async function getSpaceRoomJoinStatus(
       Date.now() - createdMs > SPACE_ROOM_TEMPORARY_INVITE_MINUTES * 60_000
     ) {
       // Окно прямой ссылки истекло, но комната ещё открыта — переводим на ручное одобрение
-      return { joinable: false, denial: 'approval_required', isDbHost: false }
+      return { joinable: false, denial: 'approval_required', isDbHost: false, isRoomSpaceAdmin }
     }
   }
 
-  return { joinable: true, denial: 'none', isDbHost: false }
+  return { joinable: true, denial: 'none', isDbHost: false, isRoomSpaceAdmin }
 }
 
 /** Постоянные комнаты пользователя как хоста (`retain_instance`), для кабинета «Мои комнаты». */

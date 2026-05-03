@@ -108,6 +108,40 @@ export default defineConfig(({ mode }) => {
   const secure = target.startsWith('https')
   const appVersion = computeAppVersion()
 
+  let supabaseApiHost = ''
+  try {
+    const raw = String(env.VITE_SUPABASE_URL ?? '').trim().replace(/\/$/, '')
+    if (raw) supabaseApiHost = new URL(raw).hostname.toLowerCase()
+  } catch {
+    supabaseApiHost = ''
+  }
+
+  /** Для Workbox в sw.js нельзя ссылаться на переменные из vite-конфига внутри urlPattern — только литералы / RegExp на этапе сборки. */
+  function escapeRegExpLiteral(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  }
+  const supabaseRuntimeCaching = [
+    {
+      /** Cloud: *.supabase.co — без замыканий из vite config. */
+      urlPattern: ({ url }: { url: URL }) => {
+        const h = url.hostname.toLowerCase()
+        return h.endsWith('.supabase.co')
+      },
+      handler: 'NetworkOnly' as const,
+    },
+    ...(supabaseApiHost
+      ? [
+          {
+            urlPattern: new RegExp(
+              `^https?:\\/\\/${escapeRegExpLiteral(supabaseApiHost)}(?=/|:|\\?|#|$)`,
+              'i',
+            ),
+            handler: 'NetworkOnly' as const,
+          },
+        ]
+      : []),
+  ]
+
   return {
     define: {
       __APP_VERSION__: JSON.stringify(appVersion),
@@ -148,19 +182,27 @@ export default defineConfig(({ mode }) => {
         workbox: {
           importScripts: ['push-sw.js'],
           globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff2}'],
+          /** Не тащить в precache тяжёлые чанки комнаты/WebRTC — они подгружаются по маршруту. */
+          globIgnores: ['**/webrtc-*.js', '**/RoomSession-*.js', '**/StudioModeWorkspace-*.js'],
           navigateFallback: '/index.html',
           navigateFallbackDenylist: [/^\/socket\.io/, /^\/api\//],
-          runtimeCaching: [
-            {
-              /** REST, Realtime (wss), Storage — не кэшируем в SW, мессенджер всегда из сети. */
-              urlPattern: ({ url }) => /\.supabase\.co$/i.test(url.hostname),
-              handler: 'NetworkOnly',
-            },
-          ],
+          runtimeCaching: supabaseRuntimeCaching,
         },
       }),
     ],
     build: {
+      /** Не вешать `<link rel="modulepreload">` на тяжёлые ленивые чанки — иначе они качаются сразу с index. */
+      modulePreload: {
+        resolveDependencies(_filename, deps) {
+          return deps.filter(
+            (d) =>
+              !d.includes('/webrtc-') &&
+              !d.includes('/RoomSession-') &&
+              !d.includes('/StudioModeWorkspace-') &&
+              !d.includes('/supabase-'),
+          )
+        },
+      },
       rollupOptions: {
         output: {
           manualChunks(id) {

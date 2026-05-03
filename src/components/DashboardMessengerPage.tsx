@@ -93,6 +93,7 @@ import {
   pickDefaultConversationId,
   sortDirectMessagesChrono,
   buildMessengerForwardNav,
+  canViewMessengerConversationAdminStats,
 } from '../lib/messengerDashboardUtils'
 import { useLinkPreviewFromText } from '../hooks/useLinkPreviewFromText'
 import { buildLinkMetaForMessageBody, ensureLinkPreviewForBody } from '../lib/linkPreview'
@@ -161,6 +162,7 @@ import { GroupThreadPane } from './messenger/GroupThreadPane'
 import { ChannelThreadPane } from './messenger/ChannelThreadPane'
 import { MessengerThreadComposer } from './messenger/MessengerThreadComposer'
 import { MessengerConversationInfoModal } from './messenger/MessengerConversationInfoModal'
+import { MessengerConversationStatsModal } from './messenger/MessengerConversationStatsModal'
 import { MessengerCreateConversationModal } from './messenger/MessengerCreateConversationModal'
 import { MessengerImageLightbox } from './messenger/MessengerImageLightbox'
 import { MessengerJoinRequestsModal } from './messenger/MessengerJoinRequestsModal'
@@ -313,6 +315,12 @@ export function DashboardMessengerPage() {
   const [conversationStaffTargetUserId, setConversationStaffTargetUserId] = useState('')
   const [conversationStaffNewRole, setConversationStaffNewRole] = useState<ConversationStaffRole>('moderator')
   const [conversationStaffMutating, setConversationStaffMutating] = useState(false)
+  const [conversationStatsOpen, setConversationStatsOpen] = useState(false)
+  const [conversationStatsTarget, setConversationStatsTarget] = useState<{
+    id: string
+    kind: 'group' | 'channel'
+    title: string
+  } | null>(null)
   const [sending, setSending] = useState(false)
   const [photoUploading, setPhotoUploading] = useState(false)
   const [voiceUploading, setVoiceUploading] = useState(false)
@@ -1666,6 +1674,19 @@ export function DashboardMessengerPage() {
       ? sortedItems.find((i) => i.id === conversationInfoId) ??
         (activeConversation?.id === conversationInfoId ? activeConversation : null)
       : null
+
+  const openConversationStatsFromInfo = useCallback(() => {
+    const conv = conversationInfoConv
+    if (!conv || (conv.kind !== 'group' && conv.kind !== 'channel')) return
+    if (!canViewMessengerConversationAdminStats(conv.kind, conversationInfoRole)) return
+    setConversationStatsTarget({ id: conv.id, kind: conv.kind, title: conv.title })
+    setConversationStatsOpen(true)
+  }, [conversationInfoConv, conversationInfoRole])
+
+  const closeConversationStats = useCallback(() => {
+    setConversationStatsOpen(false)
+    setConversationStatsTarget(null)
+  }, [])
 
   const activeAvatarUrl =
     threadHeadConversation?.kind === 'direct'
@@ -3886,6 +3907,15 @@ export function DashboardMessengerPage() {
         onCancelEdit={cancelConversationInfoEdit}
         onApplyStaffRole={() => void applyConversationStaffRole()}
         onLeaveConfirm={() => void confirmLeaveConversation()}
+        onOpenConversationStats={openConversationStatsFromInfo}
+      />
+
+      <MessengerConversationStatsModal
+        open={conversationStatsOpen}
+        conversationId={conversationStatsTarget?.id ?? null}
+        conversationKind={conversationStatsTarget?.kind ?? null}
+        title={conversationStatsTarget?.title ?? ''}
+        onClose={closeConversationStats}
       />
 
       <MessengerCreateConversationModal

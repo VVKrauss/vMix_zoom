@@ -14,7 +14,7 @@ const ALPHA_TOOLTIP =
 
 export function HomePage() {
   const navigate = useNavigate()
-  const { user, loading, signOut } = useAuth()
+  const { user, loading, signOut, authBootstrapError, clearAuthBootstrapError } = useAuth()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const messengerUnreadCount = useMessengerUnreadCount()
   const [joinId, setJoinId] = useState('')
@@ -92,6 +92,15 @@ export function HomePage() {
           <div className="join-logo-static" aria-hidden>
             <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
           </div>
+
+        {!loading && authBootstrapError ? (
+          <div className="join-bootstrap-alert join-bootstrap-alert--home" role="alert">
+            <p className="join-error join-bootstrap-alert__text">{authBootstrapError}</p>
+            <button type="button" className="login-switch__btn join-bootstrap-alert__dismiss" onClick={clearAuthBootstrapError}>
+              Скрыть
+            </button>
+          </div>
+        ) : null}
 
         {!loading ? (
           <div className="home-auth-block">

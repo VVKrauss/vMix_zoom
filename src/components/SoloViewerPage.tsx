@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import '../styles/room-page.css'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import { useSoloViewer } from '../hooks/useSoloViewer'
 

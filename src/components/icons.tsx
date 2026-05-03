@@ -7,7 +7,7 @@ export type FiRrIconProps = {
 
 /**
  * Иконка из [@flaticon/flaticon-uicons](https://www.flaticon.com/uicons) (regular rounded, префикс `fi-rr-`).
- * Стили `regular/rounded` подключены в `main.tsx`. Лицензия пакета требует атрибуции Flaticon там, где это уместно.
+ * Стили `regular/rounded` подключены в `main.tsx` (глобально — иконки на всех экранах). Лицензия пакета требует атрибуции Flaticon там, где это уместно.
  */
 export function FiRrIcon({ name, className, 'aria-hidden': ariaHidden, ...rest }: FiRrIconProps) {
   const key = name.trim()
@@ -139,6 +139,11 @@ export function MessengerFilterGroupIcon({ className }: { className?: string } =
 /** Фильтр: каналы — эфир / трансляция (@flaticon uicons: `fi-rr-signal-stream`). */
 export function MessengerFilterChannelIcon({ className }: { className?: string } = {}) {
   return <FiRrIcon name="signal-stream" className={className} />
+}
+
+/** Статистика группы/канала — карточка беседы в мессенджере. */
+export function MessengerStatsIcon({ className }: { className?: string } = {}) {
+  return <FiRrIcon name="chart-line-up" className={className} />
 }
 
 export function StarIcon({ filled = false }: { filled?: boolean }) {

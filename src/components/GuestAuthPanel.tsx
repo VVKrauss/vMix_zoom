@@ -12,7 +12,7 @@ type Props = {
 }
 
 export function GuestAuthPanel({ onExpandedChange, expandSignal = 0 }: Props) {
-  const { user, loading, signIn, signUp } = useAuth()
+  const { user, loading, signIn, signUp, authBootstrapError, clearAuthBootstrapError } = useAuth()
   const [expanded, setExpanded] = useState(false)
   const [mode, setMode] = useState<Mode>('register')
   const [email, setEmail] = useState('')
@@ -107,6 +107,15 @@ export function GuestAuthPanel({ onExpandedChange, expandSignal = 0 }: Props) {
                 </button>
               ) : null}
             </div>
+
+            {authBootstrapError ? (
+              <div className="join-bootstrap-alert guest-auth-panel__bootstrap-alert" role="alert">
+                <p className="join-error join-bootstrap-alert__text">{authBootstrapError}</p>
+                <button type="button" className="login-switch__btn join-bootstrap-alert__dismiss" onClick={clearAuthBootstrapError}>
+                  Скрыть
+                </button>
+              </div>
+            ) : null}
 
             <div className="guest-auth-panel__body">
               {confirmSentTo ? (

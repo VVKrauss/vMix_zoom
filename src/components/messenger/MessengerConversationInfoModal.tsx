@@ -4,11 +4,13 @@ import { PillToggle } from '../PillToggle'
 import type { MessengerConversationSummary } from '../../lib/messengerConversations'
 import type { ConversationStaffMember, ConversationStaffRole } from '../../lib/conversationStaff'
 import {
+  canViewMessengerConversationAdminStats,
   conversationInitial,
   isMessengerClosedGroupOrChannel,
   messengerContactDisplayName,
   messengerStaffRoleShortLabel,
 } from '../../lib/messengerDashboardUtils'
+import { MessengerStatsIcon } from '../icons'
 import { useMessengerContactAliasesMap } from '../../hooks/useMessengerContactAliasesMap'
 import { MessengerClosedGcLockBadge } from './MessengerClosedGcLockBadge'
 
@@ -51,6 +53,8 @@ export type MessengerConversationInfoModalProps = {
   onCancelEdit: () => void
   onApplyStaffRole: () => void
   onLeaveConfirm: () => void
+  /** Статистика (owner/admin группы; owner/admin/moderator канала). */
+  onOpenConversationStats?: () => void
 }
 
 export function MessengerConversationInfoModal({
@@ -92,6 +96,7 @@ export function MessengerConversationInfoModal({
   onCancelEdit,
   onApplyStaffRole,
   onLeaveConfirm,
+  onOpenConversationStats,
 }: MessengerConversationInfoModalProps) {
   useEffect(() => {
     if (!open) return
@@ -128,20 +133,36 @@ export function MessengerConversationInfoModal({
         {conversationInfoError ? <p className="join-error">{conversationInfoError}</p> : null}
 
         <div className="messenger-settings-modal__section">
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <div className="dashboard-messenger__gc-avatar-lock-wrap dashboard-messenger__gc-avatar-lock-wrap--modal">
-              <button type="button" className="dashboard-messenger__thread-head-center-avatar" aria-label="Логотип">
-                {avatarUrl ? <img src={avatarUrl} alt="" /> : <span>{conversationInitial(c.title)}</span>}
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flex: 1, minWidth: 0 }}>
+              <div className="dashboard-messenger__gc-avatar-lock-wrap dashboard-messenger__gc-avatar-lock-wrap--modal">
+                <button type="button" className="dashboard-messenger__thread-head-center-avatar" aria-label="Логотип">
+                  {avatarUrl ? <img src={avatarUrl} alt="" /> : <span>{conversationInitial(c.title)}</span>}
+                </button>
+                {isMessengerClosedGroupOrChannel(c) ? <MessengerClosedGcLockBadge size="modal" /> : null}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                <strong style={{ overflowWrap: 'anywhere' }}>{c.title}</strong>
+                <span className="messenger-settings-modal__hint">
+                  {(c.memberCount ?? 0)} участн.
+                  {c.publicNick?.trim() ? ` · @${c.publicNick.trim()}` : ''}
+                </span>
+              </div>
+            </div>
+            {conversationInfoRole &&
+            canViewMessengerConversationAdminStats(c.kind, conversationInfoRole) &&
+            onOpenConversationStats ? (
+              <button
+                type="button"
+                className="dashboard-messenger__list-head-btn"
+                aria-label="Статистика"
+                title="Статистика"
+                disabled={conversationInfoLoading}
+                onClick={() => onOpenConversationStats()}
+              >
+                <MessengerStatsIcon />
               </button>
-              {isMessengerClosedGroupOrChannel(c) ? <MessengerClosedGcLockBadge size="modal" /> : null}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <strong>{c.title}</strong>
-              <span className="messenger-settings-modal__hint">
-                {(c.memberCount ?? 0)} участн.
-                {c.publicNick?.trim() ? ` · @${c.publicNick.trim()}` : ''}
-              </span>
-            </div>
+            ) : null}
           </div>
         </div>
 
@@ -172,10 +193,7 @@ export function MessengerConversationInfoModal({
           </p>
         </div>
 
-        {conversationInfoRole &&
-        (c.kind === 'group'
-          ? ['owner', 'admin'].includes(conversationInfoRole)
-          : ['owner', 'admin', 'moderator'].includes(conversationInfoRole)) ? (
+        {conversationInfoRole && canViewMessengerConversationAdminStats(c.kind, conversationInfoRole) ? (
           <div className="messenger-settings-modal__section">
             <button
               type="button"

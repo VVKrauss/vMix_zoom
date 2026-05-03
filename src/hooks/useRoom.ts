@@ -2050,8 +2050,9 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   }, [])
 
   /**
-   * Выгнать участника из комнаты (только хост / canManageRoom).
-   * Сервер должен обработать `hostKickPeer`: найти сокет цели и отправить ей `kicked`.
+   * Выгнать участника из комнаты (сервер должен разрешить отправителю с `canManageRoom` из joinRoom:
+   * сессионный хост, хост/со-админ комнаты в БД, staff).
+   * Событие `hostKickPeer` → цель получает `kicked`.
    */
   const requestKickPeer = useCallback((targetPeerId: string) => {
     const sock = socketRef.current

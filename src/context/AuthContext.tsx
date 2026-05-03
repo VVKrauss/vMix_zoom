@@ -6,11 +6,20 @@ import { getEmailConfirmationRedirectUrl } from '../config/authUrls'
 import { clearDesktopRoomViewStorage } from '../config/roomUiStorage'
 import { HOST_SESSION_KEY, PENDING_HOST_CLAIM_KEY } from '../lib/spaceRoom'
 
+/** Дольше — считаем проверку сессии при старте неуспешной (обрывы до Supabase Auth из части сетей). */
+const SESSION_BOOTSTRAP_TIMEOUT_MS = 12_000
+
 interface AuthContextValue {
   user: User | null
   session: Session | null
   /** true пока идёт первоначальная проверка сессии */
   loading: boolean
+  /**
+   * Сообщение, если при старте не удалось получить сессию вовремя (сеть к серверу авторизации).
+   * Сбрасывается после успешного входа или через {@link clearAuthBootstrapError}.
+   */
+  authBootstrapError: string | null
+  clearAuthBootstrapError: () => void
   signUp: (email: string, password: string, displayName: string) => Promise<{ error: string | null }>
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
@@ -22,25 +31,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser]       = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [authBootstrapError, setAuthBootstrapError] = useState<string | null>(null)
+
+  const clearAuthBootstrapError = useCallback(() => {
+    setAuthBootstrapError(null)
+  }, [])
 
   useEffect(() => {
-    // Читаем текущую сессию при монтировании
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      setUser(data.session?.user ?? null)
-      setLoading(false)
-    })
+    let cancelled = false
 
-    // Слушаем изменения: вход, выход, рефреш токена
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    void (async () => {
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          window.setTimeout(() => reject(new Error('session_bootstrap_timeout')), SESSION_BOOTSTRAP_TIMEOUT_MS)
+        })
+        const { data, error } = await Promise.race([supabase.auth.getSession(), timeoutPromise])
+        if (cancelled) return
+        if (error) {
+          setAuthBootstrapError(error.message || 'Не удалось проверить вход. Обновите страницу или попробуйте позже.')
+          setSession(null)
+          setUser(null)
+          return
+        }
+        setSession(data.session)
+        setUser(data.session?.user ?? null)
+        setAuthBootstrapError(null)
+      } catch (e) {
+        if (cancelled) return
+        const timedOut = e instanceof Error && e.message === 'session_bootstrap_timeout'
+        setAuthBootstrapError(
+          timedOut
+            ? 'Не удалось проверить вход: сервер авторизации не ответил вовремя. Проверьте интернет или VPN и обновите страницу.'
+            : 'Не удалось проверить вход. Обновите страницу или попробуйте позже.',
+        )
+        setSession(null)
+        setUser(null)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession)
       setUser(newSession?.user ?? null)
+      if (newSession) setAuthBootstrapError(null)
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      cancelled = true
+      subscription.unsubscribe()
+    }
   }, [])
 
   const signUp = useCallback(async (email: string, password: string, displayName: string) => {
+    setAuthBootstrapError(null)
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -54,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signIn = useCallback(async (email: string, password: string) => {
+    setAuthBootstrapError(null)
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) return { error: error.message }
     clearDesktopRoomViewStorage()
@@ -71,7 +118,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signUp, signIn, signOut }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        session,
+        loading,
+        authBootstrapError,
+        clearAuthBootstrapError,
+        signUp,
+        signIn,
+        signOut,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )

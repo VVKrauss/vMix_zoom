@@ -691,21 +691,24 @@ html[data-theme="light"] .messenger-msg-menu.device-popover {
 
 html[data-theme="light"] .dashboard-messenger__messages-scroll,
 html[data-theme="light"] .dashboard-messenger__list,
-html[data-theme="light"] .dashboard-profile-modal__dialog .dashboard-profile-modal__scroll {
+html[data-theme="light"] .dashboard-profile-modal__dialog .dashboard-profile-modal__scroll,
+html[data-theme="light"] .messenger-settings-modal.messenger-stats-modal {
   scrollbar-color: rgba(158, 92, 92, 0.45) transparent;
   scrollbar-color: color-mix(in srgb, var(--red) 48%, var(--surface2)) transparent;
 }
 
 html[data-theme="light"] .dashboard-messenger__messages-scroll::-webkit-scrollbar-thumb,
 html[data-theme="light"] .dashboard-messenger__list::-webkit-scrollbar-thumb,
-html[data-theme="light"] .dashboard-profile-modal__dialog .dashboard-profile-modal__scroll::-webkit-scrollbar-thumb {
+html[data-theme="light"] .dashboard-profile-modal__dialog .dashboard-profile-modal__scroll::-webkit-scrollbar-thumb,
+html[data-theme="light"] .messenger-settings-modal.messenger-stats-modal::-webkit-scrollbar-thumb {
   background: rgba(158, 92, 92, 0.42);
   background: color-mix(in srgb, var(--red) 44%, var(--surface2));
 }
 
 html[data-theme="light"] .dashboard-messenger__messages-scroll::-webkit-scrollbar-thumb:hover,
 html[data-theme="light"] .dashboard-messenger__list::-webkit-scrollbar-thumb:hover,
-html[data-theme="light"] .dashboard-profile-modal__dialog .dashboard-profile-modal__scroll::-webkit-scrollbar-thumb:hover {
+html[data-theme="light"] .dashboard-profile-modal__dialog .dashboard-profile-modal__scroll::-webkit-scrollbar-thumb:hover,
+html[data-theme="light"] .messenger-settings-modal.messenger-stats-modal::-webkit-scrollbar-thumb:hover {
   background: rgba(138, 80, 80, 0.55);
   background: color-mix(in srgb, var(--red-hover) 55%, var(--surface2));
 }
@@ -1102,6 +1105,10 @@ html.app-root--room #root {
 .guest-auth-panel__toolbar-btn:hover {
   border-color: var(--red);
   color: var(--text);
+}
+
+.guest-auth-panel__bootstrap-alert {
+  padding: 10px 14px 0;
 }
 
 .guest-auth-panel__body {
@@ -1941,6 +1948,27 @@ html.app-root--room #root {
   padding: 10px 12px;
 }
 
+.join-bootstrap-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.join-bootstrap-alert--home {
+  margin-top: 12px;
+}
+
+.join-bootstrap-alert__text {
+  margin: 0;
+}
+
+.join-bootstrap-alert__dismiss {
+  align-self: flex-start;
+}
+
 
 /* ─── Dashboard page ──────────────────────────────────────────────────────── */
 .dashboard-page {
@@ -2588,6 +2616,148 @@ html.app-root--room #root {
 .messenger-settings-modal__cancel:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.messenger-stats-modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 28500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.messenger-settings-modal.messenger-stats-modal {
+  max-width: 440px;
+  max-height: min(90dvh, 720px);
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(210, 0, 0, 0.35) transparent;
+  scrollbar-color: color-mix(in srgb, var(--red) 42%, var(--surface2)) transparent;
+}
+
+.messenger-settings-modal.messenger-stats-modal::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.messenger-settings-modal.messenger-stats-modal::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.messenger-settings-modal.messenger-stats-modal::-webkit-scrollbar-thumb {
+  background: rgba(210, 0, 0, 0.32);
+  background: color-mix(in srgb, var(--red) 38%, var(--surface2));
+  border-radius: 10px;
+}
+
+.messenger-settings-modal.messenger-stats-modal::-webkit-scrollbar-thumb:hover {
+  background: rgba(210, 0, 0, 0.5);
+  background: color-mix(in srgb, var(--red) 58%, var(--surface2));
+}
+
+.messenger-stats-modal__metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.messenger-stats-modal__metric {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.messenger-stats-modal__metric-value {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.messenger-stats-modal__metric-label {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.25;
+}
+
+.messenger-stats-modal__daily {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 84px;
+  margin-top: 8px;
+}
+
+.messenger-stats-modal__daily-slot {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.messenger-stats-modal__daily-bar {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 4px 4px 2px 2px;
+  background: color-mix(in srgb, var(--accent, #22c55e) 70%, transparent);
+}
+
+.messenger-stats-modal__list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.messenger-stats-modal__list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.messenger-stats-modal__top {
+  margin: 8px 0 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.messenger-stats-modal__top li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.messenger-stats-modal__top-rank {
+  width: 22px;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.messenger-stats-modal__top-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.messenger-stats-modal__top-count {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .messenger-forward-modal-root {
@@ -10619,6 +10789,14 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   line-height: 1.5;
   color: var(--text-dim);
   margin: 0 0 24px;
+}
+
+.confirm-dialog__msg-note {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  margin: 0;
+  opacity: 0.95;
 }
 
 .create-room-options__fieldset {

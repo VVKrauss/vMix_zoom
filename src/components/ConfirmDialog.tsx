@@ -8,6 +8,8 @@ export interface ConfirmDialogProps {
   cancelLabel?: string
   /** Блокирует кнопку подтверждения (например, во время запроса). */
   confirmLoading?: boolean
+  /** Дополнительное действие между «Отмена» и основной кнопкой (например, опасная операция). */
+  extraAction?: { label: string; onClick: () => void; danger?: boolean }
   onConfirm: () => void
   onCancel: () => void
 }
@@ -19,6 +21,7 @@ export function ConfirmDialog({
   confirmLabel = 'Выйти',
   cancelLabel = 'Отмена',
   confirmLoading = false,
+  extraAction,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -65,6 +68,20 @@ export function ConfirmDialog({
           >
             {cancelLabel}
           </button>
+          {extraAction ? (
+            <button
+              type="button"
+              className={`confirm-dialog__btn${
+                extraAction.danger ? ' confirm-dialog__btn--danger' : ' confirm-dialog__btn--secondary'
+              }`}
+              disabled={confirmLoading}
+              onClick={() => {
+                if (!confirmLoading) extraAction.onClick()
+              }}
+            >
+              {extraAction.label}
+            </button>
+          ) : null}
           <button
             type="button"
             className="confirm-dialog__btn confirm-dialog__btn--primary"

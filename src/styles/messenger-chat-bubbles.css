@@ -39,6 +39,11 @@
   gap: 12px;
 }
 
+/* Время absolute — в потоке не участвует; отступ сверху даёт ≥10px до текста/картинки/аудио в теле. */
+.dashboard-messenger__message-bottom-row:has(.dashboard-messenger__bubble-time) {
+  padding-top: 10px;
+}
+
 .dashboard-messenger__bubble-time {
   position: absolute;
   left: 9px;

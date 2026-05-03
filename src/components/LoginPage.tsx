@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext'
 type Mode = 'login' | 'register'
 
 export function LoginPage() {
-  const { signIn, signUp } = useAuth()
+  const { signIn, signUp, authBootstrapError, clearAuthBootstrapError } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [sp] = useSearchParams()
@@ -57,6 +57,14 @@ export function LoginPage() {
           <Link to="/" className="join-logo-btn" aria-label="Главная">
             <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
           </Link>
+          {authBootstrapError ? (
+            <div className="join-bootstrap-alert" role="alert">
+              <p className="join-error join-bootstrap-alert__text">{authBootstrapError}</p>
+              <button type="button" className="login-switch__btn join-bootstrap-alert__dismiss" onClick={clearAuthBootstrapError}>
+                Скрыть
+              </button>
+            </div>
+          ) : null}
           <div className="confirm-sent">
             <div className="confirm-sent__icon" aria-hidden>✉️</div>
             <h2 className="confirm-sent__title">Подтвердите почту</h2>
@@ -82,6 +90,15 @@ export function LoginPage() {
         <Link to="/" className="join-logo-btn" aria-label="Главная">
           <img className="brand-logo brand-logo--join-h" src="/logo-h.png" alt="" draggable={false} />
         </Link>
+
+        {authBootstrapError ? (
+          <div className="join-bootstrap-alert" role="alert">
+            <p className="join-error join-bootstrap-alert__text">{authBootstrapError}</p>
+            <button type="button" className="login-switch__btn join-bootstrap-alert__dismiss" onClick={clearAuthBootstrapError}>
+              Скрыть
+            </button>
+          </div>
+        ) : null}
 
         <form onSubmit={handleSubmit} className="join-form">
           {mode === 'register' && (

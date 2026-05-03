@@ -1,4 +1,14 @@
-import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import React from 'react'
 import { BrandLogoLoader } from './BrandLogoLoader'
 import { GridTilePlaceholder } from './GridTilePlaceholder'
@@ -330,8 +340,12 @@ interface Props {
   isCamOff: boolean
   onToggleMute: () => void
   onToggleCam: () => void
-  onLeave: () => void
+  onLeave: (options?: { endForAll?: boolean }) => void | Promise<void>
   leaveEndsRoomForAll?: boolean
+  /** Админ платформы без роли хоста/со-админа: в диалоге выхода — кнопка принудительно завершить эфир. */
+  leaveShowStaffForceEndOption?: boolean
+  /** Блокировка кнопок диалога выхода (запрос в процессе). */
+  leaveBusy?: boolean
   onSwitchCamera: (id: string) => void
   onSwitchMic: (id: string) => void
   activePreset: VideoPreset
@@ -401,6 +415,8 @@ export function RoomPage({
   isMuted, isCamOff,
   onToggleMute, onToggleCam, onLeave,
   leaveEndsRoomForAll = false,
+  leaveShowStaffForceEndOption = false,
+  leaveBusy = false,
   onSwitchCamera, onSwitchMic,
   activePreset, onChangePreset,
   localScreenStream, localScreenPeerId, isScreenSharing, onToggleScreenShare, onStartScreenShare,
@@ -1429,14 +1445,29 @@ export function RoomPage({
     )
   }
 
-  const leaveMessage =
-    leaveEndsRoomForAll
-      ? leaveDialog && leaveDialog.others > 0
-        ? `В комнате ещё ${leaveDialog.others} ${ruParticipantsWord(leaveDialog.others)}. Звонок завершится для всех участников.`
-        : 'Звонок будет завершён для всех участников.'
-      : leaveDialog && leaveDialog.others > 0
+  const leaveMessage: ReactNode = (() => {
+    if (leaveEndsRoomForAll) {
+      if (leaveDialog && leaveDialog.others > 0) {
+        return `В комнате ещё ${leaveDialog.others} ${ruParticipantsWord(leaveDialog.others)}. Звонок завершится для всех участников.`
+      }
+      return 'Звонок будет завершён для всех участников.'
+    }
+    const continuation =
+      leaveDialog && leaveDialog.others > 0
         ? `В комнате ещё ${leaveDialog.others} ${ruParticipantsWord(leaveDialog.others)}. Для них звонок продолжится.`
         : 'Вы отключитесь от комнаты.'
+    if (leaveShowStaffForceEndOption) {
+      return (
+        <>
+          <p style={{ margin: '0 0 10px' }}>{continuation}</p>
+          <p className="confirm-dialog__msg-note">
+            По необходимости можно принудительно завершить звонок для всех участников — отдельная кнопка ниже.
+          </p>
+        </>
+      )
+    }
+    return continuation
+  })()
 
   const openLeaveDialog = (mode: 'home' | 'leave', others: number) => {
     setLeaveDialog({ mode, others })
@@ -1446,11 +1477,11 @@ export function RoomPage({
 
   const confirmLeave = () => {
     closeLeaveDialog()
-    onLeave()
+    void Promise.resolve(onLeave({ endForAll: leaveEndsRoomForAll }))
   }
 
   const onLogoHomeClick = () => {
-    if (remoteHumanPeers.length === 0) onLeave()
+    if (remoteHumanPeers.length === 0) void Promise.resolve(onLeave({ endForAll: leaveEndsRoomForAll }))
     else openLeaveDialog('home', remoteHumanPeers.length)
   }
 
@@ -1887,6 +1918,19 @@ export function RoomPage({
             : leaveDialog?.mode === 'home'
               ? 'На главную'
               : 'Выйти'
+        }
+        confirmLoading={leaveBusy}
+        extraAction={
+          leaveShowStaffForceEndOption && !leaveEndsRoomForAll && leaveDialog
+            ? {
+                label: 'Завершить для всех',
+                danger: true,
+                onClick: () => {
+                  closeLeaveDialog()
+                  void Promise.resolve(onLeave({ endForAll: true }))
+                },
+              }
+            : undefined
         }
         onCancel={closeLeaveDialog}
         onConfirm={confirmLeave}
