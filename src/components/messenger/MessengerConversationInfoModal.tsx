@@ -126,7 +126,7 @@ export function MessengerConversationInfoModal({
   return createPortal(
     <div className="messenger-settings-modal-root" role="dialog" aria-modal="true" aria-labelledby="messenger-conv-info-title">
       <button type="button" className="messenger-settings-modal-backdrop" aria-label="Закрыть" onClick={onClose} />
-      <div className="messenger-settings-modal">
+      <div className="messenger-settings-modal app-scroll">
         <h2 id="messenger-conv-info-title" className="messenger-settings-modal__title">
           {c.kind === 'channel' ? 'Канал' : 'Группа'}
         </h2>
@@ -325,7 +325,7 @@ export function MessengerConversationInfoModal({
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <select
-                      className="dashboard-messenger__list-search-input"
+                      className="app-select app-select--block"
                       value={conversationStaffTargetUserId}
                       onChange={(e) => setConversationStaffTargetUserId(e.target.value)}
                       disabled={conversationInfoLoading || conversationStaffMutating}
@@ -347,7 +347,7 @@ export function MessengerConversationInfoModal({
                       })}
                     </select>
                     <select
-                      className="dashboard-messenger__list-search-input"
+                      className="app-select app-select--block"
                       value={conversationStaffNewRole}
                       onChange={(e) => setConversationStaffNewRole(e.target.value as ConversationStaffRole)}
                       disabled={conversationInfoLoading || conversationStaffMutating}

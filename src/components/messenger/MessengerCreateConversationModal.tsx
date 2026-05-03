@@ -55,7 +55,7 @@ export function MessengerCreateConversationModal({
   return createPortal(
     <div className="messenger-settings-modal-root" role="dialog" aria-modal="true" aria-labelledby="messenger-create-title">
       <button type="button" className="messenger-settings-modal-backdrop" aria-label="Закрыть" onClick={onClose} />
-      <div className="messenger-settings-modal">
+      <div className="messenger-settings-modal app-scroll">
         <h2 id="messenger-create-title" className="messenger-settings-modal__title">
           Создать
         </h2>

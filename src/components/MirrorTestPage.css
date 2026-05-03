@@ -66,21 +66,7 @@
   color: #888;
 }
 
-.mirror-test__select {
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid #333;
-  background: #141414;
-  color: #eee;
-  font-size: 0.9rem;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.mirror-test__select:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
+/* Внешний вид select — класс `app-select` (app-native-select.css) */
 
 .mirror-test__controls {
   max-width: 720px;

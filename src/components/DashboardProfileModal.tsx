@@ -89,7 +89,7 @@ export function DashboardProfileModal({
           Настройки профиля
         </h2>
 
-        <div className="dashboard-profile-modal__scroll">
+        <div className="dashboard-profile-modal__scroll app-scroll">
           <div className="dashboard-avatar-row">
             <button
               type="button"

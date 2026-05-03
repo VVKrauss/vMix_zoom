@@ -367,7 +367,7 @@ export function MirrorTestPage() {
           </label>
           <select
             id="mirror-video"
-            className="mirror-test__select"
+            className="app-select app-select--block mirror-test__select"
             value={selectedVideoId}
             onChange={(e) => setSelectedVideoId(e.target.value)}
             disabled={active || devicesBusy}
@@ -386,7 +386,7 @@ export function MirrorTestPage() {
           </label>
           <select
             id="mirror-audio"
-            className="mirror-test__select"
+            className="app-select app-select--block mirror-test__select"
             value={selectedAudioId}
             onChange={(e) => setSelectedAudioId(e.target.value)}
             disabled={active || devicesBusy}

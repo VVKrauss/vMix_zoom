@@ -36,8 +36,14 @@
   --radius: 10px;
 }
 
+/* Нативные формы (в т.ч. выпадающий <select>) в тон темы там, где UA это учитывает */
+html {
+  color-scheme: dark;
+}
+
 /* Светлая тема: те же принципы — матовое стекло, тёплая палитра */
 html[data-theme="light"] {
+  color-scheme: light;
   --glass-bg-base: #e8e2dd;
   --glass-mesh:
     radial-gradient(ellipse 118% 92% at 10% 14%, rgba(195, 115, 105, 0.26) 0%, transparent 56%),
@@ -421,7 +427,6 @@ html[data-theme="light"] .admin-role-picker__menu {
   box-shadow: 0 12px 36px rgba(45, 28, 26, 0.12), 0 2px 10px rgba(45, 28, 26, 0.06);
   backdrop-filter: blur(18px) saturate(1.06);
   -webkit-backdrop-filter: blur(18px) saturate(1.06);
-  scrollbar-color: color-mix(in srgb, var(--red) 48%, var(--surface2)) transparent;
 }
 
 html[data-theme="light"] .admin-role-picker__trigger:hover:not(:disabled) {
@@ -694,38 +699,6 @@ html[data-theme="light"] .messenger-msg-menu.device-popover {
   backdrop-filter: blur(20px) saturate(1.08);
   -webkit-backdrop-filter: blur(20px) saturate(1.08);
   box-shadow: 0 16px 44px rgba(60, 30, 30, 0.14);
-}
-
-html[data-theme="light"] .dashboard-messenger__messages-scroll,
-html[data-theme="light"] .dashboard-messenger__list,
-html[data-theme="light"] .dashboard-profile-modal__dialog .dashboard-profile-modal__scroll,
-html[data-theme="light"] .messenger-settings-modal {
-  scrollbar-color: rgba(158, 92, 92, 0.45) transparent;
-  scrollbar-color: color-mix(in srgb, var(--red) 48%, var(--surface2)) transparent;
-}
-
-html[data-theme="light"] .dashboard-messenger__messages-scroll::-webkit-scrollbar-thumb,
-html[data-theme="light"] .dashboard-messenger__list::-webkit-scrollbar-thumb,
-html[data-theme="light"] .dashboard-profile-modal__dialog .dashboard-profile-modal__scroll::-webkit-scrollbar-thumb,
-html[data-theme="light"] .messenger-settings-modal::-webkit-scrollbar-thumb {
-  background: rgba(158, 92, 92, 0.42);
-  background: color-mix(in srgb, var(--red) 44%, var(--surface2));
-}
-
-html[data-theme="light"] .dashboard-messenger__messages-scroll::-webkit-scrollbar-thumb:hover,
-html[data-theme="light"] .dashboard-messenger__list::-webkit-scrollbar-thumb:hover,
-html[data-theme="light"] .dashboard-profile-modal__dialog .dashboard-profile-modal__scroll::-webkit-scrollbar-thumb:hover,
-html[data-theme="light"] .messenger-settings-modal::-webkit-scrollbar-thumb:hover {
-  background: rgba(138, 80, 80, 0.55);
-  background: color-mix(in srgb, var(--red-hover) 55%, var(--surface2));
-}
-
-html[data-theme="light"] .admin-role-picker__menu::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--red) 44%, var(--surface2));
-}
-
-html[data-theme="light"] .admin-role-picker__menu::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--red-hover) 55%, var(--surface2));
 }
 
 html[data-theme="light"] .dashboard-topbar__messenger,
@@ -2318,29 +2291,6 @@ html.app-root--room #root {
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(22px) saturate(1.12);
   -webkit-backdrop-filter: blur(22px) saturate(1.12);
-  scrollbar-width: thin;
-  scrollbar-color: rgba(210, 0, 0, 0.35) transparent;
-  scrollbar-color: color-mix(in srgb, var(--red) 42%, var(--surface2)) transparent;
-}
-
-.messenger-settings-modal::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.messenger-settings-modal::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.messenger-settings-modal::-webkit-scrollbar-thumb {
-  background: rgba(210, 0, 0, 0.32);
-  background: color-mix(in srgb, var(--red) 38%, var(--surface2));
-  border-radius: 10px;
-}
-
-.messenger-settings-modal::-webkit-scrollbar-thumb:hover {
-  background: rgba(210, 0, 0, 0.5);
-  background: color-mix(in srgb, var(--red) 58%, var(--surface2));
 }
 
 html[data-theme="light"] .messenger-settings-modal {
@@ -2493,21 +2443,6 @@ html[data-theme="light"] .messenger-file-input__name {
 
 html[data-theme="light"] .messenger-file-input__name--placeholder {
   color: #6d5555;
-}
-
-/* Native select в модалках мессенджера — как поля ввода + своя стрелка */
-.messenger-settings-modal select.dashboard-messenger__list-search-input {
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  padding-right: 36px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23c8c8d8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-}
-
-html[data-theme="light"] .messenger-settings-modal select.dashboard-messenger__list-search-input {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23704040' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
 }
 
 .messenger-settings-modal__title {
@@ -2973,26 +2908,6 @@ html[data-theme="light"] .messenger-settings-modal select.dashboard-messenger__l
   min-height: 0;
   overflow: auto;
   padding-right: 4px;
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--red) 42%, var(--surface2)) transparent;
-}
-
-.messenger-forward-modal__list::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.messenger-forward-modal__list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.messenger-forward-modal__list::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--red) 38%, var(--surface2));
-  border-radius: 10px;
-}
-
-.messenger-forward-modal__list::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--red) 58%, var(--surface2));
 }
 
 .messenger-forward-modal__row {
@@ -4893,25 +4808,6 @@ button.admin-stat-card--interactive:disabled {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(16px) saturate(1.1);
   -webkit-backdrop-filter: blur(16px) saturate(1.1);
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--red) 42%, var(--surface2)) transparent;
-}
-
-.admin-role-picker__menu::-webkit-scrollbar {
-  width: 6px;
-}
-
-.admin-role-picker__menu::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.admin-role-picker__menu::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--red) 38%, var(--surface2));
-  border-radius: 10px;
-}
-
-.admin-role-picker__menu::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--red) 55%, var(--surface2));
 }
 
 /* Портал в body: не режется overflow у таблицы / dashboard */
@@ -6653,37 +6549,7 @@ button.dashboard-messenger__row-avatar {
   overscroll-behavior: contain;
 }
 
-/* Скролл в цветах проекта (акцент --red, тёмная/светлая тема). Дерево чатов — без скроллбара, см. .dashboard-messenger__list-scroll */
-.dashboard-messenger__messages-scroll,
-.dashboard-messenger__list {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(210, 0, 0, 0.35) transparent;
-  scrollbar-color: color-mix(in srgb, var(--red) 42%, var(--surface2)) transparent;
-}
-
-.dashboard-messenger__messages-scroll::-webkit-scrollbar,
-.dashboard-messenger__list::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.dashboard-messenger__messages-scroll::-webkit-scrollbar-track,
-.dashboard-messenger__list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.dashboard-messenger__messages-scroll::-webkit-scrollbar-thumb,
-.dashboard-messenger__list::-webkit-scrollbar-thumb {
-  background: rgba(210, 0, 0, 0.32);
-  background: color-mix(in srgb, var(--red) 38%, var(--surface2));
-  border-radius: 10px;
-}
-
-.dashboard-messenger__messages-scroll::-webkit-scrollbar-thumb:hover,
-.dashboard-messenger__list::-webkit-scrollbar-thumb:hover {
-  background: rgba(210, 0, 0, 0.5);
-  background: color-mix(in srgb, var(--red) 58%, var(--surface2));
-}
+/* Скроллбар ленты сообщений: класс `app-scroll` (styles/app-scrollbar.css). Дерево чатов — без полосы, см. .dashboard-messenger__list-scroll */
 
 .dashboard-messenger__load-older {
   padding: 8px 12px 4px;
@@ -6999,26 +6865,6 @@ span.dashboard-messenger__thread-avatar {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--red) 42%, var(--surface2)) transparent;
-}
-
-.mention-autocomplete__inner::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.mention-autocomplete__inner::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.mention-autocomplete__inner::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--red) 38%, var(--surface2));
-  border-radius: 10px;
-}
-
-.mention-autocomplete__inner::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--red) 58%, var(--surface2));
 }
 
 .mention-autocomplete__row {
@@ -7157,6 +7003,12 @@ span.dashboard-messenger__thread-avatar {
   bottom: calc(100% + 6px);
   z-index: 9400;
   pointer-events: auto;
+}
+
+.dashboard-messenger__composer-emoji-pop.dashboard-messenger__composer-emoji-pop--portal {
+  position: fixed;
+  left: auto;
+  top: auto;
 }
 
 /* Обёртка часто 0×0: якорь по правому краю кнопок; селектор сильнее .device-popover.device-popover--reaction-pick из chat-bubbles. */
@@ -10427,25 +10279,6 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   min-height: 0;
   padding-right: 4px;
   margin-right: -4px;
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--red) 42%, var(--surface2)) transparent;
-}
-
-.dashboard-profile-modal__dialog .dashboard-profile-modal__scroll::-webkit-scrollbar {
-  width: 6px;
-}
-
-.dashboard-profile-modal__dialog .dashboard-profile-modal__scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.dashboard-profile-modal__dialog .dashboard-profile-modal__scroll::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--red) 38%, var(--surface2));
-  border-radius: 10px;
-}
-
-.dashboard-profile-modal__dialog .dashboard-profile-modal__scroll::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--red) 58%, var(--surface2));
 }
 
 .dashboard-profile-modal__dialog .dashboard-avatar-row {
@@ -11056,17 +10889,6 @@ html[data-theme="light"] .confirm-dialog {
   font-size: 12px;
   color: var(--text-dim);
   margin: 0 0 8px;
-}
-
-.create-room-options__select {
-  width: 100%;
-  font-size: 14px;
-  padding: 10px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  font-family: var(--font);
 }
 
 .confirm-dialog__actions {

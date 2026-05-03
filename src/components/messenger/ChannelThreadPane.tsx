@@ -1,7 +1,6 @@
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { messengerBodyForMarkdown } from '../../lib/messengerMarkdownBody'
-import { shouldClosePopoverOnOutsidePointer } from '../../utils/popoverOutsideClick'
 import { readVisualViewportRect } from '../../utils/visualViewportRect'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
@@ -76,6 +75,7 @@ import { MessengerImageLightbox } from './MessengerImageLightbox'
 import { loadCachedChannelFeed, saveCachedChannelFeed } from '../../lib/channelFeedCache'
 import { resolveMediaUrlsForStoragePaths } from '../../lib/mediaCache'
 import { MentionAutocomplete } from './MentionAutocomplete'
+import { ComposerEmojiPopoverPortal } from './ComposerEmojiPopoverPortal'
 function extractStoragePathsFromMarkdown(md: string): string[] {
   const out: string[] = []
   const re = /\bms:\/\/([^\s)]+)\b/g
@@ -801,24 +801,6 @@ export function ChannelThreadPane({
     },
     [feedDraft, adjustFeedComposerHeight],
   )
-
-  useEffect(() => {
-    if (!feedComposerEmojiOpen) return
-    const onDown = (e: MouseEvent | TouchEvent) => {
-      const target =
-        'touches' in e && e.touches[0] ? (e.touches[0]!.target as EventTarget) : (e as MouseEvent).target
-      if (shouldClosePopoverOnOutsidePointer(feedComposerEmojiWrapRef.current, target)) {
-        setFeedComposerEmojiOpen(false)
-      }
-    }
-    const touchOpts: AddEventListenerOptions = { capture: true, passive: true }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('touchstart', onDown, touchOpts)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('touchstart', onDown, touchOpts)
-    }
-  }, [feedComposerEmojiOpen])
 
   useEffect(() => {
     if (feedVoiceRecording) setFeedComposerEmojiOpen(false)
@@ -1980,7 +1962,7 @@ export function ChannelThreadPane({
       <div className="dashboard-messenger__scroll-region-wrap">
         <div
           ref={postsFeedScrollRef}
-          className="dashboard-messenger__messages-scroll"
+          className="dashboard-messenger__messages-scroll app-scroll"
           role="region"
           aria-label="Посты канала"
           onScroll={updateFeedPinnedToBottom}
@@ -2173,16 +2155,13 @@ export function ChannelThreadPane({
                   }`}
                   ref={feedComposerEmojiWrapRef}
                 >
-                  {feedComposerEmojiOpen ? (
-                    <div className="dashboard-messenger__composer-emoji-pop">
-                      <ReactionEmojiPopover
-                        title="Эмодзи"
-                        emojis={MESSENGER_COMPOSER_EMOJIS}
-                        onClose={() => setFeedComposerEmojiOpen(false)}
-                        onPick={(em) => insertEmojiInFeedDraft(em)}
-                      />
-                    </div>
-                  ) : null}
+                  <ComposerEmojiPopoverPortal
+                    open={feedComposerEmojiOpen}
+                    anchorRef={feedComposerEmojiWrapRef}
+                    emojis={MESSENGER_COMPOSER_EMOJIS}
+                    onClose={() => setFeedComposerEmojiOpen(false)}
+                    onPick={(em) => insertEmojiInFeedDraft(em)}
+                  />
                   <button
                     type="button"
                     className="dashboard-messenger__composer-icon-btn"
@@ -2342,7 +2321,7 @@ export function ChannelThreadPane({
         <div className="dashboard-messenger__scroll-region-wrap dashboard-messenger__scroll-region-wrap--channel-comments">
           <div
             ref={commentsScrollRef}
-            className="dashboard-messenger__messages-scroll"
+            className="dashboard-messenger__messages-scroll app-scroll"
             style={{ flex: '1 1 auto' }}
             onScroll={updateCommentsPinned}
           >

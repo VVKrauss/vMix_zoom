@@ -41,7 +41,7 @@ export function MessengerQuickNavMenu(props: {
         onClick={onBackdropClick}
       />
       <nav
-        className={`dashboard-messenger-quick-menu${
+        className={`dashboard-messenger-quick-menu app-scroll${
           open ? ' dashboard-messenger-quick-menu--open' : ''
         } dashboard-messenger-quick-menu--anchor-head`}
         aria-hidden={!open}

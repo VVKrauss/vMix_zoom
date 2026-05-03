@@ -360,7 +360,11 @@ function MessengerDirectThreadBodyImpl(props: {
 
       <div className="dashboard-messenger__thread-main">
         <div className="dashboard-messenger__scroll-region-wrap">
-          <div ref={messagesScrollRef} className="dashboard-messenger__messages-scroll" onScroll={onMessagesScroll}>
+          <div
+            ref={messagesScrollRef}
+            className="dashboard-messenger__messages-scroll app-scroll"
+            onScroll={onMessagesScroll}
+          >
             {loadingOlder ? (
               <div className="dashboard-messenger__load-older" role="status" aria-live="polite">
                 Загрузка истории…

@@ -124,7 +124,7 @@ export function MentionAutocomplete({
 
   return (
     <div className="mention-autocomplete" role="listbox" aria-label="Упоминания">
-      <div className="mention-autocomplete__inner" onMouseDown={(e) => e.preventDefault()}>
+      <div className="mention-autocomplete__inner app-scroll" onMouseDown={(e) => e.preventDefault()}>
         {filtered.map((m, idx) => (
           <button
             key={m.userId}

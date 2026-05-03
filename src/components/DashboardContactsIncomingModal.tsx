@@ -85,7 +85,7 @@ export function DashboardContactsIncomingModal({
         <h2 id="dashboard-contacts-incoming-title" className="confirm-dialog__title">
           Входящие от других
         </h2>
-        <div className="dashboard-profile-modal__scroll">
+        <div className="dashboard-profile-modal__scroll app-scroll">
           <p className="dashboard-field__hint" style={{ marginTop: 0 }}>
             Кто-то добавил вас в контакты. Добавьте этого человека к себе — вы станете взаимными контактами. «Скрыть»
             убирает строку из списка (считается просмотренным).

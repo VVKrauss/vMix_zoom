@@ -279,7 +279,7 @@ export function DashboardRoomStatsModal({
         <h2 id="dashboard-room-stats-title" className="confirm-dialog__title">
           Статистика комнаты
         </h2>
-        <div className="dashboard-profile-modal__scroll">
+        <div className="dashboard-profile-modal__scroll app-scroll">
           <p className="dashboard-room-info-modal__title">{title}</p>
           {slug ? (
             <p className="dashboard-field__hint">

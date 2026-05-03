@@ -157,7 +157,7 @@ export function JoinPage({ roomId, hostCreateFlow = false, onJoin, onBackToHome,
               </label>
               <select
                 id="join-video-preset"
-                className="create-room-options__select join-host-create__select"
+                className="app-select app-select--block join-host-create__select"
                 value={videoPresetIndex}
                 onChange={(e) => setVideoPresetIndex(Number.parseInt(e.target.value, 10) || 0)}
                 aria-label="Качество видео при входе"
@@ -175,7 +175,7 @@ export function JoinPage({ roomId, hostCreateFlow = false, onJoin, onBackToHome,
                   Хост может изменить режим чата во время встречи.
                 </p>
                 <select
-                  className="create-room-options__select join-host-create__select"
+                  className="app-select app-select--block join-host-create__select"
                   value={chatVisibility}
                   onChange={(e) => setChatVisibility(e.target.value as SpaceRoomChatVisibility)}
                   aria-label="Режим чата при создании"

@@ -990,7 +990,7 @@ function PlayoutPopover({
         <div className="device-popover__section">
           <span className="device-popover__label">Выход звука</span>
           <select
-            className="settings-select device-popover__select-full"
+            className="settings-select app-select device-popover__select-full"
             value={playoutSinkId || audioOutputs[0]?.deviceId || ''}
             onChange={(e) => onPlayoutSinkChange(e.target.value)}
           >
@@ -1065,7 +1065,7 @@ function ChatOptionsPopover({
         <div className="settings-popover__section settings-popover__section--bordered">
           <span className="device-popover__label">Кто может пользоваться чатом</span>
           <select
-            className="settings-select device-popover__select-full"
+            className="settings-select app-select device-popover__select-full"
             value={roomChatVisibility}
             onChange={(e) => {
               onRoomChatVisibilityChange(e.target.value as SpaceRoomChatVisibility)

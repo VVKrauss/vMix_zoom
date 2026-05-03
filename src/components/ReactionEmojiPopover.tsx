@@ -37,7 +37,9 @@ export function ReactionEmojiPopover({
   return (
     <div className="device-popover device-popover--reaction-pick" ref={ref}>
       <div className="device-popover__title">{title}</div>
-      <div className={`reaction-emoji-grid${grid.length > 16 ? ' reaction-emoji-grid--scroll' : ''}`}>
+      <div
+        className={`reaction-emoji-grid app-scroll${grid.length > 16 ? ' reaction-emoji-grid--scroll' : ''}`}
+      >
         {grid.map((emoji) => (
           <ReactionEmojiGridButton key={emoji} emoji={emoji} onPick={() => onPick(emoji)} />
         ))}

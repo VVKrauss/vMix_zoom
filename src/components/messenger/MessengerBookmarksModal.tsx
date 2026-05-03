@@ -68,7 +68,7 @@ export function MessengerBookmarksModal({
   return createPortal(
     <div className="messenger-settings-modal-root" role="dialog" aria-modal="true" aria-label="Закладки">
       <button type="button" className="messenger-settings-modal-backdrop" onClick={onClose} aria-label="Закрыть" />
-      <div className="messenger-settings-modal">
+      <div className="messenger-settings-modal app-scroll">
         <div className="messenger-settings-modal__head">
           <div className="messenger-settings-modal__title">
             <FiRrIcon name="bookmark" /> Закладки

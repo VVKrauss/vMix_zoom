@@ -84,7 +84,7 @@ export function MessengerForwardToDmModal({
           onChange={(e) => setQuery(e.target.value)}
           aria-label="Поиск по чатам"
         />
-        <div className="messenger-forward-modal__list" role="list" aria-label="Выбор диалогов">
+        <div className="messenger-forward-modal__list app-scroll" role="list" aria-label="Выбор диалогов">
           {filtered.length === 0 ? (
             <p className="messenger-settings-modal__hint">Нет других личных чатов.</p>
           ) : (

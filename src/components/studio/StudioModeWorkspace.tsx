@@ -822,7 +822,7 @@ export function StudioModeWorkspace({
             <label className="studio-settings-modal__field">
               <span>Разрешение выхода</span>
               <select
-                className="studio-settings-modal__input studio-settings-modal__select"
+                className="studio-settings-modal__input studio-settings-modal__select app-select app-select--block"
                 value={outputPresetId}
                 disabled={liveActive}
                 onChange={(e) => setOutputPresetId(e.target.value)}

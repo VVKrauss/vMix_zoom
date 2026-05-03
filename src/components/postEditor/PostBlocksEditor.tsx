@@ -387,7 +387,7 @@ export function PostBlocksEditor({
                   }
                 />
                 {slash?.index === i ? (
-                  <div className="post-blocks-editor__slash-menu">
+                  <div className="post-blocks-editor__slash-menu app-scroll">
                     {filteredSlash.map((item) => (
                       <button
                         key={item.id}

@@ -1,15 +1,23 @@
-/* Фильтр «Все / ЛС / Группы / Каналы» в списке чатов */
+/* Фильтр «Все / ЛС / Группы / Каналы» в списке чатов — ряд на всю ширину, вкладки поровну */
 .dashboard-messenger__list-search--kind-tabs-only {
   display: flex;
-  justify-content: center;
+  justify-content: stretch;
+  width: 100%;
   padding-top: 6px;
   padding-bottom: 10px;
+}
+
+/* Как у ленты дерева (.dashboard-messenger--mobile-chromeless .list-scroll): не к краю экрана, выравнивание с карточками чатов */
+.dashboard-messenger--mobile-chromeless .dashboard-messenger__list-search--kind-tabs-only {
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+  box-sizing: border-box;
 }
 
 .dashboard-messenger__kind-tabs {
   display: flex;
   flex-wrap: nowrap;
-  justify-content: flex-start;
+  justify-content: stretch;
   gap: 6px;
   width: 100%;
   max-width: 100%;
@@ -29,7 +37,7 @@
   appearance: none;
   border: 1px solid var(--border);
   margin: 0;
-  padding: 6px 10px 6px 9px;
+  padding: 6px 8px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-dim);
@@ -37,7 +45,11 @@
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  flex-shrink: 0;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   white-space: nowrap;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }

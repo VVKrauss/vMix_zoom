@@ -353,7 +353,7 @@ function RoleAccessPicker({
     open && !busy && menuPlace ? (
       <ul
         ref={menuRef}
-        className="admin-role-picker__menu admin-role-picker__menu--portal"
+        className="admin-role-picker__menu admin-role-picker__menu--portal app-scroll"
         style={{ top: menuPlace.top, right: menuPlace.right }}
         role="listbox"
       >

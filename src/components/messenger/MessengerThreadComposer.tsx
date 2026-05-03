@@ -7,7 +7,7 @@ import type { LinkPreview } from '../../lib/linkPreview'
 import { AttachmentIcon, FiRrIcon, MessengerSendPlaneIcon } from '../icons'
 import { MessengerVoiceRecordBtn } from './MessengerVoiceRecordBtn'
 import { MessengerReplyMiniThumb } from '../MessengerReplyMiniThumb'
-import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
+import { ComposerEmojiPopoverPortal } from './ComposerEmojiPopoverPortal'
 import { DraftLinkPreviewBar } from './DraftLinkPreviewBar'
 import { MentionAutocomplete } from './MentionAutocomplete'
 
@@ -247,16 +247,13 @@ export function MessengerThreadComposer(props: {
             }`}
             ref={composerEmojiWrapRef}
           >
-            {composerEmojiOpen && !editingMessageId ? (
-              <div className="dashboard-messenger__composer-emoji-pop">
-                <ReactionEmojiPopover
-                  title="Эмодзи"
-                  emojis={MESSENGER_COMPOSER_EMOJIS}
-                  onClose={() => setComposerEmojiOpen(false)}
-                  onPick={(em) => insertEmojiInDraft(em)}
-                />
-              </div>
-            ) : null}
+            <ComposerEmojiPopoverPortal
+              open={composerEmojiOpen && !editingMessageId}
+              anchorRef={composerEmojiWrapRef}
+              emojis={MESSENGER_COMPOSER_EMOJIS}
+              onClose={() => setComposerEmojiOpen(false)}
+              onPick={(em) => insertEmojiInDraft(em)}
+            />
             <button
               type="button"
               className="dashboard-messenger__composer-icon-btn"

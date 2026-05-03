@@ -320,7 +320,7 @@ export function PostEditorModal({
         </header>
 
         <div className="post-editor-body">
-          <div className="post-editor-main">
+          <div className="post-editor-main app-scroll">
             {preview ? (
               <PostDraftReadView draft={draft} urlByStoragePath={urlByPath} />
             ) : (

@@ -86,7 +86,7 @@ export function MessengerConversationStatsModal({
   return createPortal(
     <div className="messenger-stats-modal-root" role="dialog" aria-modal="true" aria-labelledby="messenger-stats-title">
       <button type="button" className="messenger-settings-modal-backdrop" aria-label="Закрыть" onClick={onClose} />
-      <div className="messenger-settings-modal messenger-stats-modal">
+      <div className="messenger-settings-modal messenger-stats-modal app-scroll">
         <h2 id="messenger-stats-title" className="messenger-settings-modal__title">
           Статистика · {headingKind}
         </h2>

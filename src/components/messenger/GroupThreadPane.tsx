@@ -1,7 +1,6 @@
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useMessengerThreadReadCoordinator } from '../../hooks/useMessengerThreadReadCoordinator'
-import { shouldClosePopoverOnOutsidePointer } from '../../utils/popoverOutsideClick'
 import { readVisualViewportRect } from '../../utils/visualViewportRect'
 import { useAuth } from '../../context/AuthContext'
 import { useProfile } from '../../hooks/useProfile'
@@ -44,7 +43,7 @@ import {
 } from '../../lib/messengerDashboardUtils'
 import { ThreadMessageBubble } from './ThreadMessageBubble'
 import { useDevRenderTrace } from '../../lib/devTrace'
-import { ReactionEmojiPopover } from '../ReactionEmojiPopover'
+import { ComposerEmojiPopoverPortal } from './ComposerEmojiPopoverPortal'
 import { useLinkPreviewFromText } from '../../hooks/useLinkPreviewFromText'
 import { buildLinkMetaForMessageBody, ensureLinkPreviewForBody } from '../../lib/linkPreview'
 import { attachMessengerTailCatchupAfterContentPaint } from '../../hooks/messengerTailCatchup'
@@ -824,24 +823,6 @@ export function GroupThreadPane({
   }, [])
 
   useEffect(() => {
-    if (!composerEmojiOpen) return
-    const onDown = (e: MouseEvent | TouchEvent) => {
-      const target =
-        'touches' in e && e.touches[0] ? (e.touches[0]!.target as EventTarget) : (e as MouseEvent).target
-      if (shouldClosePopoverOnOutsidePointer(composerEmojiWrapRef.current, target)) {
-        setComposerEmojiOpen(false)
-      }
-    }
-    const touchOpts: AddEventListenerOptions = { capture: true, passive: true }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('touchstart', onDown, touchOpts)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('touchstart', onDown, touchOpts)
-    }
-  }, [composerEmojiOpen])
-
-  useEffect(() => {
     if (voiceRecording) setComposerEmojiOpen(false)
   }, [voiceRecording])
 
@@ -901,7 +882,7 @@ export function GroupThreadPane({
       <div className="dashboard-messenger__scroll-region-wrap">
         <div
           ref={messagesScrollRef}
-          className="dashboard-messenger__messages-scroll"
+          className="dashboard-messenger__messages-scroll app-scroll"
           role="region"
           aria-label="Сообщения группы"
           onScroll={updatePinnedToBottom}
@@ -1174,16 +1155,13 @@ export function GroupThreadPane({
                 className={`dashboard-messenger__composer-tools${voiceRecording ? ' dashboard-messenger__composer-tools--voice-rec' : ''}`}
                 ref={composerEmojiWrapRef}
               >
-                {composerEmojiOpen ? (
-                  <div className="dashboard-messenger__composer-emoji-pop">
-                    <ReactionEmojiPopover
-                      title="Эмодзи"
-                      emojis={MESSENGER_COMPOSER_EMOJIS}
-                      onClose={() => setComposerEmojiOpen(false)}
-                      onPick={(em) => insertEmojiInDraft(em)}
-                    />
-                  </div>
-                ) : null}
+                <ComposerEmojiPopoverPortal
+                  open={composerEmojiOpen}
+                  anchorRef={composerEmojiWrapRef}
+                  emojis={MESSENGER_COMPOSER_EMOJIS}
+                  onClose={() => setComposerEmojiOpen(false)}
+                  onPick={(em) => insertEmojiInDraft(em)}
+                />
                 <button
                   type="button"
                   className="dashboard-messenger__composer-icon-btn"

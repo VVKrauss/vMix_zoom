@@ -1,0 +1,64 @@
+/**
+ * Нативный <select> в стиле приложения (тёмная/светлая тема, стрелка).
+ * Добавляйте класс `app-select` на элемент; для ширины на всю строку — `app-select--block`.
+ * Выпадающий список на части платформ подтягивается через `color-scheme` на `html` (index.css).
+ */
+select.app-select {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  background-color: color-mix(in srgb, var(--surface2) 92%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-height: 40px;
+  padding: 8px 36px 8px 12px;
+  cursor: pointer;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23b8b8c8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  max-width: 100%;
+}
+
+select.app-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+select.app-select:focus-visible {
+  outline: 2px solid rgba(159, 214, 255, 0.38);
+  outline-offset: 1px;
+}
+
+select.app-select--block {
+  display: block;
+  width: 100%;
+}
+
+select.app-select option,
+select.app-select optgroup {
+  background-color: var(--surface);
+  color: var(--text);
+}
+
+html[data-theme='light'] select.app-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235c4846' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+}
+
+html[data-theme='light'] select.app-select option,
+html[data-theme='light'] select.app-select optgroup {
+  background-color: #faf7f5;
+  color: #2a2220;
+}
+
+/* Компактный ряд: поповеры настроек комнаты (рядом с .settings-select) */
+select.settings-select.app-select {
+  min-height: 32px;
+  padding: 4px 28px 4px 8px;
+  font-size: 12px;
+  border-radius: 8px;
+  background-position: right 8px center;
+}
