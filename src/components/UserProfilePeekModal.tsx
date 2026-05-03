@@ -19,6 +19,7 @@ import {
   type ContactStatus,
 } from '../lib/socialGraph'
 import type { UserPeekTarget } from '../types/userPeek'
+import { supabase } from '../lib/supabase'
 import { StorageOrHttpAvatarImg } from './messenger/StorageOrHttpAvatarImg'
 
 function formatLastActive(iso: string | null): string {
@@ -58,6 +59,7 @@ export function UserProfilePeekModal({
   const [avatarEditing, setAvatarEditing] = useState(false)
   const [avatarBusy, setAvatarBusy] = useState(false)
   const avatarFileInputRef = useRef<HTMLInputElement | null>(null)
+  const [dmMessageCount, setDmMessageCount] = useState<number | null>(null)
 
   const uid = target?.userId?.trim() ?? ''
   const isSelf = Boolean(user?.id && uid && user.id === uid)
@@ -78,8 +80,17 @@ export function UserProfilePeekModal({
       setDisplayAvatarOverride(null)
       setAvatarEditing(false)
       setAvatarBusy(false)
+      setDmMessageCount(null)
       return
     }
+
+    const initialCount =
+      target &&
+      typeof target.directThreadMessageCount === 'number' &&
+      Number.isFinite(target.directThreadMessageCount)
+        ? target.directThreadMessageCount
+        : null
+    setDmMessageCount(initialCount)
 
     let cancelled = false
     setLoading(true)
@@ -122,7 +133,23 @@ export function UserProfilePeekModal({
     return () => {
       cancelled = true
     }
-  }, [open, uid, user?.id])
+  }, [open, uid, user?.id, target])
+
+  useEffect(() => {
+    if (!open || !uid || isSelf || !dmConversationId?.trim()) return
+    let cancelled = false
+    void (async () => {
+      const { count, error } = await supabase
+        .from('chat_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('conversation_id', dmConversationId.trim())
+      if (cancelled || error) return
+      setDmMessageCount(typeof count === 'number' ? count : 0)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [open, uid, isSelf, dmConversationId])
 
   useEffect(() => {
     if (!open || !uid || isSelf || !user?.id) {
@@ -432,6 +459,9 @@ export function UserProfilePeekModal({
           </div>
         ) : null}
         {slug ? <p className="user-peek-modal__slug">@{slug}</p> : null}
+        {!isSelf && dmMessageCount !== null ? (
+          <p className="user-peek-modal__hint">{dmMessageCount} сообщ.</p>
+        ) : null}
         {showLastActivityLine || profile?.isOnline ? (
           <p className="user-peek-modal__active">
             {showLastActivityLine ? (

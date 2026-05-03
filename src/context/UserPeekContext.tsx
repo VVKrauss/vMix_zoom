@@ -28,7 +28,15 @@ export function UserPeekProvider({ children }: { children: ReactNode }) {
   const openUserPeek = useCallback((t: UserPeekTarget) => {
     const id = t.userId?.trim()
     if (!id) return
-    setTarget({ userId: id, displayName: t.displayName ?? null, avatarUrl: t.avatarUrl ?? null })
+    setTarget({
+      userId: id,
+      displayName: t.displayName ?? null,
+      avatarUrl: t.avatarUrl ?? null,
+      directThreadMessageCount:
+        typeof t.directThreadMessageCount === 'number' && Number.isFinite(t.directThreadMessageCount)
+          ? t.directThreadMessageCount
+          : null,
+    })
   }, [])
 
   const close = useCallback(() => setTarget(null), [])

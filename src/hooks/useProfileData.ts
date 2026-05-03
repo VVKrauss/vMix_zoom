@@ -5,6 +5,31 @@ import { useAuth } from '../context/AuthContext'
 import { normalizeProfileSlug, validateProfileSlugInput } from '../lib/profileSlug'
 import { assignAutoProfileSlugIfEmpty, isProfileSlugAvailable } from '../lib/profileSlugAvailability'
 
+/** Пустой `file.type` (часто у «сфотканных» файлов) даёт 400 у Storage; расширение из имени ненадёжно — подстраховываемся по MIME. */
+function imageContentTypeForUpload(file: File): string {
+  const t = file.type?.trim()
+  if (t) return t
+  const ext = (file.name.split('.').pop() ?? '').toLowerCase()
+  if (ext === 'png') return 'image/png'
+  if (ext === 'gif') return 'image/gif'
+  if (ext === 'webp') return 'image/webp'
+  if (ext === 'avif') return 'image/avif'
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
+  return 'image/jpeg'
+}
+
+function safeAvatarFileExtension(file: File): string {
+  const raw = (file.name.split('.').pop() ?? '').toLowerCase()
+  const allowed = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif'])
+  if (allowed.has(raw)) return raw === 'jpeg' ? 'jpg' : raw
+  const ct = file.type?.trim().toLowerCase() ?? ''
+  if (ct === 'image/png') return 'png'
+  if (ct === 'image/webp') return 'webp'
+  if (ct === 'image/gif') return 'gif'
+  if (ct === 'image/avif') return 'avif'
+  return 'jpg'
+}
+
 /** Глобальные роли из `user_global_roles` + справочник `roles`. */
 export interface UserGlobalRole {
   code: string
@@ -307,12 +332,12 @@ export function useProfileData(): UseProfileReturn {
     if (!user) return { error: 'Нет пользователя' }
     setUploadingAvatar(true)
 
-    const ext = file.name.split('.').pop() ?? 'jpg'
+    const ext = safeAvatarFileExtension(file)
     const path = `${user.id}/avatar.${ext}`
 
     const { error: uploadErr } = await supabase.storage
       .from('avatars')
-      .upload(path, file, { upsert: true, contentType: file.type })
+      .upload(path, file, { upsert: true, contentType: imageContentTypeForUpload(file) })
 
     if (uploadErr) { setUploadingAvatar(false); return { error: uploadErr.message } }
 

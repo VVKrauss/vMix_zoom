@@ -10,11 +10,18 @@ export function ownerPeerFromDescriptor(p: ProducerDescriptor): string | undefin
 
 export function descriptorVideoSource(
   p: ProducerDescriptor,
-): 'camera' | 'screen' | 'vmix' | 'studio_program' | undefined {
-  if (p.appData?.studioPreview === true || p.appData?.source === 'studio_preview') return 'studio_program'
+): 'camera' | 'screen' | 'vmix' | undefined {
+  const raw = p.appData?.source
+  if (
+    raw === 'studio_preview' ||
+    raw === 'studio_program' ||
+    p.appData?.studioPreview === true
+  ) {
+    return undefined
+  }
   if (p.videoSource) return p.videoSource
   const src = p.appData?.source
-  if (src === 'screen' || src === 'camera' || src === 'vmix' || src === 'studio_program') return src
+  if (src === 'screen' || src === 'camera' || src === 'vmix') return src
   return undefined
 }
 
@@ -60,8 +67,8 @@ export function hasSeparateScreenVideoPeer(producer: ProducerDescriptor): boolea
 }
 
 /**
- * Роль видео при **produce** (локальный аплинк): только camera vs screen (+ vmix→camera, studio→screen).
- * @see resolveConsumeVideoRole — роль при **consume** (входящие), там же `studio_program` и эвристика separate screen peer.
+ * Роль видео при **produce** (локальный аплинк): только camera vs screen (+ vmix→camera).
+ * @see resolveConsumeVideoRole — роль при **consume** (входящие), там же эвристика separate screen peer.
  */
 export function resolveVideoProducerRole(
   producer: ProducerDescriptor,
@@ -69,24 +76,21 @@ export function resolveVideoProducerRole(
 ): 'camera' | 'screen' {
   const t = descriptorVideoSource(producer)
   if (t === 'vmix') return 'camera'
-  /** В соло/эвристике студия идёт в «экранный» слот, но в комнате — отдельный studioProgramStream. */
-  if (t === 'studio_program') return 'screen'
   if (t === 'screen') return 'screen'
   if (t === 'camera') return 'camera'
   return hasCameraStream ? 'screen' : 'camera'
 }
 
 /**
- * Роль видео при **consume** (входящие): studio_program, отдельный screen peer, fallback на produce-роль.
+ * Роль видео при **consume** (входящие): отдельный screen peer, fallback на produce-роль.
  * @see resolveVideoProducerRole — локальный produce; при смене правил синхронизировать обе.
  */
 export function resolveConsumeVideoRole(
   producer: ProducerDescriptor,
   hasCameraStream: boolean,
-): 'camera' | 'screen' | 'studio_program' {
+): 'camera' | 'screen' {
   const src = descriptorVideoSource(producer)
   if (src === 'vmix') return 'camera'
-  if (src === 'studio_program') return 'studio_program'
   const separateScreenPeer = hasSeparateScreenVideoPeer(producer)
   if (src === 'screen' || separateScreenPeer) return 'screen'
   if (src === 'camera') return 'camera'

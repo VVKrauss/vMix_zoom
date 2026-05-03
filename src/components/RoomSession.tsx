@@ -172,23 +172,13 @@ export function RoomSession({ roomId }: Props) {
     localScreenStream, localScreenPeerId, isScreenSharing, toggleScreenShare, startScreenShare,
     chatMessages, sendChatMessage, sendReaction, reactionBursts,
     remoteScreenConsumePending,
-    remoteStudioProgramConsumePending,
-    remoteStudioRtmpByPeer,
     startVmixIngress, stopVmixIngress, vmixIngressInfo, vmixIngressLoading,
     vmixProgramHostMuted,
     setVmixProgramMutedForAll,
     getPeerUplinkVideoQuality,
     requestPeerMicMute,
     requestKickPeer,
-    startStudioPreview,
-    stopStudioPreview,
-    startStudioProgram,
-    stopStudioProgram,
-    replaceStudioProgramAudioTrack,
     endRoomForAll,
-    studioBroadcastHealth,
-    studioBroadcastHealthDetail,
-    studioServerLogLines,
     roomClosedReason,
   } = useRoom(roomActivityNotifyRef)
 
@@ -528,8 +518,6 @@ export function RoomSession({ roomId }: Props) {
         chatToastNotifications={chatToastNotifications}
         onToggleChatToastNotifications={() => setChatToastNotifications((v) => !v)}
         remoteScreenSharePending={remoteScreenConsumePending}
-        remoteStudioProgramConsumePending={remoteStudioProgramConsumePending}
-        remoteStudioRtmpByPeer={remoteStudioRtmpByPeer}
         vmixIngressInfo={vmixIngressInfo}
         vmixIngressLoading={vmixIngressLoading}
         onStartVmixIngress={startVmixIngress}
@@ -539,14 +527,6 @@ export function RoomSession({ roomId }: Props) {
         getPeerUplinkVideoQuality={getPeerUplinkVideoQuality}
         requestPeerMicMute={requestPeerMicMute}
         requestKickPeer={requestKickPeer}
-        startStudioPreview={startStudioPreview}
-        stopStudioPreview={stopStudioPreview}
-        startStudioProgram={startStudioProgram}
-        stopStudioProgram={stopStudioProgram}
-        replaceStudioProgramAudioTrack={replaceStudioProgramAudioTrack}
-        studioBroadcastHealth={studioBroadcastHealth}
-        studioBroadcastHealthDetail={studioBroadcastHealthDetail}
-        studioServerLogLines={studioServerLogLines}
         connectionState={connectionState}
         reconnectAttempt={reconnectAttempt}
         leaveEndsRoomForAll={isRoomLeaveAuthority}

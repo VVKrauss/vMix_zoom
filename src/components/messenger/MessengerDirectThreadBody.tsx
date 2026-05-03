@@ -13,7 +13,6 @@ import { buildQuotePreview } from '../../lib/messengerQuotePreview'
 import {
   conversationInitial,
   formatDateTime,
-  formatMessengerListRowTime,
   formatMessengerDaySeparatorLabel,
   QUICK_REACTION_EMOJI,
 } from '../../lib/messengerDashboardUtils'
@@ -42,7 +41,12 @@ function MessengerDirectThreadBodyImpl(props: {
   directPeerLastActivityAt?: string | null
   /** false — собеседник скрыл время активности; строку «Был(а): …» не показываем. */
   directPeerShowLastActivity?: boolean
-  openUserPeek: (p: { userId: string; displayName?: string | null; avatarUrl?: string | null }) => void
+  openUserPeek: (p: {
+    userId: string
+    displayName?: string | null
+    avatarUrl?: string | null
+    directThreadMessageCount?: number | null
+  }) => void
   user: { id: string } | null | undefined
   profile: { display_name?: string | null; avatar_url?: string | null } | null | undefined
   activeAvatarUrl: string | null
@@ -183,12 +187,14 @@ function MessengerDirectThreadBodyImpl(props: {
                     userId: oid,
                     displayName: threadHeadConversation.title,
                     avatarUrl: activeAvatarUrl,
+                    directThreadMessageCount: threadHeadConversation.messageCount,
                   })
                 } else if (user?.id) {
                   openUserPeek({
                     userId: user.id,
                     displayName: profile?.display_name ?? threadHeadConversation.title,
                     avatarUrl: profile?.avatar_url ?? null,
+                    directThreadMessageCount: threadHeadConversation.messageCount,
                   })
                 }
               }}
@@ -209,33 +215,25 @@ function MessengerDirectThreadBodyImpl(props: {
                 </span>
               </span>
               <div className="dashboard-messenger__thread-head-center-text">
-                <div
-                  className="dashboard-messenger__thread-head-center-title dashboard-messenger__thread-head-center-title--row"
-                  role="heading"
-                  aria-level={3}
-                >
-                  <span className="dashboard-messenger__thread-head-center-title-text">
-                    {threadHeadConversation.title}
-                  </span>
-                </div>
-                <div
-                  className={`dashboard-messenger__thread-head-center-meta${
-                    isMemberOfActiveConversation &&
-                    !threadHeadConversation.joinRequestPending &&
-                    threadHeadConversation.unreadCount > 0
-                      ? ' dashboard-messenger__thread-head-center-meta--has-unread'
-                      : ''
-                  }`}
-                >
-                  {formatMessengerListRowTime(threadHeadConversation.lastMessageAt ?? threadHeadConversation.createdAt)}
+                <div className="dashboard-messenger__thread-titleline">
+                  <div className="dashboard-messenger__thread-title-with-dot">
+                    <div className="dashboard-section__subtitle" role="heading" aria-level={3}>
+                      {threadHeadConversation.title}
+                    </div>
+                  </div>
                   {isMemberOfActiveConversation &&
                   !threadHeadConversation.joinRequestPending &&
                   threadHeadConversation.unreadCount > 0 ? (
-                    <span
-                      className="dashboard-messenger__row-badge dashboard-messenger__row-badge--float"
-                      aria-label={`Непрочитано: ${threadHeadConversation.unreadCount}`}
-                    >
+                    <span className="dashboard-messenger__row-badge" aria-label={`Непрочитано: ${threadHeadConversation.unreadCount}`}>
                       {threadHeadConversation.unreadCount > 99 ? '99+' : threadHeadConversation.unreadCount}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="dashboard-messenger__thread-meta">
+                  {directPeerShowLastActivity ? (
+                    <span>
+                      Был{'\u00A0'}(а):{' '}
+                      {directPeerLastActivityAt ? formatDateTime(directPeerLastActivityAt) : 'Нет данных'}
                     </span>
                   ) : null}
                 </div>
@@ -282,12 +280,14 @@ function MessengerDirectThreadBodyImpl(props: {
                     userId: oid,
                     displayName: threadHeadConversation.title,
                     avatarUrl: activeAvatarUrl,
+                    directThreadMessageCount: threadHeadConversation.messageCount,
                   })
                 } else if (user?.id) {
                   openUserPeek({
                     userId: user.id,
                     displayName: profile?.display_name ?? threadHeadConversation.title,
                     avatarUrl: profile?.avatar_url ?? null,
+                    directThreadMessageCount: threadHeadConversation.messageCount,
                   })
                 }
               }}
@@ -326,7 +326,6 @@ function MessengerDirectThreadBodyImpl(props: {
                   ) : null}
                 </div>
                 <div className="dashboard-messenger__thread-meta">
-                  <span>{threadHeadConversation.messageCount} сообщ.</span>
                   {directPeerShowLastActivity ? (
                     <span>
                       Был{'\u00A0'}(а):{' '}

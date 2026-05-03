@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { PillToggle } from '../PillToggle'
 import type { MessengerConversationSummary } from '../../lib/messengerConversations'
 import type { ConversationStaffMember, ConversationStaffRole } from '../../lib/conversationStaff'
@@ -13,7 +13,7 @@ import {
 import { FiRrIcon, MessengerStatsIcon } from '../icons'
 import { useMessengerContactAliasesMap } from '../../hooks/useMessengerContactAliasesMap'
 import { MessengerClosedGcLockBadge } from './MessengerClosedGcLockBadge'
-import { MessengerFilePickField } from './MessengerFilePickField'
+import { StorageOrHttpAvatarImg } from './StorageOrHttpAvatarImg'
 
 export type MessengerConversationInfoModalProps = {
   open: boolean
@@ -56,6 +56,8 @@ export type MessengerConversationInfoModalProps = {
   onLeaveConfirm: () => void
   /** Статистика (owner/admin группы; owner/admin/moderator канала). */
   onOpenConversationStats?: () => void
+  /** Смена логотипа с карточки (без общего «Сохранить»). */
+  onApplyConversationAvatar?: (file: File) => Promise<void>
 }
 
 export function MessengerConversationInfoModal({
@@ -98,7 +100,12 @@ export function MessengerConversationInfoModal({
   onApplyStaffRole,
   onLeaveConfirm,
   onOpenConversationStats,
+  onApplyConversationAvatar,
 }: MessengerConversationInfoModalProps) {
+  const [logoHeroEditing, setLogoHeroEditing] = useState(false)
+  const [convAvatarBusy, setConvAvatarBusy] = useState(false)
+  const convLogoFileInputRef = useRef<HTMLInputElement | null>(null)
+
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -119,9 +126,23 @@ export function MessengerConversationInfoModal({
   )
   const staffAliasByUserId = useMessengerContactAliasesMap(Boolean(open && conversation), staffUserIds)
 
+  useEffect(() => {
+    if (!open) {
+      setLogoHeroEditing(false)
+      setConvAvatarBusy(false)
+    }
+  }, [open])
+
   if (!open || !conversation) return null
 
   const c = conversation
+  const showStaffToolbar = Boolean(
+    conversationInfoRole && canViewMessengerConversationAdminStats(c.kind, conversationInfoRole),
+  )
+  const canChangeLogo =
+    Boolean(onApplyConversationAvatar) &&
+    conversationInfoRole &&
+    ['owner', 'admin'].includes(conversationInfoRole)
 
   return createPortal(
     <div className="messenger-settings-modal-root" role="dialog" aria-modal="true" aria-labelledby="messenger-conv-info-title">
@@ -133,25 +154,85 @@ export function MessengerConversationInfoModal({
 
         {conversationInfoError ? <p className="join-error">{conversationInfoError}</p> : null}
 
-        <div className="messenger-settings-modal__section">
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flex: 1, minWidth: 0 }}>
+        <div className="messenger-settings-modal__section messenger-conv-info-modal__hero-section">
+          <div className="messenger-conv-info-modal__hero">
+            <div className="user-peek-modal__avatar-wrap-outer">
               <div className="dashboard-messenger__gc-avatar-lock-wrap dashboard-messenger__gc-avatar-lock-wrap--modal">
-                <button type="button" className="dashboard-messenger__thread-head-center-avatar" aria-label="Логотип">
-                  {avatarUrl ? <img src={avatarUrl} alt="" /> : <span>{conversationInitial(c.title)}</span>}
-                </button>
+                <div className="user-peek-modal__avatar-wrap">
+                  {avatarUrl?.trim() ? (
+                    <StorageOrHttpAvatarImg
+                      src={avatarUrl.trim()}
+                      alt=""
+                      className="user-peek-modal__avatar-img"
+                      fallback={<span className="user-peek-modal__avatar-fallback">{conversationInitial(c.title)}</span>}
+                    />
+                  ) : (
+                    <span className="user-peek-modal__avatar-fallback">{conversationInitial(c.title)}</span>
+                  )}
+                </div>
                 {isMessengerClosedGroupOrChannel(c) ? <MessengerClosedGcLockBadge size="modal" /> : null}
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                <strong style={{ overflowWrap: 'anywhere' }}>{c.title}</strong>
-                <span className="messenger-settings-modal__hint">
-                  {(c.memberCount ?? 0)} участн.
-                  {c.publicNick?.trim() ? ` · @${c.publicNick.trim()}` : ''}
-                </span>
-              </div>
+              {canChangeLogo ? (
+                <button
+                  type="button"
+                  className="user-peek-modal__avatar-edit-btn"
+                  aria-label="Изменить логотип"
+                  title="Изменить логотип"
+                  disabled={conversationInfoLoading || convAvatarBusy}
+                  onClick={() => setLogoHeroEditing((v) => !v)}
+                >
+                  ✎
+                </button>
+              ) : null}
             </div>
-            {conversationInfoRole && canViewMessengerConversationAdminStats(c.kind, conversationInfoRole) ? (
-              <div className="dashboard-messenger__list-head-actions">
+            <p className="user-peek-modal__name">{c.title}</p>
+            <p className="messenger-settings-modal__hint messenger-conv-info-modal__hero-sub">
+              {(c.memberCount ?? 0)} участн.
+              {c.publicNick?.trim() ? ` · @${c.publicNick.trim()}` : ''}
+            </p>
+            {canChangeLogo && logoHeroEditing ? (
+              <div className="user-peek-modal__alias-row messenger-conv-info-modal__avatar-pick-row">
+                <input
+                  ref={convLogoFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="user-peek-modal__avatar-file-input"
+                  aria-label="Выбрать логотип"
+                  disabled={conversationInfoLoading || convAvatarBusy}
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0]
+                    e.target.value = ''
+                    if (!f || !onApplyConversationAvatar || convAvatarBusy) return
+                    if (!f.type.startsWith('image/')) return
+                    setConvAvatarBusy(true)
+                    try {
+                      await onApplyConversationAvatar(f)
+                      setLogoHeroEditing(false)
+                    } finally {
+                      setConvAvatarBusy(false)
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="dashboard-topbar__action dashboard-topbar__action--primary"
+                  disabled={conversationInfoLoading || convAvatarBusy}
+                  onClick={() => convLogoFileInputRef.current?.click()}
+                >
+                  {convAvatarBusy ? '…' : 'Выбрать изображение'}
+                </button>
+                <button
+                  type="button"
+                  className="dashboard-topbar__action"
+                  disabled={conversationInfoLoading || convAvatarBusy}
+                  onClick={() => setLogoHeroEditing(false)}
+                >
+                  Закрыть
+                </button>
+              </div>
+            ) : null}
+            {showStaffToolbar ? (
+              <div className="messenger-conv-info-modal__hero-toolbar">
                 <button
                   type="button"
                   className={`dashboard-messenger__list-head-btn${conversationInfoEdit ? ' dashboard-messenger__list-head-btn--open' : ''}`}
@@ -296,18 +377,6 @@ export function MessengerConversationInfoModal({
                 </div>
               </div>
             )}
-
-            <div className="messenger-settings-modal__section">
-              <span className="messenger-settings-modal__label">Логотип</span>
-              <MessengerFilePickField
-                accept="image/*"
-                disabled={conversationInfoLoading}
-                onPick={setConversationInfoLogoFile}
-                selectedName={conversationInfoLogoFile?.name ?? null}
-                emptyLabel="Файл не выбран"
-              />
-              <p className="messenger-settings-modal__hint">Опционально. Рекомендуем PNG или JPG.</p>
-            </div>
 
             {conversationInfoRole && ['owner', 'admin'].includes(conversationInfoRole) ? (
               <div className="messenger-settings-modal__section">

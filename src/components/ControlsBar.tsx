@@ -137,10 +137,6 @@ interface Props {
   canManageVmixProgramIngress?: boolean
   /** Мобильная нижняя панель: кнопка смены вида (стример / админ). */
   showMobileLayoutCycle?: boolean
-  /** Кнопка «Студия» рядом с SRT (режим стримера и права хоста/админа). */
-  showStudioEntry?: boolean
-  studioOpen?: boolean
-  onStudioToggle?: () => void
   /** Личные «Настройки»: скрыть тумблер «Инфо» (перенесён в шапку «Комната»). */
   hidePersonalVideoInfoToggle?: boolean
   /** Меню «Чат»: скрыть политику комнаты (она в шапке). */
@@ -277,9 +273,6 @@ export function ControlsBar({
   onHideVideoLetterboxingChange,
   canManageVmixProgramIngress = false,
   showMobileLayoutCycle = false,
-  showStudioEntry = false,
-  studioOpen = false,
-  onStudioToggle,
   hidePersonalVideoInfoToggle = false,
   hideHostRoomPoliciesInChat = false,
 }: Props) {
@@ -642,22 +635,10 @@ export function ControlsBar({
 
   const sourcesStrip = (sheet: boolean) => {
     const vmixStrip = vmixSourcesBlock(sheet)
-    const studioBtn =
-      streamerMode && showStudioEntry && onStudioToggle ? (
-        <button
-          type="button"
-          className={`ctrl-btn ctrl-btn--source-ingest ctrl-btn--studio${studioOpen ? ' ctrl-btn--studio--open' : ''}`}
-          onClick={onStudioToggle}
-          title={studioOpen ? 'Закрыть студию' : 'Режим «Студия»'}
-        >
-          <FiRrIcon name="clapperboard" className="ctrl-btn__studio-fi" aria-hidden />
-        </button>
-      ) : null
-    if (!vmixStrip && !studioBtn) return null
+    if (!vmixStrip) return null
     return (
       <div className={`controls-bar__sources${sheet ? ' controls-bar__sources--in-sheet' : ''}`} aria-label="Внешние источники">
         {vmixStrip}
-        {studioBtn}
       </div>
     )
   }
@@ -822,17 +803,6 @@ export function ControlsBar({
               </button>
             </div>
             <div className="ctrl-mobile-bottom-bar__edge ctrl-mobile-bottom-bar__edge--right">
-              {streamerMode && showStudioEntry && onStudioToggle ? (
-                <button
-                  type="button"
-                  className={`ctrl-mobile-bottom-bar__btn ctrl-mobile-bottom-bar__btn--compact${studioOpen ? ' ctrl-mobile-bottom-bar__btn--studio-on' : ''}`}
-                  onClick={onStudioToggle}
-                  title={studioOpen ? 'Закрыть студию' : 'Режим «Студия»'}
-                  aria-label={studioOpen ? 'Закрыть студию' : 'Открыть режим «Студия»'}
-                >
-                  <FiRrIcon name="clapperboard" className="ctrl-mobile-studio-fi" />
-                </button>
-              ) : null}
               {showMobileLayoutCycle ? (
                 <button
                   type="button"

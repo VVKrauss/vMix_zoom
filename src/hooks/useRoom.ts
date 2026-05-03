@@ -30,7 +30,6 @@ import {
   videoAnchorPeerId,
 } from '../utils/producerVideoRole'
 import { screenTileKey } from '../utils/screenTileKey'
-import { studioProgramTileKey } from '../utils/studioProgramTileKey'
 import { readVmixIngressEmitExtras } from '../config/serverSettingsStorage'
 import { isDevTraceEnabled } from '../lib/devTrace'
 import { normalizeSupabaseStoragePublicUrl } from '../lib/supabaseStorageUrl'
@@ -59,15 +58,13 @@ import {
   writePreferredCameraId,
   writePreferredMicId,
 } from '../config/roomUiStorage'
-import { formatMediaJoinError, formatStudioProgramError } from '../utils/formatMediaJoinError'
+import { formatMediaJoinError } from '../utils/formatMediaJoinError'
 import { isIosLikeDevice } from '../utils/iosLikeDevice'
 import { buildRoomMicTrackConstraints } from '../utils/roomMicCapture'
 import { acquireRoomCameraVideoStream } from '../utils/roomCameraCapture'
 import { isVirtualVideoInputLabel } from '../utils/videoInputDeviceFilter'
 import { sleepMs } from '../utils/sleepMs'
 import { captureJoinLocalMediaStream } from './roomJoin/roomJoinLocalMedia'
-import type { StudioOutputPreset } from '../types/studio'
-
 const SIGNALING_HTTP = signalingHttpBase()
 const DEFAULT_ROOM = import.meta.env.VITE_DEFAULT_ROOM as string ?? 'test'
 
@@ -131,31 +128,6 @@ function clearResumeReloadMark(roomId: string): void {
   }
 }
 
-/** Строки с сокета для панели отладки студии (RTMP); UI подтягивает их фиолетовым. */
-const STUDIO_SERVER_LOG_CAP = 80
-
-function stringifyStudioServerSocketPayload(label: string, raw: unknown): string {
-  if (raw == null || typeof raw !== 'object') return `${label} ${String(raw)}`
-  const o = { ...(raw as Record<string, unknown>) }
-  if (typeof o.detail === 'string' && o.detail.length > 900) {
-    o.detail = `${o.detail.slice(0, 900)}…`
-  }
-  try {
-    const s = JSON.stringify(o, (key, value) => {
-      if (
-        typeof key === 'string' &&
-        /key|secret|password|token|rtmpkey|streamkey|authorization|auth/i.test(key)
-      ) {
-        return '***'
-      }
-      return value
-    })
-    return `${label} ${s}`
-  } catch {
-    return `${label} ${String(raw)}`
-  }
-}
-
 /** Совпадение с недавним локальным сообщением (оптимистичным) — заменяем серверной версией. */
 const CHAT_ECHO_DEDUP_MS = 12_000
 const CHAT_ECHO_DEDUP_SCAN = 48
@@ -214,8 +186,6 @@ function applyRosterRow(
     videoStream: ex?.videoStream,
     screenStream: ex?.screenStream,
     screenPeerId: ex?.screenPeerId,
-    studioProgramStream: ex?.studioProgramStream,
-    studioProgramPeerId: ex?.studioProgramPeerId,
   })
 }
 
@@ -225,7 +195,7 @@ type ProducerMeta = {
   producerPeerId: string
   kind: 'audio' | 'video'
   audioSource?: 'mic' | 'screen' | 'vmix'
-  videoSource?: 'camera' | 'screen' | 'vmix' | 'studio_program'
+  videoSource?: 'camera' | 'screen' | 'vmix'
   /** Из ack `consume` (сервер): нужен для `setConsumerPreferredLayers`. */
   consumerType?: 'simple' | 'simulcast' | 'svc'
   producerPaused?: boolean
@@ -242,14 +212,6 @@ function findProducerMetaByConsumerId(map: Map<string, ProducerMeta>, consumerId
     }
   }
   return null
-}
-
-function isStudioPreviewDescriptor(p: ProducerDescriptor): boolean {
-  return p.appData?.studioPreview === true || p.appData?.source === 'studio_preview'
-}
-
-function isStudioLiveDescriptor(p: ProducerDescriptor): boolean {
-  return p.appData?.source === 'studio_program'
 }
 
 function registerProducerMeta(
@@ -534,9 +496,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const videoProducerRef = useRef<Producer | null>(null)
   const screenProducerRef = useRef<Producer | null>(null)
   // Screen share: only video. We do not mix/replace outgoing audio.
-  const studioPreviewVideoProducerRef = useRef<Producer | null>(null)
-  const studioProgramAudioProducerRef = useRef<Producer | null>(null)
-  const studioStopInFlightRef = useRef<Promise<void> | null>(null)
   const localScreenStreamRef = useRef<MediaStream | null>(null)
   const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null)
   const [isScreenSharing, setIsScreenSharing] = useState(false)
@@ -607,29 +566,8 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
   const [reactionBursts, setReactionBursts] = useState<RoomReactionBurst[]>([])
   /** Пока consume удалённого экрана не завершился — раскладка meet у гостей */
   const [remoteScreenConsumePending, setRemoteScreenConsumePending] = useState(false)
-  /** Аналогично для видео эфира студии (отдельный producer). */
-  const [remoteStudioProgramConsumePending, setRemoteStudioProgramConsumePending] = useState(false)
-  /** У гостей: фаза RTMP эфира по peerId ведущего (событие studioBroadcastHealth + опционально broadcasterPeerId). */
-  const [remoteStudioRtmpByPeer, setRemoteStudioRtmpByPeer] = useState<
-    Record<string, 'idle' | 'connecting' | 'live' | 'warning'>
-  >({})
   const [vmixIngressInfo, setVmixIngressInfo] = useState<VmixIngressInfo | null>(null)
-  /** Эфир «Студии» на RTMP (состояние UI + опционально `studioBroadcastHealth` с signaling). */
-  const [studioBroadcastHealth, setStudioBroadcastHealth] = useState<
-    'idle' | 'connecting' | 'live' | 'warning'
-  >('idle')
-  /** Хвост stderr / пояснение с бэка (событие studioBroadcastHealth), только при проблемах эфира. */
-  const [studioBroadcastHealthDetail, setStudioBroadcastHealthDetail] = useState<string | null>(null)
-  /** Сырые строки событий студии с сервера (socket) — для лога в UI. */
-  const [studioServerLogLines, setStudioServerLogLines] = useState<string[]>([])
-  const appendStudioServerLogRef = useRef<(line: string) => void>(() => {})
   const suppressRoomClosedReasonRef = useRef(false)
-  appendStudioServerLogRef.current = (line: string) => {
-    setStudioServerLogLines((prev) => {
-      const next = [...prev, line]
-      return next.length > STUDIO_SERVER_LOG_CAP ? next.slice(-STUDIO_SERVER_LOG_CAP) : next
-    })
-  }
   const lastLocalReactionAtRef = useRef(0)
   const displayNameRef = useRef('')
   const authUserIdRef = useRef<string | null>(null)
@@ -710,22 +648,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
         const next = new Map(prev)
         const p = next.get(meta.anchorPeerId)
         if (!p) return next
-        if (meta.kind === 'video' && meta.videoSource === 'studio_program') {
-          const hasSiblingStudioVideo = [...producerMetaRef.current.values()].some(
-            (m) =>
-              m !== meta &&
-              m.kind === 'video' &&
-              m.videoSource === 'studio_program' &&
-              m.anchorPeerId === meta.anchorPeerId,
-          )
-          if (hasSiblingStudioVideo) {
-            return next
-          }
-          if (p.virtualSourceType === 'studio_program') {
-            next.delete(meta.anchorPeerId)
-            return next
-          }
-        }
         const cleared: Partial<RemoteParticipant> =
           meta.kind === 'audio'
             ? meta.audioSource === 'screen'
@@ -735,9 +657,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
                 : { audioStream: undefined, micAudioStream: undefined }
             : meta.videoSource === 'screen'
               ? { screenStream: undefined, screenPeerId: undefined }
-              : meta.videoSource === 'studio_program'
-                ? { studioProgramStream: undefined, studioProgramPeerId: undefined }
-                : { videoStream: undefined }
+              : { videoStream: undefined }
         const updated = { ...p, ...cleared }
         next.set(meta.anchorPeerId, updated)
         return next
@@ -745,14 +665,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
       if (meta.kind === 'video' && meta.videoSource === 'screen') {
         stripScreenChatForPeer(meta.anchorPeerId)
-      }
-      if (meta.kind === 'video' && meta.videoSource === 'studio_program') {
-        setRemoteStudioRtmpByPeer((prev) => {
-          if (!prev[meta.anchorPeerId]) return prev
-          const n = { ...prev }
-          delete n[meta.anchorPeerId]
-          return n
-        })
       }
     },
     [stripScreenChatForPeer],
@@ -767,19 +679,26 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       const socket = socketRef.current
       if (!device || !recvTransport || !socket) return
 
+      {
+        const ad = producer.appData
+        const src = typeof ad?.source === 'string' ? ad.source : ''
+        if (
+          (producer.kind === 'video' &&
+            (ad?.studioPreview === true || src === 'studio_preview' || src === 'studio_program')) ||
+          (producer.kind === 'audio' && src === 'studio_program_audio')
+        ) {
+          return
+        }
+      }
+
       let endRemoteScreenPending: (() => void) | undefined
       if (producer.kind === 'video') {
         const aid = videoAnchorPeerId(producer)
         const ex = participantsRef.current.get(aid)
         const role = resolveConsumeVideoRole(producer, !!ex?.videoStream)
-        if (role === 'screen' || (role === 'studio_program' && isStudioPreviewDescriptor(producer))) {
-          if (role === 'screen') {
-            setRemoteScreenConsumePending(true)
-            endRemoteScreenPending = () => setRemoteScreenConsumePending(false)
-          } else {
-            setRemoteStudioProgramConsumePending(true)
-            endRemoteScreenPending = () => setRemoteStudioProgramConsumePending(false)
-          }
+        if (role === 'screen') {
+          setRemoteScreenConsumePending(true)
+          endRemoteScreenPending = () => setRemoteScreenConsumePending(false)
         }
       }
 
@@ -902,51 +821,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           }
 
           const resolved = resolveConsumeVideoRole(producer, !!existing.videoStream)
-
-          if (resolved === 'studio_program') {
-            if (isStudioLiveDescriptor(producer) && !isStudioPreviewDescriptor(producer)) {
-              return next
-            }
-            const ownerPeerId = ownerPeerFromDescriptor(producer) ?? anchorId
-            const producerVirtualPeerId = producer.peerId
-            const holderPeerId = studioProgramTileKey(ownerPeerId)
-            const owner = next.get(ownerPeerId)
-            const legacyStudioEntry = next.get(producerVirtualPeerId)
-            const studioExisting: RemoteParticipant = next.get(holderPeerId) ?? legacyStudioEntry ?? {
-              peerId: holderPeerId,
-              name: 'ЭФИР',
-              avatarUrl: owner?.avatarUrl ?? producer.avatarUrl ?? undefined,
-              virtualSourceType: 'studio_program',
-              sourceOwnerPeerId: ownerPeerId,
-            }
-
-            const videoMeta = {
-              consumerId: consumer.id,
-              anchorPeerId: holderPeerId,
-              producerPeerId: producerVirtualPeerId,
-              kind: 'video' as const,
-              videoSource: resolved,
-              consumerType,
-              producerPaused,
-            }
-            registerProducerMeta(producerMetaRef.current, producer.producerId, consumer.producerId, videoMeta)
-
-            if (producerVirtualPeerId !== holderPeerId) {
-              next.delete(producerVirtualPeerId)
-            }
-
-            next.set(holderPeerId, {
-              ...studioExisting,
-              peerId: holderPeerId,
-              name: 'ЭФИР',
-              avatarUrl: owner?.avatarUrl ?? producer.avatarUrl ?? studioExisting.avatarUrl ?? null,
-              virtualSourceType: 'studio_program',
-              sourceOwnerPeerId: ownerPeerId,
-              studioProgramPeerId: producerVirtualPeerId,
-              videoStream: stream,
-            })
-            return next
-          }
 
           const videoMeta = {
             consumerId: consumer.id,
@@ -1214,7 +1088,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     setError(null)
     setLocalScreenPeerId(null)
     setRemoteScreenConsumePending(false)
-    setRemoteStudioProgramConsumePending(false)
     roomIdRef.current = roomId
     displayNameRef.current = name.trim() || 'Гость'
     authUserIdRef.current = media?.authUserId ?? null
@@ -1612,12 +1485,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       socket.on('producerClosed', (payload: unknown) => {
         if (isDevTraceEnabled()) console.log('[producerClosed] raw payload:', JSON.stringify(payload))
         const id = producerIdFromClosedPayload(payload)
-        if (id && studioProgramAudioProducerRef.current?.id === id) {
-          studioProgramAudioProducerRef.current = null
-          setStudioBroadcastHealth('warning')
-          setStudioBroadcastHealthDetail(null)
-          return
-        }
         if (id) dropProducerById(id)
         else if (isDevTraceEnabled()) console.warn('[producerClosed] could not extract id from payload')
 
@@ -1653,36 +1520,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
           const n = { ...prev }
           delete n[peerId]
           return n
-        })
-      })
-
-      socket.on('studioProgramRoomNotify', (raw: unknown) => {
-        if (isDevTraceEnabled()) console.log('[studioProgramRoomNotify] raw payload:', JSON.stringify(raw))
-        const payload = raw as {
-          open?: boolean
-          broadcasterPeerId?: string
-          broadcaster_peer_id?: string
-          ownerPeerId?: string
-          owner_peer_id?: string
-        } | null
-        const open = payload?.open === true
-        const ownerPeerId =
-          extractField(payload, 'ownerPeerId', 'owner_peer_id') ??
-          extractField(payload, 'broadcasterPeerId', 'broadcaster_peer_id')
-        if (!ownerPeerId || open) return
-
-        const holderPeerId = studioProgramTileKey(ownerPeerId)
-        setParticipants((prev) => {
-          if (!prev.has(holderPeerId)) return prev
-          const next = new Map(prev)
-          next.delete(holderPeerId)
-          return next
-        })
-        setRemoteStudioRtmpByPeer((prev) => {
-          if (!prev[ownerPeerId]) return prev
-          const next = { ...prev }
-          delete next[ownerPeerId]
-          return next
         })
       })
 
@@ -1817,84 +1654,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
 
       // (couch mode removed)
 
-      socket.on('studioBroadcastHealth', (raw: unknown) => {
-        const o = raw as Record<string, unknown>
-        if (typeof o.roomId === 'string' && o.roomId !== roomIdRef.current) return
-        appendStudioServerLogRef.current(stringifyStudioServerSocketPayload('studioBroadcastHealth', raw))
-
-        const st = String(o.state ?? o.status ?? '').toLowerCase()
-        const detailRaw = o.detail
-        const detail =
-          typeof detailRaw === 'string' && detailRaw.trim() ? detailRaw.trim() : null
-
-        const anchorRaw =
-          o.broadcasterPeerId ??
-          o.broadcaster_peer_id ??
-          o.anchorPeerId ??
-          o.anchor_peer_id ??
-          o.producerPeerId ??
-          o.producer_peer_id
-        const anchor = typeof anchorRaw === 'string' ? anchorRaw.trim() : ''
-        const sid = socket.id ?? ''
-        if (anchor && anchor !== sid) {
-          setRemoteStudioRtmpByPeer((prev) => {
-            const next = { ...prev }
-            if (o.ok === true || st === 'live') next[anchor] = 'live'
-            else if (st === 'connecting') next[anchor] = 'connecting'
-            else if (
-              o.ok === false ||
-              st === 'warning' ||
-              st === 'error' ||
-              st === 'stalled' ||
-              Boolean(detail)
-            ) {
-              next[anchor] = 'warning'
-            } else if (st === 'idle' || st === 'off') {
-              delete next[anchor]
-            }
-            return next
-          })
-        }
-
-        if (st === 'idle' || st === 'off') {
-          setStudioBroadcastHealth('idle')
-          setStudioBroadcastHealthDetail(null)
-          return
-        }
-
-        if (anchor && anchor !== sid) return
-
-        if (o.ok === true || st === 'live') {
-          setStudioBroadcastHealth('live')
-          setStudioBroadcastHealthDetail(null)
-        } else if (st === 'connecting') {
-          setStudioBroadcastHealth('connecting')
-          setStudioBroadcastHealthDetail(null)
-        } else if (o.ok === false || st === 'warning' || st === 'error' || st === 'stalled') {
-          setStudioBroadcastHealth('warning')
-          setStudioBroadcastHealthDetail(detail)
-        }
-      })
-
-      /** Опционально: бэк шлёт поэтапные сообщения (FFmpeg, RTMP connect, …). */
-      socket.on('studioBroadcastLog', (raw: unknown) => {
-        const o = raw as Record<string, unknown>
-        if (typeof o.roomId === 'string' && o.roomId !== roomIdRef.current) return
-        const msg =
-          typeof o.message === 'string'
-            ? o.message.trim()
-            : typeof o.msg === 'string'
-              ? o.msg.trim()
-              : typeof o.text === 'string'
-                ? o.text.trim()
-                : null
-        if (msg) {
-          appendStudioServerLogRef.current(`studioBroadcastLog ${msg}`)
-        } else {
-          appendStudioServerLogRef.current(stringifyStudioServerSocketPayload('studioBroadcastLog', raw))
-        }
-      })
-
       if (superseded()) return
 
       setStatus('connected')
@@ -1912,13 +1671,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       setChatMessages([])
       setReactionBursts([])
       setRemoteScreenConsumePending(false)
-      setRemoteStudioProgramConsumePending(false)
-      setRemoteStudioRtmpByPeer({})
-      studioProgramAudioProducerRef.current?.close()
-      studioProgramAudioProducerRef.current = null
-      setStudioBroadcastHealth('idle')
-      setStudioBroadcastHealthDetail(null)
-      setStudioServerLogLines([])
       peerUplinkVideoQualityRef.current = {}
       peerCameraVideoConsumerIdRef.current.clear()
       consumerInboundLayerPolicyRef.current.clear()
@@ -2471,115 +2223,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     }
   }, [])
 
-  const requestStopStudioBroadcast = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
-    const socket = socketRef.current
-    const roomId = roomIdRef.current
-    if (!socket?.connected || !roomId) {
-      return { ok: false, error: 'Нет соединения с сервером' }
-    }
-    return await new Promise<{ ok: boolean; error?: string }>((resolve) => {
-      socket.timeout(15_000).emit(
-        'stopStudioBroadcast',
-        { roomId },
-        (err: Error | null, res?: Record<string, unknown>) => {
-          if (err) {
-            resolve({
-              ok: false,
-              error: 'Сервер не подтвердил остановку эфира (таймаут или обрыв соединения).',
-            })
-            return
-          }
-          const data = res ?? {}
-          if (data.error) {
-            resolve({ ok: false, error: String(data.error) })
-            return
-          }
-          resolve({ ok: true })
-        },
-      )
-    })
-  }, [])
-
-  const requestStartStudioBroadcast = useCallback(
-    async (
-      rtmpUrl: string,
-      rtmpKey: string,
-      output: StudioOutputPreset,
-    ): Promise<{ ok: boolean; error?: string }> => {
-      const socket = socketRef.current
-      const roomId = roomIdRef.current
-      if (!socket?.connected || !roomId) {
-        return { ok: false, error: 'Нет соединения с сервером' }
-      }
-      return await new Promise<{ ok: boolean; error?: string }>((resolve) => {
-        socket.timeout(15_000).emit(
-          'startStudioBroadcast',
-          {
-            roomId,
-            rtmpUrl,
-            rtmpKey,
-            outputWidth: output.width,
-            outputHeight: output.height,
-            maxBitrate: output.maxBitrate,
-            maxFramerate: output.maxFramerate,
-          },
-          (err: Error | null, res?: Record<string, unknown>) => {
-            if (err) {
-              resolve({
-                ok: false,
-                error: 'Сервер не подтвердил запуск эфира (таймаут или обрыв соединения).',
-              })
-              return
-            }
-            const data = res ?? {}
-            if (data.error) {
-              resolve({ ok: false, error: String(data.error) })
-              return
-            }
-            resolve({ ok: true })
-          },
-        )
-      })
-    },
-    [],
-  )
-
-  const requestStudioProgramRoomNotify = useCallback(
-    async (open: boolean, reason?: string): Promise<{ ok: boolean; error?: string }> => {
-      const socket = socketRef.current
-      const roomId = roomIdRef.current
-      if (!socket?.connected || !roomId) {
-        return { ok: false, error: 'Нет соединения с сервером' }
-      }
-      return await new Promise<{ ok: boolean; error?: string }>((resolve) => {
-        socket.timeout(7_000).emit(
-          'studioProgramRoomNotify',
-          {
-            roomId,
-            open,
-            ...(reason ? { reason } : {}),
-          },
-          (err: Error | null, res?: Record<string, unknown>) => {
-            if (err) {
-              resolve({
-                ok: false,
-                error: 'Сервер не подтвердил обновление состояния студии (таймаут или обрыв соединения).',
-              })
-              return
-            }
-            const data = res ?? {}
-            if (data.error) {
-              resolve({ ok: false, error: String(data.error) })
-              return
-            }
-            resolve({ ok: true })
-          },
-        )
-      })
-    },
-    [],
-  )
-
   const requestEndRoomForAll = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
     const socket = socketRef.current
     const roomId = roomIdRef.current
@@ -2669,7 +2312,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       const producer = videoProducerRef.current
       if (!producer || producer.closed || producer.kind !== 'video') return null
       const src = (producer.appData as { source?: string } | undefined)?.source
-      if (src === 'screen' || src === 'studio_program') return null
+      if (src === 'screen' || src === 'studio_program' || src === 'studio_preview') return null
 
       let report: RTCStatsReport
       try {
@@ -2711,277 +2354,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     [sessionMeta?.localPeerId, peerUplinkBroadcastTick],
   )
 
-  const stopStudioProgram = useCallback(async () => {
-    if (studioStopInFlightRef.current) {
-      await studioStopInFlightRef.current
-      return
-    }
-    /* Обычная комната без эфира студии: не ждём искусственные 450 ms в конце teardown. */
-    if (studioProgramAudioProducerRef.current == null && studioBroadcastHealth === 'idle') {
-      return
-    }
-
-    const stopPromise = (async () => {
-      const audioP = studioProgramAudioProducerRef.current
-      const shouldRequestServerStop =
-        (audioP != null || studioBroadcastHealth !== 'idle') &&
-        socketRef.current?.connected &&
-        !!roomIdRef.current
-
-      let stopRes: { ok: boolean; error?: string } = { ok: true }
-      if (shouldRequestServerStop) {
-        stopRes = await requestStopStudioBroadcast()
-      }
-
-      try {
-        audioP?.pause()
-      } catch {
-        /* ignore */
-      }
-
-      audioP?.close()
-      studioProgramAudioProducerRef.current = null
-      if (stopRes.ok) {
-        setStudioBroadcastHealth('idle')
-        setStudioBroadcastHealthDetail(null)
-        setStudioServerLogLines([])
-      } else {
-        setStudioBroadcastHealth('warning')
-        setStudioBroadcastHealthDetail(stopRes.error ?? 'Эфир остановлен локально, но сервер не подтвердил teardown.')
-      }
-
-      await new Promise((resolve) => window.setTimeout(resolve, 450))
-    })()
-
-    studioStopInFlightRef.current = stopPromise
-    try {
-      await stopPromise
-    } finally {
-      studioStopInFlightRef.current = null
-    }
-  }, [requestStopStudioBroadcast, studioBroadcastHealth])
-
-  const replaceStudioProgramAudioTrack = useCallback(async (track: MediaStreamTrack | null) => {
-    const producer = studioProgramAudioProducerRef.current
-    if (!producer) return
-    try {
-      await producer.replaceTrack({ track })
-      if (track) {
-        producer.resume()
-      } else {
-        producer.pause()
-      }
-    } catch {
-      /* mediasoup-client */
-    }
-  }, [])
-
-  const stopStudioPreview = useCallback(async () => {
-    const preview = studioPreviewVideoProducerRef.current
-    if (!preview) return
-    void requestStudioProgramRoomNotify(false, 'studio_closed')
-    try {
-      preview.pause()
-    } catch {
-      /* ignore */
-    }
-    preview.close()
-    studioPreviewVideoProducerRef.current = null
-  }, [requestStudioProgramRoomNotify])
-
-  const startStudioPreview = useCallback(
-    async (videoTrack: MediaStreamTrack): Promise<{ ok: boolean; error?: string }> => {
-      const sendTransport = sendTransportRef.current
-      if (!socketRef.current?.connected || !roomIdRef.current) {
-        return { ok: false, error: 'Нет WebRTC-транспорта' }
-      }
-      if (!sendTransport) {
-        return { ok: false, error: 'Нет WebRTC-транспорта' }
-      }
-
-      const existing = studioPreviewVideoProducerRef.current
-      if (existing && !existing.closed) {
-        try {
-          await existing.replaceTrack({ track: videoTrack })
-          existing.resume()
-          return { ok: true }
-        } catch (e) {
-          existing.close()
-          studioPreviewVideoProducerRef.current = null
-          if (isDevTraceEnabled()) console.warn('[studio] preview replaceTrack failed; recreating producer', e)
-        }
-      }
-
-      try {
-        const codecs = deviceRef.current?.rtpCapabilities.codecs ?? []
-        const pickMime = (mime: string) =>
-          codecs.find((c) => c.mimeType.toLowerCase() === mime)
-        const studioVideoCodec =
-          pickMime('video/vp8') ??
-          pickMime('video/vp9') ??
-          pickMime('video/h264') ??
-          undefined
-
-        const previewProducer = await sendTransport.produce({
-          track: videoTrack,
-          codec: studioVideoCodec,
-          appData: {
-            source: 'screen',
-            ownerPeerId: socketRef.current?.id,
-            studioPreview: true,
-          },
-        })
-        studioPreviewVideoProducerRef.current = previewProducer
-        previewProducer.on('transportclose', () => {
-          if (studioPreviewVideoProducerRef.current === previewProducer) {
-            studioPreviewVideoProducerRef.current = null
-          }
-        })
-        void requestStudioProgramRoomNotify(true)
-        return { ok: true }
-      } catch (e) {
-        return { ok: false, error: formatStudioProgramError(e) }
-      }
-    },
-    [requestStudioProgramRoomNotify],
-  )
-
-  const startStudioProgram = useCallback(
-    async (
-      videoTrack: MediaStreamTrack,
-      audioTrack: MediaStreamTrack | null,
-      rtmpUrl: string,
-      streamKey: string,
-      output: StudioOutputPreset,
-    ): Promise<{ ok: boolean; error?: string; warning?: string }> => {
-      void videoTrack
-      const sendTransport = sendTransportRef.current
-      if (!socketRef.current?.connected || !roomIdRef.current) {
-        setStudioBroadcastHealth('warning')
-        setStudioBroadcastHealthDetail(null)
-        return { ok: false, error: 'Нет WebRTC-транспорта' }
-      }
-      if (!sendTransport) {
-        setStudioBroadcastHealth('warning')
-        setStudioBroadcastHealthDetail(null)
-        return { ok: false, error: 'Нет WebRTC-транспорта' }
-      }
-      const url = rtmpUrl.trim()
-      const key = streamKey.trim()
-      if (!url || !key) {
-        setStudioBroadcastHealth('warning')
-        setStudioBroadcastHealthDetail(null)
-        return { ok: false, error: 'Укажите URL и ключ RTMP' }
-      }
-      await stopStudioProgram()
-      setStudioBroadcastHealth('connecting')
-      setStudioBroadcastHealthDetail(null)
-      await new Promise((resolve) => window.setTimeout(resolve, 180))
-      try {
-        // LIVE больше не публикует отдельный video producer в комнату.
-        if (false) {
-          const fpsCap = capVideoFramerate(output.maxFramerate, videoTrack)
-        const startBr = Math.max(
-          400_000,
-          Math.min(Math.round(output.maxBitrate * 0.28), 3_500_000),
-        )
-        const minBr = Math.max(
-          300_000,
-          Math.min(Math.round(output.maxBitrate * 0.12), 1_200_000),
-        )
-        /* Canvas → WebRTC → FFmpeg: H.264 из Chrome часто даёт decode errors на сервере;
-           VP8/VP9 обычно стабильнее для декодера перед libx264 в RTMP. */
-        const codecs = deviceRef.current?.rtpCapabilities.codecs ?? []
-        const pickMime = (mime: string) =>
-          codecs.find((c) => c.mimeType.toLowerCase() === mime)
-        const studioVideoCodec =
-          pickMime('video/vp8') ??
-          pickMime('video/vp9') ??
-          pickMime('video/h264') ??
-          undefined
-        const videoProducer = await sendTransport!.produce({
-          track: videoTrack,
-          codec: studioVideoCodec,
-          appData: {
-            source: 'studio_program',
-            rtmpUrl: url,
-            rtmpKey: key,
-            outputWidth: output.width,
-            outputHeight: output.height,
-            maxBitrate: output.maxBitrate,
-            maxFramerate: fpsCap,
-          },
-          codecOptions: {
-            videoGoogleStartBitrate: startBr,
-            videoGoogleMinBitrate: minBr,
-            videoGoogleMaxBitrate: output.maxBitrate,
-          },
-          encodings: [{ maxBitrate: output.maxBitrate, maxFramerate: fpsCap }],
-        })
-        videoProducer.on('transportclose', () => {
-          void videoProducer
-          setStudioBroadcastHealth('warning')
-          setStudioBroadcastHealthDetail(null)
-        })
-        }
-
-        let audioWarning: string | undefined
-
-        if (audioTrack) {
-          try {
-            if (audioTrack.readyState !== 'live') {
-              audioWarning = 'Студийный аудиотрек оказался завершён до publish. Эфир запущен без звука.'
-            } else {
-              const audioProducer = await sendTransport.produce({
-                track: audioTrack,
-                appData: {
-                  source: 'studio_program_audio',
-                  rtmpUrl: url,
-                  rtmpKey: key,
-                },
-              })
-              studioProgramAudioProducerRef.current = audioProducer
-              audioProducer.on('transportclose', () => {
-                studioProgramAudioProducerRef.current = null
-                setStudioBroadcastHealth('warning')
-                setStudioBroadcastHealthDetail(null)
-              })
-            }
-          } catch (e) {
-            studioProgramAudioProducerRef.current = null
-            if (isDevTraceEnabled()) {
-              console.warn('[studio] audio produce failed; continuing video-only', e)
-            }
-            if (isEndedTrackError(e)) {
-              audioWarning = 'Студийный аудиотрек завершился. Эфир запущен без звука.'
-            } else {
-              audioWarning = `Не удалось подключить звук студии: ${formatStudioProgramError(e)}`
-            }
-          }
-        } else {
-          studioProgramAudioProducerRef.current = null
-        }
-
-        const startRes = await requestStartStudioBroadcast(url, key, output)
-        if (!startRes.ok) {
-          studioProgramAudioProducerRef.current?.close()
-          studioProgramAudioProducerRef.current = null
-          setStudioBroadcastHealth('warning')
-          setStudioBroadcastHealthDetail(null)
-          return { ok: false, error: startRes.error ?? 'Не удалось запустить эфир' }
-        }
-
-        setStudioBroadcastHealthDetail(audioWarning ?? null)
-        return audioWarning ? { ok: true, warning: audioWarning } : { ok: true }
-      } catch (e) {
-        setStudioBroadcastHealth('warning')
-        setStudioBroadcastHealthDetail(null)
-        return { ok: false, error: formatStudioProgramError(e) }
-      }
-    },
-    [requestStartStudioBroadcast, stopStudioProgram],
-  )
-
   const leave = useCallback(async (opts?: { preserveRoomClosedReason?: boolean }) => {
     joinGenerationRef.current += 1
     stopScreenShare()
@@ -2991,16 +2363,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
       } catch {
         /* ignore */
       }
-    }
-    try {
-      await stopStudioPreview()
-    } catch {
-      /* ignore */
-    }
-    try {
-      await stopStudioProgram()
-    } catch {
-      /* ignore */
     }
     videoProducerRef.current?.close()
     audioProducerRef.current?.close()
@@ -3040,9 +2402,7 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     setChatMessages([])
     setReactionBursts([])
     setVmixIngressInfo(null)
-    setRemoteStudioProgramConsumePending(false)
-    setRemoteStudioRtmpByPeer({})
-  }, [stopScreenShare, stopStudioPreview, stopStudioProgram, stopVmixIngress, vmixIngressInfo])
+  }, [stopScreenShare, stopVmixIngress, vmixIngressInfo])
 
   const endRoomForAll = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
     suppressRoomClosedReasonRef.current = true
@@ -3090,8 +2450,6 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     sendReaction,
     reactionBursts,
     remoteScreenConsumePending,
-    remoteStudioProgramConsumePending,
-    remoteStudioRtmpByPeer,
     startVmixIngress,
     stopVmixIngress,
     vmixIngressInfo,
@@ -3099,13 +2457,5 @@ export function useRoom(activityNotifyRef?: RoomActivityNotifyRef) {
     vmixProgramHostMuted,
     setVmixProgramMutedForAll,
     getPeerUplinkVideoQuality,
-    startStudioPreview,
-    stopStudioPreview,
-    startStudioProgram,
-    stopStudioProgram,
-    replaceStudioProgramAudioTrack,
-    studioBroadcastHealth,
-    studioBroadcastHealthDetail,
-    studioServerLogLines,
   }
 }

@@ -36,23 +36,3 @@ export function formatMediaJoinError(err: unknown): string {
 
   return 'Не удалось войти в комнату. Попробуйте ещё раз.'
 }
-
-/** Ошибки produce/трека студии — не путать с join (иначе показывается «не удалось войти»). */
-export function formatStudioProgramError(err: unknown): string {
-  if (err instanceof DOMException) {
-    const m = err.message
-    if (m) return m
-  }
-  if (err instanceof Error) {
-    const m = err.message
-    if (m === 'aborted') return 'Подключение прервано.'
-    if (/track ended|ended/i.test(m)) {
-      return (
-        'Видеотрек студии уже завершён (часто из‑за перерисовки canvas или повторного старта). ' +
-        'Остановите эфир, подождите секунду и нажмите LIVE снова.'
-      )
-    }
-    if (m) return m
-  }
-  return 'Не удалось запустить эфир студии. Попробуйте ещё раз.'
-}

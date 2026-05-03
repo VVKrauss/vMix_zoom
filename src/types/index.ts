@@ -28,7 +28,7 @@ export type ProducerDescriptor = {
   avatarUrl?: string | null
   authUserId?: string | null
   /** Явный источник видео (из producer.appData на бэке). */
-  videoSource?: 'camera' | 'screen' | 'vmix' | 'studio_program'
+  videoSource?: 'camera' | 'screen' | 'vmix'
   /** Явный источник аудио (из producer.appData на бэке). */
   audioSource?: 'mic' | 'screen' | 'vmix'
   /** Если peerId у видео экрана — отдельный, здесь peerId «хозяина» (камера/имя в комнате). */
@@ -56,8 +56,6 @@ export type RemoteParticipant = {
   name: string
   avatarUrl?: string | null
   authUserId?: string | null
-  virtualSourceType?: 'studio_program'
-  sourceOwnerPeerId?: string
   /** Сведённый в один поток звук участника (legacy). */
   audioStream?: MediaStream
   /** Вариант A: микрофон участника — отдельный входящий поток. */
@@ -69,9 +67,6 @@ export type RemoteParticipant = {
   screenStream?: MediaStream
   /** Отдельный peerId продюсера экрана (соло-ссылка и SRT), если отдаёт бэкенд. */
   screenPeerId?: string
-  /** RTMP-выход режима «Студия» (отдельно от демонстрации экрана). */
-  studioProgramStream?: MediaStream
-  studioProgramPeerId?: string
 }
 
 /** Socket.IO `srtStarted` и элементы `srt[]` из GET /api/frontend/rooms/:roomId */

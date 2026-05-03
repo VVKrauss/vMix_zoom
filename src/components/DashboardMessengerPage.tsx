@@ -3242,6 +3242,99 @@ export function DashboardMessengerPage() {
     user?.id,
   ])
 
+  const applyConversationAvatarOnly = useCallback(
+    async (file: File) => {
+      const cid = conversationInfoId?.trim() ?? ''
+      if (!user?.id || !cid || conversationInfoLoading) return
+      const conv = itemsRef.current.find((i) => i.id === cid) ?? activeConversation
+      if (!conv || (conv.kind !== 'group' && conv.kind !== 'channel')) return
+
+      const title =
+        conversationInfoTitle.trim() ||
+        (typeof conv.title === 'string' && conv.title.trim() ? conv.title.trim() : '') ||
+        (conv.kind === 'channel' ? 'Канал' : 'Группа')
+      const nickRaw = conversationInfoNick.trim().toLowerCase()
+      const nick = nickRaw ? nickRaw.replace(/\s+/g, '_') : ''
+      const nickOk = !nick || /^[a-z0-9_]{3,32}$/.test(nick)
+      if (!nickOk) {
+        const msg = 'Ник: только a-z, 0-9, _ (3–32). Откройте «Редактировать» и исправьте ник.'
+        setConversationInfoError(msg)
+        toast.push({ tone: 'error', message: msg, ms: 3200 })
+        return
+      }
+
+      setConversationInfoLoading(true)
+      setConversationInfoError(null)
+      try {
+        const up = await uploadMessengerImage(cid, file)
+        if (up.error) {
+          setConversationInfoError(up.error)
+          toast.push({ tone: 'error', message: up.error, ms: 2600 })
+          return
+        }
+        const avatarPath = up.path
+        const avatarThumbPath = up.thumbPath
+        if (conv.kind === 'group') {
+          const upd = await updateGroupProfile({
+            conversationId: cid,
+            title,
+            publicNick: nick || null,
+            isPublic: conversationInfoIsOpen,
+            avatarPath,
+            avatarThumbPath,
+          })
+          if (upd.error) {
+            setConversationInfoError(upd.error === 'nick_taken' ? 'Ник уже занят.' : upd.error)
+            toast.push({
+              tone: 'error',
+              message: upd.error === 'nick_taken' ? 'Ник уже занят.' : upd.error,
+              ms: 2600,
+            })
+            return
+          }
+        } else {
+          const commentsMode = conversationInfoChannelComments === 'comments' ? 'everyone' : 'disabled'
+          const upd = await updateChannelProfile({
+            conversationId: cid,
+            title,
+            publicNick: nick || null,
+            isPublic: conversationInfoIsOpen,
+            postingMode: 'admins_only',
+            commentsMode,
+            avatarPath,
+            avatarThumbPath,
+          })
+          if (upd.error) {
+            setConversationInfoError(upd.error === 'nick_taken' ? 'Ник уже занят.' : upd.error)
+            toast.push({
+              tone: 'error',
+              message: upd.error === 'nick_taken' ? 'Ник уже занят.' : upd.error,
+              ms: 2600,
+            })
+            return
+          }
+        }
+        const listRes = await listMessengerConversationsWithContactAliases()
+        if (!listRes.error && listRes.data) setItems(listRes.data)
+        toast.push({ tone: 'success', message: 'Логотип обновлён.', ms: 1800 })
+      } finally {
+        setConversationInfoLoading(false)
+      }
+    },
+    [
+      activeConversation,
+      conversationInfoChannelComments,
+      conversationInfoId,
+      conversationInfoIsOpen,
+      conversationInfoLoading,
+      conversationInfoNick,
+      conversationInfoTitle,
+      setItems,
+      toast,
+      user?.id,
+    ],
+  )
+
   return (
     <DashboardShell
       active="messenger"
@@ -3912,6 +4005,7 @@ export function DashboardMessengerPage() {
         onApplyStaffRole={() => void applyConversationStaffRole()}
         onLeaveConfirm={() => void confirmLeaveConversation()}
         onOpenConversationStats={openConversationStatsFromInfo}
+        onApplyConversationAvatar={(file) => applyConversationAvatarOnly(file)}
       />
 
       <MessengerConversationStatsModal

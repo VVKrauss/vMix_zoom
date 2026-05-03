@@ -1,6 +1,4 @@
 import {
-  Suspense,
-  lazy,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -60,13 +58,7 @@ import {
   parseScreenTilePeerId,
   screenTileKey,
 } from '../utils/screenTileKey'
-import {
-  isStudioProgramTileId,
-  parseStudioProgramTilePeerId,
-  studioProgramTileKey,
-} from '../utils/studioProgramTileKey'
 import { LocalScreenShareTile } from './LocalScreenShareTile'
-import { StudioProgramShareTile } from './StudioProgramShareTile'
 import type { RoomChatMessage, RoomReactionBurst } from '../types/roomComms'
 import { isScreenShareChatNotice } from '../types/roomComms'
 import { pickLatestBurstForPeer } from '../types/roomComms'
@@ -107,7 +99,6 @@ import {
 } from '../lib/spaceRoom'
 import { supabase } from '../lib/supabase'
 import type { RealtimeChannel } from '@supabase/supabase-js'
-import type { StudioOutputPreset } from '../types/studio'
 import { getContactStatuses, setContactPin, type ContactStatus } from '../lib/socialGraph'
 
 /** Входящий запрос на вход в комнату (access_mode=approval). */
@@ -132,11 +123,6 @@ function RoomHeaderChevronGlyph({ open }: { open: boolean }) {
     </svg>
   )
 }
-
-const StudioModeWorkspace = lazy(async () => {
-  const mod = await import('./studio/StudioModeWorkspace')
-  return { default: mod.StudioModeWorkspace }
-})
 
 // couch mode removed
 
@@ -170,22 +156,11 @@ function remoteScreenTileId(p: RemoteParticipant): string | null {
   return p.screenPeerId ?? screenTileKey(p.peerId)
 }
 
-function remoteStudioProgramTileId(p: RemoteParticipant): string | null {
-  if (p.virtualSourceType === 'studio_program') return null
-  if (!p.studioProgramStream) return null
-  return p.studioProgramPeerId ?? studioProgramTileKey(p.peerId)
-}
-
 /** peerId гостя для пункта «выключить звук гостю» (не локальная плитка). */
 function guestMuteTargetPeerId(tileId: string, localPeerId: string): string | null {
   if (!tileId || tileId === localPeerId) return null
   if (isScreenTileId(tileId)) {
     const owner = parseScreenTilePeerId(tileId)
-    if (!owner || owner === localPeerId) return null
-    return owner
-  }
-  if (isStudioProgramTileId(tileId)) {
-    const owner = parseStudioProgramTilePeerId(tileId)
     if (!owner || owner === localPeerId) return null
     return owner
   }
@@ -372,9 +347,6 @@ interface Props {
   onToggleChatToastNotifications: () => void
   /** У гостей: идёт приём newProducer экрана, ещё нет screenStream в state */
   remoteScreenSharePending?: boolean
-  remoteStudioProgramConsumePending?: boolean
-  /** Фаза RTMP эфира студии по peerId ведущего (для индикатора на плитке «Эфир»). */
-  remoteStudioRtmpByPeer?: Readonly<Record<string, 'idle' | 'connecting' | 'live' | 'warning'>>
   vmixIngressInfo: VmixIngressInfo | null
   vmixIngressLoading: boolean
   onStartVmixIngress: () => Promise<{ ok: true; info: VmixIngressInfo } | { ok: false; error: string }>
@@ -389,22 +361,6 @@ interface Props {
   requestPeerMicMute?: (targetPeerId: string) => void
   /** Выгнать участника из комнаты (сигналинг). */
   requestKickPeer?: (targetPeerId: string) => void
-  startStudioPreview: (videoTrack: MediaStreamTrack) => Promise<{ ok: boolean; error?: string }>
-  stopStudioPreview: () => Promise<void>
-  /** RTMP-эфир из режима «Студия». */
-  startStudioProgram: (
-    videoTrack: MediaStreamTrack,
-    audioTrack: MediaStreamTrack | null,
-    rtmpUrl: string,
-    streamKey: string,
-    output: StudioOutputPreset,
-  ) => Promise<{ ok: boolean; error?: string; warning?: string }>
-  stopStudioProgram: () => Promise<void>
-  replaceStudioProgramAudioTrack: (track: MediaStreamTrack | null) => Promise<void>
-  studioBroadcastHealth: 'idle' | 'connecting' | 'live' | 'warning'
-  /** Пояснение с сервера (stderr FFmpeg и т.д.) при studioBroadcastHealth ≠ live. */
-  studioBroadcastHealthDetail?: string | null
-  studioServerLogLines?: readonly string[]
   connectionState?: 'connected' | 'reconnecting'
   reconnectAttempt?: number | null
 }
@@ -425,8 +381,6 @@ export function RoomPage({
   onDismissChatIncomingPreview,
   chatToastNotifications, onToggleChatToastNotifications,
   remoteScreenSharePending = false,
-  remoteStudioProgramConsumePending = false,
-  remoteStudioRtmpByPeer = {},
   vmixIngressInfo,
   vmixIngressLoading,
   onStartVmixIngress,
@@ -436,14 +390,6 @@ export function RoomPage({
   getPeerUplinkVideoQuality,
   requestPeerMicMute,
   requestKickPeer,
-  startStudioPreview,
-  stopStudioPreview,
-  startStudioProgram,
-  stopStudioProgram,
-  replaceStudioProgramAudioTrack,
-  studioBroadcastHealth,
-  studioBroadcastHealthDetail = null,
-  studioServerLogLines = [],
   connectionState = 'connected',
   reconnectAttempt = null,
 }: Props) {
@@ -916,14 +862,9 @@ export function RoomPage({
   })
 
   const [streamerMode, setStreamerMode] = useLocalStorageBool('vmix_streamer_mode', false)
-  const [studioOpen, setStudioOpen] = useState(false)
   const couchOpen = false
   /** Только локальное превью; отправляемый поток без отражения. */
   const [mirrorLocalCamera, setMirrorLocalCamera] = useLocalStorageBool('vmix_local_camera_mirror', true)
-
-  useEffect(() => {
-    if (!streamerMode) setStudioOpen(false)
-  }, [streamerMode])
 
   // couch mode removed
 
@@ -933,7 +874,6 @@ export function RoomPage({
       vmixModalOpen ||
       screenStopDialogOpen ||
       vmixStopDialogOpen ||
-      studioOpen ||
       roomMobileChromeMenuOpen ||
       (chatOpen && !chatEmbed),
     [
@@ -941,7 +881,6 @@ export function RoomPage({
       vmixModalOpen,
       screenStopDialogOpen,
       vmixStopDialogOpen,
-      studioOpen,
       roomMobileChromeMenuOpen,
       chatOpen,
       chatEmbed,
@@ -1065,7 +1004,7 @@ export function RoomPage({
 
   /** Участники-люди в счётчике шапки (без виртуального SRT/внешнего потока). */
   const remoteHumanPeers = useMemo(
-    () => remoteList.filter((p) => !isProgramIngestPeerDisplayName(p.name) && p.virtualSourceType !== 'studio_program'),
+    () => remoteList.filter((p) => !isProgramIngestPeerDisplayName(p.name)),
     [remoteList],
   )
 
@@ -1191,19 +1130,11 @@ export function RoomPage({
     () => remoteList.some((p) => p.screenStream),
     [remoteList],
   )
-  const remoteStudioProgramActive = useMemo(
-    () => remoteList.some((p) => p.studioProgramStream || (p.virtualSourceType === 'studio_program' && p.videoStream)),
-    [remoteList],
-  )
   const canStartScreenShare = !remoteScreenActive && !remoteScreenSharePending
   // couch mode removed
 
   const hasAnyScreenShare =
-    isScreenSharing ||
-    remoteScreenActive ||
-    remoteScreenSharePending ||
-    remoteStudioProgramActive ||
-    remoteStudioProgramConsumePending
+    isScreenSharing || remoteScreenActive || remoteScreenSharePending
   const hadScreenShareRef = useRef(false)
   useEffect(() => {
     if (hasAnyScreenShare && !hadScreenShareRef.current) {
@@ -1237,10 +1168,6 @@ export function RoomPage({
     () => remoteList.filter((p) => p.screenStream).length,
     [remoteList],
   )
-  const remoteStudioProgramTileCount = useMemo(
-    () => remoteList.filter((p) => p.studioProgramStream || (p.virtualSourceType === 'studio_program' && p.videoStream)).length,
-    [remoteList],
-  )
   /** Только люди: вы + удалённые гости; без внешнего потока (SRT) и без плиток демонстрации экрана. */
   const rosterCount = remoteHumanPeers.length + 1
 
@@ -1249,8 +1176,7 @@ export function RoomPage({
     layoutUsesTiledView(layout) &&
     remoteHumanPeers.length === 0 &&
     !(isScreenSharing && localScreenStream) &&
-    remoteScreenTileCount === 0 &&
-    remoteStudioProgramTileCount === 0
+    remoteScreenTileCount === 0
 
   const mobileMultiTiles = isViewportMobile && layoutUsesTiledView(layout) && !mobileSoloTiles
 
@@ -1281,12 +1207,9 @@ export function RoomPage({
     const ids: string[] = [localPeerId]
     if (localScreenTileId) ids.push(localScreenTileId)
     for (const p of remoteList) {
-      if (p.virtualSourceType === 'studio_program' && !p.videoStream) continue
       ids.push(p.peerId)
       const sid = remoteScreenTileId(p)
       if (sid) ids.push(sid)
-      const stu = remoteStudioProgramTileId(p)
-      if (stu) ids.push(stu)
     }
     return ids
   }, [localPeerId, localScreenTileId, remoteList])
@@ -1356,7 +1279,7 @@ export function RoomPage({
 
   const speakerFallbackTileId = useMemo(() => {
     if (orderedTileIds.length === 0) return localPeerId
-    const presentationTileId = orderedTileIds.find((id) => isScreenTileId(id) || isStudioProgramTileId(id))
+    const presentationTileId = orderedTileIds.find((id) => isScreenTileId(id))
     if (presentationTileId) return presentationTileId
     if (allTileIdsSet.has(activeSpeakerPeerId) && !isScreenTileId(activeSpeakerPeerId)) {
       return activeSpeakerPeerId
@@ -1728,37 +1651,6 @@ export function RoomPage({
     }
     const p = participants.get(id)
     if (!p) return null
-    if (p.virtualSourceType === 'studio_program' && p.videoStream) {
-      const owner = p.sourceOwnerPeerId ?? p.peerId
-      const linkPeerId = p.studioProgramPeerId ?? owner
-      const phase =
-        remoteStudioRtmpByPeer[owner] ??
-        (remoteStudioProgramConsumePending ? 'connecting' : 'idle')
-      const ownerPart = participants.get(owner)
-      const studioExtras = buildTileExtras(id, ownerPart?.authUserId ?? p.authUserId, ownerPart?.name ?? p.name)
-      return (
-        <StudioProgramShareTile
-          stream={p.videoStream}
-          label="ЭФИР"
-          roomId={roomId}
-          linkPeerId={linkPeerId}
-          videoStyle={screenShareVideoStyle}
-          showInfo={showInfo}
-          srtConnectUrl={srtByPeer[owner]?.connectUrlPublic}
-          srtListenPort={srtByPeer[owner]?.listenPort}
-          reactionBurst={pickLatestBurstForPeer(reactionBursts, owner)}
-          showSoloViewerCopy={canUseElevatedRoomTools}
-          rtmpPhase={phase}
-          guestMute={
-            canRemoteMutePeers
-              ? { show: true, onMute: () => { requestPeerMicMute?.(owner) } }
-              : undefined
-          }
-          extraMenuItems={studioExtras}
-          showTileOverflowButton={studioExtras.length > 0}
-        />
-      )
-    }
     const isProgramIngestTile = isProgramIngestPeerDisplayName(p.name)
     const participantExtras = buildTileExtras(id, p.authUserId, p.name)
     return (
@@ -2147,18 +2039,6 @@ export function RoomPage({
                     ariaLabel={streamerMode ? 'Режим стримера включён' : 'Режим стримера выключен'}
                   />
                 </div>
-              ) : null}
-              {streamerMode && canUseElevatedRoomTools ? (
-                <button
-                  type="button"
-                  className="room-mobile-chrome-menu__btn room-mobile-chrome-menu__btn--accent"
-                  onClick={() => {
-                    setRoomMobileChromeMenuOpen(false)
-                    setStudioOpen(true)
-                  }}
-                >
-                  Режим «Студия»
-                </button>
               ) : null}
               {user ? (
                 <a
@@ -2761,9 +2641,6 @@ export function RoomPage({
         onHideVideoLetterboxingChange={setHideVideoLetterboxing}
         canManageVmixProgramIngress={canUseElevatedRoomTools}
         showMobileLayoutCycle={showLayoutToggle}
-        showStudioEntry={streamerMode && canUseElevatedRoomTools}
-        studioOpen={studioOpen}
-        onStudioToggle={() => setStudioOpen((v) => !v)}
       />
       </div>
 
@@ -2786,33 +2663,6 @@ export function RoomPage({
           composerLockedHint={chatComposerHint}
         />
       )}
-
-      {studioOpen ? (
-        <Suspense fallback={<div className="join-screen"><div className="auth-loading" aria-label="Загрузка…" /></div>}>
-          <StudioModeWorkspace
-            open={studioOpen}
-            onClose={() => setStudioOpen(false)}
-            participants={participants}
-            localPeerId={localPeerId || null}
-            localStream={localStream}
-            localScreenStream={localScreenStream}
-            localDisplayName={name}
-            startStudioPreview={startStudioPreview}
-            stopStudioPreview={stopStudioPreview}
-            startStudioProgram={startStudioProgram}
-            stopStudioProgram={stopStudioProgram}
-            replaceStudioProgramAudioTrack={replaceStudioProgramAudioTrack}
-            studioBroadcastHealth={studioBroadcastHealth}
-            studioBroadcastHealthDetail={studioBroadcastHealthDetail}
-            studioServerLogLines={studioServerLogLines}
-            currentUserId={user?.id ?? null}
-            contactStatuses={chatContactStatuses}
-            onToggleContactPin={(targetUserId, nextFavorite) => {
-              void toggleFavoriteFromChat(targetUserId, nextFavorite)
-            }}
-          />
-        </Suspense>
-      ) : null}
 
       {/* couch mode removed */}
 

@@ -252,7 +252,7 @@ html[data-theme="light"] .ctrl-chevron:disabled:hover {
   color: var(--text-dim);
 }
 
-html[data-theme="light"] .controls-bar .ctrl-btn:hover:not(:disabled):not(.ctrl-btn--leave):not(.ctrl-btn--screen):not(.ctrl-btn--off):not(.ctrl-btn--source-ingest):not(.ctrl-btn--studio) {
+html[data-theme="light"] .controls-bar .ctrl-btn:hover:not(:disabled):not(.ctrl-btn--leave):not(.ctrl-btn--screen):not(.ctrl-btn--off):not(.ctrl-btn--source-ingest) {
   background: color-mix(in srgb, var(--surface2) 55%, var(--border));
 }
 
@@ -298,25 +298,6 @@ html[data-theme="light"] .ctrl-btn.ctrl-btn--source-ingest:hover:not(:disabled) 
   color: var(--text);
   background: color-mix(in srgb, var(--surface2) 45%, var(--border));
   border-color: color-mix(in srgb, var(--red) 22%, var(--border));
-}
-
-html[data-theme="light"] .ctrl-btn.ctrl-btn--studio {
-  color: #000;
-  border-color: var(--border);
-  background: var(--surface2);
-}
-
-html[data-theme="light"] .ctrl-btn.ctrl-btn--studio:hover:not(:disabled) {
-  color: #000;
-  border-color: var(--border);
-  background: color-mix(in srgb, var(--surface2) 55%, var(--border));
-}
-
-html[data-theme="light"] .ctrl-btn.ctrl-btn--studio.ctrl-btn--studio--open {
-  color: #000;
-  border-color: var(--border);
-  background: color-mix(in srgb, var(--text) 7%, var(--surface2));
-  box-shadow: none;
 }
 
 /* Светлая тема: SRT (логотип + громкость программы) — делаем контрастным. */
@@ -2581,6 +2562,46 @@ html[data-theme="light"] .messenger-file-input__name--placeholder {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.messenger-conv-info-modal__hero-section {
+  text-align: center;
+}
+
+.messenger-conv-info-modal__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+.messenger-conv-info-modal__hero .dashboard-messenger__gc-avatar-lock-wrap--modal {
+  width: 88px;
+  height: 88px;
+  margin: 0 auto;
+}
+
+.messenger-conv-info-modal__hero .user-peek-modal__name {
+  margin-top: 10px;
+}
+
+.messenger-conv-info-modal__hero-sub {
+  margin: 0 0 4px;
+  max-width: 100%;
+}
+
+.messenger-conv-info-modal__hero-toolbar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.messenger-conv-info-modal__avatar-pick-row {
+  margin-top: 10px;
+  justify-content: center;
 }
 
 .messenger-settings-modal__push-row {
@@ -9304,6 +9325,13 @@ span.dashboard-messenger__thread-head-center-avatar {
   flex-direction: column;
   gap: 2px;
   align-items: center;
+}
+
+/* Моб. шапка ЛС: та же вторичная строка, что на десктопе (не время последнего сообщения). */
+.dashboard-messenger__list-head--thread .dashboard-messenger__thread-head-center-text .dashboard-messenger__thread-titleline,
+.dashboard-messenger__list-head--thread .dashboard-messenger__thread-head-center-text .dashboard-messenger__thread-meta {
+  justify-content: center;
+  width: 100%;
 }
 
 .dashboard-messenger__thread-head-center-title {
