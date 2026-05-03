@@ -4,11 +4,13 @@
 /* ─── Dashboard page ──────────────────────────────────────────────────────── */
 .dashboard-page {
   --dashboard-topbar-height: 56px;
+  --dashboard-safe-top: env(safe-area-inset-top, 0px);
+  --dashboard-topbar-stack-height: calc(var(--dashboard-topbar-height) + var(--dashboard-safe-top));
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
   min-width: 0;
-  padding-top: var(--dashboard-topbar-height);
+  padding-top: var(--dashboard-topbar-stack-height);
   box-sizing: border-box;
   background: var(--bg);
   overflow-x: hidden;
@@ -25,8 +27,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 0 18px 0 20px;
-  height: var(--dashboard-topbar-height);
+  padding: var(--dashboard-safe-top) 18px 0 20px;
+  height: var(--dashboard-topbar-stack-height);
   box-sizing: border-box;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
@@ -1434,9 +1436,9 @@
 
 .dashboard-sidebar {
   position: sticky;
-  top: var(--dashboard-topbar-height);
+  top: var(--dashboard-topbar-stack-height);
   align-self: start;
-  height: calc(100dvh - var(--dashboard-topbar-height));
+  height: calc(100dvh - var(--dashboard-topbar-stack-height));
   padding: 20px 12px;
   border-right: 1px solid var(--border);
   background:
@@ -1577,7 +1579,7 @@
   .dashboard-page {
     --dashboard-topbar-height: 54px;
     --dashboard-mobile-tabs-height: 62px;
-    padding-top: calc(var(--dashboard-topbar-height) + var(--dashboard-mobile-tabs-height));
+    padding-top: calc(var(--dashboard-topbar-stack-height) + var(--dashboard-mobile-tabs-height));
   }
 
   .dashboard-profile-account-row {
@@ -1629,7 +1631,7 @@
 
   .dashboard-sidebar {
     position: fixed;
-    top: var(--dashboard-topbar-height);
+    top: var(--dashboard-topbar-stack-height);
     left: 0;
     right: 0;
     z-index: 180;
@@ -1676,7 +1678,7 @@
   }
 
   .dashboard-topbar {
-    padding: 0 10px 0 12px;
+    padding: var(--dashboard-safe-top) 10px 0 12px;
   }
 
   .dashboard-topbar__actions {
@@ -1716,7 +1718,7 @@
 
   /* Кабинет / комнаты / друзья: бургер вместо полоски вкладок — не добавляем высоту под табы */
   .dashboard-page.dashboard-page--cabinet-mobile-burger {
-    padding-top: var(--dashboard-topbar-height);
+    padding-top: var(--dashboard-topbar-stack-height);
   }
 }
 
