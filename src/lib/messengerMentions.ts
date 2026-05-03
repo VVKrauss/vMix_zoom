@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { normalizeSupabaseStoragePublicUrl } from './supabaseStorageUrl'
 
 export type ConversationMentionPick = {
   userId: string
@@ -26,7 +27,9 @@ export async function listConversationMembersForMentions(
       const profileSlug = typeof row.profile_slug === 'string' ? row.profile_slug.trim() : ''
       if (!userId || !profileSlug) return null
       const avatarUrl =
-        typeof row.avatar_url === 'string' && row.avatar_url.trim() ? row.avatar_url.trim() : null
+        typeof row.avatar_url === 'string' && row.avatar_url.trim()
+          ? normalizeSupabaseStoragePublicUrl(row.avatar_url.trim())
+          : null
       return { userId, displayName, profileSlug, avatarUrl }
     })
     .filter(Boolean) as ConversationMentionPick[]

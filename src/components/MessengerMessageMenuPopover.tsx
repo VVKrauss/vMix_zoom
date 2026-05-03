@@ -27,6 +27,7 @@ export function MessengerMessageMenuPopover({
   pinBusy,
   onTogglePin,
   hideReply,
+  outsidePointerIgnoreInside,
 }: {
   canEdit: boolean
   canDelete: boolean
@@ -56,6 +57,8 @@ export function MessengerMessageMenuPopover({
   pinActive?: boolean
   pinBusy?: boolean
   onTogglePin?: () => void
+  /** Пузырь/строка сообщения: не закрывать меню по клику внутри (long-press + отпускание). */
+  outsidePointerIgnoreInside?: HTMLElement | null
 }) {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -76,7 +79,13 @@ export function MessengerMessageMenuPopover({
         'touches' in e && e.touches[0]
           ? (e.touches[0]!.target as EventTarget)
           : (e as MouseEvent).target
-      if (shouldClosePopoverOnOutsidePointer(ref.current, target)) onClose()
+      if (
+        shouldClosePopoverOnOutsidePointer(ref.current, target, {
+          ignoreInside: outsidePointerIgnoreInside ?? null,
+        })
+      ) {
+        onClose()
+      }
     }
     const touchOpts: AddEventListenerOptions = { capture: true, passive: true }
     document.addEventListener('mousedown', onDown)
@@ -85,7 +94,7 @@ export function MessengerMessageMenuPopover({
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('touchstart', onDown, touchOpts)
     }
-  }, [onClose])
+  }, [onClose, outsidePointerIgnoreInside])
 
   return (
     <div className="messenger-msg-menu device-popover" ref={ref} role="menu">

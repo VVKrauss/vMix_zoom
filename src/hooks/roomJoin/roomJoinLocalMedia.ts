@@ -1,6 +1,7 @@
 import { readPreferredCameraId, readPreferredMicId } from '../../config/roomUiStorage'
 import { isIosLikeDevice } from '../../utils/iosLikeDevice'
 import { buildRoomMicTrackConstraints } from '../../utils/roomMicCapture'
+import { getUserMediaAudioThenVideo } from '../../utils/splitAvMediaStream'
 import type { VideoPreset } from '../../types'
 
 export type JoinLocalMediaParams = {
@@ -15,7 +16,8 @@ export type JoinLocalMediaParams = {
 }
 
 /**
- * Шаг join: getUserMedia по тумблерам входа (или пустой поток без треков).
+ * Шаг join: при одновременном микрофоне и камере сначала раздельный захват (splitAvMediaStream),
+ * затем до трёх combined/fallback — без длинных цепочек на каждом уровне микрофона.
  */
 export async function captureJoinLocalMediaStream(p: JoinLocalMediaParams): Promise<MediaStream | null> {
   const { wantMic, wantCam, preset, aborted, stopStreamTracks, setIsMuted, setIsCamOff, setStatus } = p
@@ -40,34 +42,55 @@ export async function captureJoinLocalMediaStream(p: JoinLocalMediaParams): Prom
     const audioPart: boolean | MediaTrackConstraints = wantMic
       ? buildRoomMicTrackConstraints(!isIosLikeDevice() && micPref ? micPref : null)
       : false
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: audioPart,
-        video: videoPart,
-      })
-    } catch {
+    const videoLoose = wantCam
+      ? {
+          width: { ideal: preset.width },
+          height: { ideal: preset.height },
+          frameRate: { ideal: preset.frameRate },
+        }
+      : false
+
+    if (wantMic && wantCam) {
+      try {
+        stream = await getUserMediaAudioThenVideo(audioPart, videoPart)
+      } catch {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: audioPart,
+            video: videoPart,
+          })
+        } catch {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              audio: wantMic ? buildRoomMicTrackConstraints(!isIosLikeDevice() && micPref ? micPref : null) : false,
+              video: videoLoose || false,
+            })
+          } catch {
+            stream = await navigator.mediaDevices.getUserMedia({
+              audio: wantMic,
+              video: videoLoose || false,
+            })
+          }
+        }
+      }
+    } else {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          audio: wantMic ? buildRoomMicTrackConstraints(!isIosLikeDevice() && micPref ? micPref : null) : false,
-          video: wantCam
-            ? {
-                width: { ideal: preset.width },
-                height: { ideal: preset.height },
-                frameRate: { ideal: preset.frameRate },
-              }
-            : false,
+          audio: audioPart,
+          video: videoPart,
         })
       } catch {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: wantMic,
-          video: wantCam
-            ? {
-                width: { ideal: preset.width },
-                height: { ideal: preset.height },
-                frameRate: { ideal: preset.frameRate },
-              }
-            : false,
-        })
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: wantMic ? buildRoomMicTrackConstraints(!isIosLikeDevice() && micPref ? micPref : null) : false,
+            video: videoLoose || false,
+          })
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: wantMic,
+            video: videoLoose || false,
+          })
+        }
       }
     }
   }

@@ -1,7 +1,7 @@
 # Состояние и структура БД (актуально по репозиторию)
 
 Документ собран по **`supabase/migrations/`**, **`supabase/functions/`** и **`supabase/config.toml`**.  
-Проект Supabase: **`dbhrmaabotdaagmiuzum`** (см. `config.toml`). Целевая СУБД: **PostgreSQL 17** (локальный `major_version` в конфиге). Актуальная сверка с удалённой БД и Edge — **[раздел 7](#7-сверка-с-удалённым-проектом-mcp-supabase)** (инструменты MCP `user-supabase`: `execute_sql`, `list_tables`, `list_edge_functions`).
+Прод: **self-hosted** (`https://supabase.redflow.online`), см. `supabase/config.toml` (`project_id` — условный идентификатор для CLI). Целевая СУБД: **PostgreSQL 17**. Сверка схемы: **`docs/db-schema.vps.sql`**. Для облачного MCP Supabase см. **[раздел 7](#7-сверка-с-удалённым-проектом-mcp-supabase)** при необходимости.
 
 > **Важно.** Реальная удалённая БД может содержать дополнительные правки вне репозитория; при расхождении источником правды для схемы остаются миграции в git. Подробное описание «классической» доменной модели (accounts, rooms, events, live_sessions и т.д.) по-прежнему в [`DATABASE.md`](./DATABASE.md).
 
@@ -218,7 +218,7 @@
 
 ## 7. Сверка с удалённым проектом (MCP Supabase)
 
-Проверка: **`project_id` = `dbhrmaabotdaagmiuzum`**, инструменты **`list_tables`**, **`execute_sql`** (список `public` функций из `pg_proc`), **`list_edge_functions`**.
+Проверка: актуальный **`project_id`** в `config.toml` / `supabase link`, инструменты **`list_tables`**, **`execute_sql`**, **`list_edge_functions`** (если используется MCP).
 
 ### 7.1. Таблицы и колонки
 

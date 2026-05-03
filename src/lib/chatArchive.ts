@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { normalizeSupabaseStoragePublicUrl } from './supabaseStorageUrl'
 
 export const ROOM_CHAT_PAGE_SIZE = 10
 
@@ -154,7 +155,10 @@ export async function listRoomChatMembersForUser(
     if (!id) continue
     byId.set(id, {
       display_name: typeof row.display_name === 'string' ? row.display_name : null,
-      avatar_url: typeof row.avatar_url === 'string' ? row.avatar_url : null,
+      avatar_url:
+        typeof row.avatar_url === 'string' && row.avatar_url.trim()
+          ? normalizeSupabaseStoragePublicUrl(row.avatar_url.trim())
+          : null,
     })
   }
 
@@ -164,7 +168,7 @@ export async function listRoomChatMembersForUser(
     return {
       userId: id,
       displayName: dn || 'Участник',
-      avatarUrl: u?.avatar_url?.trim() ? u.avatar_url.trim() : null,
+      avatarUrl: u?.avatar_url ?? null,
     }
   })
   mapped.sort((a, b) => a.displayName.localeCompare(b.displayName, 'ru'))

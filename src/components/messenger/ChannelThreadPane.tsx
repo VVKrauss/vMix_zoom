@@ -1530,38 +1530,6 @@ export function ChannelThreadPane({
   }, [reactionPick])
 
   useEffect(() => {
-    if (!postMenu) return
-    const onDown = (e: MouseEvent | TouchEvent) => {
-      const target =
-        'touches' in e && e.touches[0] ? (e.touches[0]!.target as EventTarget) : (e as MouseEvent).target
-      if (shouldClosePopoverOnOutsidePointer(postMenuWrapRef.current, target)) setPostMenu(null)
-    }
-    const touchOpts: AddEventListenerOptions = { capture: true, passive: true }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('touchstart', onDown, touchOpts)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('touchstart', onDown, touchOpts)
-    }
-  }, [postMenu])
-
-  useEffect(() => {
-    if (!commentMenu) return
-    const onDown = (e: MouseEvent | TouchEvent) => {
-      const target =
-        'touches' in e && e.touches[0] ? (e.touches[0]!.target as EventTarget) : (e as MouseEvent).target
-      if (shouldClosePopoverOnOutsidePointer(commentMenuWrapRef.current, target)) setCommentMenu(null)
-    }
-    const touchOpts: AddEventListenerOptions = { capture: true, passive: true }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('touchstart', onDown, touchOpts)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('touchstart', onDown, touchOpts)
-    }
-  }, [commentMenu])
-
-  useEffect(() => {
     if (!reactionPick) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setReactionPick(null)
@@ -2548,6 +2516,7 @@ export function ChannelThreadPane({
                       postMenu.post.kind === 'system'),
                 )}
                 timestampLabel={formatChannelBubbleTime(postMenu.post.createdAt)}
+                outsidePointerIgnoreInside={postAnchorRef.current.get(postMenu.post.id) ?? null}
                 onClose={() => setPostMenu(null)}
                 onCopy={async () => {
                   const text = previewTextForDirectMessageTail(postMenu.post)
@@ -2636,6 +2605,7 @@ export function ChannelThreadPane({
                 )}
                 canDelete={canDeleteChannelComment(commentMenu.message)}
                 timestampLabel={formatChannelBubbleTime(commentMenu.message.createdAt)}
+                outsidePointerIgnoreInside={commentAnchorRef.current.get(commentMenu.message.id) ?? null}
                 onClose={() => setCommentMenu(null)}
                 onCopy={async () => {
                   const text = previewTextForDirectMessageTail(commentMenu.message)

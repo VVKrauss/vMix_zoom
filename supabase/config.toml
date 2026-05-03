@@ -1,5 +1,5 @@
-# Для CLI: `supabase link` / `supabase db push` (ref из Supabase Dashboard).
-project_id = "dbhrmaabotdaagmiuzum"
+# Для CLI (`supabase link`): актуальный ref/host задаётся при линковке; не захардкоженный Cloud-проект.
+project_id = "redflow-online"
 
 [db]
 major_version = 17

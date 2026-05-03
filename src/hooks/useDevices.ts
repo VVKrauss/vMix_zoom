@@ -5,6 +5,7 @@ import {
   writePreferredCameraId,
   writePreferredMicId,
 } from '../config/roomUiStorage'
+import { filterRealVideoInputDevices } from '../utils/videoInputDeviceFilter'
 
 export interface DeviceList {
   cameras: MediaDeviceInfo[]
@@ -20,7 +21,7 @@ export function useDevices() {
   const enumerate = useCallback(async () => {
     // Permissions must already be granted for labels to appear
     const devices = await navigator.mediaDevices.enumerateDevices()
-    const cams = devices.filter(d => d.kind === 'videoinput')
+    const cams = filterRealVideoInputDevices(devices.filter((d) => d.kind === 'videoinput'))
     const mics = devices.filter(d => d.kind === 'audioinput')
     setCameras(cams)
     setMicrophones(mics)

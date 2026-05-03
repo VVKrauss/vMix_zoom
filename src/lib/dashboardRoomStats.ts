@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { normalizeSupabaseStoragePublicUrl } from './supabaseStorageUrl'
 import type { RoomChatConversationSummary } from './chatArchive'
 import type { PersistentSpaceRoomRow } from './spaceRoom'
 import { spaceRoomEffectiveOpenSeconds } from './spaceRoom'
@@ -142,7 +143,10 @@ export async function fetchRoomChatMembersDashboard(
             userId: uid,
             displayName:
               typeof o.displayName === 'string' && o.displayName.trim() ? o.displayName.trim() : 'Участник',
-            avatarUrl: typeof o.avatarUrl === 'string' && o.avatarUrl.trim() ? o.avatarUrl.trim() : null,
+            avatarUrl:
+              typeof o.avatarUrl === 'string' && o.avatarUrl.trim()
+                ? normalizeSupabaseStoragePublicUrl(o.avatarUrl.trim())
+                : null,
           }
         })
         .filter(Boolean) as DashboardRoomMemberProfile[]

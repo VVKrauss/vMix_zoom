@@ -6,6 +6,7 @@ import { useToast } from '../context/ToastContext'
 import { GuestAuthPanel } from './GuestAuthPanel'
 import { ensureDirectConversationWithUser } from '../lib/messenger'
 import { getContactStatuses, setContactPin } from '../lib/socialGraph'
+import { normalizeSupabaseStoragePublicUrl } from '../lib/supabaseStorageUrl'
 
 type PublicProfile = {
   id: string
@@ -24,7 +25,10 @@ function parsePublicProfile(raw: unknown): PublicProfile | null {
   return {
     id,
     displayName: typeof r.display_name === 'string' && r.display_name.trim() ? r.display_name.trim() : 'Пользователь',
-    avatarUrl: typeof r.avatar_url === 'string' && r.avatar_url.trim() ? r.avatar_url.trim() : null,
+    avatarUrl:
+      typeof r.avatar_url === 'string' && r.avatar_url.trim()
+        ? normalizeSupabaseStoragePublicUrl(r.avatar_url.trim())
+        : null,
     profileSlug: typeof r.profile_slug === 'string' && r.profile_slug.trim() ? r.profile_slug.trim() : null,
     restricted: r.restricted === true,
   }

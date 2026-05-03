@@ -641,24 +641,6 @@ export function ControlsBar({
   )
 
   const sourcesStrip = (sheet: boolean) => {
-    const ndi =
-      streamerMode ? (
-        <button
-          type="button"
-          className="ctrl-btn ctrl-btn--source-ingest ctrl-btn--source-ingest--ndi"
-          title="Добавить источник NDI (скоро)"
-          onClick={() => {}}
-        >
-          <img
-            className="ctrl-btn__source-logo-img"
-            src="/ndi-logo.png"
-            alt=""
-            width={56}
-            height={18}
-            draggable={false}
-          />
-        </button>
-      ) : null
     const vmixStrip = vmixSourcesBlock(sheet)
     const studioBtn =
       streamerMode && showStudioEntry && onStudioToggle ? (
@@ -671,10 +653,9 @@ export function ControlsBar({
           <FiRrIcon name="clapperboard" className="ctrl-btn__studio-fi" aria-hidden />
         </button>
       ) : null
-    if (!ndi && !vmixStrip && !studioBtn) return null
+    if (!vmixStrip && !studioBtn) return null
     return (
       <div className={`controls-bar__sources${sheet ? ' controls-bar__sources--in-sheet' : ''}`} aria-label="Внешние источники">
-        {ndi}
         {vmixStrip}
         {studioBtn}
       </div>
@@ -768,7 +749,7 @@ export function ControlsBar({
       ) : null}
 
       {forceMobileFabMenu ? (
-        <>
+        <div className="ctrl-mobile-fab-popover-host">
           <div className="ctrl-mobile-bottom-bar" role="toolbar" aria-label="Управление комнатой">
             <div className="ctrl-mobile-bottom-bar__edge ctrl-mobile-bottom-bar__edge--left">
               <button
@@ -899,7 +880,7 @@ export function ControlsBar({
               onPlayoutSinkChange={onPlayoutSinkChange}
             />
           ) : null}
-        </>
+        </div>
       ) : null}
 
       {screenPickerOpen && (

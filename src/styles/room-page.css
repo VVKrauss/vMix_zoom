@@ -1032,7 +1032,7 @@ html[data-theme="light"] .card-bar-fav--on {
   flex: 0 0 auto;
 }
 
-/* Заглушки NDI / SRT — те же отступы и мин. ширина, что у кнопок в .ctrl-group */
+/* Заглушки внешнего источника (SRT) — те же отступы и мин. ширина, что у кнопок в .ctrl-group */
 .ctrl-btn.ctrl-btn--source-ingest {
   flex-direction: row;
   flex-wrap: nowrap;
@@ -1060,7 +1060,7 @@ html[data-theme="light"] .card-bar-fav--on {
   cursor: wait;
 }
 
-/* Логотипы NDI / SRT — настоящий PNG с альфой в public/ */
+/* Логотипы источников — PNG с альфой в public/ */
 .ctrl-btn__source-logo-img {
   display: block;
   height: 36px;
@@ -1235,7 +1235,6 @@ html[data-theme="light"] .card-bar-fav--on {
   max-width: 72px;
 }
 
-.controls-bar.controls-bar--icons-only .ctrl-btn--source-ingest--ndi .ctrl-btn__source-logo-img,
 .controls-bar.controls-bar--icons-only .ctrl-btn--source-ingest--vmix .ctrl-btn__source-logo-img {
   display: inline-flex;
   align-items: center;
@@ -1440,7 +1439,7 @@ html[data-theme="light"] .card-bar-fav--on {
   box-sizing: border-box;
 }
 
-/* NDI и SRT (idle): вне .ctrl-group — те же 48×48, что у остальных в режиме «только иконки» */
+/* SRT (idle): вне .ctrl-group — те же 48×48, что у остальных в режиме «только иконки» */
 .controls-bar.controls-bar--icons-only .controls-bar__sources > .ctrl-btn.ctrl-btn--source-ingest {
   width: 48px;
   min-width: 48px;
@@ -7046,6 +7045,11 @@ html[data-theme="light"] .room-chat-msg--own .room-chat-msg__name {
   pointer-events: none;
 }
 
+/* Объединяет нижнюю панель и FAB device-popover в одну зону для outside-click (см. popoverOutsideClick). */
+.ctrl-mobile-fab-popover-host {
+  display: contents;
+}
+
 /* Нижняя панель мобильной комнаты: наушники | центр | смена вида */
 .ctrl-mobile-bottom-bar {
   position: fixed;
@@ -8557,15 +8561,6 @@ html[data-theme="light"] .room-chat-preview-toast__text {
 }
 
 /* Панель: разноцветное свечение групп (режим стримера) */
-.room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__sources .ctrl-btn--source-ingest--ndi {
-  border-color: #00ffc8;
-  color: #bffff0;
-  box-shadow:
-    0 0 10px rgba(0, 255, 200, 0.55),
-    0 0 22px rgba(0, 255, 200, 0.25),
-    inset 0 0 12px rgba(0, 255, 200, 0.08);
-}
-
 .room-page--streamer-mode .controls-bar--streamer-mode .controls-bar__sources .ctrl-btn--source-ingest--vmix:not(.ctrl-btn--source-ingest--vmix-waiting):not(.ctrl-btn--source-ingest--vmix-live) {
   border-color: #ff2ebe;
   color: #ffc8f0;

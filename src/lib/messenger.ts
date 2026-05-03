@@ -3,6 +3,7 @@ import { REACTION_EMOJI_WHITELIST } from '../types/roomComms'
 import { isPostDraftV1 } from './postEditor/draftUtils'
 import type { PostDraftV1 } from './postEditor/types'
 import { supabase } from './supabase'
+import { normalizeSupabaseStoragePublicUrl } from './supabaseStorageUrl'
 
 /** Событие для мгновенного пересчёта бейджа непрочитанных (см. useMessengerUnreadCount). */
 export const MESSENGER_UNREAD_REFRESH_EVENT = 'vmix:messenger-unread-refresh'
@@ -586,7 +587,7 @@ function mapDirectConversationRow(row: Record<string, unknown>): DirectConversat
       : ''
   const otherAvatarFromRpc =
     typeof row.other_avatar_url === 'string' && row.other_avatar_url.trim()
-      ? row.other_avatar_url.trim()
+      ? normalizeSupabaseStoragePublicUrl(row.other_avatar_url.trim())
       : null
 
   const displayTitle = otherUserId
@@ -638,7 +639,12 @@ async function attachConversationAvatars(
   for (const row of data ?? []) {
     const id = typeof row.id === 'string' ? row.id : ''
     if (!id) continue
-    avatarMap.set(id, typeof row.avatar_url === 'string' && row.avatar_url.trim() ? row.avatar_url.trim() : null)
+    avatarMap.set(
+      id,
+      typeof row.avatar_url === 'string' && row.avatar_url.trim()
+        ? normalizeSupabaseStoragePublicUrl(row.avatar_url.trim())
+        : null,
+    )
   }
 
   return items.map((item) => ({

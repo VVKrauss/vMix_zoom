@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { normalizeSupabaseStoragePublicUrl } from './supabaseStorageUrl'
 
 /** PostgREST отдаёт timestamptz в JSON как строку; на всякий случай принимаем и число ms. */
 function parseRpcTimestamp(v: unknown): string | null {
@@ -67,7 +68,9 @@ export async function fetchPublicUserProfile(
           ? row.display_name.trim()
           : 'Пользователь',
       avatarUrl:
-        typeof row.avatar_url === 'string' && row.avatar_url.trim() ? row.avatar_url.trim() : null,
+        typeof row.avatar_url === 'string' && row.avatar_url.trim()
+          ? normalizeSupabaseStoragePublicUrl(row.avatar_url.trim())
+          : null,
       profileSlug:
         typeof row.profile_slug === 'string' && row.profile_slug.trim() ? row.profile_slug.trim() : null,
       lastActivityAt: rawActivity,

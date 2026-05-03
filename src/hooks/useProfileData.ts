@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { normalizeSupabaseStoragePublicUrl } from '../lib/supabaseStorageUrl'
 import { useAuth } from '../context/AuthContext'
 import { normalizeProfileSlug, validateProfileSlugInput } from '../lib/profileSlug'
 import { assignAutoProfileSlugIfEmpty, isProfileSlugAvailable } from '../lib/profileSlugAvailability'
@@ -161,7 +162,9 @@ export function useProfileData(): UseProfileReturn {
         display_name: userData.display_name,
         profile_slug: resolvedSlug,
         email: userData.email ?? user.email ?? null,
-        avatar_url: userData.avatar_url,
+        avatar_url: normalizeSupabaseStoragePublicUrl(
+          typeof userData.avatar_url === 'string' ? userData.avatar_url : null,
+        ),
         status: userData.status,
         room_ui_preferences: userData.room_ui_preferences ?? null,
         global_roles: globalRoles,

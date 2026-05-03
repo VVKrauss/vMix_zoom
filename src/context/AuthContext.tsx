@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import type { ReactNode } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { normalizeSupabaseStoragePublicUrl } from '../lib/supabaseStorageUrl'
 import { getEmailConfirmationRedirectUrl } from '../config/authUrls'
 import { clearDesktopRoomViewStorage } from '../config/roomUiStorage'
 import { HOST_SESSION_KEY, PENDING_HOST_CLAIM_KEY } from '../lib/spaceRoom'
@@ -26,6 +27,16 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
+
+function userWithNormalizedStoragePublicUrls(user: User): User {
+  const meta = { ...(user.user_metadata ?? {}) }
+  const raw = meta.avatar_url
+  if (typeof raw === 'string' && raw.trim()) {
+    const n = normalizeSupabaseStoragePublicUrl(raw.trim())
+    if (n) meta.avatar_url = n
+  }
+  return { ...user, user_metadata: meta }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser]       = useState<User | null>(null)
@@ -54,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
         setSession(data.session)
-        setUser(data.session?.user ?? null)
+        setUser(data.session?.user ? userWithNormalizedStoragePublicUrls(data.session.user) : null)
         setAuthBootstrapError(null)
       } catch (e) {
         if (cancelled) return
@@ -75,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession)
-      setUser(newSession?.user ?? null)
+      setUser(newSession?.user ? userWithNormalizedStoragePublicUrls(newSession.user) : null)
       if (newSession) setAuthBootstrapError(null)
     })
 

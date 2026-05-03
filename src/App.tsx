@@ -101,6 +101,11 @@ const PublicGroupChannelPage = lazy(async () => {
   return { default: mod.PublicGroupChannelPage }
 })
 
+const MirrorTestPage = lazy(async () => {
+  const mod = await import('./components/MirrorTestPage')
+  return { default: mod.MirrorTestPage }
+})
+
 function RouteLoadingFallback() {
   return (
     <div className="join-screen">
@@ -175,6 +180,7 @@ export function App() {
         <Route path="/admin" element={<AdminProtectedRoute><AdminPage /></AdminProtectedRoute>} />
         <Route path="/room-closed" element={<RoomClosedPage />} />
         <Route path="/r/:roomId" element={<RoomRoute />} />
+        <Route path="/mirror" element={<MirrorTestPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>

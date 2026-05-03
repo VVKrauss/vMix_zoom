@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { normalizeSupabaseStoragePublicUrl } from './supabaseStorageUrl'
 
 /** Постоянная комната — строка в БД сохраняется при выходе хоста (закрыта, но не удалена). Временная — как раньше, без долгой ссылки. */
 export type SpaceRoomLifecycleKind = 'permanent' | 'temporary'
@@ -206,7 +207,8 @@ export function takeSpaceRoomCreateOptions(slug: string): SpaceRoomCreateOptions
     if (dn) base.displayName = dn
     const auRaw =
       typeof p.avatarUrl === 'string' ? p.avatarUrl : typeof p.avatar_url === 'string' ? p.avatar_url : ''
-    const au = auRaw.trim().slice(0, SPACE_ROOM_AVATAR_URL_MAX)
+    const auNorm = normalizeSupabaseStoragePublicUrl(auRaw.trim()) ?? auRaw.trim()
+    const au = auNorm.slice(0, SPACE_ROOM_AVATAR_URL_MAX)
     if (au) base.avatarUrl = au
     const gpStored = p.guestPolicy ?? p.guest_policy
     const gp = parseGuestPolicyFromStorage(gpStored)
@@ -425,10 +427,12 @@ export async function fetchPersistentSpaceRoomsForUser(
         typeof r.display_name === 'string' && r.display_name.trim()
           ? r.display_name.trim().slice(0, SPACE_ROOM_DISPLAY_NAME_MAX)
           : null,
-      avatarUrl:
-        typeof r.avatar_url === 'string' && r.avatar_url.trim()
-          ? r.avatar_url.trim().slice(0, SPACE_ROOM_AVATAR_URL_MAX)
-          : null,
+      avatarUrl: (() => {
+        if (typeof r.avatar_url !== 'string' || !r.avatar_url.trim()) return null
+        const n =
+          normalizeSupabaseStoragePublicUrl(r.avatar_url.trim()) ?? r.avatar_url.trim()
+        return n.slice(0, SPACE_ROOM_AVATAR_URL_MAX)
+      })(),
       guestPolicy,
       requireCreatorHostForJoin: r.require_creator_host_for_join === true,
       cumulativeOpenSeconds:
@@ -466,8 +470,10 @@ export async function registerSpaceRoomAsHost(
   }
   const displayName = typeof opts?.displayName === 'string' ? opts.displayName.trim() : ''
   if (displayName) insertPayload.display_name = displayName.slice(0, SPACE_ROOM_DISPLAY_NAME_MAX)
-  const avatarUrl = typeof opts?.avatarUrl === 'string' ? opts.avatarUrl.trim() : ''
-  if (avatarUrl) insertPayload.avatar_url = avatarUrl.slice(0, SPACE_ROOM_AVATAR_URL_MAX)
+  const avatarUrlRaw = typeof opts?.avatarUrl === 'string' ? opts.avatarUrl.trim() : ''
+  const avatarUrlNorm = normalizeSupabaseStoragePublicUrl(avatarUrlRaw) ?? avatarUrlRaw
+  if (avatarUrlNorm)
+    insertPayload.avatar_url = avatarUrlNorm.slice(0, SPACE_ROOM_AVATAR_URL_MAX)
   if (opts?.guestPolicy && typeof opts.guestPolicy === 'object' && !Array.isArray(opts.guestPolicy)) {
     insertPayload.guest_policy = opts.guestPolicy
   }

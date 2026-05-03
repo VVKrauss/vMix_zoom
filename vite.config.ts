@@ -191,6 +191,7 @@ export default defineConfig(({ mode }) => {
       }),
     ],
     build: {
+      chunkSizeWarningLimit: 15,
       /** Не вешать `<link rel="modulepreload">` на тяжёлые ленивые чанки — иначе они качаются сразу с index. */
       modulePreload: {
         resolveDependencies(_filename, deps) {
@@ -207,12 +208,19 @@ export default defineConfig(({ mode }) => {
         output: {
           manualChunks(id) {
             if (!id.includes('node_modules')) return
-            if (id.includes('mediasoup-client') || id.includes('socket.io-client')) {
-              return 'webrtc'
-            }
-            if (id.includes('@supabase/supabase-js')) {
-              return 'supabase'
-            }
+
+            if (id.includes('mediasoup-client') || id.includes('socket.io-client')) return 'webrtc'
+            if (id.includes('@supabase')) return 'supabase'
+            if (id.includes('react-dom')) return 'react-dom'
+            if (id.includes('react/') || id.includes('scheduler')) return 'react-core'
+            if (id.includes('@radix-ui')) return 'ui-radix'
+            if (id.includes('framer-motion')) return 'motion'
+            if (id.includes('lucide-react')) return 'icons'
+            if (id.includes('zustand') || id.includes('jotai') || id.includes('immer')) return 'state'
+            if (id.includes('zod') || id.includes('react-hook-form')) return 'forms'
+            if (id.includes('date-fns') || id.includes('dayjs')) return 'dates'
+
+            return 'vendor'
           },
         },
       },

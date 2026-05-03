@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { normalizeSupabaseStoragePublicUrl } from './supabaseStorageUrl'
 
 /** Контакты (user_favorites): я добавил / меня добавили / взаимно. */
 export type ContactStatus = {
@@ -48,7 +49,7 @@ export async function listMyContactDisplayOverrides(
     const alias = typeof aliasRaw === 'string' ? aliasRaw.trim() : aliasRaw != null ? String(aliasRaw).trim() : ''
     const avRaw = r.display_avatar_url ?? r.displayAvatarUrl
     const displayAvatarUrl =
-      typeof avRaw === 'string' && avRaw.trim() ? avRaw.trim() : null
+      typeof avRaw === 'string' && avRaw.trim() ? normalizeSupabaseStoragePublicUrl(avRaw.trim()) : null
     out[uid] = { alias, displayAvatarUrl }
   }
   return { data: out, error: null }
@@ -80,7 +81,10 @@ export async function setMyContactDisplayAvatar(
   if (error) return { data: null, error: error.message }
   const row = data as Record<string, unknown> | null
   if (!row || row.ok !== true) return { data: null, error: typeof row?.error === 'string' ? row.error : 'request_failed' }
-  const u = typeof row.display_avatar_url === 'string' && row.display_avatar_url.trim() ? row.display_avatar_url.trim() : null
+  const u =
+    typeof row.display_avatar_url === 'string' && row.display_avatar_url.trim()
+      ? normalizeSupabaseStoragePublicUrl(row.display_avatar_url.trim())
+      : null
   return { data: u, error: null }
 }
 
@@ -137,7 +141,9 @@ function mapContactCardRow(row: Record<string, unknown>): ContactCard {
         : 'Пользователь',
     profileSlug: slug,
     avatarUrl:
-      typeof row.avatar_url === 'string' && row.avatar_url.trim() ? row.avatar_url.trim() : null,
+      typeof row.avatar_url === 'string' && row.avatar_url.trim()
+        ? normalizeSupabaseStoragePublicUrl(row.avatar_url.trim())
+        : null,
     accountStatus:
       typeof row.status === 'string' && row.status.trim()
         ? row.status.trim()
@@ -262,7 +268,9 @@ export async function searchRegisteredUsers(
       profileSlug:
         typeof r.profile_slug === 'string' && r.profile_slug.trim() ? r.profile_slug.trim() : null,
       avatarUrl:
-        typeof r.avatar_url === 'string' && r.avatar_url.trim() ? r.avatar_url.trim() : null,
+        typeof r.avatar_url === 'string' && r.avatar_url.trim()
+          ? normalizeSupabaseStoragePublicUrl(r.avatar_url.trim())
+          : null,
     }
   })
   return { data: mapped.filter((x) => x.id.length > 0), error: null }

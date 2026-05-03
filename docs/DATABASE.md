@@ -1,6 +1,6 @@
 # DATABASE.md — Структура БД (Supabase / RedFlow)
 
-Проект: `dbhrmaabotdaagmiuzum` · регион: `eu-west-1` · Postgres 17
+Прод: API Supabase `https://supabase.redflow.online` · Postgres 17 (см. `docs/db-schema.vps.sql` / миграции).
 
 ---
 

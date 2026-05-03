@@ -40,6 +40,7 @@ import { useMobileMessengerComposerHeight } from '../hooks/useMobileMessengerCom
 import { useMessengerPendingJumpToQuoted } from '../hooks/useMessengerPendingJumpToQuoted'
 import { useConversationInfoStaffLoad } from '../hooks/useConversationInfoStaffLoad'
 import { useProfile } from '../hooks/useProfile'
+import { normalizeSupabaseStoragePublicUrl } from '../lib/supabaseStorageUrl'
 import { useToast } from '../context/ToastContext'
 import {
   appendDirectMessage,
@@ -2057,7 +2058,9 @@ export function DashboardMessengerPage() {
             ? String(row.display_name).trim()
             : null,
         avatarUrl:
-          typeof row.avatar_url === 'string' && row.avatar_url.trim() ? row.avatar_url.trim() : null,
+          typeof row.avatar_url === 'string' && row.avatar_url.trim()
+            ? normalizeSupabaseStoragePublicUrl(row.avatar_url.trim())
+            : null,
       })
     },
     [openUserPeek, toast],
@@ -2853,6 +2856,7 @@ export function DashboardMessengerPage() {
                 : null
             }
             timestampLabel={formatDateTime(messageMenu.message.createdAt)}
+            outsidePointerIgnoreInside={messageAnchorRef.current.get(messageMenu.message.id) ?? null}
             onClose={closeMessageActionMenu}
             onCopy={async () => {
               const text = previewTextForDirectMessageTail(messageMenu.message)

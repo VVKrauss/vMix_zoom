@@ -12,6 +12,8 @@ export const LS_HIDE_VIDEO_LETTERBOXING = 'vmix_hide_video_letterboxing'
 const LS_VIDEO_PRESET_INDEX = 'vmix_video_preset_index'
 const LS_PREFERRED_CAMERA = 'vmix_preferred_camera_id'
 const LS_PREFERRED_MIC = 'vmix_preferred_mic_id'
+/** `1` = отключить AEC/NS/AGC на захвате (редкий режим под SRT/колонки); по умолчанию — стандарт браузера. */
+const LS_MIC_RAW_CAPTURE = 'vmix_room_mic_raw_capture'
 
 const LAYOUT_MODES = new Set<string>(['grid', 'pip', 'speaker'])
 
@@ -178,6 +180,24 @@ export function writePreferredMicId(deviceId: string): void {
   try {
     if (deviceId) localStorage.setItem(LS_PREFERRED_MIC, deviceId)
     else localStorage.removeItem(LS_PREFERRED_MIC)
+  } catch {
+    /* noop */
+  }
+}
+
+export function readRoomMicRawCapture(): boolean {
+  try {
+    return localStorage.getItem(LS_MIC_RAW_CAPTURE) === '1'
+  } catch {
+    return false
+  }
+}
+
+/** Сырой захват микрофона (без AEC и т.д.) — только для продвинутого сценария; по умолчанию выключено. */
+export function writeRoomMicRawCapture(on: boolean): void {
+  try {
+    if (on) localStorage.setItem(LS_MIC_RAW_CAPTURE, '1')
+    else localStorage.removeItem(LS_MIC_RAW_CAPTURE)
   } catch {
     /* noop */
   }

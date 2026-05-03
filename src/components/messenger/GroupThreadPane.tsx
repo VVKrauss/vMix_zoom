@@ -806,22 +806,6 @@ export function GroupThreadPane({
 
   useEffect(() => {
     if (!messageMenu) return
-    const onDown = (e: MouseEvent | TouchEvent) => {
-      const target =
-        'touches' in e && e.touches[0] ? (e.touches[0]!.target as EventTarget) : (e as MouseEvent).target
-      if (shouldClosePopoverOnOutsidePointer(messageMenuWrapRef.current, target)) setMessageMenu(null)
-    }
-    const touchOpts: AddEventListenerOptions = { capture: true, passive: true }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('touchstart', onDown, touchOpts)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('touchstart', onDown, touchOpts)
-    }
-  }, [messageMenu])
-
-  useEffect(() => {
-    if (!messageMenu) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setMessageMenu(null)
     }
@@ -1296,6 +1280,7 @@ export function GroupThreadPane({
                       messageMenu.message.kind === 'audio'),
                 )}
                 timestampLabel={formatGroupBubbleTime(messageMenu.message.createdAt)}
+                outsidePointerIgnoreInside={messageAnchorRef.current.get(messageMenu.message.id) ?? null}
                 onClose={() => setMessageMenu(null)}
                 onCopy={async () => {
                   const text = previewTextForDirectMessageTail(messageMenu.message)
