@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom'
+import { MessengerFilePickField } from './MessengerFilePickField'
 import { useEffect } from 'react'
 
 export type MessengerCreateConversationModalProps = {
@@ -147,21 +148,14 @@ export function MessengerCreateConversationModal({
 
         <div className="messenger-settings-modal__section">
           <span className="messenger-settings-modal__label">Логотип</span>
-          <input
-            type="file"
+          <MessengerFilePickField
             accept="image/*"
             disabled={createBusy}
-            onChange={(e) => {
-              const f = e.target.files?.[0] ?? null
-              e.target.value = ''
-              setCreateLogoFile(f)
-            }}
+            onPick={setCreateLogoFile}
+            selectedName={createLogoFile?.name ?? null}
+            emptyLabel="Файл не выбран"
           />
-          {createLogoFile ? (
-            <p className="messenger-settings-modal__hint">Выбрано: {createLogoFile.name}</p>
-          ) : (
-            <p className="messenger-settings-modal__hint">Опционально.</p>
-          )}
+          <p className="messenger-settings-modal__hint">Опционально. Рекомендуем PNG или JPG.</p>
         </div>
 
         {createKind === 'channel' ? (

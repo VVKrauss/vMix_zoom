@@ -13,6 +13,7 @@ import {
 import { FiRrIcon, MessengerStatsIcon } from '../icons'
 import { useMessengerContactAliasesMap } from '../../hooks/useMessengerContactAliasesMap'
 import { MessengerClosedGcLockBadge } from './MessengerClosedGcLockBadge'
+import { MessengerFilePickField } from './MessengerFilePickField'
 
 export type MessengerConversationInfoModalProps = {
   open: boolean
@@ -298,21 +299,14 @@ export function MessengerConversationInfoModal({
 
             <div className="messenger-settings-modal__section">
               <span className="messenger-settings-modal__label">Логотип</span>
-              <input
-                type="file"
+              <MessengerFilePickField
                 accept="image/*"
                 disabled={conversationInfoLoading}
-                onChange={(e) => {
-                  const f = e.target.files?.[0] ?? null
-                  e.target.value = ''
-                  setConversationInfoLogoFile(f)
-                }}
+                onPick={setConversationInfoLogoFile}
+                selectedName={conversationInfoLogoFile?.name ?? null}
+                emptyLabel="Файл не выбран"
               />
-              {conversationInfoLogoFile ? (
-                <p className="messenger-settings-modal__hint">Выбрано: {conversationInfoLogoFile.name}</p>
-              ) : (
-                <p className="messenger-settings-modal__hint">Опционально.</p>
-              )}
+              <p className="messenger-settings-modal__hint">Опционально. Рекомендуем PNG или JPG.</p>
             </div>
 
             {conversationInfoRole && ['owner', 'admin'].includes(conversationInfoRole) ? (

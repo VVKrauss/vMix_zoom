@@ -416,9 +416,12 @@ html[data-theme="light"] .admin-role-picker--dashboard-layout .admin-role-picker
 }
 
 html[data-theme="light"] .admin-role-picker__menu {
-  background: var(--surface);
-  border-color: var(--border);
-  box-shadow: 0 10px 36px rgba(45, 28, 26, 0.14), 0 2px 10px rgba(45, 28, 26, 0.08);
+  background: rgba(255, 252, 250, 0.9);
+  border-color: color-mix(in srgb, var(--border) 90%, transparent);
+  box-shadow: 0 12px 36px rgba(45, 28, 26, 0.12), 0 2px 10px rgba(45, 28, 26, 0.06);
+  backdrop-filter: blur(18px) saturate(1.06);
+  -webkit-backdrop-filter: blur(18px) saturate(1.06);
+  scrollbar-color: color-mix(in srgb, var(--red) 48%, var(--surface2)) transparent;
 }
 
 html[data-theme="light"] .admin-role-picker__trigger:hover:not(:disabled) {
@@ -696,7 +699,7 @@ html[data-theme="light"] .messenger-msg-menu.device-popover {
 html[data-theme="light"] .dashboard-messenger__messages-scroll,
 html[data-theme="light"] .dashboard-messenger__list,
 html[data-theme="light"] .dashboard-profile-modal__dialog .dashboard-profile-modal__scroll,
-html[data-theme="light"] .messenger-settings-modal.messenger-stats-modal {
+html[data-theme="light"] .messenger-settings-modal {
   scrollbar-color: rgba(158, 92, 92, 0.45) transparent;
   scrollbar-color: color-mix(in srgb, var(--red) 48%, var(--surface2)) transparent;
 }
@@ -704,7 +707,7 @@ html[data-theme="light"] .messenger-settings-modal.messenger-stats-modal {
 html[data-theme="light"] .dashboard-messenger__messages-scroll::-webkit-scrollbar-thumb,
 html[data-theme="light"] .dashboard-messenger__list::-webkit-scrollbar-thumb,
 html[data-theme="light"] .dashboard-profile-modal__dialog .dashboard-profile-modal__scroll::-webkit-scrollbar-thumb,
-html[data-theme="light"] .messenger-settings-modal.messenger-stats-modal::-webkit-scrollbar-thumb {
+html[data-theme="light"] .messenger-settings-modal::-webkit-scrollbar-thumb {
   background: rgba(158, 92, 92, 0.42);
   background: color-mix(in srgb, var(--red) 44%, var(--surface2));
 }
@@ -712,8 +715,16 @@ html[data-theme="light"] .messenger-settings-modal.messenger-stats-modal::-webki
 html[data-theme="light"] .dashboard-messenger__messages-scroll::-webkit-scrollbar-thumb:hover,
 html[data-theme="light"] .dashboard-messenger__list::-webkit-scrollbar-thumb:hover,
 html[data-theme="light"] .dashboard-profile-modal__dialog .dashboard-profile-modal__scroll::-webkit-scrollbar-thumb:hover,
-html[data-theme="light"] .messenger-settings-modal.messenger-stats-modal::-webkit-scrollbar-thumb:hover {
+html[data-theme="light"] .messenger-settings-modal::-webkit-scrollbar-thumb:hover {
   background: rgba(138, 80, 80, 0.55);
+  background: color-mix(in srgb, var(--red-hover) 55%, var(--surface2));
+}
+
+html[data-theme="light"] .admin-role-picker__menu::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--red) 44%, var(--surface2));
+}
+
+html[data-theme="light"] .admin-role-picker__menu::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--red-hover) 55%, var(--surface2));
 }
 
@@ -2294,6 +2305,7 @@ html.app-root--room #root {
   max-width: 400px;
   max-height: min(90dvh, 560px);
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -2304,6 +2316,29 @@ html.app-root--room #root {
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(22px) saturate(1.12);
   -webkit-backdrop-filter: blur(22px) saturate(1.12);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(210, 0, 0, 0.35) transparent;
+  scrollbar-color: color-mix(in srgb, var(--red) 42%, var(--surface2)) transparent;
+}
+
+.messenger-settings-modal::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.messenger-settings-modal::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.messenger-settings-modal::-webkit-scrollbar-thumb {
+  background: rgba(210, 0, 0, 0.32);
+  background: color-mix(in srgb, var(--red) 38%, var(--surface2));
+  border-radius: 10px;
+}
+
+.messenger-settings-modal::-webkit-scrollbar-thumb:hover {
+  background: rgba(210, 0, 0, 0.5);
+  background: color-mix(in srgb, var(--red) 58%, var(--surface2));
 }
 
 html[data-theme="light"] .messenger-settings-modal {
@@ -2365,6 +2400,112 @@ html[data-theme="light"] .messenger-settings-modal__leave-btn {
 html[data-theme="light"] .messenger-settings-modal__leave-btn:hover:not(:disabled) {
   background: color-mix(in srgb, var(--red) 92%, rgba(255, 252, 250, 0.55));
   color: #300404;
+}
+
+/* Выбор файла логотипа в модалках мессенджера */
+.messenger-file-input {
+  width: 100%;
+}
+
+.messenger-file-input__row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.messenger-file-input__label {
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.messenger-file-input__label--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.messenger-file-input__native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.messenger-file-input__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.messenger-file-input__label:hover:not(.messenger-file-input__label--disabled) .messenger-file-input__btn {
+  border-color: rgba(158, 92, 92, 0.45);
+  background: color-mix(in srgb, var(--surface2) 90%, var(--red) 8%);
+}
+
+.messenger-file-input__name {
+  flex: 1 1 140px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  background: color-mix(in srgb, var(--surface2) 75%, transparent);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.messenger-file-input__name--placeholder {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+html[data-theme="light"] .messenger-file-input__btn {
+  background: var(--surface2);
+}
+
+html[data-theme="light"] .messenger-file-input__name {
+  background: rgba(255, 252, 250, 0.55);
+  color: #2a1a1a;
+}
+
+html[data-theme="light"] .messenger-file-input__name--placeholder {
+  color: #6d5555;
+}
+
+/* Native select в модалках мессенджера — как поля ввода + своя стрелка */
+.messenger-settings-modal select.dashboard-messenger__list-search-input {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23c8c8d8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+
+html[data-theme="light"] .messenger-settings-modal select.dashboard-messenger__list-search-input {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23704040' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
 }
 
 .messenger-settings-modal__title {
@@ -2691,30 +2832,6 @@ html[data-theme="light"] .messenger-settings-modal__leave-btn:hover:not(:disable
 .messenger-settings-modal.messenger-stats-modal {
   max-width: 440px;
   max-height: min(90dvh, 720px);
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(210, 0, 0, 0.35) transparent;
-  scrollbar-color: color-mix(in srgb, var(--red) 42%, var(--surface2)) transparent;
-}
-
-.messenger-settings-modal.messenger-stats-modal::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.messenger-settings-modal.messenger-stats-modal::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.messenger-settings-modal.messenger-stats-modal::-webkit-scrollbar-thumb {
-  background: rgba(210, 0, 0, 0.32);
-  background: color-mix(in srgb, var(--red) 38%, var(--surface2));
-  border-radius: 10px;
-}
-
-.messenger-settings-modal.messenger-stats-modal::-webkit-scrollbar-thumb:hover {
-  background: rgba(210, 0, 0, 0.5);
-  background: color-mix(in srgb, var(--red) 58%, var(--surface2));
 }
 
 .messenger-stats-modal__metrics {
@@ -4761,13 +4878,38 @@ button.admin-stat-card--interactive:disabled {
   right: 0;
   z-index: 50;
   min-width: 220px;
+  max-height: min(52vh, 360px);
   margin: 0;
   padding: 4px 0;
   list-style: none;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: color-mix(in srgb, var(--surface) 86%, rgba(12, 12, 18, 0.45));
+  border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
   border-radius: var(--radius);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--red) 42%, var(--surface2)) transparent;
+}
+
+.admin-role-picker__menu::-webkit-scrollbar {
+  width: 6px;
+}
+
+.admin-role-picker__menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-role-picker__menu::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--red) 38%, var(--surface2));
+  border-radius: 10px;
+}
+
+.admin-role-picker__menu::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--red) 55%, var(--surface2));
 }
 
 /* Портал в body: не режется overflow у таблицы / dashboard */
