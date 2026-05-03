@@ -6955,15 +6955,14 @@ span.dashboard-messenger__thread-avatar {
   pointer-events: auto;
 }
 
-/* Родитель схлопывается по ширине (только absolute-дети): left:0 у .device-popover
-   тянет сетку вправо за край — якорим правый край к колонке кнопок. */
-.dashboard-messenger__composer-emoji-pop .device-popover--reaction-pick {
+/* Обёртка часто 0×0: якорь по правому краю кнопок; селектор сильнее .device-popover.device-popover--reaction-pick из chat-bubbles. */
+.dashboard-messenger__composer-emoji-pop .device-popover.device-popover--reaction-pick {
   left: auto;
   right: 0;
   box-sizing: border-box;
-  width: min(280px, calc(100vw - 20px));
-  min-width: min(260px, calc(100vw - 20px));
-  max-width: min(320px, 92vw);
+  width: min(280px, calc(100vw - max(20px, env(safe-area-inset-left, 0px) + env(safe-area-inset-right, 0px))));
+  min-width: min(240px, calc(100vw - max(20px, env(safe-area-inset-left, 0px) + env(safe-area-inset-right, 0px))));
+  max-width: min(320px, calc(100vw - max(16px, env(safe-area-inset-left, 0px) + env(safe-area-inset-right, 0px))));
 }
 
 .dashboard-messenger__composer-icon-btn {

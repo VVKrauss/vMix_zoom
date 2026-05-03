@@ -868,14 +868,16 @@ html[data-theme='light'] .dashboard-messenger__message--emoji-only .dashboard-me
 }
 
 /* ── ReactionEmojiPopover: разметка и кнопки были только в room-page.css; без них в дашборде/мессенджере сетка схлопывается. ── */
+/* right + left:auto: обёртка у композера часто нулевой ширины — с left:0 попап уезжает вправо за экран. */
 .device-popover.device-popover--reaction-pick {
   position: absolute;
   bottom: calc(100% + 8px);
-  left: 0;
+  left: auto;
+  right: 0;
   box-sizing: border-box;
-  width: min(220px, calc(100vw - 24px));
-  min-width: min(200px, calc(100vw - 24px));
-  max-width: min(100vw - 16px, 280px);
+  width: min(220px, calc(100vw - max(24px, env(safe-area-inset-left, 0px) + env(safe-area-inset-right, 0px))));
+  min-width: min(200px, calc(100vw - max(24px, env(safe-area-inset-left, 0px) + env(safe-area-inset-right, 0px))));
+  max-width: min(100vw - max(16px, env(safe-area-inset-left, 0px) + env(safe-area-inset-right, 0px)), 280px);
   font-size: 13px;
   background: #1e1e1e;
   border: 1px solid var(--border);
