@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import type { SpaceRoomChatVisibility } from '../lib/spaceRoom'
 
@@ -51,6 +51,11 @@ export function useSpaceRoomSettings(roomSlug: string | undefined): {
   const [loading, setLoading] = useState(true)
 
   const slug = roomSlug?.trim() ?? ''
+  /** Уникальный суффикс канала: иначе два хука с одним slug (RoomSession + RoomPage) ломают Realtime. */
+  const channelSuffixRef = useRef<string | null>(null)
+  if (channelSuffixRef.current === null) {
+    channelSuffixRef.current = `${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
+  }
 
   const refresh = useCallback(() => {
     if (!slug) {
@@ -88,7 +93,7 @@ export function useSpaceRoomSettings(roomSlug: string | undefined): {
   useEffect(() => {
     if (!slug) return
     const ch = supabase
-      .channel(`space_room:${slug}`)
+      .channel(`space_room:${slug}:${channelSuffixRef.current}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'space_rooms', filter: `slug=eq.${slug}` },
