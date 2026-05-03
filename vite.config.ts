@@ -61,11 +61,16 @@ function computeAppVersion() {
   try {
     const raw = fs.readFileSync('version.json', 'utf8')
     const meta = JSON.parse(raw) as {
+      /** UI-версия вида 01.002.116 (см. .cursor/rules/app-release-version.mdc). */
+      release?: string
       major: number
       minor: number
       basePatch: number
       baseRef: string
     }
+
+    const rel = typeof meta.release === 'string' ? meta.release.trim() : ''
+    if (/^\d{2}\.\d{3}\.\d{3}$/.test(rel)) return rel
 
     const major = Number(meta.major) || 0
     const minor = Number(meta.minor) || 0

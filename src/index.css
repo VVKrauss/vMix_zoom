@@ -686,7 +686,11 @@ html[data-theme="light"] .dashboard-messenger__channel-post-share {
 }
 
 html[data-theme="light"] .messenger-msg-menu.device-popover {
-  background: var(--surface2);
+  background: rgba(255, 252, 250, 0.82);
+  border-color: color-mix(in srgb, var(--border) 88%, transparent);
+  backdrop-filter: blur(20px) saturate(1.08);
+  -webkit-backdrop-filter: blur(20px) saturate(1.08);
+  box-shadow: 0 16px 44px rgba(60, 30, 30, 0.14);
 }
 
 html[data-theme="light"] .dashboard-messenger__messages-scroll,
@@ -1595,14 +1599,6 @@ html.app-root--room #root {
   text-align: center;
 }
 
-.home-version {
-  font-size: 8px;
-  color: var(--text-dim);
-  text-align: center;
-  opacity: 0.5;
-  user-select: none;
-}
-
 /* ─── News page (/news) — колонка по центру экрана, без карточки-модалки ───── */
 .news-page.join-screen {
   padding: 28px 20px 48px;
@@ -2287,7 +2283,8 @@ html.app-root--room #root {
   margin: 0;
   cursor: pointer;
   background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(12px) saturate(1.05);
+  -webkit-backdrop-filter: blur(12px) saturate(1.05);
 }
 
 .messenger-settings-modal {
@@ -2301,10 +2298,18 @@ html.app-root--room #root {
   flex-direction: column;
   gap: 16px;
   padding: 20px 20px 18px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
   border-radius: 16px;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(22px) saturate(1.12);
+  -webkit-backdrop-filter: blur(22px) saturate(1.12);
+}
+
+html[data-theme="light"] .messenger-settings-modal {
+  background: rgba(255, 252, 250, 0.86);
+  border-color: color-mix(in srgb, var(--border) 90%, transparent);
+  box-shadow: 0 24px 72px rgba(60, 30, 30, 0.12);
 }
 
 .messenger-settings-modal__title {
@@ -7214,14 +7219,20 @@ span.dashboard-messenger__thread-avatar {
   bottom: auto;
   left: auto;
   z-index: 1;
-  background: #1e1e1e;
-  border: 1px solid var(--border);
+  background: rgba(22, 22, 28, 0.78);
+  border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
   border-radius: var(--radius);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(18px) saturate(1.12);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
 }
 
 html[data-theme="light"] .messenger-msg-menu-wrap.messenger-channel-reaction-pick-wrap > .device-popover--reaction-pick {
-  background: var(--surface2);
+  background: rgba(255, 252, 250, 0.84);
+  border-color: color-mix(in srgb, var(--border) 88%, transparent);
+  box-shadow: 0 12px 40px rgba(60, 30, 30, 0.12);
+  backdrop-filter: blur(20px) saturate(1.06);
+  -webkit-backdrop-filter: blur(20px) saturate(1.06);
 }
 
 /* Не тянуть позиционирование .device-popover (absolute/bottom) — меню в портале fixed. */
@@ -7234,10 +7245,12 @@ html[data-theme="light"] .messenger-msg-menu-wrap.messenger-channel-reaction-pic
   left: auto;
   z-index: 1;
   min-width: 200px;
-  background: #1e1e1e;
-  border: 1px solid var(--border);
+  background: rgba(22, 22, 28, 0.78);
+  border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
   border-radius: var(--radius);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(18px) saturate(1.12);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
 }
 
 .messenger-msg-menu {
@@ -10511,7 +10524,8 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   margin: 0;
   cursor: pointer;
   background: rgba(0, 0, 0, .72);
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(12px) saturate(1.05);
+  -webkit-backdrop-filter: blur(12px) saturate(1.05);
 }
 
 .confirm-dialog {
@@ -10519,12 +10533,20 @@ html[data-theme="light"] .dashboard-messenger-quick-menu {
   z-index: 1;
   width: 100%;
   max-width: 400px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
   border-radius: 16px;
   padding: 28px 28px 22px;
   box-shadow: 0 24px 80px rgba(0, 0, 0, .55);
   animation: confirm-dialog-in .22s ease;
+  backdrop-filter: blur(20px) saturate(1.1);
+  -webkit-backdrop-filter: blur(20px) saturate(1.1);
+}
+
+html[data-theme="light"] .confirm-dialog {
+  background: rgba(255, 252, 250, 0.88);
+  border-color: color-mix(in srgb, var(--border) 90%, transparent);
+  box-shadow: 0 24px 72px rgba(60, 30, 30, 0.14);
 }
 
 .confirm-dialog.dashboard-profile-modal__dialog {

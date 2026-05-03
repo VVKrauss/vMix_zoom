@@ -22,6 +22,7 @@ import {
 import type { StoredLayoutMode } from '../config/roomUiStorage'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { mergeRoomUiPrefs } from '../types/roomUiPreferences'
+import { APP_VERSION } from '../config/version'
 import { DashboardContactsIncomingModal } from './DashboardContactsIncomingModal'
 import { DashboardLayoutPicker } from './DashboardLayoutPicker'
 import { DashboardMenuPicker } from './DashboardMenuPicker'
@@ -429,7 +430,7 @@ export function DashboardPage() {
     if (screen === 'visibility') return 'Видимость на сайте'
     if (screen === 'messages') return 'Сообщения'
     if (screen === 'roomPrefs') return 'Настройки комнат'
-    if (screen === 'network') return 'Сетевые настройки'
+    if (screen === 'network') return 'Другие настройки'
     return ''
   }
 
@@ -823,10 +824,11 @@ export function DashboardPage() {
                   {roomSaveMsg ? <p className="dashboard-save-ok">{roomSaveMsg}</p> : null}
                 </div>
               ) : null}
-              {settingsMenuRow('network', 'v1')}
+              {settingsMenuRow('network', APP_VERSION)}
               {isDesktopSettings && expandedSettingsSection === 'network' ? (
                 <div className="dashboard-settings-expand">
-                  <p className="dashboard-field__hint">Версия настроек сети: v1</p>
+                  <p className="dashboard-field__label">Версия приложения</p>
+                  <p className="dashboard-field__hint">{APP_VERSION}</p>
                 </div>
               ) : null}
               {searchPrivacyErr ? <p className="join-error">{searchPrivacyErr}</p> : null}
@@ -920,8 +922,9 @@ export function DashboardPage() {
           </section>
         ) : settingsScreen === 'network' ? (
           <section className="dashboard-tile dashboard-settings-page">
-            <SettingsBack title="Сетевые настройки" />
-            <p className="dashboard-field__hint">Версия настроек сети: v1</p>
+            <SettingsBack title="Другие настройки" />
+            <p className="dashboard-field__label">Версия приложения</p>
+            <p className="dashboard-field__hint">{APP_VERSION}</p>
           </section>
         ) : null}
       </div>

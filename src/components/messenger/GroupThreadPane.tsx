@@ -2,6 +2,7 @@ import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useMessengerThreadReadCoordinator } from '../../hooks/useMessengerThreadReadCoordinator'
 import { shouldClosePopoverOnOutsidePointer } from '../../utils/popoverOutsideClick'
+import { readVisualViewportRect } from '../../utils/visualViewportRect'
 import { useAuth } from '../../context/AuthContext'
 import { useProfile } from '../../hooks/useProfile'
 import { useStableMobileMessenger } from '../../hooks/useStableMobileMessenger'
@@ -788,14 +789,13 @@ export function GroupThreadPane({
         return
       }
       const pad = 10
-      const vw = window.innerWidth
-      const vh = window.innerHeight
+      const { ox, oy, vw, vh } = readVisualViewportRect()
       let left = anchor.left
       let top = anchor.bottom + 6
-      if (left + rect.width > vw - pad) left = vw - pad - rect.width
-      if (left < pad) left = pad
-      if (top + rect.height > vh - pad) top = anchor.top - rect.height - 6
-      if (top < pad) top = pad
+      if (left + rect.width > ox + vw - pad) left = ox + vw - pad - rect.width
+      if (left < ox + pad) left = ox + pad
+      if (top + rect.height > oy + vh - pad) top = anchor.top - rect.height - 6
+      if (top < oy + pad) top = oy + pad
       el.style.left = `${left}px`
       el.style.top = `${top}px`
       el.style.visibility = 'visible'

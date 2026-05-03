@@ -1,10 +1,8 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
 import { useMessengerUnreadCount } from '../hooks/useMessengerUnreadCount'
-import { APP_VERSION } from '../config/version'
-import { fetchAppVersion } from '../lib/appVersion'
 import { setPendingHostClaim } from '../lib/spaceRoom'
 import { newRoomId } from '../utils/roomId'
 import { ChatBubbleIcon, DashboardIcon } from './icons'
@@ -18,37 +16,6 @@ export function HomePage() {
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const messengerUnreadCount = useMessengerUnreadCount()
   const [joinId, setJoinId] = useState('')
-  const [dbVersion, setDbVersion] = useState<string | null>(null)
-  const [entryJsName, setEntryJsName] = useState<string>('')
-
-  useEffect(() => {
-    let cancelled = false
-    void fetchAppVersion().then((v) => {
-      if (cancelled) return
-      setDbVersion(v)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  useEffect(() => {
-    const guessEntryAssetName = (): string => {
-      try {
-        const scripts = Array.from(document.querySelectorAll('script[type="module"][src]'))
-        const asset = scripts
-          .map((s) => String((s as HTMLScriptElement).src || '').trim())
-          .find((src) => src.includes('/assets/') && src.endsWith('.js'))
-        if (!asset) return ''
-        const clean = asset.split('?')[0].split('#')[0]
-        const base = clean.slice(clean.lastIndexOf('/') + 1)
-        return base || ''
-      } catch {
-        return ''
-      }
-    }
-    setEntryJsName(guessEntryAssetName())
-  }, [])
   const handleCreateClick = () => {
     if (!user) return
     const id = newRoomId()
@@ -203,14 +170,6 @@ export function HomePage() {
         </form>
 
         </div>
-
-        <p
-          className="home-version"
-          aria-label={`Текущий JS: ${entryJsName || 'неизвестно'}; версия БД: ${dbVersion ?? APP_VERSION}`}
-          title={entryJsName ? `JS: ${entryJsName}` : undefined}
-        >
-          {entryJsName || 'unknown.js'}
-        </p>
       </div>
     </div>
   )
