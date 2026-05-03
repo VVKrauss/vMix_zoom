@@ -69,7 +69,8 @@ function computeAppVersion() {
       baseRef: string
     }
 
-    const rel = typeof meta.release === 'string' ? meta.release.trim() : ''
+    const relRaw = typeof meta.release === 'string' ? meta.release.trim() : ''
+    const rel = relRaw.replace(/^\uFEFF/, '').replace(/^v\s*/i, '').trim()
     if (/^\d{2}\.\d{3}\.\d{3}$/.test(rel)) return rel
 
     const major = Number(meta.major) || 0
