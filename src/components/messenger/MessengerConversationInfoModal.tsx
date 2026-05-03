@@ -10,7 +10,7 @@ import {
   messengerContactDisplayName,
   messengerStaffRoleShortLabel,
 } from '../../lib/messengerDashboardUtils'
-import { MessengerStatsIcon } from '../icons'
+import { FiRrIcon, MessengerStatsIcon } from '../icons'
 import { useMessengerContactAliasesMap } from '../../hooks/useMessengerContactAliasesMap'
 import { MessengerClosedGcLockBadge } from './MessengerClosedGcLockBadge'
 
@@ -149,19 +149,32 @@ export function MessengerConversationInfoModal({
                 </span>
               </div>
             </div>
-            {conversationInfoRole &&
-            canViewMessengerConversationAdminStats(c.kind, conversationInfoRole) &&
-            onOpenConversationStats ? (
-              <button
-                type="button"
-                className="dashboard-messenger__list-head-btn"
-                aria-label="Статистика"
-                title="Статистика"
-                disabled={conversationInfoLoading}
-                onClick={() => onOpenConversationStats()}
-              >
-                <MessengerStatsIcon />
-              </button>
+            {conversationInfoRole && canViewMessengerConversationAdminStats(c.kind, conversationInfoRole) ? (
+              <div className="dashboard-messenger__list-head-actions">
+                <button
+                  type="button"
+                  className={`dashboard-messenger__list-head-btn${conversationInfoEdit ? ' dashboard-messenger__list-head-btn--open' : ''}`}
+                  aria-label={conversationInfoEdit ? 'Закрыть редактирование' : 'Редактировать'}
+                  title={conversationInfoEdit ? 'Закрыть редактирование' : 'Редактировать'}
+                  aria-pressed={conversationInfoEdit}
+                  disabled={conversationInfoLoading}
+                  onClick={() => setConversationInfoEdit((v) => !v)}
+                >
+                  <FiRrIcon name="pencil" />
+                </button>
+                {onOpenConversationStats ? (
+                  <button
+                    type="button"
+                    className="dashboard-messenger__list-head-btn"
+                    aria-label="Статистика"
+                    title="Статистика"
+                    disabled={conversationInfoLoading}
+                    onClick={() => onOpenConversationStats()}
+                  >
+                    <MessengerStatsIcon />
+                  </button>
+                ) : null}
+              </div>
             ) : null}
           </div>
         </div>
@@ -192,25 +205,6 @@ export function MessengerConversationInfoModal({
             Отключает push и звук уведомлений для этого чата.
           </p>
         </div>
-
-        {conversationInfoRole && canViewMessengerConversationAdminStats(c.kind, conversationInfoRole) ? (
-          <div className="messenger-settings-modal__section">
-            <button
-              type="button"
-              className={`messenger-settings-modal__row-btn${
-                conversationInfoEdit ? ' messenger-settings-modal__row-btn--on' : ''
-              }`}
-              aria-pressed={conversationInfoEdit}
-              onClick={() => setConversationInfoEdit((v) => !v)}
-              disabled={conversationInfoLoading}
-            >
-              <span className="messenger-settings-modal__row-ico" aria-hidden>
-                ✎
-              </span>
-              Редактировать
-            </button>
-          </div>
-        ) : null}
 
         {conversationInfoEdit ? (
           <>
@@ -393,13 +387,11 @@ export function MessengerConversationInfoModal({
             {leaveError ? <p className="join-error">{leaveError}</p> : null}
             <button
               type="button"
-              className="dashboard-messenger-quick-menu__btn dashboard-messenger-quick-menu__btn--danger dashboard-messenger-quick-menu__btn--span"
+              className="messenger-settings-modal__leave-btn"
               onClick={() => setLeaveConfirmOpen(true)}
               disabled={conversationInfoLoading || leaveBusy}
             >
-              <span className="dashboard-messenger-quick-menu__lbl">
-                {c.kind === 'channel' ? 'Выйти из канала' : 'Выйти из группы'}
-              </span>
+              {c.kind === 'channel' ? 'Выйти из канала' : 'Выйти из группы'}
             </button>
           </div>
         ) : null}
