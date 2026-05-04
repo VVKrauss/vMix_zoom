@@ -557,11 +557,25 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.dashboard-app-release-check {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.dashboard-app-release-check__line {
+  margin: 0;
+}
+
+.dashboard-app-release-check__line + .dashboard-app-release-check__line {
+  margin-top: 6px;
+}
+
 .dashboard-app-release-check__update-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 10px;
+  gap: 4px 8px;
 }
 
 .dashboard-app-release-check__update-link {
@@ -585,30 +599,24 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
   margin: 0;
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--surface2) 70%, transparent);
-  color: var(--text);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
   cursor: pointer;
   vertical-align: middle;
+  line-height: 1;
 }
 
 .dashboard-app-release-check__icon-btn:hover {
-  border-color: color-mix(in srgb, var(--red) 45%, var(--border));
   color: var(--red);
 }
 
 .dashboard-app-release-check__icon-btn-ico {
   font-size: 15px;
   line-height: 1;
-}
-
-html[data-theme='light'] .dashboard-app-release-check__icon-btn {
-  background: color-mix(in srgb, var(--surface2) 88%, var(--border));
 }
 
 .dashboard-settings-page {

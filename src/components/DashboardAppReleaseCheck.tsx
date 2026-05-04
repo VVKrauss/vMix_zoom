@@ -6,9 +6,9 @@ import { FiRrIcon } from './icons'
 type CheckState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'ok'; server: string }
+  | { status: 'ok' }
   | { status: 'stale'; server: string }
-  | { status: 'error'; message: string }
+  | { status: 'error' }
 
 export type DashboardAppReleaseCheckProps = {
   /** Когда true — запрашиваем /release.json (раздел «Другие настройки» открыт). */
@@ -24,18 +24,18 @@ export function DashboardAppReleaseCheck(props: DashboardAppReleaseCheckProps) {
     try {
       const payload = await fetchDeployedRelease()
       if (!payload) {
-        setState({ status: 'error', message: 'no_release' })
+        setState({ status: 'error' })
         return
       }
       const serverN = normalizeAppRelease(payload.release)
       const localN = normalizeAppRelease(APP_VERSION)
       if (serverN === localN) {
-        setState({ status: 'ok', server: payload.release })
+        setState({ status: 'ok' })
       } else {
         setState({ status: 'stale', server: payload.release })
       }
     } catch {
-      setState({ status: 'error', message: 'network' })
+      setState({ status: 'error' })
     }
   }, [])
 
@@ -53,15 +53,10 @@ export function DashboardAppReleaseCheck(props: DashboardAppReleaseCheckProps) {
 
   return (
     <div className="dashboard-app-release-check">
-      <p className="dashboard-field__hint" style={{ marginTop: 8 }}>
-        Текущая версия: {current}
-      </p>
-      {state.status === 'idle' || state.status === 'loading' ? (
-        <p className="dashboard-field__hint">…</p>
-      ) : null}
-      {state.status === 'ok' ? <p className="dashboard-field__hint">Обновлений нет.</p> : null}
+      <p className="dashboard-field__hint dashboard-app-release-check__line">текущая версия: {current}</p>
+      {state.status === 'ok' ? <p className="dashboard-field__hint dashboard-app-release-check__line">обновлений нет</p> : null}
       {state.status === 'stale' ? (
-        <p className="dashboard-field__hint dashboard-app-release-check__update-row">
+        <p className="dashboard-field__hint dashboard-app-release-check__line dashboard-app-release-check__update-row">
           Есть обновление: {normalizeAppRelease(state.server)}.{' '}
           <button type="button" className="dashboard-app-release-check__update-link" onClick={() => void hardReloadApp()}>
             Обновить
@@ -69,25 +64,7 @@ export function DashboardAppReleaseCheck(props: DashboardAppReleaseCheckProps) {
           <button
             type="button"
             className="dashboard-app-release-check__icon-btn"
-            aria-label="Обновить приложение"
-            title="Обновить"
-            onClick={() => void hardReloadApp()}
-          >
-            <FiRrIcon name="download" className="dashboard-app-release-check__icon-btn-ico" />
-          </button>
-        </p>
-      ) : null}
-      {state.status === 'error' ? (
-        <p className="dashboard-field__hint dashboard-app-release-check__update-row">
-          Не удалось проверить обновление.{' '}
-          <button type="button" className="dashboard-app-release-check__update-link" onClick={() => void runCheck()}>
-            Повторить
-          </button>
-          <button
-            type="button"
-            className="dashboard-app-release-check__icon-btn"
-            aria-label="Обновить приложение"
-            title="Обновить"
+            aria-label="Обновить"
             onClick={() => void hardReloadApp()}
           >
             <FiRrIcon name="download" className="dashboard-app-release-check__icon-btn-ico" />

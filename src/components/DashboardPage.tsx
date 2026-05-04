@@ -832,8 +832,6 @@ export function DashboardPage() {
               {settingsMenuRow('network', APP_VERSION)}
               {isDesktopSettings && expandedSettingsSection === 'network' ? (
                 <div className="dashboard-settings-expand">
-                  <p className="dashboard-field__label">Версия приложения</p>
-                  <p className="dashboard-field__hint">{APP_VERSION}</p>
                   <DashboardAppReleaseCheck active={appReleaseCheckActive} />
                 </div>
               ) : null}
@@ -929,8 +927,6 @@ export function DashboardPage() {
         ) : settingsScreen === 'network' ? (
           <section className="dashboard-tile dashboard-settings-page">
             <SettingsBack title="Другие настройки" />
-            <p className="dashboard-field__label">Версия приложения</p>
-            <p className="dashboard-field__hint">{APP_VERSION}</p>
             <DashboardAppReleaseCheck active={appReleaseCheckActive} />
           </section>
         ) : null}
