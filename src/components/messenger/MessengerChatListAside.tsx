@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import type { NavigateFunction } from 'react-router-dom'
 import { BrandLogoLoader } from '../BrandLogoLoader'
 import {
-  ChevronLeftIcon,
   FiRrIcon,
   MessengerFilterAllIcon,
   MessengerFilterChannelIcon,
@@ -177,11 +176,20 @@ function MessengerChatListAsideImpl(props: {
           <header className="dashboard-messenger__list-head dashboard-messenger__list-head--chats-toolbar">
           <Link
             to="/dashboard"
-            className="dashboard-messenger__list-head-back"
-            title="Назад в кабинет"
-            aria-label="Назад в кабинет"
+            className="dashboard-messenger__list-head-back dashboard-messenger__list-head-back--avatar"
+            title="Личный кабинет"
+            aria-label="Личный кабинет"
           >
-            <ChevronLeftIcon />
+            {profileAvatarUrl?.trim() ? (
+              <StorageOrHttpAvatarImg
+                src={profileAvatarUrl.trim()}
+                alt=""
+                className="dashboard-messenger__list-head-back-avatar-img"
+                fallback={<FiRrIcon name="user" className="dashboard-messenger__list-head-back-avatar-fallback" />}
+              />
+            ) : (
+              <FiRrIcon name="user" className="dashboard-messenger__list-head-back-avatar-fallback" />
+            )}
           </Link>
           <button
             type="button"

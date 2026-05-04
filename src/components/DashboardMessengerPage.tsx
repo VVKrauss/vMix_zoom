@@ -3507,19 +3507,17 @@ export function DashboardMessengerPage() {
       onSignOut={() => signOut()}
       chromeless={isMobileMessenger}
       suppressBurger={!isMobileMessenger}
-      headerExtra={
+      headerActionsExtra={
         !isMobileMessenger ? (
-          <div className="dashboard-topbar__messenger-controls">
-            <button
-              type="button"
-              className="dashboard-messenger__list-head-btn"
-              onClick={() => setMessengerSettingsOpen(true)}
-              aria-label="Настройки мессенджера"
-              title="Настройки мессенджера"
-            >
-              <FiRrIcon name="settings" />
-            </button>
-          </div>
+          <button
+            type="button"
+            className="dashboard-topbar__messenger-settings"
+            onClick={() => setMessengerSettingsOpen(true)}
+            aria-label="Настройки мессенджера"
+            title="Настройки мессенджера"
+          >
+            <FiRrIcon name="settings" className="dashboard-topbar__messenger-settings-fi" />
+          </button>
         ) : null
       }
     >

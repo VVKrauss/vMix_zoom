@@ -141,11 +141,6 @@ export function DashboardShell({
           <Link to="/" className="dashboard-topbar__logo" title="На главную">
             <img className="brand-logo brand-logo--header-h" src="/logo-h.png" alt="" draggable={false} />
           </Link>
-          {canAccessAdmin && showCabinetQuickCircleActions ? (
-            <Link to="/admin" className="dashboard-topbar__admin" title="Админка" aria-label="Админка">
-              <AdminPanelIcon />
-            </Link>
-          ) : null}
         </div>
 
         {unifiedCabinetNav ? (
@@ -154,7 +149,17 @@ export function DashboardShell({
 
         <div className="dashboard-topbar__actions">
           {!unifiedCabinetNav ? headerExtra : null}
-          {headerActionsExtra}
+          {!unifiedCabinetNav ? headerActionsExtra : null}
+          {!unifiedCabinetNav && canAccessAdmin ? (
+            <Link to="/admin" className="dashboard-topbar__admin" title="Админка" aria-label="Админка">
+              <AdminPanelIcon />
+            </Link>
+          ) : null}
+          {unifiedCabinetNav && canAccessAdmin ? (
+            <Link to="/admin" className="dashboard-topbar__admin" title="Админка" aria-label="Админка">
+              <AdminPanelIcon />
+            </Link>
+          ) : null}
           {unifiedCabinetNav && active !== 'messenger' && !chromeless ? (
             <Link
               to="/dashboard/messenger"
@@ -170,7 +175,7 @@ export function DashboardShell({
               ) : null}
             </Link>
           ) : null}
-          {unifiedCabinetNav ? (
+          {unifiedCabinetNav && !chromeless ? (
             <button
               type="button"
               className="dashboard-topbar__circle-action dashboard-topbar__circle-action--primary"
@@ -181,6 +186,7 @@ export function DashboardShell({
               <FiRrIcon name="circle-phone" className="dashboard-topbar__new-room-fi" />
             </button>
           ) : null}
+          {unifiedCabinetNav ? headerActionsExtra : null}
           {showCabinetQuickCircleActions ? (
             <>
               <Link
@@ -214,11 +220,6 @@ export function DashboardShell({
                 <LogOutIcon />
               </button>
             </>
-          ) : null}
-          {canAccessAdmin ? (
-            <Link to="/admin" className="dashboard-topbar__admin" title="Админка" aria-label="Админка">
-              <AdminPanelIcon />
-            </Link>
           ) : null}
         </div>
       </header>

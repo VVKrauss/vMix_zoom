@@ -3924,6 +3924,24 @@ html[data-theme="light"] .messenger-file-input__name--placeholder {
   height: 22px;
 }
 
+.dashboard-messenger__list-head-back--avatar {
+  padding: 0;
+  overflow: hidden;
+}
+
+.dashboard-messenger__list-head-back--avatar .dashboard-messenger__list-head-back-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
+.dashboard-messenger__list-head-back--avatar .dashboard-messenger__list-head-back-avatar-fallback {
+  font-size: 20px;
+  line-height: 1;
+}
+
 /* Мессенджер: одна строка грида на оставшуюся высоту страницы */
 .dashboard-page:has(.dashboard-messenger--fill) .dashboard-shell {
   grid-template-rows: minmax(0, 1fr);
