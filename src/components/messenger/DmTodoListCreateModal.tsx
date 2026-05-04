@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type FocusEvent } from 'react'
 import type { DmTodoListItem } from '../../lib/messenger'
 
 const MAX_ITEMS = 10
@@ -48,11 +48,38 @@ function buildDisplayLines(raw: string[]): string[] {
   return base.slice(0, n)
 }
 
+function scrollFieldIntoView(e: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
+  const el = e.target
+  requestAnimationFrame(() => {
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  })
+}
+
 export function DmTodoListCreateModal(props: DmTodoListCreateModalProps) {
   const { open, mode, initialTitle = '', initialItems, onClose, onConfirm } = props
 
   const [title, setTitle] = useState('')
   const [lines, setLines] = useState<string[]>([''])
+  const [keyboardInset, setKeyboardInset] = useState(0)
+
+  useEffect(() => {
+    if (!open) {
+      setKeyboardInset(0)
+      return
+    }
+    const vv = window.visualViewport
+    if (!vv) return
+    const sync = () => {
+      setKeyboardInset(Math.max(0, window.innerHeight - vv.height - vv.offsetTop))
+    }
+    vv.addEventListener('resize', sync)
+    vv.addEventListener('scroll', sync)
+    sync()
+    return () => {
+      vv.removeEventListener('resize', sync)
+      vv.removeEventListener('scroll', sync)
+    }
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -107,49 +134,58 @@ export function DmTodoListCreateModal(props: DmTodoListCreateModalProps) {
 
   if (!open) return null
 
+  const scrollPadBottom = 12 + keyboardInset
+
   return (
-    <div className="messenger-settings-modal-root" role="presentation">
+    <div className="messenger-settings-modal-root dm-todo-create-modal-root" role="presentation">
       <button type="button" className="messenger-settings-modal-backdrop" aria-label="Закрыть" onClick={onClose} />
       <div
-        className="messenger-settings-modal app-scroll dm-todo-create-modal"
+        className="messenger-settings-modal dm-todo-create-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="dm-todo-modal-title"
       >
-        <h2 id="dm-todo-modal-title" className="messenger-settings-modal__title">
+        <h2 id="dm-todo-modal-title" className="messenger-settings-modal__title dm-todo-create-modal__head">
           {mode === 'edit' ? 'Редактировать список' : 'Список дел'}
         </h2>
-        <div className="messenger-settings-modal__section">
-          <label className="messenger-settings-modal__label" htmlFor="dm-todo-title">
-            Заголовок (необязательно)
-          </label>
-          <input
-            id="dm-todo-title"
-            type="text"
-            className="dashboard-messenger__input dm-todo-create-modal__input dm-todo-create-modal__title-input"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Без заголовка"
-            maxLength={500}
-          />
-        </div>
-        <div className="messenger-settings-modal__section dm-todo-create-modal__tasks">
-          {displayLines.map((value, idx) => (
-            <div key={`line-${idx}`} className="dm-todo-create-modal__task-row">
-              <label className="messenger-settings-modal__label" htmlFor={`dm-todo-line-${idx}`}>
-                {idx === 0 ? 'Задача' : `Задача ${idx + 1}`}
-              </label>
-              <textarea
-                id={`dm-todo-line-${idx}`}
-                className="dashboard-messenger__input dm-todo-create-modal__input dm-todo-create-modal__task-textarea"
-                rows={1}
-                value={value}
-                onChange={(e) => setLine(idx, e.target.value)}
-                placeholder="Текст задачи"
-                maxLength={500}
-              />
-            </div>
-          ))}
+        <div
+          className="dm-todo-create-modal__body-scroll app-scroll"
+          style={{ paddingBottom: scrollPadBottom }}
+        >
+          <div className="messenger-settings-modal__section">
+            <label className="messenger-settings-modal__label" htmlFor="dm-todo-title">
+              Заголовок (необязательно)
+            </label>
+            <input
+              id="dm-todo-title"
+              type="text"
+              className="dashboard-messenger__input dm-todo-create-modal__input dm-todo-create-modal__title-input"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onFocus={scrollFieldIntoView}
+              placeholder="Без заголовка"
+              maxLength={500}
+            />
+          </div>
+          <div className="messenger-settings-modal__section dm-todo-create-modal__tasks">
+            {displayLines.map((value, idx) => (
+              <div key={`line-${idx}`} className="dm-todo-create-modal__task-row">
+                <label className="messenger-settings-modal__label" htmlFor={`dm-todo-line-${idx}`}>
+                  {idx === 0 ? 'Задача' : `Задача ${idx + 1}`}
+                </label>
+                <textarea
+                  id={`dm-todo-line-${idx}`}
+                  className="dashboard-messenger__input dm-todo-create-modal__input dm-todo-create-modal__task-textarea"
+                  rows={1}
+                  value={value}
+                  onChange={(e) => setLine(idx, e.target.value)}
+                  onFocus={scrollFieldIntoView}
+                  placeholder="Текст задачи"
+                  maxLength={500}
+                />
+              </div>
+            ))}
+          </div>
         </div>
         <div className="dm-todo-create-modal__actions">
           <button type="button" className="dashboard-topbar__action" onClick={onClose}>

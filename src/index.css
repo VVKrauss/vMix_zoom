@@ -7379,6 +7379,41 @@ span.dashboard-messenger__thread-avatar {
   color: #f66;
 }
 
+.messenger-settings-modal-root.dm-todo-create-modal-root {
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: max(10px, env(safe-area-inset-top));
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+.messenger-settings-modal.dm-todo-create-modal {
+  max-height: min(calc(100dvh - 20px), 100dvh);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  gap: 10px;
+}
+
+.dm-todo-create-modal__head {
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+
+.dm-todo-create-modal__body-scroll {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 4px;
+  margin-right: -2px;
+}
+
 .dm-todo-create-modal .messenger-settings-modal__title {
   margin-bottom: 2px;
 }
@@ -7438,7 +7473,10 @@ span.dashboard-messenger__thread-avatar {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 0;
+  flex-shrink: 0;
+  padding-top: 4px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
 }
 
 .dashboard-messenger__composer-reply,
@@ -7606,6 +7644,75 @@ html[data-theme="light"] .messenger-msg-menu-wrap.messenger-channel-reaction-pic
   white-space: nowrap;
 }
 
+.messenger-msg-menu__top-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 8px 7px;
+  border-bottom: 1px solid var(--border);
+  justify-content: flex-end;
+}
+
+.messenger-msg-menu__actions-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  padding: 6px 6px 7px;
+  justify-content: space-between;
+  max-width: 100%;
+}
+
+.messenger-msg-menu__icon-btn {
+  box-sizing: border-box;
+  flex: 1 1 0;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 6px 4px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.messenger-msg-menu__icon-btn i.fi {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.messenger-msg-menu__icon-btn:hover:not(:disabled) {
+  background: var(--surface2);
+}
+
+.messenger-msg-menu__icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.messenger-msg-menu__icon-btn--danger {
+  color: #ff8a80;
+}
+
+.messenger-msg-menu__item--pin {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.messenger-msg-menu__item-pin-ico {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.messenger-msg-menu__item-pin-ico i.fi {
+  font-size: 15px;
+  line-height: 1;
+}
+
 .messenger-msg-menu__emoji-row {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -7621,11 +7728,6 @@ html[data-theme="light"] .messenger-msg-menu-wrap.messenger-channel-reaction-pic
   font-size: 11px;
   line-height: 1.25;
   user-select: none;
-}
-
-/* Разделитель над реакциями только если сверху есть «Редактировать» */
-.messenger-msg-menu__item + .messenger-msg-menu__emoji-row {
-  border-top: 1px solid var(--border);
 }
 
 .messenger-msg-menu__emoji {

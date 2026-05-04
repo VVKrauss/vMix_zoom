@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom'
 import { useEffect } from 'react'
-import { BellIcon, BellOffIcon } from '../icons'
+import { BellIcon, BellOffIcon, FiRrIcon } from '../icons'
 import { PillToggle } from '../PillToggle'
 import type { MessengerFontPreset } from '../../lib/messengerUi'
 
@@ -18,6 +18,8 @@ export type MessengerSettingsModalProps = {
   pushUi: MessengerPushUi
   pushBusy: boolean
   onTogglePush: () => void
+  /** Личный кабинет → настройки приватности («Видимость на сайте»). */
+  onOpenVisibilitySettings?: () => void
 }
 
 export function MessengerSettingsModal({
@@ -32,6 +34,7 @@ export function MessengerSettingsModal({
   pushUi,
   pushBusy,
   onTogglePush,
+  onOpenVisibilitySettings,
 }: MessengerSettingsModalProps) {
   useEffect(() => {
     if (!open) return
@@ -115,6 +118,24 @@ export function MessengerSettingsModal({
             {pushUi === 'denied' ? (
               <p className="messenger-settings-modal__hint">Разрешите уведомления в настройках браузера.</p>
             ) : null}
+          </div>
+        ) : null}
+        {onOpenVisibilitySettings ? (
+          <div className="messenger-settings-modal__section">
+            <button
+              type="button"
+              className="messenger-settings-modal__row-btn"
+              onClick={() => {
+                onClose()
+                onOpenVisibilitySettings()
+              }}
+            >
+              <span className="messenger-settings-modal__row-ico" aria-hidden>
+                <FiRrIcon name="eye" />
+              </span>
+              Видимость на сайте
+            </button>
+            <p className="messenger-settings-modal__hint">Кто видит карточку, активность и статус «в сети»</p>
           </div>
         ) : null}
         <div className="messenger-settings-modal__actions">

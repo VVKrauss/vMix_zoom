@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useUserPeek } from '../context/UserPeekContext'
 import { useCanAccessAdminPanel } from '../hooks/useCanAccessAdminPanel'
@@ -120,6 +120,7 @@ export function DashboardPage() {
   const { signOut, user } = useAuth()
   const { openUserPeek } = useUserPeek()
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
+  const [searchParams, setSearchParams] = useSearchParams()
   const {
     profile,
     plan,
@@ -197,6 +198,29 @@ export function DashboardPage() {
   useEffect(() => {
     refreshHiddenIncoming()
   }, [refreshHiddenIncoming, contactsTick])
+
+  /** Открытие экрана «Видимость на сайте» из ссылки, например из настроек мессенджера. */
+  useEffect(() => {
+    if (loading) return
+    const s = searchParams.get('settings')?.trim()
+    if (s !== 'visibility') return
+    if (isDesktopSettings) {
+      setExpandedSettingsSection('visibility')
+      setSettingsScreen('root')
+    } else {
+      setSettingsScreen('visibility')
+    }
+    setSearchPrivacyErr(null)
+    setContactPrivacyErr(null)
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('settings')
+        return next
+      },
+      { replace: true },
+    )
+  }, [loading, searchParams, isDesktopSettings, setSearchParams])
 
   useEffect(() => {
     if (!profile) return

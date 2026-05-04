@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { useCallback, useRef, useState } from 'react'
 import type { DirectMessage, DmOutgoingReceiptLevel, MessengerForwardNav } from '../../lib/messenger'
 import { isDmSoftDeletedStub } from '../../lib/messenger'
-import { DmOutgoingReceiptGlyph } from './DmOutgoingReceiptGlyph'
+import { DmOutgoingReceiptHintTrigger } from './DmOutgoingReceiptHintTrigger'
 import { DoubleTapHeartSurface } from './DoubleTapHeartSurface'
 import { MessengerBubbleBody, type MessengerImageLightboxOpen } from '../MessengerBubbleBody'
 import { MessengerReplyMiniThumb } from '../MessengerReplyMiniThumb'
@@ -406,20 +406,11 @@ export function ThreadMessageBubble({
         </div>
       ) : null}
       {isOwn && dmOutgoingReceipt ? (
-        <span
+        <DmOutgoingReceiptHintTrigger
+          level={dmOutgoingReceipt}
+          messageId={message.id}
           className={`dashboard-messenger__dm-receipt dashboard-messenger__dm-receipt--${dmOutgoingReceipt} dashboard-messenger__dm-receipt--outside`}
-          aria-label={
-            dmOutgoingReceipt === 'pending'
-              ? 'Отправка'
-              : dmOutgoingReceipt === 'read'
-                ? 'Прочитано'
-                : dmOutgoingReceipt === 'delivered'
-                  ? 'Доставлено'
-                  : 'Отправлено'
-          }
-        >
-          <DmOutgoingReceiptGlyph level={dmOutgoingReceipt} messageId={message.id} />
-        </span>
+        />
       ) : null}
     </article>
   )

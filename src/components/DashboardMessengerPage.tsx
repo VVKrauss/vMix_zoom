@@ -4237,6 +4237,10 @@ export function DashboardMessengerPage() {
         onTogglePush={() => {
           void toggleMessengerPush()
         }}
+        onOpenVisibilitySettings={() => {
+          setMessengerSettingsOpen(false)
+          navigate('/dashboard?settings=visibility')
+        }}
       />
 
     </DashboardShell>

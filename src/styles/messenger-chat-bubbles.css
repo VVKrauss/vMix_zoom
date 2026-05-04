@@ -263,6 +263,56 @@
   flex-shrink: 0;
 }
 
+/* Кнопка-обёртка индикатора доставки: не задавать position — иначе перебивается .dm-receipt--outside (absolute). */
+.dashboard-messenger__dm-receipt--hint-trigger {
+  box-sizing: border-box;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: default;
+  line-height: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  min-width: 0;
+  width: auto;
+}
+
+.dashboard-messenger__dm-receipt--hint-trigger:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--red) 70%, transparent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.dashboard-messenger__dm-receipt-hint-pop {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  padding: 4px 9px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: #fff;
+  background: rgba(12, 12, 16, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+html[data-theme='light'] .dashboard-messenger__dm-receipt-hint-pop {
+  color: #1a1a1f;
+  background: rgba(255, 252, 250, 0.96);
+  border-color: color-mix(in srgb, var(--border) 80%, transparent);
+  box-shadow: 0 6px 20px rgba(60, 30, 30, 0.14);
+}
+
 .dashboard-messenger__dm-receipt-svg {
   display: block;
   flex-shrink: 0;

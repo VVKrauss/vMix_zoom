@@ -4,6 +4,7 @@ import { REACTION_EMOJI_WHITELIST } from '../types/roomComms'
 import type { ReactionEmoji } from '../types/roomComms'
 import type { DmOutgoingReceiptLevel } from '../lib/messenger'
 import { DmOutgoingReceiptGlyph } from './messenger/DmOutgoingReceiptGlyph'
+import { FiRrIcon } from './icons'
 
 export function MessengerMessageMenuPopover({
   canEdit,
@@ -73,6 +74,12 @@ export function MessengerMessageMenuPopover({
             ? 'Отправлено'
             : null
 
+  const showTopRow = Boolean((canBookmark && onBookmark) || (canSave && onSave))
+  const showReply = !hideReply
+  const showCopy = Boolean(canCopy && onCopy)
+  const showForward = Boolean(onForward)
+  const showBottomRow = showReply || showCopy || showForward || canEdit || canDelete
+
   useEffect(() => {
     const onDown = (e: MouseEvent | TouchEvent) => {
       const target =
@@ -106,51 +113,37 @@ export function MessengerMessageMenuPopover({
           <span className="messenger-msg-menu__legend-text">{receiptLabel}</span>
         </div>
       ) : null}
-      {canEdit ? (
-        <button type="button" className="messenger-msg-menu__item" role="menuitem" onClick={onEdit}>
-          Редактировать
-        </button>
-      ) : null}
-      {canCopy && onCopy ? (
-        <button
-          type="button"
-          className="messenger-msg-menu__item"
-          role="menuitem"
-          onClick={() => {
-            void Promise.resolve(onCopy()).finally(() => onClose())
-          }}
-        >
-          Скопировать
-        </button>
-      ) : null}
-      {canBookmark && onBookmark ? (
-        <button
-          type="button"
-          className="messenger-msg-menu__item"
-          role="menuitem"
-          onClick={() => {
-            void Promise.resolve(onBookmark()).finally(() => onClose())
-          }}
-        >
-          В закладки
-        </button>
-      ) : null}
-      {canSave && onSave ? (
-        <button
-          type="button"
-          className="messenger-msg-menu__item"
-          role="menuitem"
-          onClick={() => {
-            void Promise.resolve(onSave()).finally(() => onClose())
-          }}
-        >
-          Сохранить
-        </button>
-      ) : null}
-      {canDelete ? (
-        <button type="button" className="messenger-msg-menu__item" role="menuitem" onClick={onDelete}>
-          Удалить
-        </button>
+      {showTopRow ? (
+        <div className="messenger-msg-menu__top-actions" role="group" aria-label="Закладки и сохранение">
+          {canBookmark && onBookmark ? (
+            <button
+              type="button"
+              className="messenger-msg-menu__icon-btn"
+              role="menuitem"
+              title="В закладки"
+              aria-label="В закладки"
+              onClick={() => {
+                void Promise.resolve(onBookmark()).finally(() => onClose())
+              }}
+            >
+              <FiRrIcon name="bookmark" />
+            </button>
+          ) : null}
+          {canSave && onSave ? (
+            <button
+              type="button"
+              className="messenger-msg-menu__icon-btn"
+              role="menuitem"
+              title="Сохранить"
+              aria-label="Сохранить"
+              onClick={() => {
+                void Promise.resolve(onSave()).finally(() => onClose())
+              }}
+            >
+              <FiRrIcon name="inbox-in" />
+            </button>
+          ) : null}
+        </div>
       ) : null}
       <div className="messenger-msg-menu__emoji-row" role="group" aria-label="Реакции">
         {REACTION_EMOJI_WHITELIST.map((emoji) => (
@@ -166,32 +159,86 @@ export function MessengerMessageMenuPopover({
           </button>
         ))}
       </div>
-      {!hideReply ? (
-        <button type="button" className="messenger-msg-menu__item" role="menuitem" onClick={onReply}>
-          Ответить
-        </button>
-      ) : null}
-      {onForward ? (
-        <button
-          type="button"
-          className="messenger-msg-menu__item"
-          role="menuitem"
-          onClick={() => {
-            onForward()
-            onClose()
-          }}
-        >
-          Переслать
-        </button>
+      {showBottomRow ? (
+        <div className="messenger-msg-menu__actions-row" role="group" aria-label="Действия с сообщением">
+          {showReply ? (
+            <button
+              type="button"
+              className="messenger-msg-menu__icon-btn"
+              role="menuitem"
+              title="Ответить"
+              aria-label="Ответить"
+              onClick={onReply}
+            >
+              <FiRrIcon name="comment-quote" />
+            </button>
+          ) : null}
+          {showCopy ? (
+            <button
+              type="button"
+              className="messenger-msg-menu__icon-btn"
+              role="menuitem"
+              title="Скопировать"
+              aria-label="Скопировать"
+              onClick={() => {
+                void Promise.resolve(onCopy!()).finally(() => onClose())
+              }}
+            >
+              <FiRrIcon name="copy" />
+            </button>
+          ) : null}
+          {showForward ? (
+            <button
+              type="button"
+              className="messenger-msg-menu__icon-btn"
+              role="menuitem"
+              title="Переслать"
+              aria-label="Переслать"
+              onClick={() => {
+                onForward!()
+                onClose()
+              }}
+            >
+              <FiRrIcon name="share" />
+            </button>
+          ) : null}
+          {canEdit ? (
+            <button
+              type="button"
+              className="messenger-msg-menu__icon-btn"
+              role="menuitem"
+              title="Редактировать"
+              aria-label="Редактировать"
+              onClick={onEdit}
+            >
+              <FiRrIcon name="edit" />
+            </button>
+          ) : null}
+          {canDelete ? (
+            <button
+              type="button"
+              className="messenger-msg-menu__icon-btn messenger-msg-menu__icon-btn--danger"
+              role="menuitem"
+              title="Удалить"
+              aria-label="Удалить"
+              onClick={onDelete}
+            >
+              <FiRrIcon name="trash-xmark" />
+            </button>
+          ) : null}
+        </div>
       ) : null}
       {showAddPin && onTogglePin ? (
         <button
           type="button"
-          className="messenger-msg-menu__item"
+          className="messenger-msg-menu__item messenger-msg-menu__item--pin"
           role="menuitem"
           disabled={pinBusy}
           onClick={onTogglePin}
         >
+          <span className="messenger-msg-menu__item-pin-ico" aria-hidden>
+            <FiRrIcon name="user-add" />
+          </span>
           {pinActive ? 'Убрать из контактов' : 'Добавить в контакты'}
         </button>
       ) : null}

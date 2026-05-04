@@ -74,6 +74,13 @@ docker compose up -d --no-deps auth
 docker compose logs auth --tail 50
 ```
 
+Если меняли **`ENABLE_EMAIL_AUTOCONFIRM`** (или другие переменные из `.env` не подхватились), контейнер **`auth`** нужно **пересоздать**, иначе внутри останется старое `GOTRUE_*` (типичный симптом: в `.env` уже `false`, а регистрация всё ещё сразу с сессией):
+
+```bash
+docker compose up -d --force-recreate --no-deps auth
+docker compose exec -T auth printenv GOTRUE_MAILER_AUTOCONFIRM
+```
+
 Проверка, что переменные дошли до контейнера (без вывода секретов):
 
 ```bash
@@ -88,7 +95,7 @@ docker compose exec -T auth sh -lc 'test -n "$GOTRUE_SMTP_HOST" && test -n "$GOT
 
 1. **SMTP** — заполнить `SMTP_*` в `~/apps/supabase/docker/.env`, перезапустить `auth`, убедиться по логам что письмо уходит (тестовый `signup` без autoconfirm или лог SMTP).
 2. **Редиректы** — в `.env` в `ADDITIONAL_REDIRECT_URLS` добавить прод и дев, например `https://redflow.online/**,http://localhost:5173/**` (чтобы `redirect_to` из клиента не отвергали).
-3. **Выключить autoconfirm** — `ENABLE_EMAIL_AUTOCONFIRM=false`, снова `docker compose up -d --no-deps auth`.
+3. **Выключить autoconfirm** — `ENABLE_EMAIL_AUTOCONFIRM=false`, затем **`docker compose up -d --force-recreate --no-deps auth`** (см. блок выше про подхват env).
 4. **Проверка** — регистрация: ответ 200, `session` в теле ответа **нет**, на почту приходит ссылка; переход по ссылке открывает `/auth/email-confirmed` и логинит в приложение.
 
 Пока шаги 1–3 не готовы, оставляйте `ENABLE_EMAIL_AUTOCONFIRM=true`, иначе `signup` снова даст 500 при ошибке отправки письма.

@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FocusEvent,
+} from 'react'
 import { useToast } from '../../context/ToastContext'
 import {
   appendChannelPostRich,
@@ -23,6 +31,29 @@ import './PostEditorModal.css'
 
 function storageKey(cid: string, mid: string | null) {
   return `vmix.pe.${cid}.${mid ?? 'new'}`
+}
+
+function autosizeTextareaMaxLines(el: HTMLTextAreaElement, maxLines: number) {
+  const cs = window.getComputedStyle(el)
+  const linePx =
+    cs.lineHeight === 'normal' ? parseFloat(cs.fontSize) * 1.25 : parseFloat(cs.lineHeight)
+  const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
+  const border = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth)
+  const minH = linePx + pad + border
+  const maxH = linePx * maxLines + pad + border
+
+  el.style.overflowY = 'hidden'
+  el.style.height = '0'
+  const sh = el.scrollHeight
+  el.style.height = `${Math.min(Math.max(sh, minH), maxH)}px`
+}
+
+function scrollPostFieldIntoView(e: FocusEvent<HTMLTextAreaElement>) {
+  if (!window.matchMedia('(max-width: 900px)').matches) return
+  const el = e.target
+  requestAnimationFrame(() => {
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  })
 }
 
 export function PostEditorModal({
@@ -258,6 +289,34 @@ export function PostEditorModal({
 
   const [matTitle, setMatTitle] = useState('')
   const [matUrl, setMatUrl] = useState('')
+  const titleTaRef = useRef<HTMLTextAreaElement>(null)
+  const subtitleTaRef = useRef<HTMLTextAreaElement>(null)
+  const [keyboardInset, setKeyboardInset] = useState(0)
+
+  useLayoutEffect(() => {
+    if (!open || preview) return
+    if (titleTaRef.current) autosizeTextareaMaxLines(titleTaRef.current, 3)
+    if (subtitleTaRef.current) autosizeTextareaMaxLines(subtitleTaRef.current, 2)
+  }, [open, preview, draft.title, draft.subtitle])
+
+  useEffect(() => {
+    if (!open || preview || !narrow) {
+      setKeyboardInset(0)
+      return
+    }
+    const vv = window.visualViewport
+    if (!vv) return
+    const sync = () => {
+      setKeyboardInset(Math.max(0, window.innerHeight - vv.height - vv.offsetTop))
+    }
+    vv.addEventListener('resize', sync)
+    vv.addEventListener('scroll', sync)
+    sync()
+    return () => {
+      vv.removeEventListener('resize', sync)
+      vv.removeEventListener('scroll', sync)
+    }
+  }, [open, preview, narrow])
 
   const addMaterial = useCallback(() => {
     const title = matTitle.trim()
@@ -320,25 +379,32 @@ export function PostEditorModal({
         </header>
 
         <div className="post-editor-body">
-          <div className="post-editor-main app-scroll">
+          <div
+            className="post-editor-main app-scroll"
+            style={narrow && !preview ? { paddingBottom: 16 + keyboardInset } : undefined}
+          >
             {preview ? (
               <PostDraftReadView draft={draft} urlByStoragePath={urlByPath} />
             ) : (
               <>
                 <textarea
+                  ref={titleTaRef}
                   className="post-editor-field-title"
-                  rows={2}
+                  rows={1}
                   placeholder="Заголовок поста"
                   value={draft.title}
                   onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
+                  onFocus={scrollPostFieldIntoView}
                   disabled={busy}
                 />
                 <textarea
+                  ref={subtitleTaRef}
                   className="post-editor-field-subtitle"
-                  rows={3}
+                  rows={1}
                   placeholder="Краткое описание (Markdown: ~~зачёркнуто~~, **жирный**)"
                   value={draft.subtitle ?? ''}
                   onChange={(e) => setDraft((d) => ({ ...d, subtitle: e.target.value }))}
+                  onFocus={scrollPostFieldIntoView}
                   disabled={busy}
                 />
                 <div className="post-editor-cover">

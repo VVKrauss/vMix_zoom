@@ -11,6 +11,7 @@
   background: rgba(0, 0, 0, 0.72);
   backdrop-filter: blur(6px);
   box-sizing: border-box;
+  min-height: 0;
 }
 
 .post-editor-shell {
@@ -31,6 +32,7 @@
   max-height: none;
   width: 100%;
   height: 100%;
+  min-height: 0;
   border-radius: 0;
 }
 
@@ -146,16 +148,18 @@
   border: none;
   background: transparent;
   color: var(--text);
-  font-size: clamp(26px, 4vw, 34px);
+  font-size: clamp(22px, 3.6vw, 34px);
   font-weight: 700;
-  line-height: 1.15;
-  padding: 0 0 12px;
-  margin: 0 0 8px;
+  line-height: 1.2;
+  padding: 0 0 8px;
+  margin: 0 0 6px;
   resize: none;
   font-family: inherit;
   outline: none;
   overflow-wrap: break-word;
   word-break: break-word;
+  overflow-y: hidden;
+  max-height: 4.5em;
 }
 
 .post-editor-field-subtitle {
@@ -168,14 +172,16 @@
   color: var(--text-dim);
   font-size: 16px;
   line-height: 1.45;
-  padding: 0 0 20px;
-  margin: 0 0 24px;
-  min-height: 52px;
-  resize: vertical;
+  padding: 0 0 12px;
+  margin: 0 0 16px;
+  min-height: calc(1.45em + 4px);
+  resize: none;
   font-family: inherit;
   outline: none;
   overflow-wrap: break-word;
   word-break: break-word;
+  overflow-y: hidden;
+  max-height: 3.1em;
 }
 
 .post-editor-cover {
@@ -262,20 +268,50 @@ html[data-theme='light'] .post-editor-extras-panel {
 @media (max-width: 900px) {
   .post-editor-overlay {
     padding: 0;
+    align-items: stretch;
+    justify-content: stretch;
   }
 
   .post-editor-shell {
     border-radius: 0;
     max-height: none;
     height: 100%;
+    min-height: 100%;
+  }
+
+  .post-editor-shell.post-editor-shell--fullscreen {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
   }
 
   .post-editor-body {
     flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
   }
 
   .post-editor-main {
-    padding: 20px 18px 28px;
+    padding: 16px 16px 24px;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .post-editor-field-title {
+    font-size: clamp(18px, 5.2vw, 26px);
+    padding-bottom: 6px;
+    margin-bottom: 4px;
+    max-height: 3.75em;
+  }
+
+  .post-editor-field-subtitle {
+    font-size: 15px;
+    margin-bottom: 12px;
+    max-height: 2.95em;
+  }
+
+  .post-editor-cover {
+    margin-bottom: 18px;
   }
 }
 
