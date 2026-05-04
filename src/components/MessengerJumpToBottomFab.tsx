@@ -11,6 +11,14 @@ export function MessengerJumpToBottomFab({
     <button
       type="button"
       className="messenger-jump-to-bottom"
+      onPointerDown={(e) => {
+        // Не забираем фокус у textarea → на мобильных это предотвращает закрытие клавиатуры.
+        e.preventDefault()
+      }}
+      onMouseDown={(e) => {
+        // Fallback для браузеров без Pointer Events.
+        e.preventDefault()
+      }}
       onClick={onClick}
       aria-label="К последнему сообщению"
       title="Вниз"

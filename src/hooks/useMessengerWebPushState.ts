@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   disableMessengerPush,
   enableMessengerPush,
-  isMessengerPushSubscribed,
   isMessengerWebPushConfigured,
   isWebPushApiSupported,
   reconcileMessengerPushSubscription,
@@ -49,13 +48,27 @@ export function useMessengerWebPushState(
       return
     }
 
-    const subbed = await isMessengerPushSubscribed()
-    setPushUi(subbed ? 'on' : 'off')
+    setPushUi(reconciled.state === 'on' ? 'on' : 'off')
   }, [userId, setGlobalError])
 
   useEffect(() => {
     void refreshPushUi()
   }, [refreshPushUi])
+
+  useEffect(() => {
+    if (!userId || !isWebPushApiSupported() || !isMessengerWebPushConfigured()) return
+    const t = window.setInterval(() => {
+      void refreshPushUi()
+    }, 45_000)
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void refreshPushUi()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      window.clearInterval(t)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [userId, refreshPushUi])
 
   const toggleMessengerPush = useCallback(async () => {
     if (!userId || pushUi === 'absent' || pushUi === 'unconfigured' || pushBusy) return

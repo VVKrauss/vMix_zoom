@@ -38,6 +38,50 @@ alwaysApply: true
 pwsh -File .\tools\apply-selfhosted-migration.ps1 -MigrationPath .\supabase\migrations\20260421153000_presence_online_15s.sql
 ```
 
+## Auth (GoTrue): исходящая почта (SMTP)
+
+Один только адрес ящика (например `service@redflow.online`) **не заменяет SMTP**: GoTrue шлёт письма через **исходящий сервер** (хост, порт, логин, пароль). Если SMTP не настроен или неверен, `POST /auth/v1/signup` отвечает **500** с текстом вроде `Error sending confirmation email`.
+
+### Откуда взять значения
+
+У регистратора домена / хостинга почты для `service@redflow.online` в панели обычно указано: **SMTP-сервер**, **порт** (часто **587** с STARTTLS или **465** с SSL), **логин** (часто полный email), **пароль** ящика или **пароль приложения**.
+
+### Куда писать
+
+Файл на сервере: `~/apps/supabase/docker/.env`. В `docker-compose.yml` сервис **`auth`** уже прокидывает в GoTrue переменные вида `GOTRUE_SMTP_*` из `${SMTP_*}` — достаточно заполнить нижележащие ключи в `.env`.
+
+Минимально для писем подтверждения:
+
+- `ENABLE_EMAIL_SIGNUP=true` — иначе внешняя почта как провайдер входа может быть выключена (смотрите актуальное значение в вашем `.env`).
+- `ENABLE_EMAIL_AUTOCONFIRM=false` — если нужны письма подтверждения; `true` — без писем, сразу подтверждённый пользователь (удобно только для отладки).
+- `SMTP_HOST` — хост исходящей почты (не «redflow.online» абстрактно, а именно **smtp.…** из панели провайдера).
+- `SMTP_PORT` — обычно `587` или `465`.
+- `SMTP_USER` — как правило `service@redflow.online`.
+- `SMTP_PASS` — пароль ящика или app password.
+- `SMTP_ADMIN_EMAIL` — служебный «From»/admin для системных писем; часто тот же `service@redflow.online`.
+- `SMTP_SENDER_NAME` — отображаемое имя отправителя, например `Redflow`.
+
+Редиректы после клика по ссылке в письме:
+
+- `SITE_URL` — базовый URL приложения, например `https://redflow.online`.
+- `ADDITIONAL_REDIRECT_URLS` — список через запятую допустимых `redirect_to`, например `https://redflow.online/**,http://localhost:5173/**` (или точные пути `/auth/email-confirmed`), иначе клиент с `emailRedirectTo` на localhost получит отказ по URL.
+
+### После правок
+
+```bash
+cd ~/apps/supabase/docker
+docker compose up -d --no-deps auth
+docker compose logs auth --tail 50
+```
+
+Проверка, что переменные дошли до контейнера (без вывода секретов):
+
+```bash
+docker compose exec -T auth sh -lc 'test -n "$GOTRUE_SMTP_HOST" && test -n "$GOTRUE_SMTP_USER" && echo SMTP_ENV_OK'
+```
+
+Если провайдер требует явный TLS-режим, смотрите документацию вашей версии GoTrue / шаблон Supabase: иногда добавляют `GOTRUE_SMTP_SECURE` и т.п. в `docker-compose.yml`.
+
 ## Web Push: Edge Functions, которые нужны проекту
 
 - `send-dm-webpush`

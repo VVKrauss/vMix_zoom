@@ -32,17 +32,6 @@ export function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray
 }
 
-export async function isMessengerPushSubscribed(): Promise<boolean> {
-  if (!isWebPushApiSupported() || !isMessengerWebPushConfigured()) return false
-  try {
-    const reg = await navigator.serviceWorker.ready
-    const sub = await reg.pushManager.getSubscription()
-    return !!sub
-  } catch {
-    return false
-  }
-}
-
 async function subscribePushOrThrow(reg: ServiceWorkerRegistration, keyBytes: BufferSource): Promise<PushSubscription> {
   try {
     return await reg.pushManager.subscribe({
@@ -71,78 +60,41 @@ async function subscribePushOrThrow(reg: ServiceWorkerRegistration, keyBytes: Bu
   }
 }
 
-export async function enableMessengerPush(userId: string): Promise<{ ok: boolean; error?: string }> {
-  if (!isWebPushApiSupported() || !isMessengerWebPushConfigured()) {
-    return { ok: false, error: 'push_not_configured' }
-  }
-
-  const key = VAPID()
-  let perm = Notification.permission
-  if (perm === 'default') {
-    perm = await Notification.requestPermission()
-  }
-  if (perm !== 'granted') {
-    return { ok: false, error: perm === 'denied' ? 'permission_denied' : 'permission_blocked' }
-  }
-
-  try {
-    const reg = await navigator.serviceWorker.ready
-    let sub = await reg.pushManager.getSubscription()
-
-    if (!sub) {
-      const keyBytes = urlBase64ToUint8Array(key)
-      sub = await subscribePushOrThrow(reg, keyBytes as BufferSource)
-    }
-
-    const json = sub.toJSON()
-    const { error } = await supabase.from('push_subscriptions').upsert(
-      {
-        user_id: userId,
-        endpoint: sub.endpoint,
-        subscription: json,
-        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id,endpoint' },
-    )
-
-    if (error) return { ok: false, error: error.message }
-    return { ok: true }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'subscribe_failed'
-    return { ok: false, error: msg }
-  }
+async function readMessengerWebPushDesired(
+  userId: string,
+): Promise<{ enabled: boolean; error?: string }> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('messenger_web_push_enabled')
+    .eq('id', userId)
+    .maybeSingle()
+  if (error) return { enabled: false, error: error.message }
+  const raw = (data as { messenger_web_push_enabled?: boolean } | null)?.messenger_web_push_enabled
+  return { enabled: raw === true }
 }
 
-export async function disableMessengerPush(userId: string): Promise<{ ok: boolean; error?: string }> {
-  if (!isWebPushApiSupported()) return { ok: true }
+async function setMessengerWebPushDesired(userId: string, enabled: boolean): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await supabase
+    .from('users')
+    .update({ messenger_web_push_enabled: enabled, updated_at: new Date().toISOString() })
+    .eq('id', userId)
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
 
+/** Снять локальную подписку (ошибки глотаем — цель «чистый» браузер). */
+async function unsubscribeCurrentPushSilently(reg: ServiceWorkerRegistration): Promise<void> {
   try {
-    const reg = await navigator.serviceWorker.ready
     const sub = await reg.pushManager.getSubscription()
-
-    if (sub) {
-      const { error } = await supabase
-        .from('push_subscriptions')
-        .delete()
-        .eq('user_id', userId)
-        .eq('endpoint', sub.endpoint)
-
-      if (error) return { ok: false, error: error.message }
-
-      await sub.unsubscribe()
-    }
-
-    return { ok: true }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'unsubscribe_failed'
-    return { ok: false, error: msg }
+    if (sub) await sub.unsubscribe()
+  } catch {
+    /* noop */
   }
 }
 
 /**
- * Если в браузере уже есть push-подписка, а строки в БД нет — восстанавливает upsert.
- * Не включает push сама по себе (нет подписки в браузере → state off).
+ * Синхронизация: флаг в `users.messenger_web_push_enabled` + `push_subscriptions` + PushManager.
+ * При выключенном намерении снимаем подписку в браузере и удаляем все строки push для пользователя.
  */
 export async function reconcileMessengerPushSubscription(
   userId: string,
@@ -160,9 +112,25 @@ export async function reconcileMessengerPushSubscription(
   }
 
   try {
+    const desiredRes = await readMessengerWebPushDesired(userId)
+    if (desiredRes.error) {
+      return { ok: false, state: 'off', error: desiredRes.error }
+    }
+    const desired = desiredRes.enabled
     const reg = await navigator.serviceWorker.ready
-    const sub = await reg.pushManager.getSubscription()
 
+    if (!desired) {
+      await unsubscribeCurrentPushSilently(reg)
+      const { error: delErr } = await supabase.from('push_subscriptions').delete().eq('user_id', userId)
+      if (delErr) return { ok: false, state: 'off', error: delErr.message }
+      return { ok: true, state: 'off' }
+    }
+
+    if (Notification.permission !== 'granted') {
+      return { ok: true, state: 'off' }
+    }
+
+    const sub = await reg.pushManager.getSubscription()
     if (!sub) {
       return { ok: true, state: 'off' }
     }
@@ -205,5 +173,114 @@ export async function reconcileMessengerPushSubscription(
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'reconcile_failed'
     return { ok: false, state: 'off', error: msg }
+  }
+}
+
+export async function enableMessengerPush(userId: string): Promise<{ ok: boolean; error?: string }> {
+  if (!isWebPushApiSupported() || !isMessengerWebPushConfigured()) {
+    return { ok: false, error: 'push_not_configured' }
+  }
+
+  const key = VAPID()
+  let perm = Notification.permission
+  if (perm === 'default') {
+    perm = await Notification.requestPermission()
+  }
+  if (perm !== 'granted') {
+    return { ok: false, error: perm === 'denied' ? 'permission_denied' : 'permission_blocked' }
+  }
+
+  try {
+    const reg = await navigator.serviceWorker.ready
+    await unsubscribeCurrentPushSilently(reg)
+
+    const keyBytes = urlBase64ToUint8Array(key)
+    const sub = await subscribePushOrThrow(reg, keyBytes as BufferSource)
+
+    const json = sub.toJSON()
+    const { error: upErr } = await supabase.from('push_subscriptions').upsert(
+      {
+        user_id: userId,
+        endpoint: sub.endpoint,
+        subscription: json,
+        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,endpoint' },
+    )
+
+    if (upErr) {
+      try {
+        await sub.unsubscribe()
+      } catch {
+        /* noop */
+      }
+      return { ok: false, error: upErr.message }
+    }
+
+    const pref = await setMessengerWebPushDesired(userId, true)
+    if (!pref.ok) {
+      await supabase.from('push_subscriptions').delete().eq('user_id', userId).eq('endpoint', sub.endpoint)
+      try {
+        await sub.unsubscribe()
+      } catch {
+        /* noop */
+      }
+      return { ok: false, error: pref.error ?? 'preference_update_failed' }
+    }
+
+    return { ok: true }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'subscribe_failed'
+    return { ok: false, error: msg }
+  }
+}
+
+export async function disableMessengerPush(userId: string): Promise<{ ok: boolean; error?: string }> {
+  const pref = await setMessengerWebPushDesired(userId, false)
+  if (!pref.ok) return { ok: false, error: pref.error }
+
+  const { error: delErr } = await supabase.from('push_subscriptions').delete().eq('user_id', userId)
+  if (delErr) return { ok: false, error: delErr.message }
+
+  if (!isWebPushApiSupported()) return { ok: true }
+
+  try {
+    const reg = await navigator.serviceWorker.ready
+    await unsubscribeCurrentPushSilently(reg)
+    return { ok: true }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'unsubscribe_failed'
+    return { ok: false, error: msg }
+  }
+}
+
+/**
+ * Для UI: «полностью включено» — намерение в БД, разрешение, есть подписка в браузере и строка в БД для endpoint.
+ */
+export async function isMessengerPushFullyOn(userId: string): Promise<boolean> {
+  if (!userId || !isWebPushApiSupported() || !isMessengerWebPushConfigured()) return false
+  if (Notification.permission !== 'granted') return false
+
+  const desired = await readMessengerWebPushDesired(userId)
+  if (!desired) return false
+
+  try {
+    const reg = await navigator.serviceWorker.ready
+    const sub = await reg.pushManager.getSubscription()
+    if (!sub) return false
+    const endpoint = sub.endpoint?.trim()
+    if (!endpoint) return false
+
+    const { data, error } = await supabase
+      .from('push_subscriptions')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('endpoint', endpoint)
+      .maybeSingle()
+
+    return !error && !!data
+  } catch {
+    return false
   }
 }

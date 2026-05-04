@@ -591,15 +591,25 @@ export function GroupThreadPane({
       setPhotoUploading(true)
       setError(null)
       const uploaded: Array<{ path: string; thumbPath?: string }> = []
-      for (const p of pendingGroupPhotos) {
-        const up = await uploadMessengerImage(cid, p.file)
-        if (up.error || !up.path) {
-          setError(up.error ?? 'Не удалось загрузить фото')
+      let finished = false
+      try {
+        for (const p of pendingGroupPhotos) {
+          const up = await uploadMessengerImage(cid, p.file)
+          if (up.error || !up.path) {
+            setError(up.error ?? 'Не удалось загрузить фото')
+            return
+          }
+          uploaded.push({ path: up.path, ...(up.thumbPath ? { thumbPath: up.thumbPath } : {}) })
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Не удалось загрузить фото'
+        setError(msg)
+        return
+      } finally {
+        if (!finished) {
           setSending(false)
           setPhotoUploading(false)
-          return
         }
-        uploaded.push({ path: up.path, ...(up.thumbPath ? { thumbPath: up.thumbPath } : {}) })
       }
       const imageMeta: DirectMessage['meta'] =
         uploaded.length === 1 ? { image: uploaded[0]! } : { images: uploaded }
@@ -637,6 +647,7 @@ export function GroupThreadPane({
       setSending(false)
       setMessages((prev) => [...prev, newMsg].sort(sortChrono))
       onTouchTail?.({ lastMessageAt: createdAt, lastMessagePreview: preview })
+      finished = true
       return
     }
 

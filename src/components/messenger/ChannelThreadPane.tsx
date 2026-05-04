@@ -591,15 +591,25 @@ export function ChannelThreadPane({
       setFeedPhotoUploading(true)
       setError(null)
       const uploaded: Array<{ path: string; thumbPath?: string }> = []
-      for (const p of pendingChannelPhotos) {
-        const up = await uploadMessengerImage(cid, p.file)
-        if (up.error || !up.path) {
-          setError(up.error ?? 'Не удалось загрузить фото')
+      let finished = false
+      try {
+        for (const p of pendingChannelPhotos) {
+          const up = await uploadMessengerImage(cid, p.file)
+          if (up.error || !up.path) {
+            setError(up.error ?? 'Не удалось загрузить фото')
+            return
+          }
+          uploaded.push({ path: up.path, ...(up.thumbPath ? { thumbPath: up.thumbPath } : {}) })
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Не удалось загрузить фото'
+        setError(msg)
+        return
+      } finally {
+        if (!finished) {
           setFeedSending(false)
           setFeedPhotoUploading(false)
-          return
         }
-        uploaded.push({ path: up.path, ...(up.thumbPath ? { thumbPath: up.thumbPath } : {}) })
       }
       const imageMeta =
         uploaded.length === 1 ? { image: uploaded[0]! } : { images: uploaded }
@@ -639,6 +649,7 @@ export function ChannelThreadPane({
         if (el) el.scrollTop = el.scrollHeight
         channelFeedEndRef.current?.scrollIntoView({ block: 'end', inline: 'nearest' })
       })
+      finished = true
       return
     }
 

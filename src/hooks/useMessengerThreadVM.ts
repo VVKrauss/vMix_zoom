@@ -256,7 +256,6 @@ export function useMessengerThreadVM(opts: {
       const conversationSwitched = prevOpenedId !== startedTarget
       if (conversationSwitched) {
         opts.prevThreadIdForClearRef.current = startedTarget
-        opts.lastFetchedThreadIdRef.current = null
       }
 
       const cacheHit = stable.cacheRef.current.get(startedTarget)
@@ -264,6 +263,57 @@ export function useMessengerThreadVM(opts: {
         stable.dispatch({ type: 'READY_FROM_CACHE', id: startedTarget, entry: cacheHit })
       } else {
         stable.dispatch({ type: 'SWITCH_LOADING', id: startedTarget })
+      }
+
+      const summary =
+        opts.mergedItemsRef.current.find((i) => i.id === startedTarget && i.kind === 'direct') ?? null
+      const summaryLastAt = summary?.lastMessageAt?.trim() ?? ''
+
+      const lastNonReactionAt = (msgs: DirectMessage[]) => {
+        for (let i = msgs.length - 1; i >= 0; i -= 1) {
+          const m = msgs[i]
+          if (m && m.kind !== 'reaction' && typeof m.createdAt === 'string') return m.createdAt
+        }
+        return ''
+      }
+
+      // If we have a cache hit and it already matches the sidebar tail, skip the initial DB fetch.
+      if (cacheHit && opts.isOnline) {
+        const cachedAt = lastNonReactionAt(cacheHit.messages)
+        if (cachedAt && summaryLastAt && cachedAt >= summaryLastAt) {
+          opts.lastFetchedThreadIdRef.current = startedTarget
+          return
+        }
+      }
+
+      // If we don't have an in-memory cache, try IDB tail-cache to avoid a blank thread on switch.
+      if (!cacheHit) {
+        const cachedTail = await readMessengerThreadTailCache('direct', startedTarget)
+        const wantNow =
+          opts.conversationIdRef.current.trim() || pickDefaultConversationId(opts.mergedItemsRef.current, null) || ''
+        if (wantNow === startedTarget && cachedTail?.length && summary) {
+          const convo = { ...summary, kind: 'direct' as const }
+          stable.dispatch({
+            type: 'THREAD_LOADED',
+            id: startedTarget,
+            conversation: convo,
+            messages: cachedTail,
+            hasMoreOlder: true,
+          })
+          stable.cacheRef.current.set(startedTarget, {
+            at: Date.now(),
+            activeConversation: convo,
+            messages: cachedTail,
+            hasMoreOlder: true,
+          })
+          if (opts.isOnline) {
+            const cachedAt = lastNonReactionAt(cachedTail)
+            if (cachedAt && summaryLastAt && cachedAt >= summaryLastAt) {
+              opts.lastFetchedThreadIdRef.current = startedTarget
+              return
+            }
+          }
+        }
       }
 
       // Prevent duplicate fetches when already fetched and online

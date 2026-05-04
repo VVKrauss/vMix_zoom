@@ -267,6 +267,9 @@ export function DashboardMessengerPage() {
   const [chatListRefreshing, setChatListRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { pushUi, pushBusy, refreshPushUi, toggleMessengerPush } = useMessengerWebPushState(user?.id, setError)
+  useEffect(() => {
+    if (messengerSettingsOpen) void refreshPushUi()
+  }, [messengerSettingsOpen, refreshPushUi])
   const [items, setItems] = useState<MessengerConversationSummary[]>([])
   const { mutedConversationIds, setMutedConversationIds, mutedConversationIdsRef } =
     useMessengerConversationNotificationMutes(user?.id, items)
@@ -1077,15 +1080,25 @@ export function DashboardMessengerPage() {
       setPhotoUploading(true)
       setError(null)
       const uploaded: Array<{ path: string; thumbPath?: string }> = []
-      for (const p of pendingMessengerPhotos) {
-        const up = await uploadMessengerImage(convId, p.file)
-        if (up.error || !up.path) {
-          setError(up.error ?? 'Не удалось загрузить фото')
+      let finished = false
+      try {
+        for (const p of pendingMessengerPhotos) {
+          const up = await uploadMessengerImage(convId, p.file)
+          if (up.error || !up.path) {
+            setError(up.error ?? 'Не удалось загрузить фото')
+            return
+          }
+          uploaded.push({ path: up.path, ...(up.thumbPath ? { thumbPath: up.thumbPath } : {}) })
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Не удалось загрузить фото'
+        setError(msg)
+        return
+      } finally {
+        if (!finished) {
           setSending(false)
           setPhotoUploading(false)
-          return
         }
-        uploaded.push({ path: up.path, ...(up.thumbPath ? { thumbPath: up.thumbPath } : {}) })
       }
       const imageMeta: DirectMessage['meta'] =
         uploaded.length === 1 ? { image: uploaded[0]! } : { images: uploaded }
@@ -1164,6 +1177,7 @@ export function DashboardMessengerPage() {
         }
         refocusMessengerComposer()
       })
+      finished = true
       return
     }
 
