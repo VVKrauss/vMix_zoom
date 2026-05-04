@@ -108,6 +108,34 @@ function computeAppVersion() {
   }
 }
 
+/** Статический release для сравнения с бандлом (`__APP_VERSION__`) без кэша клиента. */
+function releaseJsonPlugin(appVersion: string): Plugin {
+  const body = JSON.stringify({ release: appVersion })
+  return {
+    name: 'release-json',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const pathOnly = (req.url ?? '').split('?')[0] ?? ''
+        if (pathOnly !== '/release.json') {
+          next()
+          return
+        }
+        res.statusCode = 200
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.setHeader('Cache-Control', 'no-store')
+        res.end(body)
+      })
+    },
+    writeBundle(outputOptions) {
+      const dir = outputOptions.dir
+        ? path.resolve(outputOptions.dir)
+        : path.resolve(process.cwd(), 'dist')
+      fs.mkdirSync(dir, { recursive: true })
+      fs.writeFileSync(path.join(dir, 'release.json'), `${body}\n`, 'utf8')
+    },
+  }
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const target = String(env.VITE_SIGNALING_URL ?? 'https://s.redflow.online').replace(/\/$/, '')
@@ -154,6 +182,7 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       inlineIndexCssImports(),
+      releaseJsonPlugin(appVersion),
       react(),
       VitePWA({
         registerType: 'autoUpdate',
@@ -191,7 +220,7 @@ export default defineConfig(({ mode }) => {
           /** Не тащить в precache тяжёлые чанки комнаты/WebRTC — они подгружаются по маршруту. */
           globIgnores: ['**/webrtc-*.js', '**/RoomSession-*.js', '**/StudioModeWorkspace-*.js'],
           navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/socket\.io/, /^\/api\//],
+          navigateFallbackDenylist: [/^\/socket\.io/, /^\/api\//, /^\/release\.json$/],
           runtimeCaching: supabaseRuntimeCaching,
         },
       }),

@@ -27,6 +27,7 @@ import { DashboardContactsIncomingModal } from './DashboardContactsIncomingModal
 import { DashboardLayoutPicker } from './DashboardLayoutPicker'
 import { DashboardMenuPicker } from './DashboardMenuPicker'
 import { PillToggle } from './PillToggle'
+import { DashboardAppReleaseCheck } from './DashboardAppReleaseCheck'
 import { DashboardShell } from './DashboardShell'
 import { ConfirmDialog } from './ConfirmDialog'
 import { DashboardRoomRow } from './DashboardRoomRow'
@@ -180,6 +181,10 @@ export function DashboardPage() {
   const [settingsScreen, setSettingsScreen] = useState<SettingsScreen>('root')
   const [expandedSettingsSection, setExpandedSettingsSection] = useState<SettingsScreen | null>(null)
   const isDesktopSettings = useMediaQuery('(min-width: 901px)')
+  const appReleaseCheckActive = useMemo(
+    () => settingsScreen === 'network' || (isDesktopSettings && expandedSettingsSection === 'network'),
+    [settingsScreen, isDesktopSettings, expandedSettingsSection],
+  )
 
   const refreshHiddenIncoming = useCallback(() => {
     if (!user?.id) {
@@ -829,6 +834,7 @@ export function DashboardPage() {
                 <div className="dashboard-settings-expand">
                   <p className="dashboard-field__label">Версия приложения</p>
                   <p className="dashboard-field__hint">{APP_VERSION}</p>
+                  <DashboardAppReleaseCheck active={appReleaseCheckActive} />
                 </div>
               ) : null}
               {searchPrivacyErr ? <p className="join-error">{searchPrivacyErr}</p> : null}
@@ -925,6 +931,7 @@ export function DashboardPage() {
             <SettingsBack title="Другие настройки" />
             <p className="dashboard-field__label">Версия приложения</p>
             <p className="dashboard-field__hint">{APP_VERSION}</p>
+            <DashboardAppReleaseCheck active={appReleaseCheckActive} />
           </section>
         ) : null}
       </div>
