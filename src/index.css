@@ -7209,6 +7209,215 @@ span.dashboard-messenger__thread-avatar {
   line-height: 1;
 }
 
+.dashboard-messenger__composer-attach-slot {
+  position: relative;
+  width: calc(100% + 36px);
+  margin-left: -18px;
+  margin-right: -18px;
+}
+
+.dashboard-messenger__composer-attach-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 11950;
+  background: rgba(0, 0, 0, 0.32);
+}
+
+.dashboard-messenger__composer-attach-strip {
+  position: relative;
+  z-index: 11955;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 10px 14px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface2) 92%, var(--border));
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.38);
+}
+
+.dashboard-messenger__composer-attach-tile {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 56px;
+  min-height: 52px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.dashboard-messenger__composer-attach-tile:hover:not(:disabled) {
+  border-color: rgba(159, 214, 255, 0.35);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.dashboard-messenger__composer-attach-tile:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.dashboard-messenger__composer-attach-tile-ico {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.dashboard-messenger__composer-attach-tile-label {
+  font-size: 11px;
+  line-height: 1.15;
+  color: var(--text-dim);
+}
+
+@media (max-width: 720px) {
+  .dashboard-messenger__composer-attach-tile {
+    min-width: 52px;
+    min-height: 48px;
+    padding: 10px 14px;
+  }
+
+  .dashboard-messenger__composer-attach-tile-ico {
+    font-size: 20px;
+  }
+}
+
+.dashboard-messenger__composer-icon-btn--active {
+  border-color: rgba(159, 214, 255, 0.45);
+  background: rgba(159, 214, 255, 0.1);
+}
+
+.messenger-todo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.messenger-todo-list__title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.messenger-todo-list__ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.messenger-todo-list__li {
+  margin: 0;
+  padding: 0;
+}
+
+.messenger-todo-list__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.messenger-todo-list__check {
+  margin-top: 3px;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  accent-color: color-mix(in srgb, #7ecbff 70%, #1a3a52);
+}
+
+.messenger-todo-list__text {
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.messenger-todo-list__text--done {
+  text-decoration: line-through;
+  opacity: 0.65;
+}
+
+.messenger-todo-list__err {
+  margin: 0;
+  font-size: 12px;
+  color: #f66;
+}
+
+.dm-todo-create-modal .messenger-settings-modal__title {
+  margin-bottom: 2px;
+}
+
+.dm-todo-create-modal .messenger-settings-modal__section {
+  gap: 6px;
+}
+
+.dm-todo-create-modal__tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dm-todo-create-modal__task-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/*
+ * Поля модалки: глобальный .dashboard-messenger__input даёт min-height 82px (и 110px в @media max-width 900px).
+ * Нужна специфичность выше любых правил композера — иначе textarea остаётся «высотой чата».
+ */
+.messenger-settings-modal.dm-todo-create-modal input.dashboard-messenger__input.dm-todo-create-modal__title-input {
+  flex: none !important;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: calc(1.28em + 14px) !important;
+  resize: none !important;
+  padding: 7px 10px;
+  border-radius: 10px;
+  line-height: 1.28;
+}
+
+.messenger-settings-modal.dm-todo-create-modal textarea.dashboard-messenger__input.dm-todo-create-modal__task-textarea {
+  display: block;
+  flex: none !important;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: calc(1.28em + 14px) !important;
+  resize: none !important;
+  padding: 7px 10px;
+  border-radius: 10px;
+  line-height: 1.28;
+  overflow: hidden;
+  scrollbar-width: none;
+}
+
+.messenger-settings-modal.dm-todo-create-modal textarea.dashboard-messenger__input.dm-todo-create-modal__task-textarea::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.dm-todo-create-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .dashboard-messenger__composer-reply,
 .dashboard-messenger__composer-edit-bar {
   display: flex;

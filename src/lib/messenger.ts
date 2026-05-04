@@ -33,11 +33,19 @@ export type DirectConversationSummary = {
   avatarUrl: string | null
 }
 
-export type DirectMessageKind = 'text' | 'system' | 'reaction' | 'image' | 'audio'
+export type DirectMessageKind = 'text' | 'system' | 'reaction' | 'image' | 'audio' | 'todo_list'
+
+/** Пункт списка дел в ЛС (meta.todo_list). */
+export type DmTodoListItem = { id: string; text: string; done: boolean }
+
+export type DmTodoListMeta = {
+  title?: string
+  items: DmTodoListItem[]
+}
 
 /** Снимок цитируемого сообщения на момент отправки (reply_preview в БД). */
 export type MessengerReplyPreviewStored = {
-  kind: Extract<DirectMessageKind, 'text' | 'image' | 'audio' | 'system'>
+  kind: Extract<DirectMessageKind, 'text' | 'image' | 'audio' | 'system' | 'todo_list'>
   snippet: string
   senderName: string
   senderUserId: string | null
@@ -48,7 +56,7 @@ export type MessengerReplyPreviewStored = {
 export function messengerReplyPreviewStoredFromMessage(parent: DirectMessage): MessengerReplyPreviewStored | null {
   if (!parent?.id || parent.kind === 'reaction') return null
   const k = parent.kind
-  if (k !== 'text' && k !== 'image' && k !== 'audio' && k !== 'system') return null
+  if (k !== 'text' && k !== 'image' && k !== 'audio' && k !== 'system' && k !== 'todo_list') return null
 
   const raw = previewTextForDirectMessageTail(parent).replace(/\s+/g, ' ').trim()
   const snippet = (raw.length > 280 ? raw.slice(0, 280) : raw) || '…'
@@ -81,7 +89,9 @@ function mapReplyPreviewFromRow(row: Record<string, unknown>): MessengerReplyPre
   const o = raw as Record<string, unknown>
   const kindRaw = typeof o.kind === 'string' ? o.kind : ''
   const kind =
-    kindRaw === 'text' || kindRaw === 'image' || kindRaw === 'audio' || kindRaw === 'system' ? kindRaw : null
+    kindRaw === 'text' || kindRaw === 'image' || kindRaw === 'audio' || kindRaw === 'system' || kindRaw === 'todo_list'
+      ? kindRaw
+      : null
   if (!kind) return null
   const snippet =
     typeof o.snippet === 'string' && o.snippet.trim() ? o.snippet.trim().slice(0, 280) : '…'
@@ -148,6 +158,8 @@ export type DirectMessage = {
     /** Личка: soft-delete заменил сообщение системной заглушкой */
     deleted?: boolean
     forward_info?: MessengerForwardInfo
+    /** ЛС: список дел (оба участника могут менять через RPC). */
+    todo_list?: DmTodoListMeta
   } | null
 }
 
@@ -271,6 +283,29 @@ function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
     if (parsed.length > 0) images = parsed
   }
 
+  let todoList: DmTodoListMeta | undefined
+  const rawTodo = o.todo_list ?? o.todoList
+  if (rawTodo && typeof rawTodo === 'object' && !Array.isArray(rawTodo)) {
+    const tl = rawTodo as Record<string, unknown>
+    const titleRaw = typeof tl.title === 'string' ? tl.title.trim() : ''
+    const itemsRaw = tl.items
+    if (Array.isArray(itemsRaw) && itemsRaw.length > 0) {
+      const items: DmTodoListItem[] = []
+      for (const it of itemsRaw) {
+        if (!it || typeof it !== 'object') continue
+        const io = it as Record<string, unknown>
+        const id = typeof io.id === 'string' ? io.id.trim() : ''
+        const text = typeof io.text === 'string' ? io.text : ''
+        if (!id) continue
+        const done = io.done === true || io.done === 'true' || io.done === 1
+        items.push({ id, text, done })
+      }
+      if (items.length > 0) {
+        todoList = { ...(titleRaw ? { title: titleRaw } : {}), items }
+      }
+    }
+  }
+
   let forwardInfo: MessengerForwardInfo | undefined
   const rawForwardInfo = o.forward_info ?? o.forwardInfo
   if (rawForwardInfo && typeof rawForwardInfo === 'object') {
@@ -287,7 +322,8 @@ function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
     }
   }
 
-  if (!react && !image && !images && !linkMeta && !postDraft && !deleted && !forwardInfo && !audio) return null
+  if (!react && !image && !images && !linkMeta && !postDraft && !deleted && !forwardInfo && !audio && !todoList)
+    return null
   return {
     ...(deleted ? { deleted: true } : {}),
     ...(forwardInfo ? { forward_info: forwardInfo } : {}),
@@ -297,6 +333,7 @@ function mapMetaFromRow(raw: unknown): DirectMessage['meta'] {
     ...(audio ? { audio } : {}),
     ...(linkMeta ? { link: linkMeta } : {}),
     ...(postDraft ? { postDraft } : {}),
+    ...(todoList ? { todo_list: todoList } : {}),
   }
 }
 
@@ -309,7 +346,7 @@ export function isDmSoftDeletedStub(msg: Pick<DirectMessage, 'kind' | 'body' | '
 
 /** Строка из PostgREST / Realtime (snake_case). */
 function mapMessageKind(raw: unknown): DirectMessageKind {
-  if (raw === 'reaction' || raw === 'system' || raw === 'image' || raw === 'audio') return raw
+  if (raw === 'reaction' || raw === 'system' || raw === 'image' || raw === 'audio' || raw === 'todo_list') return raw
   return 'text'
 }
 
@@ -338,6 +375,16 @@ export function getMessengerImageAttachments(
 }
 
 export function previewTextForDirectMessageTail(msg: Pick<DirectMessage, 'kind' | 'body' | 'meta'>): string {
+  if (msg.kind === 'todo_list') {
+    const cap = msg.body.replace(/\s+/g, ' ').trim()
+    if (cap) return cap
+    const tl = msg.meta?.todo_list
+    const t = tl?.title?.trim()
+    if (t) return t
+    const first = tl?.items?.[0]?.text?.trim()
+    if (first) return first
+    return '📋 Список дел'
+  }
   if (msg.kind === 'audio') {
     const cap = msg.body.replace(/\s+/g, ' ').trim()
     if (cap) return cap
@@ -888,6 +935,21 @@ export async function editDirectMessage(
     p_conversation_id: conversationId.trim(),
     p_message_id: messageId.trim(),
     p_new_body: newBody,
+  })
+  return { error: error?.message ?? null }
+}
+
+/** ЛС: обновить meta.todo_list (оба участника). */
+export async function updateDirectMessageTodoList(
+  conversationId: string,
+  messageId: string,
+  payload: { title: string; items: DmTodoListItem[] },
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.rpc('update_direct_message_todo_list', {
+    p_conversation_id: conversationId.trim(),
+    p_message_id: messageId.trim(),
+    p_title: payload.title.trim(),
+    p_items: payload.items,
   })
   return { error: error?.message ?? null }
 }

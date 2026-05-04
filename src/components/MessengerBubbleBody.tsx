@@ -5,6 +5,7 @@ import { resolveMediaUrlForStoragePath } from '../lib/mediaCache'
 import { MessengerMessageBody } from './MessengerMessageBody'
 import { MessengerLinkOgCard } from './messenger/MessengerLinkOgCard'
 import { MessengerAudioPlayer } from './messenger/MessengerAudioPlayer'
+import { MessengerDmTodoListBubble } from './messenger/MessengerDmTodoListBubble'
 
 export type MessengerImageLightboxOpen = {
   urls: string[]
@@ -17,6 +18,7 @@ export function MessengerBubbleBody({
   onOpenImageLightbox,
   onInlineImageLayout,
   onMentionSlug,
+  directThreadConversationId,
 }: {
   message: DirectMessage
   /** Только текст из одних эмодзи: крупный глиф без отдельной вёрстки ссылки и т.п. */
@@ -26,6 +28,8 @@ export function MessengerBubbleBody({
   /** После decode/раскладки превью в ленте (догон скролла к низу). */
   onInlineImageLayout?: () => void
   onMentionSlug?: (slug: string) => void
+  /** ЛС: id диалога для RPC обновления списка дел. */
+  directThreadConversationId?: string
 }) {
   const attachments = useMemo(
     () => (message.kind === 'image' ? getMessengerImageAttachments(message) : []),
@@ -147,6 +151,22 @@ export function MessengerBubbleBody({
             <MessengerMessageBody text={message.body} onMentionSlug={onMentionSlug} />
           </div>
         ) : null}
+      </div>
+    )
+  }
+
+  if (message.kind === 'todo_list') {
+    const cid = directThreadConversationId?.trim() ?? ''
+    if (!cid) {
+      return <span className="messenger-message-img-missing">Список дел</span>
+    }
+    return (
+      <div className="messenger-bubble-stack messenger-bubble-stack--todo">
+        <MessengerDmTodoListBubble
+          message={message}
+          conversationId={cid}
+          onAfterPatch={() => onInlineImageLayout?.()}
+        />
       </div>
     )
   }

@@ -39,38 +39,22 @@
   gap: 12px;
 }
 
-/* Время absolute — в потоке не участвует; отступ сверху даёт ≥10px до текста/картинки/аудио в теле. */
-.dashboard-messenger__message-bottom-row:has(.dashboard-messenger__bubble-time) {
-  padding-top: 10px;
-}
-
+/* Время — absolute поверх содержимого; без padding-резервов, чтобы не сужать тело бабла. */
 .dashboard-messenger__bubble-time {
   position: absolute;
-  left: 9px;
-  top: 6px;
+  left: auto;
+  right: 8px;
+  top: 3px;
   z-index: 2;
-  font-size: 8px;
+  font-size: 9px;
   line-height: 1;
-  font-weight: 400;
+  font-weight: 500;
   letter-spacing: 0.02em;
-  color: rgba(255, 255, 255, 0.42);
+  color: var(--text-dim);
   pointer-events: none;
   user-select: none;
-}
-
-.dashboard-messenger__message--time-tr .dashboard-messenger__bubble-time {
-  left: auto;
-  right: 9px;
-  top: 6px;
-}
-
-/* Reserve space so author/body text never overlaps time */
-.dashboard-messenger__message--time-tr {
-  padding-right: 40px;
-}
-
-.dashboard-messenger__message--image.dashboard-messenger__message--time-tr {
-  padding-right: 36px;
+  /* читаемость поверх первой строки текста / медиа (тёмный пузырь) */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
 }
 
 .dashboard-messenger__message-bottom-row > .dashboard-messenger__message-body {
@@ -828,6 +812,14 @@ html[data-theme='light'] .dashboard-messenger__message {
 html[data-theme='light'] .dashboard-messenger__message--own {
   border-color: rgba(158, 92, 92, 0.35);
   background: linear-gradient(180deg, rgba(200, 150, 148, 0.35), rgba(180, 125, 122, 0.22));
+}
+
+/* Время: не фиксированный «белый 42%» — читается и на светлом фоне пузыря */
+html[data-theme='light'] .dashboard-messenger__bubble-time {
+  color: color-mix(in srgb, var(--text) 52%, var(--text-dim) 48%);
+  text-shadow:
+    0 0 1px color-mix(in srgb, var(--surface) 88%, white),
+    0 1px 2px rgba(0, 0, 0, 0.14);
 }
 
 html[data-theme='light'] .dashboard-messenger__message--emoji-only,

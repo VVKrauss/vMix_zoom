@@ -253,7 +253,6 @@ export function ChannelThreadPane({
     postsFeedScrollRef,
     postsJumpScopeKey,
     posts.length,
-    channelFeedEndRef,
   )
   const commentsJumpScopeKey = `${conversationId}:cmod:${commentsModalPostId ?? ''}`
   const commentsLen = commentsModalPostId ? (commentsByPostId[commentsModalPostId] ?? []).length : 0
@@ -261,7 +260,6 @@ export function ChannelThreadPane({
     commentsScrollRef,
     commentsJumpScopeKey,
     commentsLen,
-    commentsJumpTailRef,
   )
 
   const cidRef = useRef(conversationId)
@@ -1812,6 +1810,7 @@ export function ChannelThreadPane({
         renderBody={(msg) => renderMarkdownAndPreview(msg)}
         peerAliasByUserId={peerAliasByUserId}
         onForwardSourceNavigate={onForwardSourceNavigate}
+        threadConversationId={conversationId}
       />
     )
   }

@@ -54,6 +54,8 @@ export type ThreadMessageBubbleProps = {
   peerAliasByUserId?: Record<string, string>
   /** Переслано из … — переход по сохранённому `forward_info.nav`. */
   onForwardSourceNavigate?: (nav: MessengerForwardNav) => void
+  /** id открытого треда (ЛС/группа/канал) — для списков дел в ЛС. */
+  threadConversationId?: string
 }
 
 export function ThreadMessageBubble({
@@ -85,6 +87,7 @@ export function ThreadMessageBubble({
   enterAnim = false,
   peerAliasByUserId,
   onForwardSourceNavigate,
+  threadConversationId,
 }: ThreadMessageBubbleProps) {
   const timeOnlyLabel = (() => {
     const dt = new Date(message.createdAt)
@@ -126,7 +129,7 @@ export function ThreadMessageBubble({
 
   const canSwipeReply =
     Boolean(swipeReplyEnabled && onSwipeReply) &&
-    (message.kind === 'text' || message.kind === 'image' || message.kind === 'audio') &&
+    (message.kind === 'text' || message.kind === 'image' || message.kind === 'audio' || message.kind === 'todo_list') &&
     !message.id.startsWith('local-')
 
   const endSwipeGesture = useCallback(
@@ -207,9 +210,6 @@ export function ThreadMessageBubble({
     !showForwardInfoLine &&
     !linkUrlTrimmed &&
     isMessengerEmojiOnlyPlainText(message.body)
-  const bubbleTimeCornerClass =
-    showAuthorInMeta && !emojiOnlyBubble ? ' dashboard-messenger__message--time-tr' : ''
-
   if (isDmSoftDeletedStub(message)) {
     // Hide soft-deleted stub rows in UI.
     return null
@@ -222,7 +222,7 @@ export function ThreadMessageBubble({
       }}
       className={`dashboard-messenger__message${isOwn ? ' dashboard-messenger__message--own' : ''}${
         canSwipeReply ? ' dashboard-messenger__message--swipe-reply' : ''
-      }${message.kind === 'image' ? ' dashboard-messenger__message--image' : ''}${enterAnim ? ' dashboard-messenger__message--enter' : ''}${bubbleTimeCornerClass}${
+      }${message.kind === 'image' ? ' dashboard-messenger__message--image' : ''}${enterAnim ? ' dashboard-messenger__message--enter' : ''}${
         emojiOnlyBubble ? ' dashboard-messenger__message--emoji-only' : ''
       }`}
       style={
@@ -235,7 +235,7 @@ export function ThreadMessageBubble({
         const t = e.target as HTMLElement
         if (
           t.closest(
-            'button, a, .messenger-message-img-trigger, .dashboard-messenger__reaction-chip, .messenger-message-link, .dashboard-messenger__forward-line--action',
+            'button, a, .messenger-message-img-trigger, .dashboard-messenger__reaction-chip, .messenger-message-link, .dashboard-messenger__forward-line--action, .messenger-todo-list__check',
           )
         ) {
           return
@@ -341,6 +341,7 @@ export function ThreadMessageBubble({
               onOpenImageLightbox={onOpenImageLightbox}
               onInlineImageLayout={onInlineImageLayout}
               onMentionSlug={onMentionSlug}
+              directThreadConversationId={threadConversationId}
             />
           )}
         </DoubleTapHeartSurface>

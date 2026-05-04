@@ -45,8 +45,10 @@ import { useToast } from '../context/ToastContext'
 import {
   appendDirectMessage,
   editDirectMessage,
+  updateDirectMessageTodoList,
   type DirectConversationSummary,
   type DirectMessage,
+  type DmTodoListItem,
   type MessengerForwardNav,
   ensureDirectConversationWithUser,
   ensureSelfDirectConversation,
@@ -162,6 +164,7 @@ import { DirectThreadPane } from './messenger/DirectThreadPane'
 import { GroupThreadPane } from './messenger/GroupThreadPane'
 import { ChannelThreadPane } from './messenger/ChannelThreadPane'
 import { MessengerThreadComposer } from './messenger/MessengerThreadComposer'
+import { DmTodoListCreateModal } from './messenger/DmTodoListCreateModal'
 import { MessengerConversationInfoModal } from './messenger/MessengerConversationInfoModal'
 import { MessengerConversationStatsModal } from './messenger/MessengerConversationStatsModal'
 import { MessengerCreateConversationModal } from './messenger/MessengerCreateConversationModal'
@@ -333,6 +336,10 @@ export function DashboardMessengerPage() {
   const [replyTo, setReplyTo] = useState<DirectMessage | null>(null)
   /** Редактирование своего сообщения: id сообщения. */
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
+  /** ЛС: модалка создания/редактирования списка дел. */
+  const [dmTodoModal, setDmTodoModal] = useState<null | { kind: 'create' } | { kind: 'edit'; message: DirectMessage }>(
+    null,
+  )
   const [composerEmojiOpen, setComposerEmojiOpen] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
   /** Меню «⋯» у сообщения: якорь и данные для поповера */
@@ -491,7 +498,6 @@ export function DashboardMessengerPage() {
     messagesScrollRef,
     dmJumpKey,
     messages.length,
-    dmReadTailRef,
   )
   /** Контейнер с сообщениями — ResizeObserver ловит рост высоты после decode изображений. */
   const messagesContentRef = useRef<HTMLDivElement | null>(null)
@@ -1246,6 +1252,122 @@ export function DashboardMessengerPage() {
     })
   }
 
+  const handleDmTodoModalConfirm = useCallback(
+    async (payload: { title: string; items: DmTodoListItem[] }) => {
+      const convId = activeConversationId.trim()
+      if (!user?.id || !convId) {
+        setDmTodoModal(null)
+        return
+      }
+      const modal = dmTodoModal
+      if (!modal) return
+
+      if (modal.kind === 'edit') {
+        const { error } = await updateDirectMessageTodoList(convId, modal.message.id, payload)
+        setDmTodoModal(null)
+        if (error) {
+          toast.push({ tone: 'error', message: error, ms: 3200 })
+          return
+        }
+        toast.push({ tone: 'success', message: 'Список обновлён', ms: 1800 })
+        return
+      }
+
+      if (sending) return
+      setSending(true)
+      setError(null)
+      const replyTarget = replyTo
+      const replyId = replyTarget?.id ?? null
+      const replyStoredTodo = replyTarget ? messengerReplyPreviewStoredFromMessage(replyTarget) : null
+      const todoMeta: DirectMessage['meta'] = {
+        todo_list: {
+          ...(payload.title.trim() ? { title: payload.title.trim() } : {}),
+          items: payload.items,
+        },
+      }
+      const res = await appendDirectMessage(convId, '', {
+        kind: 'todo_list',
+        meta: todoMeta as Record<string, unknown>,
+        replyToMessageId: replyId,
+      })
+      if (res.error) {
+        setError(res.error)
+        setSending(false)
+        return
+      }
+      const preview = previewTextForDirectMessageTail({
+        kind: 'todo_list',
+        body: '',
+        meta: todoMeta,
+      })
+      setDmTodoModal(null)
+      setReplyTo(null)
+      setSending(false)
+      const createdAt = res.data?.createdAt ?? new Date().toISOString()
+      const snap = profile?.display_name?.trim() || 'Вы'
+      const newMsg: DirectMessage = {
+        id: res.data?.messageId ?? `local-${Date.now()}`,
+        senderUserId: user.id,
+        senderNameSnapshot: snap,
+        kind: 'todo_list',
+        body: preview,
+        createdAt,
+        replyToMessageId: replyId,
+        ...(replyStoredTodo ? { replyPreview: replyStoredTodo } : {}),
+        meta: todoMeta,
+      }
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === newMsg.id)) return prev
+        return [...prev, newMsg].sort(sortDirectMessagesChrono)
+      })
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === convId
+            ? {
+                ...item,
+                lastMessageAt: createdAt,
+                lastMessagePreview: preview,
+                messageCount: item.messageCount + 1,
+                unreadCount: 0,
+              }
+            : item,
+        ),
+      )
+      setActiveConversation((prev) =>
+        prev && prev.id === convId
+          ? {
+              ...prev,
+              lastMessageAt: createdAt,
+              lastMessagePreview: preview,
+              messageCount: prev.messageCount + 1,
+              unreadCount: 0,
+            }
+          : prev,
+      )
+      requestMessengerUnreadRefresh()
+      requestAnimationFrame(() => {
+        const el = messagesScrollRef.current
+        if (el) {
+          el.scrollTop = el.scrollHeight
+          messengerPinnedToBottomRef.current = true
+        }
+        refocusMessengerComposer()
+      })
+    },
+    [
+      activeConversationId,
+      dmTodoModal,
+      profile?.display_name,
+      replyTo,
+      sending,
+      setActiveConversation,
+      setItems,
+      setMessages,
+      toast,
+      user?.id,
+    ],
+  )
+
   const onVoiceRecorded = useCallback(
     async (blob: Blob, durationSec: number) => {
       const trimmed = draft.trim()
@@ -1529,6 +1651,8 @@ export function DashboardMessengerPage() {
         voiceUploading={voiceUploading}
         onVoiceRecorded={onVoiceRecorded}
         conversationId={activeConversationId}
+        dmAttachStripEnabled={threadHeadConversation?.kind === 'direct'}
+        onOpenDmTodoModal={() => setDmTodoModal({ kind: 'create' })}
       />
     ),
     [
@@ -1554,6 +1678,7 @@ export function DashboardMessengerPage() {
       onVoiceRecorded,
       activeConversationId,
       resetDraft,
+      threadHeadConversation?.kind,
     ],
   )
 
@@ -2427,6 +2552,34 @@ export function DashboardMessengerPage() {
             message: okCount === 1 ? 'Сообщение переслано.' : `Сообщение переслано (${okCount}).`,
             ms: 2400,
           })
+        } else if (src.kind === 'todo_list' && src.meta?.todo_list?.items?.length) {
+          let okCount = 0
+          for (const tid of tids) {
+            const c = await sendComment(tid)
+            if (!c.ok) {
+              toast.push({ tone: 'error', message: c.error, ms: 3200 })
+              return
+            }
+            const meta: Record<string, unknown> = {
+              ...forwardInfo,
+              todo_list: src.meta!.todo_list,
+            }
+            const res = await appendDirectMessage(tid, previewTextForDirectMessageTail(src), {
+              kind: 'todo_list',
+              meta,
+            })
+            if (res.error) {
+              toast.push({ tone: 'error', message: res.error, ms: 3200 })
+              return
+            }
+            okCount++
+          }
+          requestMessengerUnreadRefresh()
+          toast.push({
+            tone: 'success',
+            message: okCount === 1 ? 'Сообщение переслано.' : `Сообщение переслано (${okCount}).`,
+            ms: 2400,
+          })
         } else {
           let okCount = 0
           for (const tid of tids) {
@@ -2464,6 +2617,7 @@ export function DashboardMessengerPage() {
       forwardDmModal,
       forwardDmSending,
       forwardDmShowSource,
+      previewTextForDirectMessageTail,
       toast,
       uploadMessengerAudio,
       uploadMessengerImage,
@@ -2475,7 +2629,7 @@ export function DashboardMessengerPage() {
     const m = messageMenu?.message
     if (!user?.id || !convId || !m?.id || m.id.startsWith('local-')) return
     if (m.senderUserId !== user.id) return
-    if (m.kind !== 'text' && m.kind !== 'image' && m.kind !== 'audio') return
+    if (m.kind !== 'text' && m.kind !== 'image' && m.kind !== 'audio' && m.kind !== 'todo_list') return
     if (threadLoading) return
 
     closeMessageActionMenu()
@@ -2797,17 +2951,19 @@ export function DashboardMessengerPage() {
           <MessengerMessageMenuPopover
             canEdit={Boolean(
               user?.id &&
-                messageMenu.message.senderUserId === user.id &&
                 !messageMenu.message.id.startsWith('local-') &&
-                (messageMenu.message.kind === 'text' ||
-                  messageMenu.message.kind === 'image' ||
-                  messageMenu.message.kind === 'audio'),
+                ((messageMenu.message.senderUserId === user.id &&
+                  (messageMenu.message.kind === 'text' ||
+                    messageMenu.message.kind === 'image' ||
+                    messageMenu.message.kind === 'audio')) ||
+                  messageMenu.message.kind === 'todo_list'),
             )}
             canCopy={Boolean(
               !messageMenu.message.id.startsWith('local-') &&
                 (messageMenu.message.kind === 'text' ||
                   messageMenu.message.kind === 'image' ||
-                  messageMenu.message.kind === 'audio') &&
+                  messageMenu.message.kind === 'audio' ||
+                  messageMenu.message.kind === 'todo_list') &&
                 !isDmSoftDeletedStub(messageMenu.message),
             )}
             canBookmark={Boolean(
@@ -2816,6 +2972,7 @@ export function DashboardMessengerPage() {
                 (messageMenu.message.kind === 'text' ||
                   messageMenu.message.kind === 'image' ||
                   messageMenu.message.kind === 'audio' ||
+                  messageMenu.message.kind === 'todo_list' ||
                   messageMenu.message.kind === 'system') &&
                 !isDmSoftDeletedStub(messageMenu.message),
             )}
@@ -2825,6 +2982,7 @@ export function DashboardMessengerPage() {
                 (messageMenu.message.kind === 'text' ||
                   messageMenu.message.kind === 'image' ||
                   messageMenu.message.kind === 'audio' ||
+                  messageMenu.message.kind === 'todo_list' ||
                   messageMenu.message.kind === 'system') &&
                 !isDmSoftDeletedStub(messageMenu.message),
             )}
@@ -2834,7 +2992,8 @@ export function DashboardMessengerPage() {
                 !messageMenu.message.id.startsWith('local-') &&
                 (messageMenu.message.kind === 'text' ||
                   messageMenu.message.kind === 'image' ||
-                  messageMenu.message.kind === 'audio'),
+                  messageMenu.message.kind === 'audio' ||
+                  messageMenu.message.kind === 'todo_list'),
             )}
             dmOutgoingReceipt={
               threadHeadConversation?.kind === 'direct' &&
@@ -2873,6 +3032,11 @@ export function DashboardMessengerPage() {
             onSave={async () => saveMessageFromActiveConversation(messageMenu.message)}
             onEdit={() => {
               const m = messageMenu.message
+              if (m.kind === 'todo_list') {
+                setDmTodoModal({ kind: 'edit', message: m })
+                closeMessageActionMenu()
+                return
+              }
               setEditingMessageId(m.id)
               setReplyTo(null)
               setComposerEmojiOpen(false)
@@ -2893,7 +3057,8 @@ export function DashboardMessengerPage() {
               !messageMenu.message.id.startsWith('local-') &&
               (messageMenu.message.kind === 'text' ||
                 messageMenu.message.kind === 'image' ||
-                messageMenu.message.kind === 'audio')
+                messageMenu.message.kind === 'audio' ||
+                messageMenu.message.kind === 'todo_list')
                 ? () => openForwardFromDmMessage(messageMenu.message)
                 : undefined
             }
@@ -3888,6 +4053,16 @@ export function DashboardMessengerPage() {
             }
           })()
         }}
+      />
+
+      <DmTodoListCreateModal
+        key={dmTodoModal?.kind === 'edit' ? dmTodoModal.message.id : 'dm-todo-create'}
+        open={dmTodoModal !== null}
+        mode={dmTodoModal?.kind === 'edit' ? 'edit' : 'create'}
+        initialTitle={dmTodoModal?.kind === 'edit' ? dmTodoModal.message.meta?.todo_list?.title : undefined}
+        initialItems={dmTodoModal?.kind === 'edit' ? dmTodoModal.message.meta?.todo_list?.items : undefined}
+        onClose={() => setDmTodoModal(null)}
+        onConfirm={(p) => void handleDmTodoModalConfirm(p)}
       />
 
       <MessengerBookmarksModal

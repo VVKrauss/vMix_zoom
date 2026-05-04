@@ -473,7 +473,10 @@ function MessengerDirectThreadBodyImpl(props: {
                         }}
                         quickReactEnabled={Boolean(
                           userId &&
-                            (message.kind === 'text' || message.kind === 'image' || message.kind === 'audio') &&
+                            (message.kind === 'text' ||
+                              message.kind === 'image' ||
+                              message.kind === 'audio' ||
+                              message.kind === 'todo_list') &&
                             !message.id.startsWith('local-'),
                         )}
                         isMobileMessenger={isMobileMessenger}
@@ -484,6 +487,7 @@ function MessengerDirectThreadBodyImpl(props: {
                           closeMessageActionMenu()
                           queueMicrotask(() => composerTextareaRef.current?.focus())
                         }}
+                        threadConversationId={threadHeadConversation.id}
                       />,
                     )
                   }

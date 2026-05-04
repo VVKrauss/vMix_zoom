@@ -232,7 +232,6 @@ export function GroupThreadPane({
     messagesScrollRef,
     conversationId || '',
     messages.length,
-    groupReadTailRef,
   )
 
   useEffect(() => {
@@ -1005,6 +1004,7 @@ export function GroupThreadPane({
                       onOpenImageLightbox={(ctx) => setGroupImageLightbox({ urls: ctx.urls, index: ctx.initialIndex })}
                       peerAliasByUserId={peerAliasByUserId}
                       onForwardSourceNavigate={onForwardSourceNavigate}
+                      threadConversationId={conversationId}
                     />,
                   )
                 }

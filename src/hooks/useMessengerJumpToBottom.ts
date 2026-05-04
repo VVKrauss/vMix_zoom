@@ -1,62 +1,36 @@
-import { useCallback, useLayoutEffect, useRef, useState } from 'react'
-import {
-  MESSENGER_JUMP_FAB_SCROLL_EPSILON_PX,
-  messengerScrollDistanceFromBottom,
-  messengerScrollMaxScrollTop,
-} from '../lib/messengerDashboardUtils'
+import { useCallback, useLayoutEffect, useState } from 'react'
+import { messengerScrollDistanceFromBottom, messengerScrollMaxScrollTop } from '../lib/messengerDashboardUtils'
+
+/** Показываем FAB «вниз», если прокрутка дальше чем на столько от низа. */
+const MESSENGER_JUMP_FAB_NEAR_BOTTOM_PX = 30
 
 /**
- * FAB «вниз»: показываем, если нижний сентинел ленты не виден в корне скролла.
- * Дополнительно учитываем scroll-метрики с небольшим eps — из‑за overflow у реакций `scrollHeight`
- * может не совпадать с «мы уже внизу» при ползунке у края.
+ * FAB «в последние сообщения»: видна всегда, кроме случая когда скролл у нижнего края
+ * (расстояние до низа ≤ {@link MESSENGER_JUMP_FAB_NEAR_BOTTOM_PX}).
  *
- * @param tailRef необязательный узел внизу контента (как {@link readTailRef}); без него — только метрики.
  * @param activeKey Смена ключа пересоздаёт подписки (например, другой диалог).
- * @param remeasureKey Изменение без смены ключа — быстрый пересчёт (например, число сообщений).
+ * @param remeasureKey Изменение без смены ключа — пересчёт (например, число сообщений).
  */
 export function useMessengerJumpToBottom(
   scrollRef: React.RefObject<HTMLElement | null>,
   activeKey: string,
   remeasureKey?: string | number,
-  tailRef?: React.RefObject<HTMLElement | null>,
 ): { showJump: boolean; jumpToBottom: () => void } {
   const [showJump, setShowJump] = useState(false)
-  const tailIntersectingRef = useRef(false)
-
-  const computeAtBottom = useCallback(() => {
-    const el = scrollRef.current
-    if (!el) return true
-    const maxTop = messengerScrollMaxScrollTop(el)
-    const d = messengerScrollDistanceFromBottom(el)
-    const byScroll = maxTop <= 0 || d <= MESSENGER_JUMP_FAB_SCROLL_EPSILON_PX
-    const tail = tailRef?.current ?? null
-    if (!tailRef || !tail) return byScroll
-    return tailIntersectingRef.current || byScroll
-  }, [scrollRef, tailRef])
 
   const publish = useCallback(() => {
-    setShowJump(!computeAtBottom())
-  }, [computeAtBottom])
+    const el = scrollRef.current
+    if (!el) {
+      setShowJump(false)
+      return
+    }
+    const d = messengerScrollDistanceFromBottom(el)
+    setShowJump(d > MESSENGER_JUMP_FAB_NEAR_BOTTOM_PX)
+  }, [scrollRef])
 
   useLayoutEffect(() => {
     const scroll = scrollRef.current
     if (!scroll) return
-
-    const tail = tailRef?.current ?? null
-    tailIntersectingRef.current = false
-
-    let io: IntersectionObserver | null = null
-    if (tailRef && tail) {
-      io = new IntersectionObserver(
-        (entries) => {
-          const e = entries[0]
-          tailIntersectingRef.current = Boolean(e?.isIntersecting)
-          publish()
-        },
-        { root: scroll, threshold: [0, 0.01, 1] },
-      )
-      io.observe(tail)
-    }
 
     publish()
     scroll.addEventListener('scroll', publish, { passive: true })
@@ -67,14 +41,12 @@ export function useMessengerJumpToBottom(
           })
         : null
     ro?.observe(scroll)
-    if (tail) ro?.observe(tail)
 
     return () => {
       scroll.removeEventListener('scroll', publish)
-      io?.disconnect()
       ro?.disconnect()
     }
-  }, [scrollRef, tailRef, activeKey, publish])
+  }, [scrollRef, activeKey, publish])
 
   useLayoutEffect(() => {
     publish()

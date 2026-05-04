@@ -196,18 +196,12 @@ export const MESSENGER_GALLERY_MAX_ATTACH = 10
  */
 export const MESSENGER_BOTTOM_PIN_PX = 200
 
-/**
- * FAB «вниз»: запас по scroll-метрикам без сентинела или как подстраховка к IntersectionObserver
- * (переполнение пузырей/реакций раздувает scrollHeight — ползунок внизу, а дистанция ещё большая).
- */
-export const MESSENGER_JUMP_FAB_SCROLL_EPSILON_PX = 72
-
 /** Пиксели от низа прокрутки до «логического» низа контента (0 ≈ упёрлись вниз). */
 export function messengerScrollDistanceFromBottom(el: HTMLElement): number {
   return el.scrollHeight - el.scrollTop - el.clientHeight
 }
 
-/** Совпадает с `updateMessengerScrollPinned` и кнопкой «в последние сообщения». */
+/** Совпадает с `updateMessengerScrollPinned` (кнопка «вниз» использует отдельный порог в хуке). */
 export function messengerScrollIsPinnedToBottom(el: HTMLElement): boolean {
   return messengerScrollDistanceFromBottom(el) < MESSENGER_BOTTOM_PIN_PX
 }
@@ -299,7 +293,7 @@ export function lastNonReactionBody(rows: DirectMessage[]): string | null {
   for (let i = sorted.length - 1; i >= 0; i--) {
     const m = sorted[i]!
     if (m.kind === 'text' || m.kind === 'system') return m.body
-    if (m.kind === 'image' || m.kind === 'audio') return previewTextForDirectMessageTail(m)
+    if (m.kind === 'image' || m.kind === 'audio' || m.kind === 'todo_list') return previewTextForDirectMessageTail(m)
   }
   return null
 }

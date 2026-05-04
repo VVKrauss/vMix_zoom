@@ -90,6 +90,18 @@ export function buildQuotePreview({
       }
     }
 
+    if (stored.kind === 'todo_list') {
+      return {
+        preview: {
+          quotedAvatarUrl,
+          quotedName,
+          snippet: truncateMessengerReplySnippet(stored.snippet) || '📋 Список дел',
+          kind: 'text',
+        },
+        scrollTargetId: rid,
+      }
+    }
+
     return {
       preview: {
         quotedAvatarUrl,
@@ -144,6 +156,18 @@ export function buildQuotePreview({
         quotedAvatarUrl,
         quotedName,
         snippet: truncateMessengerReplySnippet(previewTextForDirectMessageTail(src)),
+        kind: 'text',
+      },
+      scrollTargetId: rid,
+    }
+  }
+
+  if (src.kind === 'todo_list') {
+    return {
+      preview: {
+        quotedAvatarUrl,
+        quotedName,
+        snippet: truncateMessengerReplySnippet(previewTextForDirectMessageTail(src)) || '📋 Список дел',
         kind: 'text',
       },
       scrollTargetId: rid,

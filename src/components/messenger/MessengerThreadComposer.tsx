@@ -1,4 +1,12 @@
-import { useEffect, useState, type ClipboardEvent, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from 'react'
 import { unlockAudioContext } from '../../lib/messengerSound'
 import { getMessengerImageAttachments, type DirectMessage } from '../../lib/messenger'
 import { MESSENGER_COMPOSER_EMOJIS } from '../../lib/messengerComposerEmojis'
@@ -44,6 +52,9 @@ export function MessengerThreadComposer(props: {
   voiceUploading?: boolean
   onVoiceRecorded?: (blob: Blob, durationSec: number) => void | Promise<void>
   conversationId?: string
+  /** ЛС: кнопка вложений открывает полоску с типами вложений. */
+  dmAttachStripEnabled?: boolean
+  onOpenDmTodoModal?: () => void
 }) {
   const {
     replyTo,
@@ -76,10 +87,14 @@ export function MessengerThreadComposer(props: {
     voiceUploading = false,
     onVoiceRecorded,
     conversationId = '',
+    dmAttachStripEnabled = false,
+    onOpenDmTodoModal,
   } = props
 
   const [voiceRecording, setVoiceRecording] = useState(false)
   const [voiceMetaEl, setVoiceMetaEl] = useState<HTMLDivElement | null>(null)
+  const [attachStripOpen, setAttachStripOpen] = useState(false)
+  const attachStripWrapRef = useRef<HTMLDivElement | null>(null)
   const showVoiceMetaStrip = isMobileMessenger && Boolean(onVoiceRecorded) && !editingMessageId
 
   const hasComposerSendPayload =
@@ -98,6 +113,27 @@ export function MessengerThreadComposer(props: {
   useEffect(() => {
     if (voiceRecording) setComposerEmojiOpen(false)
   }, [voiceRecording, setComposerEmojiOpen])
+
+  useEffect(() => {
+    if (!attachStripOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAttachStripOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [attachStripOpen])
+
+  useEffect(() => {
+    if (!attachStripOpen) return
+    const onPointer = (e: PointerEvent) => {
+      const root = attachStripWrapRef.current
+      if (!root) return
+      if (e.target instanceof Node && root.contains(e.target)) return
+      setAttachStripOpen(false)
+    }
+    window.addEventListener('pointerdown', onPointer, true)
+    return () => window.removeEventListener('pointerdown', onPointer, true)
+  }, [attachStripOpen])
 
   return (
     <div className="dashboard-messenger__composer" role="region" aria-label="Новое сообщение">
@@ -120,6 +156,8 @@ export function MessengerThreadComposer(props: {
                   })()}
                   <span>{truncateMessengerReplySnippet(replyTo.body)}</span>
                 </>
+              ) : replyTo.kind === 'todo_list' ? (
+                <span>{truncateMessengerReplySnippet(replyTo.body) || '📋 Список дел'}</span>
               ) : (
                 <span>{truncateMessengerReplySnippet(replyTo.body) || '…'}</span>
               )}
@@ -190,6 +228,55 @@ export function MessengerThreadComposer(props: {
           aria-live="polite"
         />
       ) : null}
+      <div ref={attachStripWrapRef} className="dashboard-messenger__composer-attach-slot">
+        {attachStripOpen && dmAttachStripEnabled && !editingMessageId ? (
+          <>
+            <div
+              className="dashboard-messenger__composer-attach-backdrop"
+              aria-hidden
+              onClick={() => setAttachStripOpen(false)}
+            />
+            <div className="dashboard-messenger__composer-attach-strip" role="menu" aria-label="Вложения">
+              <button
+                type="button"
+                className="dashboard-messenger__composer-attach-tile"
+                role="menuitem"
+                title="Изображение"
+                aria-label="Прикрепить изображение"
+                disabled={threadLoading || photoUploading || voiceUploading}
+                onClick={() => {
+                  setAttachStripOpen(false)
+                  photoInputRef.current?.click()
+                }}
+              >
+                <span className="dashboard-messenger__composer-attach-tile-ico" aria-hidden>
+                  <FiRrIcon name="camera" />
+                </span>
+                <span className="dashboard-messenger__composer-attach-tile-label">Фото</span>
+              </button>
+              {onOpenDmTodoModal ? (
+                <button
+                  type="button"
+                  className="dashboard-messenger__composer-attach-tile"
+                  role="menuitem"
+                  title="Список дел"
+                  aria-label="Список дел"
+                  disabled={threadLoading || photoUploading || voiceUploading}
+                  onClick={() => {
+                    setAttachStripOpen(false)
+                    onOpenDmTodoModal()
+                  }}
+                >
+                  <span className="dashboard-messenger__composer-attach-tile-ico" aria-hidden>
+                    <FiRrIcon name="list" />
+                  </span>
+                  <span className="dashboard-messenger__composer-attach-tile-label">Список</span>
+                </button>
+              ) : null}
+            </div>
+          </>
+        ) : null}
+      </div>
       <div
         className={`dashboard-messenger__composer-main dashboard-messenger__composer-main--row${
           voiceRecording && Boolean(onVoiceRecorded) && !editingMessageId
@@ -197,16 +284,31 @@ export function MessengerThreadComposer(props: {
             : ''
         }`}
       >
-        <button
-          type="button"
-          className="dashboard-messenger__composer-icon-btn"
-          title="Фото"
-          aria-label="Прикрепить фото"
-          disabled={threadLoading || photoUploading || voiceUploading || Boolean(editingMessageId)}
-          onClick={() => photoInputRef.current?.click()}
-        >
-          <AttachmentIcon />
-        </button>
+        {dmAttachStripEnabled && !editingMessageId ? (
+          <button
+            type="button"
+            className={`dashboard-messenger__composer-icon-btn${attachStripOpen ? ' dashboard-messenger__composer-icon-btn--active' : ''}`}
+            title="Вложения"
+            aria-label="Вложения"
+            aria-expanded={attachStripOpen}
+            aria-haspopup="menu"
+            disabled={threadLoading || photoUploading || voiceUploading}
+            onClick={() => setAttachStripOpen((v) => !v)}
+          >
+            <AttachmentIcon />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="dashboard-messenger__composer-icon-btn"
+            title="Фото"
+            aria-label="Прикрепить фото"
+            disabled={threadLoading || photoUploading || voiceUploading || Boolean(editingMessageId)}
+            onClick={() => photoInputRef.current?.click()}
+          >
+            <AttachmentIcon />
+          </button>
+        )}
         <div className="dashboard-messenger__composer-input-wrap">
           {conversationId.trim() ? (
             <MentionAutocomplete
