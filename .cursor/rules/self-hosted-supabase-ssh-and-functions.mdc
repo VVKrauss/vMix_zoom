@@ -82,6 +82,17 @@ docker compose exec -T auth sh -lc 'test -n "$GOTRUE_SMTP_HOST" && test -n "$GOT
 
 Если провайдер требует явный TLS-режим, смотрите документацию вашей версии GoTrue / шаблон Supabase: иногда добавляют `GOTRUE_SMTP_SECURE` и т.п. в `docker-compose.yml`.
 
+### Пошаговое включение подтверждения почты (после отладки с autoconfirm)
+
+Клиент уже шлёт `emailRedirectTo` на текущий origin + `/auth/email-confirmed` и умеет «письмо отправлено» / повторная отправка / приём сессии из URL (PKCE).
+
+1. **SMTP** — заполнить `SMTP_*` в `~/apps/supabase/docker/.env`, перезапустить `auth`, убедиться по логам что письмо уходит (тестовый `signup` без autoconfirm или лог SMTP).
+2. **Редиректы** — в `.env` в `ADDITIONAL_REDIRECT_URLS` добавить прод и дев, например `https://redflow.online/**,http://localhost:5173/**` (чтобы `redirect_to` из клиента не отвергали).
+3. **Выключить autoconfirm** — `ENABLE_EMAIL_AUTOCONFIRM=false`, снова `docker compose up -d --no-deps auth`.
+4. **Проверка** — регистрация: ответ 200, `session` в теле ответа **нет**, на почту приходит ссылка; переход по ссылке открывает `/auth/email-confirmed` и логинит в приложение.
+
+Пока шаги 1–3 не готовы, оставляйте `ENABLE_EMAIL_AUTOCONFIRM=true`, иначе `signup` снова даст 500 при ошибке отправки письма.
+
 ## Web Push: Edge Functions, которые нужны проекту
 
 - `send-dm-webpush`

@@ -12,7 +12,8 @@ type Props = {
 }
 
 export function GuestAuthPanel({ onExpandedChange, expandSignal = 0 }: Props) {
-  const { user, loading, signIn, signUp, authBootstrapError, clearAuthBootstrapError } = useAuth()
+  const { user, loading, signIn, signUp, resendSignupConfirmation, authBootstrapError, clearAuthBootstrapError } =
+    useAuth()
   const [expanded, setExpanded] = useState(false)
   const [mode, setMode] = useState<Mode>('register')
   const [email, setEmail] = useState('')
@@ -21,6 +22,8 @@ export function GuestAuthPanel({ onExpandedChange, expandSignal = 0 }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [confirmSentTo, setConfirmSentTo] = useState<string | null>(null)
+  const [resendBusy, setResendBusy] = useState(false)
+  const [resendNotice, setResendNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const formId = useId()
 
   useEffect(() => {
@@ -42,6 +45,7 @@ export function GuestAuthPanel({ onExpandedChange, expandSignal = 0 }: Props) {
     setMode((m) => (m === 'login' ? 'register' : 'login'))
     setError(null)
     setConfirmSentTo(null)
+    setResendNotice(null)
   }
 
   const handleSubmit = async (e: FormEvent) => {
@@ -67,6 +71,14 @@ export function GuestAuthPanel({ onExpandedChange, expandSignal = 0 }: Props) {
         const r = await signUp(email.trim(), password, displayName.trim())
         if (r.error) {
           setError(r.error)
+          return
+        }
+        if (r.sessionEstablished) {
+          setExpanded(false)
+          setEmail('')
+          setPassword('')
+          setDisplayName('')
+          setConfirmSentTo(null)
           return
         }
         setConfirmSentTo(email.trim())
@@ -128,8 +140,41 @@ export function GuestAuthPanel({ onExpandedChange, expandSignal = 0 }: Props) {
                   <button
                     type="button"
                     className="join-btn join-btn--secondary join-btn--block guest-auth-panel__confirm-btn"
+                    disabled={resendBusy || !confirmSentTo}
+                    onClick={() => {
+                      if (!confirmSentTo) return
+                      setResendNotice(null)
+                      setResendBusy(true)
+                      void (async () => {
+                        try {
+                          const { error } = await resendSignupConfirmation(confirmSentTo)
+                          if (error) setResendNotice({ kind: 'error', text: error })
+                          else setResendNotice({ kind: 'ok', text: 'Письмо отправлено ещё раз.' })
+                        } finally {
+                          setResendBusy(false)
+                        }
+                      })()
+                    }}
+                  >
+                    {resendBusy ? 'Отправка…' : 'Отправить письмо ещё раз'}
+                  </button>
+                  {resendNotice ? (
+                    <p
+                      className={
+                        resendNotice.kind === 'error'
+                          ? 'join-error guest-auth-panel__confirm-resend'
+                          : 'guest-auth-panel__confirm-hint guest-auth-panel__confirm-resend'
+                      }
+                    >
+                      {resendNotice.text}
+                    </p>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="join-btn join-btn--secondary join-btn--block guest-auth-panel__confirm-btn"
                     onClick={() => {
                       setConfirmSentTo(null)
+                      setResendNotice(null)
                       setMode('login')
                       setError(null)
                     }}

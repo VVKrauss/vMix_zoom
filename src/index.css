@@ -1134,6 +1134,11 @@ html.app-root--room #root {
   margin-top: 4px;
 }
 
+.guest-auth-panel__confirm-resend {
+  margin: 0;
+  text-align: center;
+}
+
 .join-screen--public-guest {
   padding-bottom: 100px;
   box-sizing: border-box;

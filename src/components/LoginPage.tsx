@@ -1,10 +1,10 @@
-import { FormEvent, useState } from 'react'
+import { FormEvent, useState, useCallback } from 'react'
 import { useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 type Mode = 'login' | 'register'
 
 export function LoginPage() {
-  const { signIn, signUp, authBootstrapError, clearAuthBootstrapError } = useAuth()
+  const { signIn, signUp, resendSignupConfirmation, authBootstrapError, clearAuthBootstrapError } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [sp] = useSearchParams()
@@ -16,6 +16,21 @@ export function LoginPage() {
   const [error, setError]             = useState<string | null>(null)
   const [loading, setLoading]         = useState(false)
   const [confirmSentTo, setConfirmSentTo] = useState<string | null>(null)
+  const [resendBusy, setResendBusy] = useState(false)
+  const [resendNotice, setResendNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+
+  const handleResendConfirmation = useCallback(async () => {
+    if (!confirmSentTo) return
+    setResendNotice(null)
+    setResendBusy(true)
+    try {
+      const { error } = await resendSignupConfirmation(confirmSentTo)
+      if (error) setResendNotice({ kind: 'error', text: error })
+      else setResendNotice({ kind: 'ok', text: 'Письмо отправлено ещё раз.' })
+    } finally {
+      setResendBusy(false)
+    }
+  }, [confirmSentTo, resendSignupConfirmation])
 
   const from = (location.state as { from?: string })?.from ?? '/'
 
@@ -24,30 +39,40 @@ export function LoginPage() {
     setError(null)
     setLoading(true)
 
-    let result: { error: string | null }
-
     if (mode === 'login') {
-      result = await signIn(email.trim(), password)
+      const result = await signIn(email.trim(), password)
       setLoading(false)
-      if (result.error) { setError(result.error); return }
-      navigate(from, { replace: true })
-    } else {
-      if (!displayName.trim()) {
-        setError('Введите отображаемое имя')
-        setLoading(false)
+      if (result.error) {
+        setError(result.error)
         return
       }
-      result = await signUp(email.trim(), password, displayName.trim())
-      setLoading(false)
-      if (result.error) { setError(result.error); return }
-      setConfirmSentTo(email.trim())
+      navigate(from, { replace: true })
+      return
     }
+
+    if (!displayName.trim()) {
+      setError('Введите отображаемое имя')
+      setLoading(false)
+      return
+    }
+    const reg = await signUp(email.trim(), password, displayName.trim())
+    setLoading(false)
+    if (reg.error) {
+      setError(reg.error)
+      return
+    }
+    if (reg.sessionEstablished) {
+      navigate(from, { replace: true })
+      return
+    }
+    setConfirmSentTo(email.trim())
   }
 
   const toggleMode = () => {
     setMode((m) => (m === 'login' ? 'register' : 'login'))
     setError(null)
     setConfirmSentTo(null)
+    setResendNotice(null)
   }
 
   if (confirmSentTo) {
@@ -75,6 +100,17 @@ export function LoginPage() {
             <p className="confirm-sent__hint">
               Не пришло? Проверьте папку «Спам».
             </p>
+            <button
+              type="button"
+              className="join-btn join-btn--secondary join-btn--block confirm-sent__back"
+              disabled={resendBusy}
+              onClick={() => void handleResendConfirmation()}
+            >
+              {resendBusy ? 'Отправка…' : 'Отправить письмо ещё раз'}
+            </button>
+            {resendNotice ? (
+              <p className={resendNotice.kind === 'error' ? 'join-error' : 'confirm-sent__hint'}>{resendNotice.text}</p>
+            ) : null}
             <Link to="/" className="join-btn join-btn--block confirm-sent__back">
               На главную
             </Link>

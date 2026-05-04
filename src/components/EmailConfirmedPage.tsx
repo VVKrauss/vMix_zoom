@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AUTH_EMAIL_CONFIRMED_PATH } from '../config/authUrls'
 import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
 
 type Phase = 'checking' | 'success' | 'error' | 'no_session'
 
@@ -53,6 +54,16 @@ export function EmailConfirmedPage() {
     }
 
     let cancelled = false
+    if (hasLikelyAuthPayload()) {
+      void (async () => {
+        try {
+          await supabase.auth.getSession()
+        } catch {
+          /* noop */
+        }
+      })()
+    }
+
     const waitMs = hasLikelyAuthPayload() ? 4000 : 800
     noSessionTimeoutRef.current = window.setTimeout(() => {
       noSessionTimeoutRef.current = null

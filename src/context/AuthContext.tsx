@@ -10,6 +10,11 @@ import { HOST_SESSION_KEY, PENDING_HOST_CLAIM_KEY } from '../lib/spaceRoom'
 /** Дольше — считаем проверку сессии при старте неуспешной (обрывы до Supabase Auth из части сетей). */
 const SESSION_BOOTSTRAP_TIMEOUT_MS = 12_000
 
+/** Результат {@link AuthContextValue.signUp}: при отсутствии ошибки `sessionEstablished` отражает режим сервера (autoconfirm vs письмо). */
+export type SignUpResult =
+  | { error: string; sessionEstablished?: undefined }
+  | { error: null; sessionEstablished: boolean }
+
 interface AuthContextValue {
   user: User | null
   session: Session | null
@@ -21,7 +26,9 @@ interface AuthContextValue {
    */
   authBootstrapError: string | null
   clearAuthBootstrapError: () => void
-  signUp: (email: string, password: string, displayName: string) => Promise<{ error: string | null }>
+  signUp: (email: string, password: string, displayName: string) => Promise<SignUpResult>
+  /** Повторная отправка письма подтверждения регистрации (пока `ENABLE_EMAIL_AUTOCONFIRM=false` и настроен SMTP). */
+  resendSignupConfirmation: (email: string) => Promise<{ error: string | null }>
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
 }
@@ -98,13 +105,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = useCallback(async (email: string, password: string, displayName: string) => {
     setAuthBootstrapError(null)
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: { display_name: displayName },
         emailRedirectTo: getEmailConfirmationRedirectUrl(),
       },
+    })
+    if (error) return { error: error.message }
+    return { error: null, sessionEstablished: !!data.session }
+  }, [])
+
+  const resendSignupConfirmation = useCallback(async (email: string) => {
+    setAuthBootstrapError(null)
+    const redirect = getEmailConfirmationRedirectUrl()
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: email.trim(),
+      options: redirect ? { emailRedirectTo: redirect } : undefined,
     })
     if (error) return { error: error.message }
     return { error: null }
@@ -137,6 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         authBootstrapError,
         clearAuthBootstrapError,
         signUp,
+        resendSignupConfirmation,
         signIn,
         signOut,
       }}

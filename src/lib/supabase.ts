@@ -10,4 +10,11 @@ function resolveSupabaseUrl(): string {
   return supabaseUrlDirect
 }
 
-export let supabase: SupabaseClient = createClient(resolveSupabaseUrl(), supabaseAnonKey)
+export let supabase: SupabaseClient = createClient(resolveSupabaseUrl(), supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    flowType: 'pkce',
+  },
+})

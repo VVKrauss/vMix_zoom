@@ -132,22 +132,47 @@ export function useProfileData(): UseProfileReturn {
       setLoading(true)
       setError(null)
 
-      const [{ data: userData, error: userError }, { data: roleRows, error: rolesError }] = await Promise.all([
+      const loadUserRow = async () =>
         supabase
           .from('users')
           .select(
             'id, display_name, profile_slug, email, avatar_url, status, room_ui_preferences, messenger_pinned_conversation_ids, messenger_web_push_enabled, profile_search_closed, profile_search_allow_by_name, profile_search_allow_by_email, profile_search_allow_by_slug, dm_allow_from, profile_view_allow_from, profile_show_avatar, profile_show_slug, profile_show_last_active, profile_show_online, profile_dm_receipts_private',
           )
           .eq('id', uid)
-          .single(),
-        supabase
-          .from('user_global_roles')
-          .select('roles ( code, title, scope_type )')
-          .eq('user_id', uid),
-      ])
+          .maybeSingle()
+
+      let { data: userData, error: userError } = await loadUserRow()
+
+      if (!userError && !userData) {
+        const { data: ensureData, error: ensureErr } = await supabase.rpc('ensure_my_public_user_row')
+        if (ensureErr) {
+          userError = ensureErr
+        } else {
+          const row = ensureData as { ok?: boolean; error?: string } | null
+          if (row && row.ok !== true && typeof row.error === 'string') {
+            setError(row.error === 'auth_user_missing' ? 'Учётная запись не найдена в auth.' : row.error)
+            setLoading(false)
+            return
+          }
+          const second = await loadUserRow()
+          userData = second.data
+          userError = second.error
+        }
+      }
+
+      const { data: roleRows, error: rolesError } = await supabase
+        .from('user_global_roles')
+        .select('roles ( code, title, scope_type )')
+        .eq('user_id', uid)
 
       if (userError) {
         setError(userError.message)
+        setLoading(false)
+        return
+      }
+
+      if (!userData) {
+        setError('Профиль в базе не найден. Обновите страницу или выйдите и войдите снова.')
         setLoading(false)
         return
       }

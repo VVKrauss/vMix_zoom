@@ -366,11 +366,17 @@ export function DashboardPage() {
           .from('users')
           .select('room_ui_preferences')
           .eq('id', user.id)
-          .single()
+          .maybeSingle()
 
         if (fetchErr) {
           setRoomSaving(false)
           setRoomSaveErr(fetchErr.message)
+          return
+        }
+
+        if (!data) {
+          setRoomSaving(false)
+          setRoomSaveErr('Профиль не загружен. Обновите страницу.')
           return
         }
 
