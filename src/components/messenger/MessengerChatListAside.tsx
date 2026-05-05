@@ -54,6 +54,10 @@ function MessengerChatListAsideImpl(props: {
   activeConversationId: string
   mentionUnreadByConversationId?: Record<string, number>
   selectConversation: (id: string) => void
+  /** Лента постов из подписанных каналов */
+  messengerFeedAlwaysShow: boolean
+  subscribedFeedActive: boolean
+  onOpenSubscribedFeed: () => void
   navigate: NavigateFunction
   /** user_id → состояние кольца: оффлайн / онлайн / в звонке */
   directPeersPresence: Record<string, PeerPresenceDisplay>
@@ -91,6 +95,9 @@ function MessengerChatListAsideImpl(props: {
     activeConversationId,
     mentionUnreadByConversationId,
     selectConversation,
+    messengerFeedAlwaysShow,
+    subscribedFeedActive,
+    onOpenSubscribedFeed,
     navigate,
     directPeersPresence,
     pinnedChatIds,
@@ -98,6 +105,8 @@ function MessengerChatListAsideImpl(props: {
     onRefreshChatList,
     chatListRefreshing = false,
   } = props
+
+  const showSubscribedFeedRow = messengerFeedAlwaysShow || conversationKindFilter === 'channel'
 
   const listScrollRef = useRef<HTMLDivElement | null>(null)
   const ptrInnerRef = useRef<HTMLDivElement | null>(null)
@@ -312,6 +321,25 @@ function MessengerChatListAsideImpl(props: {
           })}
           </div>
         </div>
+        {showSubscribedFeedRow ? (
+          <div className="dashboard-messenger__feed-row-outer">
+            <button
+              type="button"
+              className={`dashboard-messenger__feed-row${
+                subscribedFeedActive ? ' dashboard-messenger__feed-row--active' : ''
+              }`}
+              onClick={() => onOpenSubscribedFeed()}
+            >
+              <div className="dashboard-messenger__feed-row-avatar" aria-hidden>
+                <FiRrIcon name="signal-stream" />
+              </div>
+              <div className="dashboard-messenger__feed-row-text">
+                <div className="dashboard-messenger__feed-row-title">Лента</div>
+                <div className="dashboard-messenger__feed-row-meta">Посты из ваших каналов</div>
+              </div>
+            </button>
+          </div>
+        ) : null}
       </div>
       <div ref={listScrollRef} className="dashboard-messenger__list-scroll">
         <div ref={ptrInnerRef} className="dashboard-messenger__list-scroll-inner">

@@ -1,0 +1,408 @@
+.messenger-subscribed-feed__scroll {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 12px 24px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  /* Скрыть полосу прокрутки, прокрутка колёсиком/тач сохраняется */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.messenger-subscribed-feed__scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.messenger-subscribed-feed__grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.messenger-subscribed-feed__card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0;
+  border: 1px solid var(--messenger-bubble-border, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--messenger-surface, rgba(0, 0, 0, 0.2));
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.messenger-subscribed-feed__card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.messenger-subscribed-feed__card-cover-wrap {
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.messenger-subscribed-feed__card-cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.messenger-subscribed-feed__card-cover--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 2rem;
+}
+
+.messenger-subscribed-feed__card-body {
+  padding: 10px 12px 12px;
+}
+
+.messenger-subscribed-feed__card-channel {
+  font-size: 0.75rem;
+  opacity: 0.75;
+  margin-bottom: 4px;
+}
+
+.messenger-subscribed-feed__card-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.messenger-subscribed-feed__card-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 0.8rem;
+  opacity: 0.9;
+}
+
+/* Как чип реакции в ленте канала: ❤️ + число, отдельная «моя» подсветка */
+.messenger-subscribed-feed__card-heart-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  min-height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text-dim, rgba(255, 255, 255, 0.85));
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.messenger-subscribed-feed__card-heart-btn:hover:not(:disabled) {
+  background: var(--surface2, rgba(255, 255, 255, 0.06));
+  color: var(--text, #fff);
+}
+
+.messenger-subscribed-feed__card-heart-btn:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.messenger-subscribed-feed__card-heart-btn .dashboard-messenger__reaction-emoji {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.messenger-subscribed-feed__card-heart-count {
+  font-weight: 700;
+  color: var(--text, #fff);
+  font-variant-numeric: tabular-nums;
+}
+
+.messenger-subscribed-feed__card-heart-btn--mine {
+  border-color: rgba(236, 72, 153, 0.45);
+  background: rgba(236, 72, 153, 0.12);
+}
+
+.messenger-subscribed-feed__card-heart-btn--mine:hover:not(:disabled) {
+  border-color: rgba(236, 72, 153, 0.55);
+  background: rgba(236, 72, 153, 0.18);
+}
+
+.messenger-subscribed-feed__card-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.messenger-subscribed-feed__card-stat .fi {
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+/* Как `.dashboard-messenger__channel-post-comments` в ленте канала */
+.messenger-subscribed-feed__card-comments-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  min-height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text-dim, rgba(255, 255, 255, 0.85));
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.messenger-subscribed-feed__card-comments-btn:hover {
+  background: var(--surface2, rgba(255, 255, 255, 0.06));
+  color: var(--text, #fff);
+}
+
+.messenger-subscribed-feed__card-comments-btn .fi {
+  font-size: 14px;
+  opacity: 0.92;
+  transform: translateX(-1px);
+}
+
+.messenger-subscribed-feed__card-comments-count {
+  font-weight: 700;
+  color: var(--text, #fff);
+  font-variant-numeric: tabular-nums;
+}
+
+.messenger-subscribed-feed__card-teaser-block {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.messenger-subscribed-feed__card-teaser {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  opacity: 0.88;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-line;
+}
+
+.messenger-subscribed-feed__card-snippet-expanded {
+  width: 100%;
+}
+
+.messenger-subscribed-feed__card-snippet-text {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  opacity: 0.9;
+  white-space: pre-line;
+}
+
+.messenger-subscribed-feed__card-more-chevron {
+  margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-link, #a5b4fc);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.messenger-subscribed-feed__card-more-chevron:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.messenger-subscribed-feed__card-expand-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.messenger-subscribed-feed__card-expand-chevron:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+/* Страница чтения поста из ленты */
+.messenger-feed-post-read {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.messenger-feed-post-read__scroll {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px 24px;
+  max-width: 560px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.dashboard-messenger__thread-head--feed-post-read {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px 8px 8px;
+  border-bottom: 1px solid var(--messenger-bubble-border, rgba(255, 255, 255, 0.08));
+}
+
+.messenger-feed-post-read__back-desktop {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.messenger-feed-post-read__back-desktop:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.messenger-feed-post-read__head-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.messenger-feed-post-read__article {
+  padding-bottom: 24px;
+}
+
+.messenger-feed-post-read__plain-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  opacity: 0.92;
+}
+
+.messenger-subscribed-feed__sentinel {
+  height: 1px;
+}
+
+.messenger-subscribed-feed__more-loader {
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+}
+
+/* Строка «Лента» в списке */
+.dashboard-messenger__feed-row-outer {
+  padding: 0 8px 8px;
+}
+
+.dashboard-messenger__feed-row-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.dashboard-messenger__feed-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+.dashboard-messenger__feed-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.dashboard-messenger__feed-row--active {
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.dashboard-messenger__feed-row-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.5), rgba(236, 72, 153, 0.35));
+  flex-shrink: 0;
+}
+
+.dashboard-messenger__feed-row-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.dashboard-messenger__feed-row-meta {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  margin-top: 2px;
+}
+
+.dashboard-messenger__composer-icon-btn-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.dashboard-messenger__draft-dot {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e11d48;
+  box-shadow: 0 0 0 2px var(--surface, #12141a);
+  pointer-events: none;
+}

@@ -218,6 +218,10 @@ export type BuildMessengerUrlShare = {
   messageId?: string
   /** id поста-родителя — для комментария: открыть модалку комментариев и проскроллить к комментарию */
   parentMessageId?: string
+  /** Лента постов из подписанных каналов (без выбранного чата) */
+  feed?: 'subscribed'
+  /** Полноэкранное чтение поста из ленты (не удалять `msg` из URL автоматически) */
+  postReader?: boolean
 }
 
 /** Путь `/dashboard/messenger` с query `chat` / `with` / `title` / `msg` / `post`. */
@@ -235,6 +239,8 @@ export function buildMessengerUrl(
   const pid = share?.parentMessageId?.trim()
   if (mid) params.set('msg', mid)
   if (pid) params.set('post', pid)
+  if (share?.feed === 'subscribed') params.set('feed', 'subscribed')
+  if (share?.postReader) params.set('postReader', '1')
   const qs = params.toString()
   return qs ? `/dashboard/messenger?${qs}` : '/dashboard/messenger'
 }

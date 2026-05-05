@@ -868,3 +868,23 @@ html[data-theme='light'] .post-blocks-editor__textarea,
 html[data-theme='light'] .post-blocks-editor__input {
   border-bottom-color: rgba(0, 0, 0, 0.1);
 }
+
+.post-editor-feed-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 4px;
+  flex-wrap: wrap;
+}
+
+.post-editor-feed-toggle__label {
+  font-size: 0.9rem;
+}
+
+.post-editor-feed-hint {
+  font-size: 0.8rem;
+  opacity: 0.78;
+  margin: 0 0 10px;
+  line-height: 1.35;
+}

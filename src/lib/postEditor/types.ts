@@ -33,6 +33,8 @@ export type PostDraftV1 = {
   title: string
   subtitle?: string
   coverImage?: string | null
+  /** Показывать пост в общей ленте подписанных каналов (нужна обложка ms://). */
+  showInSubscribedFeed?: boolean
   slug?: string
   seoTitle?: string
   seoDescription?: string

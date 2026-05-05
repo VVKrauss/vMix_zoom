@@ -16,6 +16,7 @@ export function createEmptyDraft(): PostDraftV1 {
     title: '',
     subtitle: '',
     coverImage: null,
+    showInSubscribedFeed: false,
     slug: '',
     seoTitle: '',
     seoDescription: '',
@@ -62,6 +63,50 @@ function firstPlainExcerpt(blocks: PostBlock[], max: number): string {
   return ''
 }
 
+function blocksToPlainParagraphs(blocks: PostBlock[]): string[] {
+  const out: string[] = []
+  for (const b of blocks) {
+    if (b.type === 'paragraph' || b.type === 'heading2' || b.type === 'heading3' || b.type === 'quote') {
+      const t = stripLightMd((b.text ?? '').trim().replace(/\s+/g, ' '))
+      if (t) out.push(t)
+    }
+  }
+  return out
+}
+
+/**
+ * Подзаголовок; если пусто — краткий отрывок из текста поста (для 2 строк в карточке — line-clamp в CSS).
+ */
+export function feedCardTeaserText(d: PostDraftV1): string {
+  const sub = (d.subtitle ?? '').trim()
+  if (sub) return sub
+  return firstPlainExcerpt(d.blocks, 200)
+}
+
+/** Лимит plain-текста в развёрнутой карточке ленты подписок. */
+export const FEED_CARD_EXPAND_MAX = 400
+
+/**
+ * Сжатый plain-текст для разворота карточки (макс. `maxChars`); `needsOpenPost` — есть ещё контент вне сниппета.
+ */
+export function feedCardExpandedPlainSnippet(
+  d: PostDraftV1,
+  maxChars: number = FEED_CARD_EXPAND_MAX,
+): { text: string; needsOpenPost: boolean } {
+  const sub = (d.subtitle ?? '').trim()
+  const paras = blocksToPlainParagraphs(d.blocks)
+  const bodyJoined = paras.join('\n\n').trim()
+  const fullCombined = [sub, bodyJoined].filter(Boolean).join('\n\n')
+  const normalized = fullCombined.replace(/\n{3,}/g, '\n\n').trim()
+  if (normalized.length <= maxChars) {
+    return { text: normalized, needsOpenPost: false }
+  }
+  return {
+    text: `${normalized.slice(0, maxChars).trimEnd()}…`,
+    needsOpenPost: true,
+  }
+}
+
 export function blockHasRenderableContent(b: PostBlock): boolean {
   switch (b.type) {
     case 'paragraph':
@@ -97,6 +142,20 @@ export function draftHasPublishableBody(d: PostDraftV1): boolean {
   return meaningful.length > 0
 }
 
+/** Есть ли содержимое в сохранённом черновике поста канала (локально или в БД). */
+export function channelPostDraftLooksNonEmpty(d: unknown): boolean {
+  if (!d || typeof d !== 'object') return false
+  if (Object.keys(d as object).length === 0) return false
+  const o = d as Partial<PostDraftV1>
+  if (o.v !== 1) return false
+  if ((o.title ?? '').trim()) return true
+  if (o.coverImage) return true
+  if (o.showInSubscribedFeed) return true
+  if (!Array.isArray(o.blocks)) return false
+  const fake = { ...createEmptyDraft(), ...o, blocks: o.blocks } as PostDraftV1
+  return draftHasPublishableBody(fake)
+}
+
 export function isPostDraftV1(raw: unknown): raw is PostDraftV1 {
   if (!raw || typeof raw !== 'object') return false
   const o = raw as Record<string, unknown>
@@ -108,6 +167,7 @@ export function isPostDraftV1(raw: unknown): raw is PostDraftV1 {
 
 /** Один текстовый абзац, без обложки, SEO и материалов — можно показать «простой» композер как в чате. */
 export function isDraftSimpleCompatible(d: PostDraftV1): boolean {
+  if (d.showInSubscribedFeed) return false
   if ((d.title ?? '').trim()) return false
   if ((d.subtitle ?? '').trim()) return false
   if (d.coverImage) return false

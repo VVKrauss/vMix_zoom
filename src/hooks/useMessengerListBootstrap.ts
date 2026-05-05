@@ -83,12 +83,14 @@ export function useMessengerListBootstrap(opts: {
         const hasWithBoot = Boolean(spBoot.get('with')?.trim())
         const hasInviteBoot = Boolean(spBoot.get('invite')?.trim())
         const hasRouteConversationBoot = Boolean(routeConversationId.trim())
+        const hasFeedSubscribedBoot = spBoot.get('feed')?.trim() === 'subscribed'
         if (
           !hasChatBoot &&
           !hasWithBoot &&
           !hasInviteBoot &&
           !hasRouteConversationBoot &&
-          spBoot.get('view') !== 'list'
+          spBoot.get('view') !== 'list' &&
+          !hasFeedSubscribedBoot
         ) {
           navigate('/dashboard/messenger?view=list', { replace: true })
           if (active) setLoading(false)
@@ -148,11 +150,13 @@ export function useMessengerListBootstrap(opts: {
 
       const viewAtNavigate = new URLSearchParams(window.location.search).get('view')
       const viewListOnly = isMobileMessenger && viewAtNavigate === 'list'
+      const feedSubscribed = searchParams.get('feed')?.trim() === 'subscribed'
       if (
         !conversationIdRef.current.trim() &&
         targetConversationId &&
         !viewListOnly &&
-        !holdMessengerInvite
+        !holdMessengerInvite &&
+        !feedSubscribed
       ) {
         navigate(buildMessengerUrl(targetConversationId, targetUserId || undefined, targetTitle || undefined), {
           replace: true,

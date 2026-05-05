@@ -20,6 +20,10 @@ export type MessengerSettingsModalProps = {
   onTogglePush: () => void
   /** Личный кабинет → настройки приватности («Видимость на сайте»). */
   onOpenVisibilitySettings?: () => void
+  /** Блок «Лента» в дереве чатов при любом фильтре (не только «Каналы»). */
+  messengerFeedAlwaysShow?: boolean
+  messengerFeedAlwaysShowBusy?: boolean
+  onMessengerFeedAlwaysShowChange?: (next: boolean) => void | Promise<void>
 }
 
 export function MessengerSettingsModal({
@@ -35,6 +39,9 @@ export function MessengerSettingsModal({
   pushBusy,
   onTogglePush,
   onOpenVisibilitySettings,
+  messengerFeedAlwaysShow = false,
+  messengerFeedAlwaysShowBusy = false,
+  onMessengerFeedAlwaysShowChange,
 }: MessengerSettingsModalProps) {
   useEffect(() => {
     if (!open) return
@@ -98,6 +105,25 @@ export function MessengerSettingsModal({
             {soundEnabled ? 'Включён — нажмите, чтобы выключить' : 'Выключен — нажмите, чтобы включить'}
           </button>
         </div>
+        {onMessengerFeedAlwaysShowChange ? (
+          <div className="messenger-settings-modal__section">
+            <div className="messenger-settings-modal__push-row">
+              <span className="messenger-settings-modal__label">Лента каналов в списке</span>
+              <PillToggle
+                compact
+                checked={messengerFeedAlwaysShow}
+                onCheckedChange={() => void onMessengerFeedAlwaysShowChange(!messengerFeedAlwaysShow)}
+                offLabel="По фильтру"
+                onLabel="Всегда"
+                ariaLabel="Показывать ленту подписок при любом фильтре чатов"
+                disabled={messengerFeedAlwaysShowBusy}
+              />
+            </div>
+            <p className="messenger-settings-modal__hint">
+              Если выключено, блок «Лента» виден только на вкладке «Каналы».
+            </p>
+          </div>
+        ) : null}
         {pushUi !== 'absent' ? (
           <div className="messenger-settings-modal__section">
             <div className="messenger-settings-modal__push-row">

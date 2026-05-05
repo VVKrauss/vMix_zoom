@@ -1,5 +1,6 @@
 import '../styles/dashboard-page.css'
 import '../styles/messenger-kind-tabs.css'
+import '../styles/messenger-subscribed-feed.css'
 import '../styles/messenger-chat-bubbles.css'
 import '../styles/messenger-audio-player.css'
 import type { ReactNode } from 'react'

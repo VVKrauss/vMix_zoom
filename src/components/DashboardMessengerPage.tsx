@@ -172,6 +172,8 @@ import { MessengerImageLightbox } from './messenger/MessengerImageLightbox'
 import { MessengerJoinRequestsModal } from './messenger/MessengerJoinRequestsModal'
 import { MessengerSettingsModal } from './messenger/MessengerSettingsModal'
 import { MessengerChatListAside } from './messenger/MessengerChatListAside'
+import { MessengerSubscribedFeedPane } from './messenger/MessengerSubscribedFeedPane'
+import { MessengerFeedPostPane } from './messenger/MessengerFeedPostPane'
 import { MessengerClosedGcLockBadge } from './messenger/MessengerClosedGcLockBadge'
 import { MessengerNetStrip } from './messenger/MessengerNetStrip'
 import { MessengerDeleteChatDialog } from './messenger/MessengerDeleteChatDialog'
@@ -199,6 +201,19 @@ export function DashboardMessengerPage() {
   const targetTitle = searchParams.get('title')?.trim() ?? ''
   const jumpMsgFromUrl = searchParams.get('msg')?.trim() ?? ''
   const jumpPostFromUrl = searchParams.get('post')?.trim() ?? ''
+  const subscribedFeedFromUrl = searchParams.get('feed')?.trim() === 'subscribed'
+  /** Лента подписок: только `?feed=subscribed` без открытого чата / инвайта. */
+  const isSubscribedFeedView =
+    subscribedFeedFromUrl &&
+    !(searchConversationId || routeConversationId).trim() &&
+    !inviteToken.trim()
+  const postReaderFromUrl = searchParams.get('postReader')?.trim() === '1'
+  /** URL страницы чтения поста: `postReader=1` + `chat` + `msg` (рентер панели — при наличии `user`). */
+  const isFeedPostReaderUrl =
+    postReaderFromUrl &&
+    Boolean(searchConversationId.trim()) &&
+    Boolean(jumpMsgFromUrl.trim()) &&
+    !inviteToken.trim()
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -211,11 +226,13 @@ export function DashboardMessengerPage() {
     targetTitle,
     preserveMessageId: jumpMsgFromUrl || undefined,
     preserveParentMessageId: jumpPostFromUrl || undefined,
+    preservePostReader: searchParams.get('postReader') === '1',
+    preserveFeedSubscribed: searchParams.get('feed') === 'subscribed',
     navigate,
   })
   const { signOut, user } = useAuth()
   const { openUserPeek } = useUserPeek()
-  const { profile } = useProfile()
+  const { profile, saveMessengerFeedAlwaysShow, messengerFeedAlwaysShowSaving } = useProfile()
   const { pinnedChatIds, setPinnedChatIds } = useMessengerPinnedChatsSync(user?.id, profile, toast)
   const { allowed: canAccessAdmin } = useCanAccessAdminPanel()
   const isMobileMessenger = useStableMobileMessenger(900)
@@ -258,7 +275,8 @@ export function DashboardMessengerPage() {
     Boolean(searchConversationId.trim()) ||
     Boolean(routeConversationId.trim()) ||
     Boolean(targetUserId.trim()) ||
-    Boolean(jumpMsgFromUrl)
+    Boolean(jumpMsgFromUrl) ||
+    subscribedFeedFromUrl
   /** Мобильный режим «только дерево» — только если явно view=list и в URL нет chat/invite/with/сегмента диалога */
   const listOnlyMobile =
     isMobileMessenger && searchParams.get('view') === 'list' && !hasMobileOpenTarget
@@ -385,6 +403,7 @@ export function DashboardMessengerPage() {
     userId: user?.id,
     loading,
     listOnlyMobile,
+    subscribedFeedWithoutChat: isSubscribedFeedView,
     isOnline,
     conversationId,
     urlConversationId,
@@ -577,6 +596,10 @@ export function DashboardMessengerPage() {
   const selectConversation = (nextConversationId: string) => {
     navigate(buildMessengerUrl(nextConversationId), { replace: false })
   }
+
+  const openSubscribedFeed = useCallback(() => {
+    navigate(buildMessengerUrl(undefined, undefined, undefined, { feed: 'subscribed' }), { replace: false })
+  }, [navigate])
 
   useMessengerListBootstrap({
     userId: user?.id,
@@ -1736,13 +1759,32 @@ export function DashboardMessengerPage() {
 
   /** Шаринг: `?msg=` / `post=` → скролл к посту/комментарию; параметры убираем из адреса после применения. */
   useEffect(() => {
+    if (searchParams.get('postReader') === '1') return
     const msg = searchParams.get('msg')?.trim() ?? ''
-    if (!msg) return
     const post = searchParams.get('post')?.trim() ?? ''
     const cid = conversationId.trim()
     if (!cid || activeConversationId.trim() !== cid) return
     const kind = threadHeadConversation?.kind
     if (!kind) return
+
+    /** Только `post=` без `msg` в канале — открыть экран комментариев к посту (лента подписок и т.п.). */
+    if (!msg && post && kind === 'channel') {
+      setPendingJump({
+        conversationId: cid,
+        messageId: '',
+        parentMessageId: post,
+        conversationKind: 'channel',
+        sourceTitle: threadHeadConversation?.title,
+        sourceAvatarUrl: null,
+      })
+      const p = new URLSearchParams(searchParams)
+      p.delete('post')
+      const qs = p.toString()
+      navigate({ pathname: location.pathname, search: qs ? `?${qs}` : '' }, { replace: true })
+      return
+    }
+
+    if (!msg) return
 
     setPendingJump({
       conversationId: cid,
@@ -3569,6 +3611,9 @@ export function DashboardMessengerPage() {
                 activeConversationId={sidebarActiveConversationId}
                 mentionUnreadByConversationId={mentionUnreadByConversationId}
                 selectConversation={selectConversation}
+                messengerFeedAlwaysShow={profile?.messenger_feed_always_show === true}
+                subscribedFeedActive={isSubscribedFeedView}
+                onOpenSubscribedFeed={openSubscribedFeed}
                 navigate={navigate}
                 directPeersPresence={directPeersPresence}
                 pinnedChatIds={pinnedChatIds}
@@ -3585,10 +3630,31 @@ export function DashboardMessengerPage() {
                     inviteLoading &&
                     !invitePreview?.id &&
                     !inviteError)) &&
-                !threadHeadConversation ? (
+                !threadHeadConversation &&
+                !isSubscribedFeedView &&
+                !isFeedPostReaderUrl ? (
                   <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…">
                     <BrandLogoLoader size={56} />
                   </div>
+                ) : isFeedPostReaderUrl && user?.id ? (
+                  <MessengerFeedPostPane
+                    conversationId={searchConversationId}
+                    messageId={jumpMsgFromUrl}
+                    channelTitle={threadHeadConversation?.title ?? 'Канал'}
+                    isMobileMessenger={isMobileMessenger}
+                    navigate={navigate}
+                    backToSubscribedFeed={subscribedFeedFromUrl}
+                  />
+                ) : isFeedPostReaderUrl ? (
+                  <div className="dashboard-messenger__pane-loader" aria-label="Загрузка…">
+                    <BrandLogoLoader size={56} />
+                  </div>
+                ) : isSubscribedFeedView && user?.id ? (
+                  <MessengerSubscribedFeedPane
+                    isMobileMessenger={isMobileMessenger}
+                    navigate={navigate}
+                    userId={user?.id}
+                  />
                 ) : threadHeadConversation ? (
                   threadHeadConversation.kind === 'group' || threadHeadConversation.kind === 'channel' ? (
                     inviteJoinMode ? (
@@ -4236,6 +4302,14 @@ export function DashboardMessengerPage() {
         pushBusy={pushBusy}
         onTogglePush={() => {
           void toggleMessengerPush()
+        }}
+        messengerFeedAlwaysShow={profile?.messenger_feed_always_show === true}
+        messengerFeedAlwaysShowBusy={messengerFeedAlwaysShowSaving}
+        onMessengerFeedAlwaysShowChange={async (next) => {
+          const res = await saveMessengerFeedAlwaysShow(next)
+          if (res.error) {
+            toast.push({ tone: 'error', message: res.error, ms: 2600 })
+          }
         }}
         onOpenVisibilitySettings={() => {
           setMessengerSettingsOpen(false)

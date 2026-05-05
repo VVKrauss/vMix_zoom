@@ -13,11 +13,20 @@ import {
   editChannelPostRich,
 } from '../../lib/channels'
 import {
+  deleteChannelPostDraft,
+  getChannelPostDraft,
+  upsertChannelPostDraft,
+} from '../../lib/messengerSubscribedFeed'
+import { isApproxSquare, loadImageFromFile, squareResizeOnlyJpegBlob } from '../../lib/squareCoverExport'
+import { PillToggle } from '../PillToggle'
+import {
+  channelPostDraftLooksNonEmpty,
   collectStoragePathsFromDraft,
   createEmptyDraft,
   draftHasPublishableBody,
   draftToPreviewBody,
   firstLinkCardMeta,
+  isPostDraftV1,
   mergeMetaWithDraft,
   migrateLegacyBodyToDraft,
 } from '../../lib/postEditor/draftUtils'
@@ -26,6 +35,7 @@ import { newBlockId } from '../../lib/postEditor/types'
 import type { DirectMessage } from '../../lib/messenger'
 import { getMessengerImageSignedUrl, uploadMessengerImage } from '../../lib/messenger'
 import { PostBlocksEditor } from './PostBlocksEditor'
+import { PostCoverSquareEditor } from './PostCoverSquareEditor'
 import { PostDraftReadView } from './PostDraftReadView'
 import './PostEditorModal.css'
 
@@ -73,6 +83,8 @@ export function PostEditorModal({
 }) {
   const toast = useToast()
   const [draft, setDraft] = useState<PostDraftV1>(createEmptyDraft())
+  const draftRef = useRef(draft)
+  draftRef.current = draft
   const [preview, setPreview] = useState(false)
   const [seoExtrasOpen, setSeoExtrasOpen] = useState(false)
   const [narrow, setNarrow] = useState(false)
@@ -80,7 +92,9 @@ export function PostEditorModal({
   const [busy, setBusy] = useState(false)
   const snapshotRef = useRef<string>('')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dbSyncDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [urlByPath, setUrlByPath] = useState<Record<string, string>>({})
+  const [coverSquareEditorFile, setCoverSquareEditorFile] = useState<File | null>(null)
 
   const cid = conversationId.trim()
   const mid = mode === 'edit' && editMessage?.id ? editMessage.id : null
@@ -103,27 +117,61 @@ export function PostEditorModal({
 
   useEffect(() => {
     if (!open) return
-    let initial: PostDraftV1
     if (mode === 'edit' && editMessage) {
-      initial = editMessage.meta?.postDraft ?? migrateLegacyBodyToDraft(editMessage.body ?? '')
-    } else {
+      const initial = editMessage.meta?.postDraft ?? migrateLegacyBodyToDraft(editMessage.body ?? '')
+      setDraft(initial)
+      snapshotRef.current = JSON.stringify(initial)
+      setPreview(false)
+      setSaveStatus('idle')
+      setSeoExtrasOpen(false)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      let initial = createEmptyDraft()
       try {
-        const raw = localStorage.getItem(storageKey(cid, null))
-        const parsed = raw ? (JSON.parse(raw) as Partial<PostDraftV1>) : null
-        if (parsed && parsed.v === 1 && Array.isArray(parsed.blocks) && parsed.blocks.length > 0) {
-          initial = parsed as PostDraftV1
+        const res = await getChannelPostDraft(cid)
+        if (
+          !cancelled &&
+          res.ok &&
+          res.draft &&
+          typeof res.draft === 'object' &&
+          isPostDraftV1(res.draft) &&
+          channelPostDraftLooksNonEmpty(res.draft)
+        ) {
+          initial = res.draft as PostDraftV1
         } else {
-          initial = createEmptyDraft()
+          try {
+            const raw = localStorage.getItem(storageKey(cid, null))
+            const parsed = raw ? (JSON.parse(raw) as Partial<PostDraftV1>) : null
+            if (parsed && parsed.v === 1 && Array.isArray(parsed.blocks) && parsed.blocks.length > 0) {
+              initial = parsed as PostDraftV1
+            }
+          } catch {
+            /* ignore */
+          }
         }
       } catch {
-        initial = createEmptyDraft()
+        try {
+          const raw = localStorage.getItem(storageKey(cid, null))
+          const parsed = raw ? (JSON.parse(raw) as Partial<PostDraftV1>) : null
+          if (parsed && parsed.v === 1 && Array.isArray(parsed.blocks) && parsed.blocks.length > 0) {
+            initial = parsed as PostDraftV1
+          }
+        } catch {
+          /* ignore */
+        }
       }
+      if (cancelled) return
+      setDraft(initial)
+      snapshotRef.current = JSON.stringify(initial)
+      setPreview(false)
+      setSaveStatus('idle')
+      setSeoExtrasOpen(false)
+    })()
+    return () => {
+      cancelled = true
     }
-    setDraft(initial)
-    snapshotRef.current = JSON.stringify(initial)
-    setPreview(false)
-    setSaveStatus('idle')
-    setSeoExtrasOpen(false)
   }, [open, mode, editMessage, cid])
 
   const draftStoragePathsKey = useMemo(() => {
@@ -172,6 +220,18 @@ export function PostEditorModal({
   }, [open, draft, dirty, cid, mid])
 
   useEffect(() => {
+    if (!open || mode !== 'create' || !cid.trim()) return
+    if (!dirty) return
+    if (dbSyncDebounceRef.current) clearTimeout(dbSyncDebounceRef.current)
+    dbSyncDebounceRef.current = setTimeout(() => {
+      void upsertChannelPostDraft(cid, draft as unknown as Record<string, unknown>)
+    }, 900)
+    return () => {
+      if (dbSyncDebounceRef.current) clearTimeout(dbSyncDebounceRef.current)
+    }
+  }, [open, mode, cid, draft, dirty])
+
+  useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !preview) {
@@ -203,12 +263,54 @@ export function PostEditorModal({
     [cid, toast],
   )
 
+  const pickCoverFile = useCallback(() => {
+    const inp = document.createElement('input')
+    inp.type = 'file'
+    inp.accept = 'image/*'
+    inp.onchange = async () => {
+      const f = inp.files?.[0]
+      if (!f) return
+      try {
+        if (!draftRef.current.showInSubscribedFeed) {
+          const path = await uploadFile(f)
+          if (path) setDraft((d) => ({ ...d, coverImage: `ms://${path}` }))
+          return
+        }
+        const im = await loadImageFromFile(f)
+        const nw = im.naturalWidth || im.width
+        const nh = im.naturalHeight || im.height
+        if (isApproxSquare(nw, nh)) {
+          const blob = await squareResizeOnlyJpegBlob(im)
+          const uploadSrc = new File([blob], 'cover.jpg', { type: 'image/jpeg' })
+          const path = await uploadFile(uploadSrc)
+          if (path) setDraft((d) => ({ ...d, coverImage: `ms://${path}` }))
+        } else {
+          setCoverSquareEditorFile(f)
+        }
+      } catch {
+        toast.push({ tone: 'error', message: 'Не удалось обработать фото', ms: 2800 })
+      }
+    }
+    inp.click()
+  }, [uploadFile, toast])
+
   const validatePublish = useCallback((): string | null => {
     if (!draftHasPublishableBody(draft)) return 'Добавьте текст, изображение, видео или другой блок'
+    if (draft.showInSubscribedFeed) {
+      const c = (draft.coverImage ?? '').trim()
+      if (!c.startsWith('ms://')) return 'Для показа в ленте загрузите квадратную обложку (файл)'
+    }
     return null
   }, [draft])
 
-  const canPublish = useMemo(() => draftHasPublishableBody(draft), [draft])
+  const canPublish = useMemo(() => {
+    if (!draftHasPublishableBody(draft)) return false
+    if (draft.showInSubscribedFeed) {
+      const c = (draft.coverImage ?? '').trim()
+      if (!c.startsWith('ms://')) return false
+    }
+    return true
+  }, [draft])
 
   const handlePublish = useCallback(async () => {
     const err = validatePublish()
@@ -250,6 +352,9 @@ export function PostEditorModal({
       }
       snapshotRef.current = JSON.stringify({ ...draft, status: 'published' })
       localStorage.removeItem(storageKey(cid, null))
+      if (mode === 'create') {
+        await deleteChannelPostDraft(cid)
+      }
       toast.push({ tone: 'success', message: 'Опубликовано', ms: 2000 })
       onSaved?.()
       onClose()
@@ -328,6 +433,10 @@ export function PostEditorModal({
     setMatUrl('')
   }, [matTitle, matUrl])
 
+  useEffect(() => {
+    if (!open) setCoverSquareEditorFile(null)
+  }, [open])
+
   if (!open) return null
 
   const statusLabel =
@@ -342,6 +451,7 @@ export function PostEditorModal({
             : 'Черновик'
 
   return (
+    <>
     <div className="post-editor-overlay" role="presentation" onClick={requestClose}>
       <div
         className={`post-editor-shell${narrow ? ' post-editor-shell--fullscreen' : ''}`}
@@ -407,6 +517,39 @@ export function PostEditorModal({
                   onFocus={scrollPostFieldIntoView}
                   disabled={busy}
                 />
+                <div className="post-editor-feed-toggle">
+                  <span className="post-editor-feed-toggle__label">Показывать в ленте подписок</span>
+                  <PillToggle
+                    compact
+                    checked={draft.showInSubscribedFeed === true}
+                    onCheckedChange={(next) => {
+                      setDraft((d) => {
+                        if (next) {
+                          const c = (d.coverImage ?? '').trim()
+                          if (c && !c.startsWith('ms://')) {
+                            toast.push({
+                              tone: 'info',
+                              message: 'Для ленты обложка — только загруженный файл. Старая обложка сброшена.',
+                              ms: 3600,
+                            })
+                            return { ...d, showInSubscribedFeed: true, coverImage: null }
+                          }
+                        }
+                        return { ...d, showInSubscribedFeed: next }
+                      })
+                    }}
+                    offLabel="Нет"
+                    onLabel="Да"
+                    ariaLabel="Показывать пост в ленте подписанных каналов"
+                    disabled={busy}
+                  />
+                </div>
+                {draft.showInSubscribedFeed ? (
+                  <p className="post-editor-feed-hint">
+                    Обложка в ленту — то же превью карточки: квадратный JPEG. Неквадратное фото можно кадрировать или
+                    вписать с полями.
+                  </p>
+                ) : null}
                 <div className="post-editor-cover">
                   {draft.coverImage ? (
                     <>
@@ -424,23 +567,12 @@ export function PostEditorModal({
                     <button
                       type="button"
                       className="dashboard-topbar__action post-editor-cover__btn"
-                      onClick={() => {
-                        const inp = document.createElement('input')
-                        inp.type = 'file'
-                        inp.accept = 'image/*'
-                        inp.onchange = async () => {
-                          const f = inp.files?.[0]
-                          if (!f) return
-                          const path = await uploadFile(f)
-                          if (path) setDraft((d) => ({ ...d, coverImage: `ms://${path}` }))
-                        }
-                        inp.click()
-                      }}
+                      onClick={() => void pickCoverFile()}
                     >
-                      Добавить обложку
+                      {draft.showInSubscribedFeed ? 'Загрузить обложку' : 'Добавить обложку'}
                     </button>
                   )}
-                  {draft.blocks.some((b) => b.type === 'video' && b.thumbnail) ? (
+                  {draft.blocks.some((b) => b.type === 'video' && b.thumbnail) && !draft.showInSubscribedFeed ? (
                     <button type="button" className="dashboard-topbar__action" onClick={applyYoutubeCover}>
                       Использовать превью видео как обложку
                     </button>
@@ -535,6 +667,22 @@ export function PostEditorModal({
         </div>
       </div>
     </div>
+    {coverSquareEditorFile ? (
+      <PostCoverSquareEditor
+        file={coverSquareEditorFile}
+        onCancel={() => setCoverSquareEditorFile(null)}
+        onConfirm={async (blob) => {
+          setCoverSquareEditorFile(null)
+          try {
+            const path = await uploadFile(new File([blob], 'cover.jpg', { type: 'image/jpeg' }))
+            if (path) setDraft((d) => ({ ...d, coverImage: `ms://${path}` }))
+          } catch {
+            toast.push({ tone: 'error', message: 'Загрузка обложки не удалась', ms: 2800 })
+          }
+        }}
+      />
+    ) : null}
+    </>
   )
 }
 

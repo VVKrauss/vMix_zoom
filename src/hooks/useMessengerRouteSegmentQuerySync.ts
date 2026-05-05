@@ -11,6 +11,8 @@ export function useMessengerRouteSegmentQuerySync(opts: {
   /** Сохранить `msg` / `post` при синхронизации сегмента в query (шаринг поста). */
   preserveMessageId?: string
   preserveParentMessageId?: string
+  preservePostReader?: boolean
+  preserveFeedSubscribed?: boolean
   navigate: NavigateFunction
 }): void {
   const {
@@ -20,6 +22,8 @@ export function useMessengerRouteSegmentQuerySync(opts: {
     targetTitle,
     preserveMessageId,
     preserveParentMessageId,
+    preservePostReader,
+    preserveFeedSubscribed,
     navigate,
   } = opts
   useEffect(() => {
@@ -28,6 +32,8 @@ export function useMessengerRouteSegmentQuerySync(opts: {
       buildMessengerUrl(routeConversationId, targetUserId || undefined, targetTitle || undefined, {
         messageId: preserveMessageId || undefined,
         parentMessageId: preserveParentMessageId || undefined,
+        postReader: preservePostReader,
+        feed: preserveFeedSubscribed ? 'subscribed' : undefined,
       }),
       { replace: true },
     )
@@ -39,5 +45,7 @@ export function useMessengerRouteSegmentQuerySync(opts: {
     targetUserId,
     preserveMessageId,
     preserveParentMessageId,
+    preservePostReader,
+    preserveFeedSubscribed,
   ])
 }

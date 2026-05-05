@@ -125,6 +125,8 @@ export function useMessengerThreadVM(opts: {
   userId: string | undefined
   loading: boolean
   listOnlyMobile: boolean
+  /** URL `?feed=subscribed` без выбранного чата — не подставлять дефолтный диалог. */
+  subscribedFeedWithoutChat: boolean
   isOnline: boolean
   conversationId: string
   urlConversationId: string
@@ -172,6 +174,12 @@ export function useMessengerThreadVM(opts: {
 
       if (!opts.userId || opts.loading) return
       if (opts.listOnlyMobile) {
+        opts.lastFetchedThreadIdRef.current = null
+        stable.dispatch({ type: 'CLEAR' })
+        return
+      }
+
+      if (opts.subscribedFeedWithoutChat) {
         opts.lastFetchedThreadIdRef.current = null
         stable.dispatch({ type: 'CLEAR' })
         return
@@ -425,6 +433,7 @@ export function useMessengerThreadVM(opts: {
     opts.userId,
     opts.loading,
     opts.listOnlyMobile,
+    opts.subscribedFeedWithoutChat,
     opts.isOnline,
     opts.conversationId,
     opts.urlConversationId,

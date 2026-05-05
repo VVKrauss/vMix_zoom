@@ -47,7 +47,8 @@ import {
   messengerPeerDisplayTitle,
   messengerScrollIsPinnedToBottom,
 } from '../../lib/messengerDashboardUtils'
-import { collectStoragePathsFromDraft } from '../../lib/postEditor/draftUtils'
+import { channelPostDraftLooksNonEmpty, collectStoragePathsFromDraft } from '../../lib/postEditor/draftUtils'
+import { getChannelPostDraft } from '../../lib/messengerSubscribedFeed'
 import type { ReactionEmoji } from '../../types/roomComms'
 import { REACTION_EMOJI_WHITELIST } from '../../types/roomComms'
 import { AttachmentIcon, ChevronLeftIcon, FiRrIcon, MessengerSendPlaneIcon, XCloseIcon } from '../icons'
@@ -221,6 +222,7 @@ export function ChannelThreadPane({
     post: DirectMessage
     anchor: { left: number; top: number; right: number; bottom: number }
   } | null>(null)
+  const [remotePostDraftHint, setRemotePostDraftHint] = useState(false)
   const [commentMenu, setCommentMenu] = useState<{
     message: DirectMessage
     anchor: { left: number; top: number; right: number; bottom: number }
@@ -240,6 +242,23 @@ export function ChannelThreadPane({
   signedUrlByPathRef.current = signedUrlByPath
   const postAnchorRef = useRef<Map<string, HTMLElement>>(new Map())
   const commentAnchorRef = useRef<Map<string, HTMLElement>>(new Map())
+
+  useEffect(() => {
+    const cid = conversationId.trim()
+    if (!cid || !user?.id) {
+      setRemotePostDraftHint(false)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const r = await getChannelPostDraft(cid)
+      if (cancelled) return
+      setRemotePostDraftHint(Boolean(r.ok && channelPostDraftLooksNonEmpty(r.draft)))
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [conversationId, user?.id, postEditor])
   const commentsScrollRef = useRef<HTMLDivElement | null>(null)
   const commentsJumpTailRef = useRef<HTMLDivElement | null>(null)
   const postsFeedScrollRef = useRef<HTMLDivElement | null>(null)
@@ -1194,6 +1213,28 @@ export function ChannelThreadPane({
       if (el) el.scrollTop = el.scrollHeight
     })
   }, [commentsModalPostId])
+
+  /** Диплинк: только `post=` (id поста), без `msg` — сразу открыть комментарии к посту (как кнопка в ленте канала). */
+  useEffect(() => {
+    const pid = jumpToParentMessageId?.trim() ?? ''
+    const mid = jumpToMessageId?.trim() ?? ''
+    if (!pid || mid) return
+    if (viewerOnly) {
+      onJumpHandled?.()
+      return
+    }
+    if (commentsModalPostId?.trim() !== pid) {
+      void openCommentsModal(pid)
+    }
+    onJumpHandled?.()
+  }, [
+    jumpToParentMessageId,
+    jumpToMessageId,
+    commentsModalPostId,
+    viewerOnly,
+    openCommentsModal,
+    onJumpHandled,
+  ])
 
   useEffect(() => {
     const mid = jumpToMessageId?.trim() ?? ''
@@ -2182,16 +2223,21 @@ export function ChannelThreadPane({
                   >
                     😀
                   </button>
-                  <button
-                    type="button"
-                    className="dashboard-messenger__composer-icon-btn"
-                    title="Оформленный пост"
-                    aria-label="Оформленный пост: заголовок, обложка, блоки"
-                    disabled={threadLoading || feedSending}
-                    onClick={() => setPostEditor({ mode: 'create' })}
-                  >
-                    <FiRrIcon name="stars" />
-                  </button>
+                  <span className="dashboard-messenger__composer-icon-btn-wrap">
+                    <button
+                      type="button"
+                      className="dashboard-messenger__composer-icon-btn"
+                      title="Оформленный пост"
+                      aria-label="Оформленный пост: заголовок, обложка, блоки"
+                      disabled={threadLoading || feedSending}
+                      onClick={() => setPostEditor({ mode: 'create' })}
+                    >
+                      <FiRrIcon name="stars" />
+                    </button>
+                    {remotePostDraftHint ? (
+                      <span className="dashboard-messenger__draft-dot" title="Есть черновик поста" aria-hidden />
+                    ) : null}
+                  </span>
                   {showFeedMic ? (
                     <MessengerVoiceRecordBtn
                       variant={isMobileMessenger ? 'mobileEnd' : 'default'}

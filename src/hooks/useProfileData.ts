@@ -4,6 +4,7 @@ import { normalizeSupabaseStoragePublicUrl } from '../lib/supabaseStorageUrl'
 import { useAuth } from '../context/AuthContext'
 import { normalizeProfileSlug, validateProfileSlugInput } from '../lib/profileSlug'
 import { assignAutoProfileSlugIfEmpty, isProfileSlugAvailable } from '../lib/profileSlugAvailability'
+import { setMessengerFeedAlwaysShow as rpcSetMessengerFeedAlwaysShow } from '../lib/messengerSubscribedFeed'
 
 /** Пустой `file.type` (часто у «сфотканных» файлов) даёт 400 у Storage; расширение из имени ненадёжно — подстраховываемся по MIME. */
 function imageContentTypeForUpload(file: File): string {
@@ -67,6 +68,8 @@ export interface UserProfile {
   messenger_pinned_conversation_ids?: unknown | null
   /** Намерение включить web push в мессенджере (синхронизируется с тумблером настроек). */
   messenger_web_push_enabled?: boolean
+  /** Показывать блок «Лента» при любом фильтре списка чатов. */
+  messenger_feed_always_show?: boolean
 }
 
 export interface PlanInfo {
@@ -105,6 +108,8 @@ export interface UseProfileReturn {
   removeAvatar: () => Promise<{ error: string | null }>
   /** Проверка занятости ника (свой текущий ник считается свободным). */
   checkProfileSlugAvailable: (rawSlug: string) => Promise<boolean>
+  messengerFeedAlwaysShowSaving: boolean
+  saveMessengerFeedAlwaysShow: (value: boolean) => Promise<{ error: string | null }>
 }
 
 export function useProfileData(): UseProfileReturn {
@@ -115,6 +120,7 @@ export function useProfileData(): UseProfileReturn {
   const [saving, setSaving]                 = useState(false)
   const [searchPrivacySaving, setSearchPrivacySaving] = useState(false)
   const [contactPrivacySaving, setContactPrivacySaving] = useState(false)
+  const [messengerFeedAlwaysShowSaving, setMessengerFeedAlwaysShowSaving] = useState(false)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [error, setError]                   = useState<string | null>(null)
 
@@ -136,7 +142,7 @@ export function useProfileData(): UseProfileReturn {
         supabase
           .from('users')
           .select(
-            'id, display_name, profile_slug, email, avatar_url, status, room_ui_preferences, messenger_pinned_conversation_ids, messenger_web_push_enabled, profile_search_closed, profile_search_allow_by_name, profile_search_allow_by_email, profile_search_allow_by_slug, dm_allow_from, profile_view_allow_from, profile_show_avatar, profile_show_slug, profile_show_last_active, profile_show_online, profile_dm_receipts_private',
+            'id, display_name, profile_slug, email, avatar_url, status, room_ui_preferences, messenger_pinned_conversation_ids, messenger_web_push_enabled, messenger_feed_always_show, profile_search_closed, profile_search_allow_by_name, profile_search_allow_by_email, profile_search_allow_by_slug, dm_allow_from, profile_view_allow_from, profile_show_avatar, profile_show_slug, profile_show_last_active, profile_show_online, profile_dm_receipts_private',
           )
           .eq('id', uid)
           .maybeSingle()
@@ -238,6 +244,8 @@ export function useProfileData(): UseProfileReturn {
           : {}),
         messenger_web_push_enabled:
           (userData as { messenger_web_push_enabled?: boolean }).messenger_web_push_enabled === true,
+        messenger_feed_always_show:
+          (userData as { messenger_feed_always_show?: boolean }).messenger_feed_always_show === true,
       })
 
       // Подписка: берём через аккаунт владельца
@@ -461,6 +469,22 @@ export function useProfileData(): UseProfileReturn {
     [user, profile],
   )
 
+  const saveMessengerFeedAlwaysShow = useCallback(
+    async (value: boolean): Promise<{ error: string | null }> => {
+      if (!user?.id) return { error: 'auth_required' }
+      setMessengerFeedAlwaysShowSaving(true)
+      try {
+        const res = await rpcSetMessengerFeedAlwaysShow(value)
+        if (res.error) return { error: res.error }
+        setProfile((prev) => (prev ? { ...prev, messenger_feed_always_show: value } : prev))
+        return { error: null }
+      } finally {
+        setMessengerFeedAlwaysShowSaving(false)
+      }
+    },
+    [user?.id],
+  )
+
   const removeAvatar = useCallback(async (): Promise<{ error: string | null }> => {
     if (!user || !profile?.avatar_url) return { error: null }
     setUploadingAvatar(true)
@@ -493,6 +517,7 @@ export function useProfileData(): UseProfileReturn {
     saving,
     searchPrivacySaving,
     contactPrivacySaving,
+    messengerFeedAlwaysShowSaving,
     uploadingAvatar,
     error,
     saveProfile,
@@ -501,5 +526,6 @@ export function useProfileData(): UseProfileReturn {
     uploadAvatar,
     removeAvatar,
     checkProfileSlugAvailable,
+    saveMessengerFeedAlwaysShow,
   }
 }
